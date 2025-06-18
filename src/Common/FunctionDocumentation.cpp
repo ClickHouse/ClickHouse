@@ -40,7 +40,7 @@ std::string FunctionDocumentation::argumentsAsString() const
         /// reason.
         if (!types.empty())
         {
-            /// Vector 'types' is expected to look like: {"(U)Int*", "Float*"}
+            /// Vector 'types' are expected to look like: {"(U)Int*", "Float*"}
             /// The output is expected to look like: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
             bool is_first = true;
             for (const auto & type : types)
@@ -50,23 +50,76 @@ std::string FunctionDocumentation::argumentsAsString() const
                 else
                     result += " or "; /// or whatever other separator we want here :-)
 
-                result += "['" + type;
+                result += "[`" + type;
 
-                else if (type.starts_with("String"))
-                    result += "'](/sql-reference/data-types/string)";
+                if (type.starts_with("String"))
+                    result += "`](/sql-reference/data-types/string)";
                 else if (type.starts_with("FixedString"))
-                    result += "'](/sql-reference/data-types/fixedstring)";
-                if (type.starts_with("Int") || type.starts_with("UInt") || type == "(U)Int*") /// matches 'Int8', 'Int16' etc. and 'UInt8', 'UInt16' etc. and 'Int*' and '(U)Int*'
-                    result += "'](/sql-reference/data-types/int-uint)";
+                    result += "`](/sql-reference/data-types/fixedstring)";
+                else if (type.starts_with("Int") || type.starts_with("UInt") || type == "(U)Int*") /// matches 'Int8', 'Int16' etc. and 'UInt8', 'UInt16' etc. and 'Int*' and '(U)Int*'
+                    result += "`](/sql-reference/data-types/int-uint)";
                 else if (type == "Date")
-                    result += "'](/sql-reference/data-types/date)";
+                    result += "`](/sql-reference/data-types/date)";
                 else if (type == "Date32")
-                    result += "'](/sql-reference/data-types/date32)";
+                    result += "`](/sql-reference/data-types/date32)";
                 else if (type == "DateTime")
-                    result += "'](/sql-reference/data-types/datetime)";
+                    result += "`](/sql-reference/data-types/datetime)";
                 else if (type == "DateTime64")
-                    result += "'](/sql-reference/data-types/datetime64)";
-                /// TODO: ... and so on
+                    result += "`](/sql-reference/data-types/datetime64)";
+                else if (type == "Enum")
+                    result += "`](/sql-reference/data-types/enum)";
+                else if (type == "UUID")
+                    result += "`](/sql-reference/data-types/uuid)";
+                else if (type == "Object")
+                    result += "`](/sql-reference/data-types/object-data-type)";
+                else if (type == "IPv4")
+                    result += "`](/sql-reference/data-types/ipv4)";
+                else if (type == "IPv6")
+                    result += "`](/sql-reference/data-types/ipv6)";
+                else if (type.starts_with("Array")) /// matches 'Array(T)', 'Array(UInt8)', 'Array(String)' etc
+                    result += "`](/sql-reference/data-types/array)";
+                else if (type == "Bool")
+                    result += "`](/sql-reference/data-types/boolean)";
+                else if (type.starts_with("Tuple")) /// matches 'Tuple(T1, T2)', 'Tuple(UInt8, String)' etc
+                    result += "`](/sql-reference/data-types/tuple)";
+                else if (type.starts_with("Map")) /// matches 'Map(K, V)'
+                    result += "`](/sql-reference/data-types/map)";
+                else if (type.starts_with("Variant")) /// matches 'Variant(T1, T2, ...)', 'Variant(UInt8, String)' etc
+                    result += "`](/sql-reference/data-types/variant)";
+                else if (type.starts_with("LowCardinality")) /// matches 'LowCardinality(T)', 'LowCardinality(UInt8)', 'LowCardinality(String)' etc
+                    result += "`](/sql-reference/data-types/lowcardinality)";
+                else if (type.starts_with("Nullable")) /// matches 'Nullable(T)', 'Nullable(UInt8)', 'Nullable(String)' etc
+                    result += "`](/sql-reference/data-types/nullable)";
+                else if (type.starts_with("AggregateFunction")) /// matches 'AggregateFunction(agg_func, T)', 'AggregateFunction(any, UInt8)' etc
+                    result += "`](/sql-reference/data-types/aggregatefunction)";
+                else if (type.starts_with("SimpleAggregateFunction")) /// matches 'SimpleAggregateFunction(agg_func, T)', 'SimpleAggregateFunction(any, UInt8)' etc
+                    result += "`](/sql-reference/data-types/simpleaggregatefunction)";
+                else if (type == "Point")
+                    result += "`](/sql-reference/data-types/geo#point)";
+                else if (type == "Ring")
+                    result += "`](/sql-reference/data-types/geo#ring)";
+                else if (type == "LineString")
+                    result += "`](/sql-reference/data-types/geo#linestring)";
+                else if (type == "MultiLineString")
+                    result += "`](/sql-reference/data-types/geo#multilinestring)";
+                else if (type == "Polygon")
+                    result += "`](/sql-reference/data-types/geo#polygon)";
+                else if (type == "MultiPolygon")
+                    result += "`](/sql-reference/data-types/geo#multipolygon)";
+                else if (type == "Expression")
+                    result += "`](/sql-reference/data-types/special-data-types/expression)";
+                else if (type == "Set")
+                    result += "`](/sql-reference/data-types/special-data-types/set)";
+                else if (type == "Nothing")
+                    result += "`](/sql-reference/data-types/special-data-types/nothing)";
+                else if (type == "Interval")
+                    result += "`](/sql-reference/data-types/special-data-types/interval)";
+                else if (type.starts_with("Nested")) /// matches 'Nested(N1 T1, N2 T2, ...)' etc
+                    result += "`](/sql-reference/data-types/nested-data-structures/nested)";
+                else if (type == "Dynamic")
+                    result += "`](/sql-reference/data-types/dynamic)";
+                else if (type == "JSON")
+                    result += "`](/sql-reference/data-types/newjson)";
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type: {}", type);
 
@@ -140,6 +193,7 @@ std::string FunctionDocumentation::categoryAsString() const
         {Category::Mathematical, "Mathematical"},
         {Category::NLP, "Natural Language Processing"},
         {Category::Nullable, "Nullable"},
+        {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
         {Category::RandomNumber, "Random Number"},
         {Category::Rounding, "Rounding"},

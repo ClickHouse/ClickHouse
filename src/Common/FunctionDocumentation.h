@@ -17,7 +17,7 @@ namespace DB
   * - the documentation can be extracted by external tools such as SQL editors
   *   in machine-readable form and presented in human readable form;
   * - the documentation can be generated in various formats;
-  * - it is easy to generate a documentation with information about the version when the feature appeared or changed;
+  * - it is easy to generate documentation with information about the version when the feature appeared or changed;
   * - it is easy to point to the source code from the documentation;
   * - it is easy to point to the tests that covered every component, and order the tests by relevance;
   * - it is easy to point to the authors of every feature;
@@ -100,6 +100,7 @@ struct FunctionDocumentation
         Mathematical,
         NLP,
         Nullable,
+        NumericIndexedVector,
         Other,
         RandomNumber,
         Rounding,
@@ -126,7 +127,7 @@ struct FunctionDocumentation
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
     Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
     Syntax syntax {};                             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};                       /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    Arguments arguments {};                       /// E.g. ["haystack — String in which the search is performed. [`String`](/sql-reference/data-types/string)", "needle — Substring to be searched. [`String`](/sql-reference/data-types/string)."]
     ReturnedValue returned_value {};              /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
