@@ -1262,7 +1262,7 @@ void StatementGenerator::generateEngineDetails(
         SettingValues * svs = nullptr;
         const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!engineSettings.empty() && rg.nextSmallNumber() < 5)
+        if (!engineSettings.empty() && rg.nextBool())
         {
             /// Add table engine settings
             svs = svs ? svs : te->mutable_setting_values();
@@ -1274,36 +1274,32 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared))
+        if (b.isAnyS3Engine())
         {
             svs = svs ? svs : te->mutable_setting_values();
-            if (b.isAnyS3Engine())
-            {
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-                sv->set_property("input_format_with_names_use_header");
-                sv->set_value("0");
-            }
-            else if (
-                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
-                && (!fc.storage_policies.empty() || !fc.keeper_disks.empty()))
-            {
-                /// Requires storage setting
-                const auto & ovals = svs->other_values();
+            sv->set_property("input_format_with_names_use_header");
+            sv->set_value("0");
+        }
+        else if (
+            b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+            && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
+            && (!svs
+                || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
+                    && (!svs->other_values_size()
+                        || std::find_if(
+                               svs->other_values().begin(),
+                               svs->other_values().end(),
+                               [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
+                            == svs->other_values().end()))))
+        {
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
 
-                if (std::find_if(
-                        ovals.begin(),
-                        ovals.end(),
-                        [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
-                    == ovals.end())
-                {
-                    SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-                    const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
-
-                    sv->set_property(pick);
-                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
-                }
-            }
+            sv->set_property(pick);
+            sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
         }
     }
     setClusterInfo(rg, b);
