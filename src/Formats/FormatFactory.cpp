@@ -246,7 +246,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.regexp.escaping_rule = settings[Setting::format_regexp_escaping_rule];
     format_settings.regexp.regexp = settings[Setting::format_regexp];
     format_settings.regexp.skip_unmatched = settings[Setting::format_regexp_skip_unmatched];
+    format_settings.schema.format_schema_source = settings[Setting::format_schema_source];
     format_settings.schema.format_schema = settings[Setting::format_schema];
+    format_settings.schema.format_schema_message_name = settings[Setting::format_schema_message_name];
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
