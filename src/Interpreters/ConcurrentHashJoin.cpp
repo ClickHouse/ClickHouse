@@ -374,10 +374,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     else
     {
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        if (hash_joins[0]->data->twoLevelMapIsUsed())
-            dispatched_blocks.emplace_back(std::move(block));
-        else
-            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
