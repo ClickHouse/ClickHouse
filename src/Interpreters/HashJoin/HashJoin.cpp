@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include "Common/Logger.h"
 #include <Common/CurrentThread.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -30,6 +31,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include "Core/Joins.h"
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
@@ -139,7 +141,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -172,7 +175,11 @@ HashJoin::HashJoin(
 
     validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
-    used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
+    /// use shared instance if provided, else create a new one
+    if (shared_used_flags_)
+        used_flags = shared_used_flags_;
+    else
+        used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
 
     if (isCrossOrComma(kind))
     {
@@ -1105,7 +1112,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_bloc
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
 
     for (const auto & onexpr : table_join->getClauses())
     {
@@ -1170,6 +1177,41 @@ HashJoin::~HashJoin()
         instance_log_id,
         getTotalByteCount(),
         getTotalRowCount());
+}
+
+bool HashJoin::hasNonJoinedRows() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return has_non_joined_rows.load(std::memory_order_acquire);
+
+    if (!isRightOrFull(kind))
+        return false;
+
+    if (!needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+
+    /// if the hash table is empty, we have no non-joined rows
+    if (data->type == Type::EMPTY || data->type == Type::CROSS || empty())
+        return false;
+
+    updateNonJoinedRowsStatus();
+    return has_non_joined_rows.load(std::memory_order_acquire);
+}
+
+void HashJoin::updateNonJoinedRowsStatus() const
+{
+    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
+        return;
+
+    bool found_non_joined = false;
+
+    if (!empty() && used_flags)
+    {
+        found_non_joined = true;
+    }
+
+    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
+    has_non_joined_rows_checked.store(true, std::memory_order_release);
 }
 
 template <typename Mapped>
@@ -1377,27 +1419,28 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        if (!nulls_position.has_value())
-            nulls_position = parent.data->blocks_nullmaps.begin();
-
-        auto end = parent.data->blocks_nullmaps.end();
-
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        // Stateless scan of null-maps with safe bounds checking
+        for (const auto & holder : parent.data->blocks_nullmaps)
         {
-            const auto * block = it->block;
-            ConstNullMapPtr nullmap = nullptr;
-            if (it->column)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
-
-            for (size_t row = 0; row < block->rows(); ++row)
+            const auto * block = holder.block;
+            const ColumnUInt8 * col_ptr = holder.column
+                ? &assert_cast<const ColumnUInt8 &>(*holder.column)
+                : nullptr;
+            const auto * nullmap = col_ptr ? &col_ptr->getData() : nullptr;
+            size_t nrows = block->rows();
+            size_t limit = nullmap ? std::min(nrows, nullmap->size()) : nrows;
+            for (size_t row = 0; row < limit && rows_added < max_block_size; ++row)
             {
-                if (nullmap && (*nullmap)[row])
+                // treat missing nullmap as non-joined
+                if (!nullmap || (*nullmap)[row])
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*block->getByPosition(col).column, row);
+                    for (size_t c = 0; c < columns_keys_and_right.size(); ++c)
+                        columns_keys_and_right[c]->insertFrom(*block->getByPosition(c).column, row);
                     ++rows_added;
                 }
             }
+            if (rows_added >= max_block_size)
+                break;
         }
     }
 };
@@ -1716,5 +1759,6 @@ void HashJoin::onBuildPhaseFinish()
                     map_.getBufferSizeInCells(data->type) + 1);
             });
     }
+    updateNonJoinedRowsStatus();
 }
 }
