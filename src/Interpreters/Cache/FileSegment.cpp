@@ -966,15 +966,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
     const auto file_path = getPath();
 
-    struct stat file_stat;
-    stat(file_path.c_str(), &file_stat);
-    size_t sz = getSize(FileSegment::SizeAlignment::ALIGNED);
-    size_t real_size = static_cast<size_t>(file_stat.st_blocks * 512); // st_block -- Number of 512B blocks allocated
-    if (sz != real_size)
-    {
-        throw_logical("Aligned file size != statvfs: " + std::to_string(sz) + " != " + std::to_string(real_size));
-    }
-
     {
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
@@ -1007,6 +998,16 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(!remote_file_reader);
             chassert(!cache_writer);
+            { // check aligned size
+                struct stat file_stat;
+                stat(file_path.c_str(), &file_stat);
+                size_t sz = getSize(FileSegment::SizeAlignment::ALIGNED);
+                size_t real_size = static_cast<size_t>(file_stat.st_blocks * 512); // st_block -- Number of 512B blocks allocated
+                if (sz != real_size)
+                {
+                    throw_logical("Aligned file size != statvfs: " + std::to_string(sz) + " != " + std::to_string(real_size));
+                }
+            }
 
             auto file_size = fs::file_size(getPath());
             UNUSED(file_size);
