@@ -97,7 +97,7 @@ def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
         --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -184,6 +184,23 @@ def main():
 
     stages = list(JobStages)
 
+    tests = []
+    if is_flaky_check or is_bugfix_validation:
+        if info.is_local_run:
+            assert (
+                args.test
+            ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
+            tests = [args.test]
+        else:
+            tests = get_changed_tests(info)
+        if tests:
+            print(f"Test list: [{tests}]")
+        else:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED, info="No tests to run"
+            ).complete_job()
+
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -194,6 +211,7 @@ def main():
 
     res = True
     results = []
+    debug_files = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
@@ -270,10 +288,11 @@ def main():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             time.sleep(7)
             Shell.check("ps -ef | grep minio", verbose=True)
-            res = res and Shell.check(
-                "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
-                verbose=True,
-            )
+            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
+            # res = res and Shell.check(
+            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
+            #     verbose=True,
+            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
@@ -329,21 +348,13 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            # Flaky or Bugfix Validation check
-            if info.is_local_run:
-                assert (
-                    args.test
-                ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
-                tests = [args.test]
-            else:
-                tests = get_changed_tests(info)
-            if tests:
-                run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
-            else:
-                print("WARNING: No tests to run")
+            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
+
         if not info.is_local_run:
             CH.stop_log_exports()
-        results.append(FTResultsProcessor(wd=temp_dir).run())
+        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        results.append(ft_res_processor.run())
+        debug_files += ft_res_processor.debug_files
         test_result = results[-1]
 
         # invert result status for bugfix validation
@@ -401,7 +412,10 @@ def main():
         results[-1].results = CH.extra_tests_results
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=CH.logs, info=job_info
+        results=results,
+        stopwatch=stop_watch,
+        files=CH.logs + debug_files,
+        info=job_info,
     ).complete_job()
 
 
