@@ -1178,7 +1178,6 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     // todo arthur change once argument is properly implemented
     file_columns = storage_columns.getAllPhysical();
 
-    // todo arthur it is needed
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
