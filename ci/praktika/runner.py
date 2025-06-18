@@ -22,7 +22,6 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
-
 _GH_authenticated = False
 
 
@@ -34,7 +33,7 @@ def _GH_Auth(workflow):
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True:
+    if not Shell.check(f"gh auth status", verbose=True):
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
         GHAuth.auth(app_id=app_id, app_key=pem)
