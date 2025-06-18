@@ -36,9 +36,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `lead` function to return a list of successive winners in the physics category.
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE OR REPLACE VIEW nobel_prize_laureates
 AS SELECT *
 FROM file('nobel_laureates_data.csv');
