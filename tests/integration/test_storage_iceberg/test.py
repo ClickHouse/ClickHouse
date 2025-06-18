@@ -200,6 +200,7 @@ def get_creation_expression(
     format="Parquet",
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
+    use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
     **kwargs,
@@ -210,6 +211,9 @@ def get_creation_expression(
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
+
+    if use_version_hint:
+        settings_array.append("iceberg_use_version_hint = true")
 
     if settings_array:
         settings_expression = " SETTINGS " + ",".join(settings_array)
@@ -414,10 +418,11 @@ def test_partition_by(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert len(files) == 14  # 10 partitiions + 4 metadata files
+    assert len(files) == 14  # 10 partitions + 4 metadata files
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{TABLE_NAME}'")) == 1
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -645,6 +650,8 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         )
         assert len(cluster_secondary_queries) == 1
 
+    # write 3 times
+    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -768,12 +775,12 @@ def test_evolved_schema_simple(
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -1108,6 +1115,10 @@ def test_evolved_schema_simple(
             ["\\N", "4", "7.12", "\\N"],
         ],
     )
+    if not is_table_function :
+        print (instance.query("SELECT * FROM system.iceberg_history"))
+        assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{TABLE_NAME}'")) == 5
+        assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{TABLE_NAME}' AND made_current_at >= yesterday()")) == 5
 
     # Do a single check to verify that restarting CH maintains the setting (ATTACH)
     # We are just interested on the setting working after restart, so no need to run it on all combinations
@@ -1173,12 +1184,12 @@ def test_not_evolved_schema(started_cluster, format_version, storage_type):
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
+                a int NOT NULL,
+                b float,
                 c decimal(9,2) NOT NULL,
                 d array<int>
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -1587,6 +1598,7 @@ def test_row_based_deletes(started_cluster, storage_type):
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1746,7 +1758,6 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
 
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
@@ -1786,6 +1797,60 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_metadata_file_selection_from_version_hint(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_metadata_file_selection_from_version_hint_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+
+    for i in range(10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
+        
+    # test the case where version_hint.text file contains just the version number
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+        f.write('5')
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, use_version_hint=True)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
+
+    # test the case where version_hint.text file contains the whole metadata file name
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "w") as f:
+        f.write('v3.metadata.json')
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, use_version_hint=True)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 20
 
 
 def test_restart_broken_s3(started_cluster):
@@ -1848,6 +1913,7 @@ def test_restart_broken_s3(started_cluster):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -1925,12 +1991,56 @@ def test_filesystem_cache(started_cluster, storage_type):
         )
     )
 
+def check_validity_and_get_prunned_files_general(instance, table_name, settings1, settings2, profile_event_name, select_expression):
+    query_id1 = f"{table_name}-{uuid.uuid4()}"
+    query_id2 = f"{table_name}-{uuid.uuid4()}"
+
+    data1 = instance.query(
+        select_expression,
+        query_id=query_id1,
+        settings=settings1
+    )
+    data1 = list(
+        map(
+            lambda x: x.split("\t"),
+            filter(lambda x: len(x) > 0, data1.strip().split("\n")),
+        )
+    )
+
+    data2 = instance.query(
+        select_expression,
+        query_id=query_id2,
+        settings=settings2
+    )
+    data2 = list(
+        map(
+            lambda x: x.split("\t"),
+            filter(lambda x: len(x) > 0, data2.strip().split("\n")),
+        )
+    )
+
+    assert data1 == data2
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert 0 == int(
+        instance.query(
+            f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+        )
+    )
+    return int(
+        instance.query(
+            f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+        )
+    )
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
+
 
     def execute_spark_query(query: str):
         spark.sql(query)
@@ -1979,59 +2089,14 @@ def test_partition_pruning(started_cluster, storage_type):
     )
 
     def check_validity_and_get_prunned_files(select_expression):
-        query_id1 = f"{TABLE_NAME}-{uuid.uuid4()}"
-        query_id2 = f"{TABLE_NAME}-{uuid.uuid4()}"
-
-        data1 = instance.query(
-            select_expression,
-            query_id=query_id1,
-            settings={"use_iceberg_partition_pruning": 0},
-        )
-        data1 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data1.strip().split("\n")),
-            )
-        )
-
-        data2 = instance.query(
-            select_expression,
-            query_id=query_id2,
-            settings={"use_iceberg_partition_pruning": 1},
-        )
-        data2 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data2.strip().split("\n")),
-            )
-        )
-
-        assert data1 == data2
-
-        instance.query("SYSTEM FLUSH LOGS")
-
-        print(
-            "Unprunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            ),
-        )
-        print(
-            "Prunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            ),
-        )
-
-        assert 0 == int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            )
-        )
-        return int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            )
+        settings1 = {
+            "use_iceberg_partition_pruning": 0
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, 'IcebergPartitionPrunedFiles', select_expression
         )
 
     assert (
@@ -2183,7 +2248,7 @@ def test_schema_evolution_with_time_travel(
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
                 a int NOT NULL
             )
-            USING iceberg 
+            USING iceberg
             OPTIONS ('format-version'='{format_version}')
         """
     )
@@ -2353,7 +2418,7 @@ def get_last_snapshot(path_to_table):
                     last_timestamp = timestamp
                     last_snapshot_id = data.get('current-snapshot-id')
     return last_snapshot_id
-    
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -2520,12 +2585,6 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {table_expr}",
@@ -2561,12 +2620,6 @@ def test_metadata_cache(started_cluster, storage_type):
         )
     )
 
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {table_expr}",
@@ -2581,7 +2634,8 @@ def test_metadata_cache(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_minmax_pruning(started_cluster, storage_type):
+@pytest.mark.parametrize("is_table_function", [False, True])
+def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2642,64 +2696,29 @@ def test_minmax_pruning(started_cluster, storage_type):
     """
     )
 
-    creation_expression = get_creation_expression(
+    if is_table_function:
+        creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
+    else:
+        instance.query(get_creation_expression(
+            storage_type, TABLE_NAME, started_cluster, table_function=False
+        ))
+        creation_expression = TABLE_NAME
 
     def check_validity_and_get_prunned_files(select_expression):
-        query_id1 = f"{TABLE_NAME}-{uuid.uuid4()}"
-        query_id2 = f"{TABLE_NAME}-{uuid.uuid4()}"
-
-        data1 = instance.query(
-            select_expression,
-            query_id=query_id1,
-            settings={"use_iceberg_partition_pruning": 0, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
-        )
-        data1 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data1.strip().split("\n")),
-            )
-        )
-
-        data2 = instance.query(
-            select_expression,
-            query_id=query_id2,
-            settings={"use_iceberg_partition_pruning": 1, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
-        )
-        data2 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data2.strip().split("\n")),
-            )
-        )
-
-        assert data1 == data2
-
-        instance.query("SYSTEM FLUSH LOGS")
-
-        print(
-            "Unprunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            ),
-        )
-        print(
-            "Prunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            ),
-        )
-
-        assert 0 == int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            )
-        )
-        return int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            )
+        settings1 = {
+            "use_iceberg_partition_pruning": 0,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, 'IcebergMinMaxIndexPrunedFiles', select_expression
         )
 
     assert (
@@ -2762,6 +2781,9 @@ def test_minmax_pruning(started_cluster, storage_type):
         )
         == 3
     )
+
+    if not is_table_function:
+        return
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 
@@ -2949,59 +2971,18 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
     )
 
     def check_validity_and_get_prunned_files(select_expression):
-        query_id1 = f"{TABLE_NAME}-{uuid.uuid4()}"
-        query_id2 = f"{TABLE_NAME}-{uuid.uuid4()}"
-
-        data1 = instance.query(
-            select_expression,
-            query_id=query_id1,
-            settings={"use_iceberg_partition_pruning": 0, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
-        )
-        data1 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data1.strip().split("\n")),
-            )
-        )
-
-        data2 = instance.query(
-            select_expression,
-            query_id=query_id2,
-            settings={"use_iceberg_partition_pruning": 1, "input_format_parquet_bloom_filter_push_down": 0, "input_format_parquet_filter_push_down": 0},
-        )
-        data2 = list(
-            map(
-                lambda x: x.split("\t"),
-                filter(lambda x: len(x) > 0, data2.strip().split("\n")),
-            )
-        )
-
-        assert data1 == data2
-
-        instance.query("SYSTEM FLUSH LOGS")
-
-        print(
-            "Unprunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            ),
-        )
-        print(
-            "Prunned: ",
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            ),
-        )
-
-        assert 0 == int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
-            )
-        )
-        return int(
-            instance.query(
-                f"SELECT ProfileEvents['IcebergMinMaxIndexPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
-            )
+        settings1 = {
+            "use_iceberg_partition_pruning": 0,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, 'IcebergMinMaxIndexPrunedFiles', select_expression
         )
 
     assert (
@@ -3010,3 +2991,134 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
         )
         == 1
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_bucket_partition_pruning(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                id INT,
+                name STRING,
+                value DECIMAL(10, 2),
+                created_at DATE,
+                event_time TIMESTAMP
+            )
+            USING iceberg
+            PARTITIONED BY (bucket(3, id), bucket(2, name), bucket(4, value), bucket(5, created_at), bucket(3, event_time))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, 'Alice', 10.50, DATE '2024-01-20', TIMESTAMP '2024-01-20 10:00:00'),
+        (2, 'Bob', 20.00, DATE '2024-01-21', TIMESTAMP '2024-01-21 11:00:00'),
+        (3, 'Charlie', 30.50, DATE '2024-01-22', TIMESTAMP '2024-01-22 12:00:00'),
+        (4, 'Diana', 40.00, DATE '2024-01-23', TIMESTAMP '2024-01-23 13:00:00'),
+        (5, 'Eve', 50.50, DATE '2024-01-24', TIMESTAMP '2024-01-24 14:00:00');
+        """
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {
+            "use_iceberg_partition_pruning": 0
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance,
+            TABLE_NAME,
+            settings1,
+            settings2,
+            "IcebergPartitionPrunedFiles",
+            select_expression,
+        )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+    
+    queries = [
+        f"SELECT * FROM {creation_expression} WHERE id == 1 ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE value == 20.00 OR event_time == '2024-01-24 14:00:00' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE id == 3 AND name == 'Charlie' ORDER BY ALL",
+        f"SELECT * FROM {creation_expression} WHERE (event_time == TIMESTAMP '2024-01-21 11:00:00' AND name == 'Bob') OR (name == 'Eve' AND id == 5) ORDER BY ALL",
+    ]
+
+    for query in queries:
+        assert check_validity_and_get_prunned_files(query) > 0
+
+
+@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_cluster_table_function_with_partition_pruning(
+    started_cluster, format_version, storage_type
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = (
+        "test_cluster_table_function_with_partition_pruning_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                a int,
+                b float
+            )
+            USING iceberg
+            PARTITIONED BY (identity(a))
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 1.0), (2, 2.0), (3, 3.0)")
+
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+    )
+
+    instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")

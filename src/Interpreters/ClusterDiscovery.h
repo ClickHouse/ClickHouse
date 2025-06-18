@@ -28,6 +28,7 @@ public:
     ClusterDiscovery(
         const Poco::Util::AbstractConfiguration & config,
         ContextPtr context_,
+        MultiVersion<Macros>::Version macros_,
         const String & config_prefix = "remote_servers");
 
     void start();
@@ -204,6 +205,8 @@ private:
     };
 
     std::shared_ptr<std::vector<std::shared_ptr<MulticlusterDiscovery>>> multicluster_discovery_paths;
+
+    MultiVersion<Macros>::Version macros;
 };
 
 }

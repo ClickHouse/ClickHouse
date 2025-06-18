@@ -3,9 +3,13 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-util:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_archive="https://archive.ubuntu.com"
 
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+RUN sed -i "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -63,18 +67,17 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 COPY requirements.txt /
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Hudi supports only spark 3.3.*, not 3.4
-RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
-    && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C / \
-    && rm spark-3.3.2-bin-hadoop3.tgz
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
+    && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
+    && rm spark-3.5.5-bin-hadoop3.tgz
 
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN packages="org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,\
-io.delta:delta-core_2.12:2.3.0,\
-org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0" \
-    && /spark-3.3.2-bin-hadoop3/bin/spark-shell --packages "$packages" > /dev/null \
-    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.3.2-bin-hadoop3/jars/ \;
+RUN packages="io.delta:delta-spark_2.12:3.1.0,\
+org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3" \
+    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" > /dev/null \
+    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -87,8 +90,15 @@ COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
-COPY --from=clickhouse/cctools:13cfebfd8f1bbc65ab49 /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)

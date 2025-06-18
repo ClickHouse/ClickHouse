@@ -137,12 +137,6 @@ public:
         started_suffix = true;
     }
 
-    String getContentType() const override
-    {
-        NullWriteBuffer buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
     bool supportsWritingException() const override
     {
         NullWriteBuffer buffer;

@@ -11,6 +11,7 @@
             --background-color: white;
             --text-color: #000;
             --tile-background: #f9f9f9;
+            --info-background: #e4e4e4;
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
@@ -51,7 +52,8 @@
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --tile-background: #1F1F1F;
+            --info-background: #575757;
             --header-background-color: #1F1F1C;
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
@@ -86,6 +88,8 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         #toggle-status-bar {
@@ -174,6 +178,7 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
+            background-color: var(--info-background);
         }
         #info-content {
             text-align: left;
@@ -227,9 +232,10 @@
             color: #e0e0e0;
         }
 
-        #theme-toggle {
+        #theme-toggle, #status-filter-toggle {
             cursor: pointer;
             color: white;
+            margin-left: 10px;
         }
 
         #theme-toggle:hover {
@@ -296,10 +302,6 @@
             text-align: left;
         }
 
-        th {
-            background-color: var(--header-background-color);
-        }
-
         .status-success {
             color: green;
             font-weight: bold;
@@ -330,6 +332,11 @@
             font-weight: bold;
         }
 
+        .status-dropped {
+            color: rgb(78, 0, 194);
+            font-weight: bold;
+        }
+
         .status-other {
             color: grey;
             font-weight: bold;
@@ -345,6 +352,7 @@
     <div class="left"></div>
     <div class="right"></div>
     <div class="settings">
+        <span id="status-filter-toggle"></span>
         <span id="theme-toggle">🔆️</span>
     </div>
 </footer>
@@ -357,6 +365,79 @@
         } else {
             localStorage.setItem('theme', 'day');
         }
+    }
+
+    function filterRowsByStatus() {
+        const filter = localStorage.getItem('filter');
+        const showOnlyFailures = filter === 'failures';
+        const showOnlyWarnings = filter === 'warnings';
+
+        const rows = document.querySelectorAll('tr[data-status]');
+
+        if (!showOnlyFailures && !showOnlyWarnings) {
+            rows.forEach(row => row.style.display = '');
+            return;
+        }
+        rows.forEach(row => {
+            row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
+        });
+    }
+
+    function shouldShowRow(filter, status) {
+        const status_ = status.toLowerCase();
+
+        const isFailure =
+            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
+        const isWarning =
+            status_.includes('pending') || status_.includes('running');
+
+        if (filter === 'failures') {
+            return isFailure;
+        }
+
+        if (filter === 'warnings') {
+            // Show both warnings and failures under 'warnings' filter
+            return isWarning || isFailure;
+        }
+
+        // If no filter is set, show all
+        return true;
+    }
+
+    function toggleStatusFilter(setValue=false) {
+        if (setValue instanceof Event) {
+            setValue = false;
+        }
+        let current = localStorage.getItem('filter');
+
+        if (!['all', 'failures', 'warnings'].includes(current)) {
+            current = 'all';
+        }
+        let newFilter;
+        if (setValue) {
+            newFilter = current;
+        } else {
+            if (current === 'all') {
+                newFilter = 'warnings';
+            } else if (current === 'warnings') {
+                newFilter = 'failures';
+            } else {
+                newFilter = 'all';
+            }
+        }
+        localStorage.setItem('filter', newFilter);
+        const toggle = document.getElementById('status-filter-toggle');
+        if (toggle) {
+            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            toggle.innerHTML =
+                newFilter === 'failures' ? redCross :
+                    newFilter === 'warnings' ? yellowExclamationMark :
+                        greenTick;
+        }
+
+        filterRowsByStatus();
     }
 
     function toggleStatusBar() {
@@ -382,6 +463,7 @@
     }
 
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -403,7 +485,7 @@
     function formatDuration(durationInSeconds, detailed = false) {
         // Check if the duration is empty, null, or not a number
         if (!durationInSeconds || isNaN(durationInSeconds)) {
-            return '';
+            return '00s';
         }
 
         // Ensure duration is a floating-point number
@@ -441,7 +523,20 @@
         if (lowerStatus.includes('broken')) return 'status-broken';
         if (lowerStatus.includes('run')) return 'status-run';
         if (lowerStatus.includes('error')) return 'status-error';
+        if (lowerStatus.includes('dropped')) return 'status-dropped';
         return 'status-other';
+    }
+
+    // Color utility
+    function stringToColor(str, dark = false) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash % 360);
+        const saturation = dark ? 90 : 60; // Higher = more vivid
+        const lightness = dark ? 45 : 60;  // Slightly darker = more contrast
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
     }
 
     function addFileLinksWidget(links) {
@@ -540,8 +635,7 @@
         shaSelectorText.push("latest");
         shaSelectorValues.push("latest");
 
-        const currentSha = sha === "latest" ? (commits.at(-1)?.sha || "latest") : sha;
-        const shaDropdown = createDropdown(currentSha, shaSelectorText, shaSelectorValues, "sha");
+        const shaDropdown = createDropdown(sha, shaSelectorText, shaSelectorValues, "sha");
         topRow.appendChild(shaDropdown);
 
         widget.appendChild(topRow);
@@ -554,7 +648,9 @@
         }
 
         // Current SHA (full), small
-        addLine(currentSha, { small: true });
+        const real_sha = sha === "latest" ? commits.at(-1)?.sha : sha
+        addLine(real_sha, { small: true });
+        addLine(": " + commits.find(c => c.sha === real_sha)?.message || "", { small: true });
 
         statusContainer.appendChild(widget);
     }
@@ -849,16 +945,6 @@
         }
 
         drawChart(null); // Initial draw
-
-        // Color utility
-        function stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const hue = hash % 360;
-            return `hsl(${hue}, 60%, 60%)`;
-        }
     }
 
     function addTimeTraceWidget(results, statusWidget, originalTask) {
@@ -939,14 +1025,14 @@
                 taskRects.push({ x, y, width, height, task });
 
                 // Save failure marker position for second pass
-                if (task.status === "failure" || task.status === "error") {
+                if (task.status === "failure" || task.status === "error" || task.status === "dropped") {
                     failedMarkers.push({ x: x + width, y: y + height / 2 });
                 }
             });
 
             // Draw failure markers on top
             failedMarkers.forEach(({ x, y }) => {
-                ctx.font = "12px sans-serif";
+                ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
 
@@ -1002,11 +1088,6 @@
             const line = document.createElement('div');
             line.textContent = value;
 
-            // Truncate long names
-            line.style.whiteSpace = "nowrap";
-            line.style.overflow = "hidden";
-            line.style.textOverflow = "ellipsis";
-
             if (className) line.classList.add(className);
             widget.appendChild(line);
         }
@@ -1014,8 +1095,18 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-
-            addLine(name);
+            
+            // Create name line with fixed height for two lines
+            const nameLine = document.createElement('div');
+            nameLine.textContent = name;
+            nameLine.style.whiteSpace = "normal";
+            nameLine.style.overflow = "hidden";
+            nameLine.style.maxWidth = "100%";
+            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.lineHeight = "1.3em";
+            nameLine.style.textAlign = "left";
+            widget.appendChild(nameLine);
+            
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1063,9 +1154,10 @@
             columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
-                th.style.cursor = 'pointer'; // Make headers clickable
+                th.style.cursor = 'pointer';
+                th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -1083,45 +1175,44 @@
 
     function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);
-
-        // Clear existing rows if re-rendering (used in sorting)
+        // Clear existing rows
         tbody.innerHTML = '';
+        const filter = localStorage.getItem('filter');
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
+            const labels = result?.ext?.labels;
 
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-
+                    
                 if (column === 'status') {
-                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
                     row.dataset.status = value ? value.toLowerCase() : "";
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
                     }
                     td.appendChild(span);
-
+                    row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
 
                     if (
                         (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
-                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0) ||
+                            nest_level === 0)
                     ) {
-                        // If status is pending, just show plain text
                         const span = document.createElement('span');
                         span.textContent = value;
                         span.classList.add('disabled');
                         td.classList.add('name-column');
                         td.appendChild(span);
                     } else {
-                        // Create a link for the name field
                         const newUrl = new URL(currentUrl);
                         newUrl.searchParams.set(`name_${nest_level}`, value);
 
@@ -1132,6 +1223,23 @@
                         td.appendChild(link);
                     }
 
+                    if (Array.isArray(labels)) {
+                        labels.forEach(labelStr => {
+                            const label = document.createElement('span');
+                            label.textContent = labelStr;
+                            label.style.marginLeft = '6px';
+                            label.style.padding = '2px 8px';
+                            label.style.backgroundColor = stringToColor(labelStr, true);
+                            label.style.color = 'white';
+                            label.style.fontSize = '12px';
+                            label.style.borderRadius = '8px';
+                            label.style.fontWeight = 'bold';
+                            label.style.display = 'inline-block';
+                            label.style.verticalAlign = 'middle';
+                            td.appendChild(label);
+                        });
+                    }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -1139,28 +1247,36 @@
                 } else if (column === 'duration') {
                     td.classList.add('dur-column');
                     td.textContent = value ? formatDuration(value) : '';
-
                 }
+
                 row.appendChild(td);
             });
 
             tbody.appendChild(row);
+
+            // unfold all for preview mode (nest_level = 0 in this case)
+            if (nest_level === 0 && result.results.length > 0) {
+                toggleInfoRow(row, result.info, result.results, result.links);
+            }
+
         });
     }
 
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText, links = []) {
-        if (!infoText && links.length === 0) return;
-
+    function toggleInfoRow(row, infoText, sub_results = [], links = []) {
         let nextRow = row.nextElementSibling;
 
         // Check if the next row is already an "info" row
         if (nextRow && nextRow.classList.contains('info-row')) {
             nextRow.remove(); // If it's there, remove it
+            closedInfoCnt++;
+            console.log(`Info row closed. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
         } else {
             // Otherwise, create a new row for the info text
+            openedInfoCnt++;
+            console.log(`Info row opened. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
             const infoRow = document.createElement('tr');
             infoRow.classList.add('info-row');
 
@@ -1174,6 +1290,16 @@
                 // Append content securely, without interpreting HTML tags.
                 infoCell.firstChild.textContent = infoText;
                 infoCell.appendChild(content);
+            }
+
+            // Handle subResults
+            if (sub_results) {
+                if (Array.isArray(sub_results) && sub_results.length > 0) {
+                    const table = createResultsTable(sub_results, 0);
+                    if (table) {
+                        infoCell.appendChild(table); // Appends table correctly
+                    }
+                }
             }
 
             // If there are links, create a list of links
@@ -1205,7 +1331,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level, columns) {
+    function sortTable(results, column, key, tbody, nest_level) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1257,10 +1383,6 @@
             return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
         } catch (error) {
             console.error('Error loading Results:', error);
-            if (infoElement) {
-                infoElement.textContent = 'Error loading data';
-                infoElement.style.display = 'block';
-            }
             return { data: null, lastModifiedTime: null, eTag: null, updated: true };
         }
     }
@@ -1473,6 +1595,8 @@
             } catch (error) {
                 console.error('Error fetching statistics:', error);
             }
+        } else {
+            console.log('statistics updated at:', new Date(persistentStorage.updatedAt).toISOString());
         }
     }
 
@@ -1537,14 +1661,29 @@
         return hasNewData;
     }
 
-    function startAutoRefresh(PR, REF, sha, nameParams) {
+    // Track for autorefresh toggle
+    let openedInfoCnt = 0;
+    let closedInfoCnt = 0;
+    
+    function renderResultsAuto(PR, REF, sha, nameParams) {
+
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
-        async function checkForUpdates() {
+
+        async function checkForUpdatesAndRender(force = false) {
+            if (
+                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
+                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
+                && !force
+                || openedInfoCnt - closedInfoCnt > 0
+            ) {
+                return
+            }
+
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer.scrollTop;
 
@@ -1555,7 +1694,10 @@
                 statusContainer.scrollTop = scrollTop;
             }
         }
-        setInterval(checkForUpdates, 30000);
+
+        checkForUpdatesAndRender(true)
+        console.log("Auto-reload started");
+        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1589,27 +1731,19 @@
         });
 
         await fetchData(PR, REF, sha, nameParams);
-        await renderResults(PR, sha, nameParams);
+        renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
-        if (
-            (nameParams?.length === 1 &&
-                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
-            (nameParams?.length === 2 &&
-                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
-        ) {
-            console.log("Auto-reload started");
-            startAutoRefresh(PR, REF, sha, nameParams);
-        }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
         }
-        init();
+        await init();
+        toggleStatusFilter(true);
     });
 
     function createFavicon() {

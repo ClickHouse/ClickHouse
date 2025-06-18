@@ -1,3 +1,4 @@
 <clickhouse>
     <disable_insertion_and_mutation>true</disable_insertion_and_mutation>
+    <text_log><flush_interval_milliseconds>1000000000000</flush_interval_milliseconds></text_log>
 </clickhouse>

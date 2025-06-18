@@ -68,6 +68,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -130,7 +131,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -389,6 +390,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_functions = factories_info.functions;
         element.used_storages = factories_info.storages;
         element.used_table_functions = factories_info.table_functions;
+        element.used_executable_user_defined_functions = factories_info.executable_user_defined_functions;
+        element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
@@ -573,7 +576,7 @@ void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    const QueryPipeline & query_pipeline,
+    QueryPipeline && query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
@@ -586,16 +589,24 @@ void logQueryFinishImpl(
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
     {
+
+        logProcessorProfile(context, query_pipeline.getProcessors());
+
+        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
+
+        /// Reset pipeline before fetching profile counters
+        query_pipeline.reset();
+
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time, std::make_shared<QueryStatusInfo>(info));
+
         elem.type = QueryLogElementType::QUERY_FINISH;
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context, time);
 
-        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
         elem.result_rows = result_progress.result_rows;
         elem.result_bytes = result_progress.result_bytes;
 
@@ -622,10 +633,9 @@ void logQueryFinishImpl(
                 query_log->add(elem);
         }
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
     }
 
-    if (query_span)
+    if (query_span && query_span->isTraceEnabled())
     {
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
@@ -659,14 +669,14 @@ void logQueryFinish(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    const QueryPipeline & query_pipeline,
+    QueryPipeline && query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
     bool internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
@@ -696,6 +706,12 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    else if (query_ast->as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
     QueryStatusInfoPtr info;
     if (process_list_elem)
     {
@@ -721,12 +737,6 @@ void logQueryException(
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
     }
-
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (query_ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
 
     if (query_span)
     {
@@ -790,8 +800,6 @@ void logExceptionBeforeStart(
 
     elem.client_info = context->getClientInfo();
 
-    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
-
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
@@ -810,6 +818,20 @@ void logExceptionBeforeStart(
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    else if (ast->as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    QueryStatusInfoPtr info;
+    if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
+    {
+        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
+        addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
+    }
+    logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
     if (auto query_log = context->getQueryLog())
     {
@@ -857,20 +879,6 @@ void logExceptionBeforeStart(
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
-    }
-
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-
-    if (ast)
-    {
-        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        {
-            ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-        }
-        else if (ast->as<ASTInsertQuery>())
-        {
-            ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-        }
     }
 }
 
@@ -1643,14 +1651,14 @@ static BlockIO executeQueryImpl(
                                     execute_implicit_tcl_query,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline & query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span](QueryPipeline && query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
             {
                 if (query_result_cache_usage == QueryResultCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
@@ -1818,7 +1826,7 @@ void executeQuery(
                 if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = output_format->getContentType();
+                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -1954,7 +1962,7 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = output_format->getContentType();
+            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
             result_details.format = format_name;
 
             pipeline.complete(output_format);

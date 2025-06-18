@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'" --enable_json_type 1
 
 cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} \
-  --max_memory_usage 10G --query "INSERT INTO ghdata FORMAT JSONAsObject"
+  --max_memory_usage 10G --max_execution_time 300 --query "INSERT INTO ghdata FORMAT JSONAsObject"
 
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ghdata MODIFY column data JSON(max_dynamic_paths=10) SETTINGS mutations_sync=1" --enable_json_type 1
 

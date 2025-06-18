@@ -243,8 +243,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
-    if (path != "/")
-        request.SetPrefix(path);
+    request.SetPrefix(path);
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
@@ -276,7 +275,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (max_keys)
         {
-            size_t keys_left = max_keys - children.size();
+            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
             if (keys_left <= 0)
                 break;
             request.SetMaxKeys(static_cast<int>(keys_left));

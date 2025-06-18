@@ -26,7 +26,8 @@ public:
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
-        size_t /* list_batch_size */) const = 0;
+        size_t /* list_batch_size */,
+        ContextPtr context) const = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -49,6 +50,9 @@ public:
     virtual bool update(const ContextPtr &) { return false; }
 
     virtual bool supportsSchemaEvolution() const { return false; }
+    virtual bool supportsWrites() const { return false; }
+
+    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual std::optional<size_t> totalRows() const { return {}; }
     virtual std::optional<size_t> totalBytes() const { return {}; }

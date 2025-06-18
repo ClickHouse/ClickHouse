@@ -12,8 +12,8 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
+#include <Interpreters/Context.h>
 #include <base/itoa.h>
-#include <base/map.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -23,8 +23,9 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <stack>
 #include <charconv>
+#include <ranges>
+#include <stack>
 
 
 namespace DB
@@ -420,9 +421,10 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = collections::map<Columns>(
-            collections::range(0, dict_struct.attributes.size()),
-            [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
+        const auto attribute_column_ptrs = Columns{
+            std::from_range_t{},
+            collections::range(0, dict_struct.attributes.size())
+                | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
 
         for (const auto row : collections::range(0, rows))
         {

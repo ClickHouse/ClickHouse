@@ -8,6 +8,7 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <openssl/kdf.h>
+#include <openssl/core_names.h>
 
 
 namespace DB
@@ -73,7 +74,7 @@ std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::str
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MAC_CTX_new failed: {}", getOpenSSLErrors());
 
     OSSL_PARAM params[] = {
-        OSSL_PARAM_utf8_string("digest", const_cast<char*>("SHA256"), 0),
+        OSSL_PARAM_utf8_string(OSSL_MAC_PARAM_DIGEST, const_cast<char*>("SHA256"), 0),
         OSSL_PARAM_END
     };
 
