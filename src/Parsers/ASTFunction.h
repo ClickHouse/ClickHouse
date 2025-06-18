@@ -90,7 +90,7 @@ private:
 
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
+std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
 {
     auto function = std::make_shared<ASTFunction>();
 
