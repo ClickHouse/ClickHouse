@@ -18,9 +18,9 @@ REGISTER_FUNCTION(VisitParamExtractUInt)
           "beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.",
         .syntax = "simpleJSONExtractUInt(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
-        .returned_value = "It returns the number parsed from the field if the field exists and contains a number, 0 otherwise.",
+        = {{"json", "The JSON in which the field is searched for.", {"String"}},
+           {"field_name", "The name of the field to search for.", {"String"}}},
+        .returned_value = {"It returns the number parsed from the field if the field exists and contains a number, 0 otherwise."},
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons

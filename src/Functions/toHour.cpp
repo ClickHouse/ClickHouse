@@ -15,10 +15,11 @@ REGISTER_FUNCTION(ToHour)
 Returns the hour component (0-23) of a `Date` or `DateTime` value.
         )";
     FunctionDocumentation::Syntax syntax_to_hour = "toHour(datetime)";
-    FunctionDocumentation::Arguments arguments_to_hour = {
-        {"datetime", "A `Date` or `DateTime` value to get the hour from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+    FunctionDocumentation::Arguments arguments_to_hour =
+    {
+        {"datetime", "Date or date with time to get the hour from.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_hour = "The hour of the given `Date` or `DateTime` value. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_to_hour = {"The hour of the given `Date` or `DateTime` value", {"UInt8"}};
     FunctionDocumentation::Examples examples_to_hour = {
         {"Usage example", R"(
     SELECT toHour(toDateTime('2023-04-21 10:20:30'))

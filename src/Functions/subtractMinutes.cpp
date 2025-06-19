@@ -16,11 +16,12 @@ Subtracts a specified number of minutes from a date, a date with time or a strin
     FunctionDocumentation::Syntax syntax_subtractMinutes = R"(
 subtractMinutes(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractMinutes = {
-        {"datetime", "Date or date with time to subtract specified number of minutes from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of minutes to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments_subtractMinutes =
+    {
+        {"datetime", "Date or date with time to subtract specified number of minutes from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of minutes to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractMinutes = "Returns `datetime` minus `num` minutes. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractMinutes = {"Returns `datetime` minus `num` minutes", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_subtractMinutes = {
         {"Subtract minutes from different date types", R"(
 WITH

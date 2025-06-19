@@ -47,10 +47,10 @@ REGISTER_FUNCTION(BitAnd)
     FunctionDocumentation::Description description = "Performs bitwise AND operation between two values.";
     FunctionDocumentation::Syntax syntax = "bitAnd(a, b)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "First value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
-        {"b", "Second value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
+        {"a", "First value.", {"Int*", "UInt*", "Float32", "Float64"}},
+        {"b", "Second value.", {"Int*", "UInt*", "Float32", "Float64"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of bitwise operation `a AND b`";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of bitwise operation `a AND b`"};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 CREATE TABLE bits

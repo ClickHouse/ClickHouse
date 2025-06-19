@@ -21,7 +21,7 @@ REGISTER_FUNCTION(Greater)
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_greater = "Returns `1` if `a` is greater than `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::ReturnedValue returned_value_greater = {"Returns `1` if `a` is greater than `b`, otherwise `0`", {"UInt8"}};
     FunctionDocumentation::Examples examples_greater = {
         {"Usage example", "SELECT 2 > 1, 1 > 2;", R"(
 ┌─greater(2, 1)─┬─greater(1, 2)─┐

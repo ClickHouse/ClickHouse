@@ -21,7 +21,7 @@ REGISTER_FUNCTION(Equals)
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_equals = "Returns `1` if `a` is equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::ReturnedValue returned_value_equals = {"Returns `1` if `a` is equal to `b`, otherwise `0`", {"UInt8"}};
     FunctionDocumentation::Examples examples_equals = {
         {"Usage example", "SELECT 1 = 1, 1 = 2;", R"(
 ┌─equals(1, 1)─┬─equals(1, 2)─┐

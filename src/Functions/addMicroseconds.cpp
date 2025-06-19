@@ -16,10 +16,10 @@ Adds a specified number of microseconds to a date with time or a string-encoded 
 addMicroseconds(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments_addMicroseconds = {
-        {"datetime", "Date with time to add specified number of microseconds to. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of microseconds to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+        {"datetime", "Date with time to add specified number of microseconds to.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of microseconds to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addMicroseconds = "Returns `date_time` plus `num` microseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_addMicroseconds = {"Returns `date_time` plus `num` microseconds", {"DateTime64"}};
     FunctionDocumentation::Examples examples_addMicroseconds = {
         {"Add microseconds to different date time types", R"(
 WITH

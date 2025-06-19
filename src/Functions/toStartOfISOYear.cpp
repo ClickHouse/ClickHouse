@@ -21,10 +21,10 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toStartOfISOYear(value)
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_iso_year = {
-        {"value", "The date or date with time to round down to the first day of the ISO year. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+        {"value", "The date or date with time to round down to the first day of the ISO year.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_to_start_of_iso_year =
-"Returns the first day of the ISO year for the given date or date with time. [`Date`](../data-types/date.md).";
+    {"Returns the first day of the ISO year for the given date or date with time.", {"Date"}};
     FunctionDocumentation::Examples examples_to_start_of_iso_year = {
         {"Round down to the first day of the ISO year", R"(
 SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))

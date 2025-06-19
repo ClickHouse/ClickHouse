@@ -16,10 +16,10 @@ Adds a specified number of months to a date, a date with time or a string-encode
 addMonths(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments_addMonths = {
-        {"datetime", "Date or date with time to add specified number of months to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of months to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+        {"datetime", "Date or date with time to add specified number of months to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of months to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addMonths = "Returns `datetime` plus `num` months. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_addMonths = {"Returns `datetime` plus `num` months", {"Date"}};
     FunctionDocumentation::Examples examples_addMonths = {
         {"Add months to different date types", R"(
 WITH

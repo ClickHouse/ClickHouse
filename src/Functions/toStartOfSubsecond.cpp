@@ -17,11 +17,10 @@ Rounds down a date with time to the start of the milliseconds.
 toStartOfMillisecond(datetime, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_millisecond = {
-        {"datetime", "Date and time. [`DateTime64`](../../sql-reference/data-types/datetime64.md)."},
-        {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [`String`](../../sql-reference/data-types/string.md)."}
+        {"datetime", "Date and time.", {"DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_millisecond =
-        "Input value with sub-milliseconds. [`DateTime64`](../../sql-reference/data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_millisecond = {"Input value with sub-milliseconds.", { "DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_millisecond = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
@@ -65,10 +64,10 @@ Rounds down a date with time to the start of the microseconds.
 toStartOfMicrosecond(datetime, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_microsecond = {
-        {"datetime", "Date and time. [`DateTime64`](../../sql-reference/data-types/datetime64.md)."},
-        {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [`String`](../../sql-reference/data-types/string.md)."}
+        {"datetime", "Date and time.", {"DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_microsecond = "Input value with sub-microseconds. [`DateTime64`](../../sql-reference/data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_microsecond = {"Input value with sub-microseconds", {"DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_microsecond = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
@@ -113,11 +112,10 @@ Rounds down a date with time to the start of the nanoseconds.
 toStartOfNanosecond(datetime, [timezone])
         )";
     FunctionDocumentation::Arguments arguments_to_start_of_nanosecond = {
-        {"datetime", "Date and time. [`DateTime64`](../../sql-reference/data-types/datetime64.md)."},
-        {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [`String`](../../sql-reference/data-types/string.md)."}
+        {"datetime", "Date and time.", {"DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_nanosecond =
-        "Input value with nanoseconds. [`DateTime64`](../../sql-reference/data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_nanosecond = {"Input value with nanoseconds.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_nanosecond = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64

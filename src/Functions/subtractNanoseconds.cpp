@@ -15,11 +15,12 @@ Subtracts a specified number of nanoseconds from a date with time or a string-en
     FunctionDocumentation::Syntax syntax_subtractNanoseconds = R"(
 subtractNanoseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractNanoseconds = {
-        {"datetime", "Date with time to subtract specified number of nanoseconds from. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of nanoseconds to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments_subtractNanoseconds =
+    {
+        {"datetime", "Date with time to subtract specified number of nanoseconds from.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of nanoseconds to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractNanoseconds = "Returns `datetime` minus `num` nanoseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractNanoseconds = {"Returns `datetime` minus `num` nanoseconds", {"DateTime64"}};
     FunctionDocumentation::Examples examples_subtractNanoseconds = {
         {"Subtract nanoseconds from different date time types", R"(
 WITH

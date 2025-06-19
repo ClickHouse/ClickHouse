@@ -578,8 +578,7 @@ REGISTER_FUNCTION(ArrayLevenshtein)
         {"from", "The first array. [`Array(T)`](/sql-reference/data-types/array)."},
         {"to", "The second array. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_arrayLevDis = "Levenshtein distance between the first and the second arrays. [`Float64`](/sql-reference/data-types/float).";
-    FunctionDocumentation::Examples example_arrayLevDis = {
+    FunctionDocumentation::ReturnedValue returned_value_arrayLevDis = {"Levenshtein distance between the first and the second arrays", {"Float64"}};    FunctionDocumentation::Examples example_arrayLevDis = {
         {
             "Usage example",
             "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
@@ -611,7 +610,7 @@ The number of elements for the array and its weights should match.
         {"from_weights", "weights for the first array. [`Array(Float32)`](/sql-reference/data-types/array)."},
         {"to_weights", "weights for the second array. [`Array(Float32)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value_arrayLevDisW = "Levenshtein distance between the first and the second arrays with custom weights for each element. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_arrayLevDisW = {"Levenshtein distance between the first and the second arrays with custom weights for each element", {"Float64"}};
     FunctionDocumentation::IntroducedIn introduced_in_arrayLevDisW = {25, 4};
     FunctionDocumentation::Examples examples_arrayLevDisW = {
         {
@@ -638,13 +637,12 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
 )";
     FunctionDocumentation::Syntax syntax_arraySim = "arraySimilarity(from, to, from_weights, to_weights)";
     FunctionDocumentation::Arguments arguments_arraySim = {
-        {"from", "first array"},
-        {"to", "second array"},
+        {"from", "first array", {"Array(T)"}},
+        {"to", "second array", {"Array(T)"}},
         {"from_weights", "weights for the first array"},
         {"to_weights", "weights for the second array"},
     };
-    FunctionDocumentation::ReturnedValue returned_value_arraySim = "Returns the similarity between `0` and `1` of the two arrays based on the weighted Levenshtein distance. [`Float64`](/sql-reference/data-types/float).";
-    FunctionDocumentation::Examples examples_arraySim = {
+    FunctionDocumentation::ReturnedValue returned_value_arraySim = {"Returns the similarity between `0` and `1` of the two arrays based on the weighted Levenshtein distance", {"Float64"}};    FunctionDocumentation::Examples examples_arraySim = {
         {
             "Usage example",
             "SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5]);",

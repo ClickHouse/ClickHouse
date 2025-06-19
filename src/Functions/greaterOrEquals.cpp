@@ -23,7 +23,7 @@ REGISTER_FUNCTION(GreaterOrEquals)
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_greaterOrEquals = "Returns `1` if `a` is greater than or equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::ReturnedValue returned_value_greaterOrEquals = {"Returns `1` if `a` is greater than or equal to `b`, otherwise `0`", {"UInt8"}};
     FunctionDocumentation::Examples examples_greaterOrEquals = {
         {"Usage example", "SELECT 2 >= 1, 2 >= 2, 1 >= 2;", R"(
 ┌─greaterOrEquals(2, 1)─┬─greaterOrEquals(2, 2)─┬─greaterOrEquals(1, 2)─┐

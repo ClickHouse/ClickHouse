@@ -17,11 +17,11 @@ Rounds down a date with time to the start of the seconds.
 toStartOfSecond(datetime, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_second = {
-        {"datetime", "Date and time to truncate sub-seconds from. [`DateTime64`](../data-types/datetime64.md)."},
-        {"timezone", "[Timezone](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [`String`](../data-types/string.md)."}
+        {"datetime", "Date and time to truncate sub-seconds from.", {"DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_to_start_of_second =
-        "Returns the input value without sub-seconds. [`DateTime64`](../data-types/datetime64.md).";
+        {"Returns the input value without sub-seconds.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_second = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64

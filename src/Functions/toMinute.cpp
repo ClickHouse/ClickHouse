@@ -16,10 +16,11 @@ REGISTER_FUNCTION(ToMinute)
 Returns the minute component (0-59) of a `Date` or `DateTime` value.
     )";
     FunctionDocumentation::Syntax syntax_to_minute = "toMinute(datetime)";
-    FunctionDocumentation::Arguments arguments_to_minute = {
-        {"datetime", "A `Date` or `DateTime` value to get the minute from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+    FunctionDocumentation::Arguments arguments_to_minute =
+    {
+        {"datetime", "Date or date with time to get the minute from.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_minute = "Returns the minute of the hour (0 - 59) of the given `Date` or `DateTime` value. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_to_minute = {"Returns the minute of the hour (0 - 59) of the given `Date` or `DateTime` value", {"UInt8"}};
     FunctionDocumentation::Examples examples_to_minute = {
         {"Usage example", R"(
 SELECT toMinute(toDateTime('2023-04-21 10:20:30'))

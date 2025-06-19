@@ -144,11 +144,12 @@ The internal value (number of unix seconds) of the data doesn't change.
 Only the value's time zone attribute and the value's string representation changes.
         )";
     FunctionDocumentation::Syntax syntax_to_timezone = "toTimeZone(datetime, timezone)";
-    FunctionDocumentation::Arguments arguments_to_timezone = {
-        {"date", "The value to convert. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."},
-        {"timezone", "The target time zone name as a [`String`](/sql-reference/data-types/string)."}
+    FunctionDocumentation::Arguments arguments_to_timezone =
+    {
+        {"date", "The value to convert.", {"DateTime", "DateTime64"}},
+        {"timezone", "The target time zone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_timezone = "Returns the same timestamp as the input, but with the specified time zone. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64).";
+    FunctionDocumentation::ReturnedValue returned_value_to_timezone = {"Returns the same timestamp as the input, but with the specified time zone", {"DateTime"}};
     FunctionDocumentation::Examples examples_to_timezone = {
         {"Usage example", R"(
 SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,

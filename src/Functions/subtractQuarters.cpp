@@ -16,11 +16,12 @@ Subtracts a specified number of quarters from a date, a date with time or a stri
     FunctionDocumentation::Syntax syntax_subtractQuarters = R"(
 subtractQuarters(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractQuarters = {
-        {"datetime", "Date or date with time to subtract specified number of quarters from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of quarters to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments_subtractQuarters =
+    {
+        {"datetime", "Date or date with time to subtract specified number of quarters from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of quarters to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractQuarters = "Returns `datetime` minus `num` quarters. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractQuarters = {"Returns `datetime` minus `num` quarters", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_subtractQuarters = {
         {"Subtract quarters from different date types", R"(
 WITH

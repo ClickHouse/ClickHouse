@@ -16,10 +16,10 @@ Adds a specified number of hours to a date, a date with time or a string-encoded
 addHours(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments_addHours = {
-        {"datetime", "Date or date with time to add specified number of hours to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of hours to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+        {"datetime", "Date or date with time to add specified number of hours to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of hours to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addHours = "Returns `datetime` plus `num` hours. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_addHours = {"Returns `datetime` plus `num` hours", {"DateTime"}};
     FunctionDocumentation::Examples examples_addHours = {
         {"Add hours to different date types", R"(
 WITH

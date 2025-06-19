@@ -24,7 +24,7 @@ toStartOfMinute(datetime)
         {"datetime", "A date with time to convert.", {"DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_to_start_of_minute =
-        "Returns the date with time rounded down to the start of the minute. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+        {"Returns the date with time rounded down to the start of the minute.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_minute = {
         {"Round down to the start of the minute", R"(
 SELECT

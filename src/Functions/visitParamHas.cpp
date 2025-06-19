@@ -25,9 +25,9 @@ REGISTER_FUNCTION(VisitParamHas)
         .description = "Checks whether there is a field named field_name.  The result is UInt8.",
         .syntax = "simpleJSONHas(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
-        .returned_value = "It returns 1 if the field exists, 0 otherwise.",
+        = {{"json", "The JSON in which the field is searched for.", {"String"}},
+           {"field_name", "The name of the field to search for.", {"String"}}},
+        .returned_value = {"It returns 1 if the field exists, 0 otherwise."},
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons

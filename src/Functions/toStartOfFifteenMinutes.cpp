@@ -22,9 +22,9 @@ toStartOfFifteenMinutes(datetime)
     )";
     FunctionDocumentation::Arguments arguments_to_start_of_fifteen_minutes =
     {
-        {"datetime", "A [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."}
+        {"datetime", "A date or date with time to convert.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_fifteen_minutes = "Returns the date with time rounded to the start of the nearest fifteen-minute interval. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_fifteen_minutes = {"Returns the date with time rounded to the start of the nearest fifteen-minute interval", {"DateTime"}};
     FunctionDocumentation::Examples examples_to_start_of_fifteen_minutes =
     {
         {"Example", R"(

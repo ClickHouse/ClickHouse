@@ -14,11 +14,12 @@ Subtracts a specified number of microseconds from a date with time or a string-e
     FunctionDocumentation::Syntax syntax_subtractMicroseconds = R"(
 subtractMicroseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractMicroseconds = {
-        {"datetime", "Date with time to subtract specified number of microseconds from. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of microseconds to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments_subtractMicroseconds =
+    {
+        {"datetime", "Date with time to subtract specified number of microseconds from.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of microseconds to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractMicroseconds = "Returns `datetime` minus `num` microseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractMicroseconds = {"Returns `datetime` minus `num` microseconds", {"DateTime64"}};
     FunctionDocumentation::Examples examples_subtractMicroseconds = {
         {"Subtract microseconds from different date time types", R"(
 WITH

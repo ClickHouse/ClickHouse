@@ -59,11 +59,10 @@ Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1
 toUnixTimestamp(date, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
-        {"date", "Value to convert. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)/[`String`](/sql-reference/data-types/string)."},
-        {"timezone", "Optional. Timezone to use for conversion. If not specified, the server's timezone is used. [`String`](/sql-reference/data-types/string)."}
+        {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"timezone", "Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = "Returns the Unix timestamp as [`UInt32`](/sql-reference/data-types/int-uint).";
-    FunctionDocumentation::Examples examples_to_unix_timestamp = {
+    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp as", {"UInt32"}};    FunctionDocumentation::Examples examples_to_unix_timestamp = {
         {"Usage example", R"(
 SELECT
 '2017-11-05 08:07:47' AS dt_str,

@@ -16,11 +16,12 @@ Subtracts a specified number of hours from a date, a date with time or a string-
     FunctionDocumentation::Syntax syntax_subtractHours = R"(
 subtractHours(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractHours = {
-        {"datetime", "Date or date with time to subtract specified number of hours from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of hours to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments_subtractHours =
+    {
+        {"datetime", "Date or date with time to subtract specified number of hours from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of hours to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractHours = "Returns `datetime` minus `num` hours. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractHours = {"Returns `datetime` minus `num` hours", {"DateTime"}};
     FunctionDocumentation::Examples examples_subtractHours = {
         {"Subtract hours from different date types", R"(
 WITH
