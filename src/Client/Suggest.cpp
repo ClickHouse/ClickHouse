@@ -94,7 +94,13 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 {
     loading_thread = std::thread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
+        /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;
+        std::optional<CurrentThread::QueryScope> query_scope;
+        /// LocalConnection creates QueryScope for each query
+        if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
+            query_scope.emplace(my_context);
+
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
