@@ -2098,14 +2098,16 @@ message WindowDefn {
 enum WindowFuncs {
     WINdense_rank = 1;
     WINfirst_value = 2;
-    WINlagInFrame = 3;
-    WINlast_value = 4;
-    WINleadInFrame = 5;
-    WINnth_value = 6;
-    WINntile = 7;
-    WINpercent_rank = 8;
-    WINrank = 9;
-    WINrow_number = 10;
+    WINlag = 3;
+    WINlagInFrame = 4;
+    WINlast_value = 5;
+    WINleadInFrame = 6;
+    WINlead = 7;
+    WINnth_value = 8;
+    WINntile = 9;
+    WINpercent_rank = 10;
+    WINrank = 11;
+    WINrow_number = 12;
 }
 
 message SQLWindowCall {

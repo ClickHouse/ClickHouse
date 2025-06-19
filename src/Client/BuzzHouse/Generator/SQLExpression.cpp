@@ -1058,7 +1058,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 this->ids.emplace_back(static_cast<uint32_t>(WINfirst_value));
                 this->ids.emplace_back(static_cast<uint32_t>(WINlast_value));
                 this->ids.emplace_back(static_cast<uint32_t>(WINntile));
+                this->ids.emplace_back(static_cast<uint32_t>(WINlag));
                 this->ids.emplace_back(static_cast<uint32_t>(WINlagInFrame));
+                this->ids.emplace_back(static_cast<uint32_t>(WINlead));
                 this->ids.emplace_back(static_cast<uint32_t>(WINleadInFrame));
             }
             this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
@@ -1085,7 +1087,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 case WINnth_value:
                     nargs = 2;
                     break;
+                case WINlag:
                 case WINlagInFrame:
+                case WINlead:
                 case WINleadInFrame:
                     nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % 3) + 1);
                     break;
