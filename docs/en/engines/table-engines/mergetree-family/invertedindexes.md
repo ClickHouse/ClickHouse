@@ -3,13 +3,13 @@ description: 'Quickly find search terms in text.'
 keywords: ['full-text search', 'text search', 'index', 'indices']
 sidebar_label: 'text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
-title: 'Full-text Search using text Indexes'
+title: 'Full-text Search using Text Indexes'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Full-text Search using text Indexes
+# Full-text Search using text Indexes.
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -54,7 +54,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) GRANULARITY 64
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
