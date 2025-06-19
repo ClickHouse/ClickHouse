@@ -20,7 +20,9 @@ class ArrowBlockOutputFormat : public IOutputFormat
 public:
     ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "Arrow"; }
+    String getName() const override { return "ArrowBlockOutputFormat"; }
+
+    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     void consume(Chunk) override;
