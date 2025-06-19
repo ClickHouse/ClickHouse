@@ -1,4 +1,3 @@
-
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -329,13 +328,13 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     {
         // Check if the subquery contains distributed tables
         ContainsDistributedTableVisitor contains_distributed_visitor;
-        contains_distributed_visitor.visit(subquery_node);
-        
+        contains_distributed_visitor.visit(const_cast<QueryTreeNodePtr &>(subquery_node));
+
         if (contains_distributed_visitor.containsDistributedTable())
         {
             // Add DISTINCT to the subquery to reduce data transfer
             AddDistinctToQueryVisitor add_distinct_visitor;
-            add_distinct_visitor.visit(subquery_node);
+            add_distinct_visitor.visit(const_cast<QueryTreeNodePtr &>(subquery_node));
         }
     }
 
