@@ -176,6 +176,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
