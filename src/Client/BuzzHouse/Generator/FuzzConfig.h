@@ -181,7 +181,8 @@ public:
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
+    String
+    tableGetRandomPartitionOrPart(const uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };

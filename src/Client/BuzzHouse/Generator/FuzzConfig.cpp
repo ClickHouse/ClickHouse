@@ -415,7 +415,8 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
-String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table)
+String FuzzConfig::tableGetRandomPartitionOrPart(
+    const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
@@ -426,7 +427,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
             true,
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % (max2(count(), 1)::UInt64) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
                 "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
@@ -434,6 +435,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
                 detached_tbl,
                 db_clause,
                 table,
+                rand_val,
                 detached_tbl,
                 db_clause,
                 table,
