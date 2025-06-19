@@ -534,9 +534,9 @@ def test_merge_tree_custom_encrypted_disk_include(start_cluster):
 
     This test creates an encrypted disk using the include parameter to reference
     encryption keys defined in a separate configuration file. It verifies that:
-     - The include mechanism correctly merges encryption keys into the disk config
-     - Data can be successfully encrypted and decrypted using the included keys
- """
+    - The include mechanism correctly merges encryption keys into the disk config
+    - Data can be successfully encrypted and decrypted using the included keys
+    """
     node1 = cluster.instances["node1"]
 
     node1.query(
