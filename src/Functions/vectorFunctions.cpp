@@ -1597,7 +1597,7 @@ addTupleOfIntervals(datetime, intervals)
         {"datetime", "Date or date with time to add intervals to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"intervals", "Tuple of intervals to add to `datetime`. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`", {"Date", "Datr32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_addTupleOfIntervals = {
         {"Add tuple of intervals to date", R"(
 WITH toDate('2018-01-01') AS date
