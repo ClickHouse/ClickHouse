@@ -24,8 +24,8 @@ struct CreateQueryUUIDs
     String toString() const;
     static CreateQueryUUIDs fromString(const String & str);
 
-    void setTargetInnerUUID(ViewTarget::Kind kind, const UUID & new_inner_uuid);
-    UUID getTargetInnerUUID(ViewTarget::Kind kind) const;
+    void setTargetInnerUUID(ASTViewTarget::Kind kind, const UUID & new_inner_uuid);
+    UUID getTargetInnerUUID(ASTViewTarget::Kind kind) const;
 
     /// Copies UUIDs to ASTCreateQuery.
     void copyToQuery(ASTCreateQuery & query) const;
@@ -34,7 +34,7 @@ struct CreateQueryUUIDs
     UUID uuid = UUIDHelpers::Nil;
 
     /// UUIDs of its target table (or tables).
-    std::vector<std::pair<ViewTarget::Kind, UUID>> targets_inner_uuids;
+    std::vector<std::pair<ASTViewTarget::Kind, UUID>> targets_inner_uuids;
 };
 
 }

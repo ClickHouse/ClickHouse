@@ -463,8 +463,8 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
 
     auto time_series_storage_id = time_series_storage->getStorageID();
     const auto & time_series_settings = time_series_storage->getStorageSettings();
-    auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
-    auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
+    auto data_table_id = time_series_storage->getTargetTableId(ASTViewTarget::Kind::Data);
+    auto tags_table_id = time_series_storage->getTargetTableId(ASTViewTarget::Kind::Tags);
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
         start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);

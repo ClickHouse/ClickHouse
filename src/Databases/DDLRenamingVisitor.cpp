@@ -89,15 +89,20 @@ namespace
 
         if (create.targets)
         {
-            for (auto & target : create.targets->targets)
+            for (const auto & child : create.targets->children)
             {
-                auto & table_id = target.table_id;
+                auto * target = child->as<ASTViewTarget>();
+                auto table_id = target->getTableID();
                 if (!table_id.database_name.empty() && !table_id.table_name.empty())
                 {
                     QualifiedTableName target_name{table_id.database_name, table_id.table_name};
                     auto new_target_name = data.renaming_map.getNewTableName(target_name);
                     if (new_target_name != target_name)
-                        table_id = StorageID{new_target_name.database, new_target_name.table};
+                    {
+                        auto new_table_id = StorageID{new_target_name.database, new_target_name.table};
+                        auto new_identifier = std::make_shared<ASTTableIdentifier>(new_table_id);
+                        target->setOrReplace(target->table_identifier, new_identifier);
+                    }
                 }
             }
         }

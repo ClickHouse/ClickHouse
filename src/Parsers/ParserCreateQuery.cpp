@@ -817,7 +817,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+            ParserViewTargets({ASTViewTarget::Kind::Data, ASTViewTarget::Kind::Tags, ASTViewTarget::Kind::Metrics}).parse(pos, targets, expected);
         }
 
         return true;
@@ -971,7 +971,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
 
         auto view_targets = std::make_shared<ASTViewTargets>();
-        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        view_targets->setInnerUUID(ASTViewTarget::Kind::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
 
         targets = view_targets;
     }
@@ -1055,7 +1055,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (to_table)
     {
         targets = std::make_shared<ASTViewTargets>();
-        targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+        targets->setTableID(ASTViewTarget::Kind::To, to_table);
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
@@ -1223,11 +1223,11 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     {
         targets = std::make_shared<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            targets->setTableID(ASTViewTarget::Kind::To, to_table);
         if (storage)
-            targets->setInnerEngine(ViewTarget::To, storage);
+            targets->setInnerEngine(ASTViewTarget::Kind::To, storage);
         if (inner_storage)
-            targets->setInnerEngine(ViewTarget::Inner, inner_storage);
+            targets->setInnerEngine(ASTViewTarget::Kind::Inner, inner_storage);
     }
 
     // WATERMARK
@@ -1766,11 +1766,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         targets = std::make_shared<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            targets->setTableID(ASTViewTarget::Kind::To, to_table);
         if (to_inner_uuid)
-            targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+            targets->setInnerUUID(ASTViewTarget::Kind::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
         if (storage)
-            targets->setInnerEngine(ViewTarget::To, storage);
+            targets->setInnerEngine(ASTViewTarget::Kind::To, storage);
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);

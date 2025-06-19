@@ -124,10 +124,10 @@ StorageMaterializedView::StorageMaterializedView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the destination table is not set, use inner table
-    auto to_table_id = query.getTargetTableID(ViewTarget::To);
+    auto to_table_id = query.getTargetTableID(ASTViewTarget::Kind::To);
     has_inner_table = to_table_id.empty();
-    auto to_inner_uuid = query.getTargetInnerUUID(ViewTarget::To);
-    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+    auto to_inner_uuid = query.getTargetInnerUUID(ASTViewTarget::Kind::To);
+    auto to_table_engine = query.getTargetInnerEngine(ASTViewTarget::Kind::To);
 
     if (has_inner_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -200,7 +200,7 @@ StorageMaterializedView::StorageMaterializedView(
             String inner_engine;
             if (has_inner_table)
             {
-                auto storage = query.getTargetInnerEngine(ViewTarget::To);
+                auto storage = query.getTargetInnerEngine(ASTViewTarget::Kind::To);
                 if (storage && storage->engine)
                     inner_engine = storage->engine->name;
             }
@@ -264,6 +264,7 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
+        chassert(to_table_engine->engine);
         const String & engine = to_table_engine->engine->name;
         const auto & storage_features = StorageFactory::instance().getStorageFeatures(engine);
 

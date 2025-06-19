@@ -45,7 +45,7 @@ private:
     void addMissingInnerEngines(ASTCreateQuery & create) const;
 
     /// Sets the engine of an inner table by default.
-    void setInnerEngineByDefault(ViewTarget::Kind inner_table_kind, ASTStorage & inner_storage_def) const;
+    void setInnerEngineByDefault(ASTViewTarget::Kind inner_table_kind, ASTStorage & inner_storage_def) const;
 
     const StorageID time_series_storage_id;
     const TimeSeriesSettings & time_series_settings;

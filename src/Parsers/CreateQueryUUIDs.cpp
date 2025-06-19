@@ -23,8 +23,11 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
         uuid = query.uuid;
         if (query.targets)
         {
-            for (const auto & target : query.targets->targets)
-                setTargetInnerUUID(target.kind, target.inner_uuid);
+            for (const auto & child : query.targets->children)
+            {
+                auto target = child->as<ASTViewTarget>();
+                setTargetInnerUUID(target->kind, target->inner_uuid);
+            }
         }
     }
 
@@ -42,7 +45,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
         /// This replacement is safe only for CREATE queries when inner target tables don't exist yet.
         if (!query.attach)
         {
-            auto generate_target_uuid = [&](ViewTarget::Kind target_kind)
+            auto generate_target_uuid = [&](ASTViewTarget::Kind target_kind)
             {
                 if ((query.getTargetInnerUUID(target_kind) == UUIDHelpers::Nil) && query.getTargetTableID(target_kind).empty())
                     setTargetInnerUUID(target_kind, UUIDHelpers::generateV4());
@@ -52,7 +55,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// then MV will create inner table. We should generate UUID of inner table here.
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
             if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
-                generate_target_uuid(ViewTarget::To);
+                generate_target_uuid(ASTViewTarget::Kind::To);
 
 
             /// We should generate UUID of inner table for `SharedSet` or `SharedJoin` table here
@@ -60,15 +63,15 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 && (query.storage->engine->name == "SharedSet" || query.storage->engine->name == "SharedJoin")
                 && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::storage_shared_set_join_use_inner_uuid])
             {
-                if (query.getTargetInnerUUID(ViewTarget::To) == UUIDHelpers::Nil)
-                    setTargetInnerUUID(ViewTarget::To, UUIDHelpers::generateV4());
+                if (query.getTargetInnerUUID(ASTViewTarget::Kind::To) == UUIDHelpers::Nil)
+                    setTargetInnerUUID(ASTViewTarget::Kind::To, UUIDHelpers::generateV4());
             }
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Data);
-                generate_target_uuid(ViewTarget::Tags);
-                generate_target_uuid(ViewTarget::Metrics);
+                generate_target_uuid(ASTViewTarget::Kind::Data);
+                generate_target_uuid(ASTViewTarget::Kind::Tags);
+                generate_target_uuid(ASTViewTarget::Kind::Metrics);
             }
         }
     }
@@ -132,7 +135,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind;
+            ASTViewTarget::Kind kind;
             parseFromString(kind, name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
@@ -146,7 +149,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     return res;
 }
 
-void CreateQueryUUIDs::setTargetInnerUUID(ViewTarget::Kind kind, const UUID & new_inner_uuid)
+void CreateQueryUUIDs::setTargetInnerUUID(ASTViewTarget::Kind kind, const UUID & new_inner_uuid)
 {
     for (auto & pair : targets_inner_uuids)
     {
@@ -160,7 +163,7 @@ void CreateQueryUUIDs::setTargetInnerUUID(ViewTarget::Kind kind, const UUID & ne
         targets_inner_uuids.emplace_back(kind, new_inner_uuid);
 }
 
-UUID CreateQueryUUIDs::getTargetInnerUUID(ViewTarget::Kind kind) const
+UUID CreateQueryUUIDs::getTargetInnerUUID(ASTViewTarget::Kind kind) const
 {
     for (const auto & pair : targets_inner_uuids)
     {

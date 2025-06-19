@@ -360,7 +360,7 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEnginesFromAsTable(ASTCreate
     if (!as_create_query)
         return;
 
-    for (auto target_kind : {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics})
+    for (auto target_kind : {ASTViewTarget::Kind::Data, ASTViewTarget::Kind::Tags, ASTViewTarget::Kind::Metrics})
     {
         if (as_create_query->hasTargetTableID(target_kind))
         {
@@ -389,7 +389,7 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEnginesFromAsTable(ASTCreate
 
 void TimeSeriesDefinitionNormalizer::addMissingInnerEngines(ASTCreateQuery & create) const
 {
-    for (auto target_kind : {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics})
+    for (auto target_kind : {ASTViewTarget::Kind::Data, ASTViewTarget::Kind::Tags, ASTViewTarget::Kind::Metrics})
     {
         if (create.hasTargetTableID(target_kind))
             continue; /// External target is set, inner engine is not needed.
@@ -411,11 +411,11 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEngines(ASTCreateQuery & cre
 }
 
 
-void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind inner_table_kind, ASTStorage & inner_storage_def) const
+void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ASTViewTarget::Kind inner_table_kind, ASTStorage & inner_storage_def) const
 {
     switch (inner_table_kind)
     {
-        case ViewTarget::Data:
+        case ASTViewTarget::Kind::Data:
         {
             inner_storage_def.set(inner_storage_def.engine, makeASTFunction("MergeTree"));
             inner_storage_def.engine->no_empty_args = false;
@@ -430,7 +430,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             break;
         }
 
-        case ViewTarget::Tags:
+        case ASTViewTarget::Kind::Tags:
         {
             String engine_name;
             if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
@@ -466,7 +466,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             break;
         }
 
-        case ViewTarget::Metrics:
+        case ASTViewTarget::Kind::Metrics:
         {
             inner_storage_def.set(inner_storage_def.engine, makeASTFunction("ReplacingMergeTree"));
             inner_storage_def.engine->no_empty_args = false;

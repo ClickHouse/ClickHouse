@@ -1,4 +1,6 @@
 
+SET distributed_ddl_output_mode='none';
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 
