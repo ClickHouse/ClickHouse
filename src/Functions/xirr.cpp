@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -242,12 +243,15 @@ std::expected<double, SolverErrorCode> solver(Function && fun, Derivative && der
     {
         boost::uintmax_t max_iter = max_iterations;
 
+        // 53 - 4 bits of precision => ~14.75 decimal digits - accurate enough for our purpose
+        constexpr auto binary_precision = std::numeric_limits<double>::digits - 4;
+
         double result = boost::math::tools::newton_raphson_iterate(
             [&fun, &der](double x) { return std::make_tuple(fun(x), der(x)); },
             guess,
             start_lower_bound,
             start_upper_bound,
-            std::numeric_limits<double>::digits - 4,
+            binary_precision,
             max_iter);
 
         if (result >= start_lower_bound && result <= start_upper_bound && std::abs(fun(result)) < tolerance)
@@ -332,7 +336,12 @@ std::expected<double, SolverErrorCode> calculateIrr(std::span<T> cashflows, doub
 
 bool isCashFlowColumn(const IDataType & type)
 {
-    return isArray(type) && isNativeNumber(checkAndGetDataType<DataTypeArray>(type).getNestedType());
+    if (isArray(type))
+    {
+        const auto & nested = checkAndGetDataType<DataTypeArray>(type).getNestedType();
+        return isNativeInt(nested) || isFloat(nested);
+    }
+    return false;
 }
 
 bool isXirrDateColumn(const IDataType & type)
@@ -349,7 +358,7 @@ void dispatchDate(const T * cashflow_data, const IColumn * date_data, F && f)
     else if (const auto * d32 = typeid_cast<const ColumnDate32 *>(date_data))
         f(cashflow_data, d32);
     else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Date array must contain Date or Date32 values");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Date array must contain Date or Date32 values");
 }
 
 template <typename F>
@@ -368,7 +377,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
     else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
         dispatchDate(ci64, date_data, std::forward<F>(f));
     else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
 class FunctionXirr : public IFunction
@@ -395,7 +404,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
@@ -406,14 +415,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullColumnIfConst();
-        auto date_col = arguments[1].column->convertToFullColumnIfConst();
+        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
+        auto date_col = arguments[1].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
 
         if (!cashflow_array || !date_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Both cashflow and date arguments must be arrays");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Both cashflow and date arguments must be arrays");
 
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
         const ColumnArray::Offsets & date_offsets = date_array->getOffsets();
@@ -436,7 +445,7 @@ public:
             auto day_count_str = arguments[3].column->getDataAt(0).toString();
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count type: {}", day_count_str);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
             day_count = parsed_day_count.value();
         }
 
@@ -512,7 +521,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -525,7 +534,7 @@ public:
         auto cashflow_col = arguments[0].column->convertToFullColumnIfConst();
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow argument must be an array");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow argument must be an array");
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
 
         double guess = 0.1;
@@ -579,7 +588,7 @@ public:
         else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
             process_array(ci64);
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 
         return result_col;
     }
@@ -602,7 +611,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,
@@ -629,7 +638,7 @@ public:
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
 
         if (!cashflow_array || !date_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Both cashflow and date arguments must be arrays");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Both cashflow and date arguments must be arrays");
 
         const ColumnArray::Offsets & cashflow_offsets = cashflow_array->getOffsets();
         const ColumnArray::Offsets & date_offsets = date_array->getOffsets();
@@ -644,7 +653,7 @@ public:
             auto day_count_str = arguments[3].column->getDataAt(0).toString();
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count type: {}", day_count_str);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
             day_count = parsed_day_count.value();
         }
 
@@ -692,7 +701,7 @@ public:
             else if (const auto * rate_f32 = checkAndGetColumn<ColumnVector<Float32>>(rate_col.get()))
                 process_arrays(cashflow_data, date_data, rate_f32->getData());
             else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a FloatXX column");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Rate argument must be a Float32|Float64 column");
         };
 
         const auto * cashflow_data = &cashflow_array->getData();
@@ -719,7 +728,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "FloatXX"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,
@@ -742,7 +751,7 @@ public:
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow argument must be an array");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow argument must be an array");
 
         bool start_from_zero = true;
         if (arguments.size() > 2)
@@ -789,7 +798,7 @@ public:
             else if (const auto * rate_f32 = checkAndGetColumn<ColumnVector<Float32>>(rate_col.get()))
                 process_array(cashflow_data, rate_f32->getData());
             else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Rate argument must be a FloatXX column");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Rate argument must be a Float32|Float64 column");
         };
 
         const auto * cashflow_data = &cashflow_array->getData();
@@ -807,7 +816,7 @@ public:
         else if (const auto * ci64 = typeid_cast<const ColumnVector<Int64> *>(cashflow_data))
             dispatch(ci64);
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow array must contain numeric values");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 
         return result_col;
     }
@@ -817,78 +826,185 @@ public:
 
 REGISTER_FUNCTION(FunctionXirr)
 {
-    factory.registerFunction<FunctionXirr>(FunctionDocumentation{
-        .description = "Calculates the XIRR (Extended Internal Rate of Return) for a series of cash flows and their corresponding dates."
-            " Arrays should be sorted by date in ascending order. Dates need to be unique.",
-        .arguments = {
-            {"cashflow", "An array of cash flows corresponding to the dates in second param."},
-            {"date", "A sorted array of unique dates corresponding to the cash flows."},
-        },
-        .returned_value = "Returns the XIRR value as a Float64. If the calculation cannot be performed, it returns NaN.",
-        .examples = {
-            {"simple_example", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])","0.6342972615260243"},
-            {"simple_example_with_guess", "SELECT xirr([-10000, 5750, 4250,3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5)","0.6342972615260243"},
-            {"simple_example_daycount", "SELECT round(xirr([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25;", "0.099785"},
-        },
-        .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::Financial,
-    });
+    FunctionDocumentation::Description description = R"(
+Calculates the Extended Internal Rate of Return (XIRR) for a series of cash flows occurring at irregular intervals. XIRR is the discount rate at which the net present value (NPV) of all cash flows equals zero.
+
+XIRR attempts to solve the following equation (example for `ACT_365F`):
+
+$$
+\sum_{i=0}^n \frac{cashflow_i}{(1 + rate)^{(date_i - date_0)/365}} = 0
+$$
+
+Arrays should be sorted by date in ascending order. Dates need to be unique.
+    )";
+    FunctionDocumentation::Syntax syntax = "financialInternalRateOfReturnExtended(cashflow, date [, guess, daycount])";
+    FunctionDocumentation::Arguments arguments
+        = {{"cashflow",
+            "An array of cash flows corresponding to the dates in second param. "
+            "[`Array(Int8|Int16|Int32|Int64|Float32|Float64)`](/sql-reference/data-types/array)"},
+           {"date",
+            "A sorted array of unique dates corresponding to the cash flows. "
+            "[`Array(Date|Date32)`](/sql-reference/data-types/array)."},
+           {"[, guess]", "Optional. Initial guess (constant value) for the XIRR calculation. [`Float32|Float64`](/sql-reference/data-types/float)"},
+           {"[, daycount]",
+            "Optional day count convention (default 'ACT_365F'). Supported values:\n"
+            "- 'ACT_365F' - Actual/365 Fixed: Uses actual number of days between dates divided by 365\n"
+            "- 'ACT_365_25' - Actual/365.25: Uses actual number of days between dates divided by 365.25"}};
+    FunctionDocumentation::ReturnedValue returned_value
+        = "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::Examples examples = {
+        {"simple_example",
+         R"(
+SELECT financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])
+        )",
+         "0.6342972615260243"},
+        {"simple_example_with_guess",
+         R"(
+SELECT financialInternalRateOfReturnExtended([-10000, 5750, 4250, 3250], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 0.5)
+        )",
+         "0.6342972615260243"},
+        {"simple_example_daycount",
+         R"(
+SELECT round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2020-01-01'), toDate('2021-01-01')], 0.1, 'ACT_365_25'), 6) AS xirr_365_25
+        )",
+         "0.099785"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionXirr>(documentation);
 }
 
 REGISTER_FUNCTION(FunctionIRR)
 {
-    factory.registerFunction<FunctionIRR>(FunctionDocumentation{
-        .description = "Calculates the IRR (Internal Rate of Return) for a series of cash flows.",
-        .arguments = {
-            {"cashflow", "An array of cash flows."},
-            {"guess", "An optional guess value for the IRR calculation. Default is 0.1."},
-        },
-        .returned_value = "Returns the IRR value as a Float64. If the calculation cannot be performed, it returns NaN.",
-        .examples = {
-            {"simple_example", "SELECT irr([-100, 39, 59, 55, 20])", "0.2809484212526239"},
-            {"simple_example_with_default", "SELECT irr([-100, 39, 59, 55, 20], 0.1)", "0.2809484212526239"},
-        },
-        .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::Financial,
-    });
+    FunctionDocumentation::Description description = R"(
+Calculates the Internal Rate of Return (IRR) for a series of cash flows occurring at regular intervals. IRR is the discount rate at which the Net Present Value (NPV) equals zero.
+
+IRR attempts to solve the following equation:
+
+$$
+\sum_{i=0}^n \frac{cashflow_i}{(1 + irr)^i} = 0
+$$
+    )";
+    FunctionDocumentation::Syntax syntax = "financialInternalRateOfReturn(cashflows[, guess])";
+    FunctionDocumentation::Arguments arguments = {
+        {"cashflows",
+         "Array of cash flows. Each value represents a payment (negative value) or income (positive value). "
+         "[`Array(Int8|Int16|Int32|Int64|Float32|Float64)`](/sql-reference/data-types/array)"},
+        {"[, guess]",
+         "Optional initial guess (constant value) for the internal rate of return (default 0.1). "
+         "[`Float32|Float64`](/sql-reference/data-types/float)"},
+    };
+    FunctionDocumentation::ReturnedValue returned_value
+        = "Returns the internal rate of return as a Float64 value. Returns NaN if the calculation cannot converge, input array is empty or "
+          "has only one element, all cash flows are zero, or other calculation errors occur. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::Examples examples = {
+        {"simple_example", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20])", "0.2809484211599611"},
+        {"simple_example_with_guess", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20], 0.1)", "0.2809484211599611"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIRR>(documentation);
 }
 
 REGISTER_FUNCTION(FunctionXnpv)
 {
-    factory.registerFunction<FunctionXnpv>(FunctionDocumentation{
-        .description = "Calculates the XNPV (Extended Net Present Value) for a series of cash flows and their corresponding dates.",
-        .arguments = {
-            {"rate", "The discount rate as a FloatXX."},
-            {"cashflow", "An array of cash flows."},
-            {"date", "An array of dates corresponding to the cash flows."},
-        },
-        .returned_value = "Returns the XNPV value as a Float64.",
-        .examples = {
-            {"simple_example", "SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])", "3065.2226681795255"},
-            {"simple_example", "SELECT xnpv(0.1, [-10_000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25')", "2507.067268742502"},
-        },
-        .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::Financial,
-    });
+    FunctionDocumentation::Description description = R"(
+Calculates the Extended Net Present Value (XNPV) for a series of cash flows occurring at irregular intervals. XNPV considers the specific timing of each cash flow when calculating present value.
+
+XNPV equation for `ACT_365F`:
+
+$$
+XNPV=\sum_{i=1}^n \frac{cashflow_i}{(1 + rate)^{(date_i - date_0)/365}}
+$$
+
+Arrays should be sorted by date in ascending order. Dates need to be unique.
+    )";
+    FunctionDocumentation::Syntax syntax = "financialNetPresentValueExtended(rate, cashflow, date [, daycount])";
+    FunctionDocumentation::Arguments arguments
+        = {{"rate",
+            "The discount rate to apply. "
+            "[`Float32|Float64`](/sql-reference/data-types/float)"},
+           {"cashflow",
+            "Array of cash flows. Each value represents a payment (negative value) or income (positive value). Must contain at least one "
+            "positive and one negative value. "
+            "[`Array(Int8|Int16|Int32|Int64|Float32|Float64)`](/sql-reference/data-types/array)"},
+           {"date",
+            "Array of dates corresponding to each cash flow. Must have the same size as cashflows array. "
+            "[`Array(Date|Date32)`](/sql-reference/data-types/array)"},
+           {"[, daycount]",
+            "Optional day count convention (default 'ACT_365F'). Supported values:\n"
+            "- 'ACT_365F' - Actual/365 Fixed: Uses actual number of days between dates divided by 365\n"
+            "- 'ACT_365_25' - Actual/365.25: Uses actual number of days between dates divided by 365.25"}};
+    FunctionDocumentation::ReturnedValue returned_value
+        = "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::Examples examples = {
+        {"simple_example",
+         R"(
+SELECT financialNetPresentValueExtended(0.1, [-10000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')])
+         )",
+         "2506.579458169746"},
+        {"simple_example_with_daycount",
+         R"(
+SELECT financialNetPresentValueExtended(0.1, [-10000., 5750., 4250., 3250.], [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 'ACT_365_25')
+         )",
+         "2507.067268742502"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionXnpv>(documentation);
 }
 
 REGISTER_FUNCTION(FunctionNPV)
 {
-    factory.registerFunction<FunctionNPV>(FunctionDocumentation{
-        .description = "Calculates the Net Present Value (NPV) of a series of cash flows given a discount rate.",
-        .arguments = {
-            {"rate", "The discount rate as a FloatXX."},
-            {"cashflow", "An array of cash flows."},
-            {"start_from_zero", "A boolean indicating whether to start the NPV calculation from zero. Default is true."},
-        },
-        .returned_value = "Returns the NPV value as a Float64.",
-        .examples = {
-            {"simple_example", "SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.])", "3065.2226681795255"},
-            {"simple_example_exel", "SELECT npv(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False)", "2838.1691372032656"},
-        },
-        .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::Financial,
-    });
+    FunctionDocumentation::Description description = R"(
+Calculates the Net Present Value (NPV) of a series of cash flows assuming equal time intervals between each cash flow.
+
+Default variant (start_from_zero = true):
+
+$$
+\sum_{i=0}^{N-1} \frac{values_i}{(1 + rate)^i}
+$$
+
+Excel-compatible variant (start_from_zero = false):
+
+$$
+\sum_{i=1}^{N} \frac{values_i}{(1 + rate)^i}
+$$
+    )";
+
+    FunctionDocumentation::Syntax syntax = "financialNetPresentValue(rate, cashflows[, start_from_zero])";
+    FunctionDocumentation::Arguments arguments
+        = {{"rate",
+            "The discount rate to apply. "
+            "[`Float32|Float64`](/sql-reference/data-types/float)"},
+           {"cashflows",
+            "Array of cash flows. Each value represents a payment (negative value) or income (positive value). "
+            "[`Array(Int8|Int16|Int32|Int64|Float32|Float64)`](/sql-reference/data-types/array)"},
+           {"[, start_from_zero]",
+            "Optional boolean parameter indicating whether to start the NPV calculation from period 0 (true) or period 1 (false, "
+            "Excel-compatible). Default: true. "
+            "[`Boolean`](/sql-reference/data-types/boolean)"}};
+
+    FunctionDocumentation::ReturnedValue returned_value
+        = "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)";
+
+    FunctionDocumentation::Examples examples
+        = {{"default_calculation", "SELECT financialNetPresentValue(0.08, [-40000., 5000., 8000., 12000., 30000.])", "3065.2226681795255"},
+           {"excel_compatible_calculation",
+            "SELECT financialNetPresentValue(0.08, [-40000., 5000., 8000., 12000., 30000.], false)",
+            "2838.1691372032656"}};
+
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNPV>(documentation);
 }
 
 }

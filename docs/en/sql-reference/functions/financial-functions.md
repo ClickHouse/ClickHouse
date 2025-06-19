@@ -15,7 +15,7 @@ Calculates the Internal Rate of Return (IRR) for a series of cash flows occurrin
 IRR attempts to solve the following equation:
 
 $$
-\sum_{i=0}^n \frac{cashflow_i}{1 + irr}^i = 0
+\sum_{i=0}^n \frac{cashflow_i}{(1 + irr)^i} = 0
 $$
 
 **Syntax**
@@ -27,7 +27,7 @@ financialInternalRateOfReturn(cashflows[, guess])
 **Arguments**
 
 - `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
-- `guess` — Optional initial guess for the internal rate of return. Default: 0.1. Type: Float64.
+- `guess` — Optional initial guess (constant value) for the internal rate of return. Default: 0.1. Type: Float32|Float64.
 
 **Returned value**
 
@@ -86,7 +86,7 @@ financialInternalRateOfReturnExtended(cashflows, dates[, guess[, daycount]])
 
 - `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
 - `dates` — Array of dates corresponding to each cash flow. Must be sorted in ascending order with unique values. Type: Array of Date or Date32.
-- `guess` — Optional initial guess for the internal rate of return. Default: 0.1. Type: Float64.
+- `guess` — Optional initial guess (constant value) for the internal rate of return. Default: 0.1. Type: Float32|Float64.
 - `daycount` — Optional day count convention. Supported values:
   - 'ACT_365F' (default) — Actual/365 Fixed
   - 'ACT_365_25' — Actual/365.25
