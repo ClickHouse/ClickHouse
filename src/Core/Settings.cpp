@@ -3961,6 +3961,14 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization to trivial query `SELECT agg() FROM table GROUP BY key LIMIT n` using max_rows_to_group_by setting with group_by_overflow_mode = OverflowMode::ANY.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -4986,6 +4994,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
+Rewrite regular expression related functions into simpler and more efficient forms
+)", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
 If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
 
@@ -5438,6 +5449,21 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_push_down_order_by_limit, true, R"(
+Toggles a query-plan-level optimization which tries to push down order by limit clause as predicate.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(UInt64, max_limit_to_push_down_topn_predicate, 100, R"(
+Maximum LIMIT threshold for pushing down TopN predicates.
+
+When executing a query with `ORDER BY … LIMIT N`, ClickHouse will attempt to push down the TopN predicate to the storage engine to reduce network traffic and aggregation overhead. This parameter defines the maximum `LIMIT` value for which the pushdown will be applied.
+Setting this threshold too high may cause the storage engine to scan or maintain excessive intermediate state, leading to increased memory usage or degraded performance. Keeping the threshold lower ensures that pushdown remains within a safe and efficient range.
 )", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
@@ -6002,7 +6028,7 @@ SELECT * FROM test_table
 └───┘
 ```
 )", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
+    DECLARE(Bool, count_distinct_optimization, true, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(

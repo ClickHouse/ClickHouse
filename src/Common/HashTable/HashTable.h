@@ -433,6 +433,12 @@ protected:
     template <typename SubMaps>
     friend class StringHashTable;
 
+    template <typename, typename, size_t>
+    friend class TwoLevelSerializedHashTable;
+
+    template <typename SubMaps>
+    friend class SerializedHashTable;
+
     using HashValue = size_t;
     using Self = HashTable;
 
@@ -954,13 +960,19 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
-    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
+public:
+    void ALWAYS_INLINE prefetchByHash(size_t hash_key, size_t = 0) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-public:
+    bool ALWAYS_INLINE isEmptyCell(size_t hash_key, size_t = 0) const
+    {
+        const auto place = grower.place(hash_key);
+        return buf[place].isZero(*this);
+    }
+
     void reserve(size_t num_elements)
     {
         resize(num_elements);

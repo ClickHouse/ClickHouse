@@ -48,14 +48,48 @@ struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24,
 
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).
-    static bool isZero(const StringKey24 & key, const HashTableNoState &)
-    { return key.c == 0; }
+    static bool isZero(const StringKey24 & key, const HashTableNoState &) { return key.c == 0; }
     void setZero() { this->value.first.c = 0; }
 
     // external
     StringRef getKey() const { return toStringView(this->value.first); } /// NOLINT
     // internal
     static const StringKey24 & getKey(const value_type & value_) { return value_.first; }
+};
+
+template <typename TMapped>
+struct StringHashMapCell<StringRefWithInlineHash, TMapped>
+    : public HashMapCell<StringRefWithInlineHash, TMapped, StringHashTableHash, HashTableNoState>
+{
+    using Base = HashMapCell<StringRefWithInlineHash, TMapped, StringHashTableHash, HashTableNoState>;
+    using value_type = typename Base::value_type;
+    using Base::Base;
+    static constexpr bool need_zero_value_storage = false;
+    // external
+    StringRef getKey() const { return StringRef(this->value.first.data, this->value.first.size >> StringRefWithInlineHash::SHIFT); }
+
+    /// Get the key (internally).
+    static const StringRefWithInlineHash & getKey(const value_type & value_) { return value_.first; }
+
+    void setHash(size_t hash_value) { chassert(hash_value == this->value.first.size); }
+
+    bool keyEquals(const StringRefWithInlineHash & key_, size_t /*hash_*/, const Base::State & /* state */) const
+    {
+        if (Base::value.first.size != key_.size)
+            return false;
+
+        if (Base::value.first.size == 0)
+            return true;
+
+        size_t size = Base::value.first.size >> StringRefWithInlineHash::SHIFT;
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        return memequalWide(Base::value.first.data, key_.data, size);
+#else
+        return 0 == memcmp(Base::value.first.data, key_.data, size);
+#endif
+    }
+    size_t getHash(const StringHashTableHash & /*hash_function*/) const { return this->value.first.size; }
 };
 
 template <typename TMapped>
@@ -78,6 +112,12 @@ struct StringHashMapSubMaps
     using T1 = HashMapTable<StringKey8, StringHashMapCell<StringKey8, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashMapTable<StringKey16, StringHashMapCell<StringKey16, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T3 = HashMapTable<StringKey24, StringHashMapCell<StringKey24, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
+    using Th = HashMapTable<
+        StringRefWithInlineHash,
+        StringHashMapCell<StringRefWithInlineHash, TMapped>,
+        StringHashTableHash,
+        StringHashTableGrower<>,
+        Allocator>;
     using Ts = HashMapTable<StringRef, StringHashMapCell<StringRef, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
 };
 
@@ -111,6 +151,7 @@ public:
         this->m1.mergeToViaEmplace(that.m1, func);
         this->m2.mergeToViaEmplace(that.m2, func);
         this->m3.mergeToViaEmplace(that.m3, func);
+        this->mh.mergeToViaEmplace(that.mh, func);
         this->ms.mergeToViaEmplace(that.ms, func);
     }
 
@@ -129,6 +170,7 @@ public:
         this->m1.mergeToViaFind(that.m1, func);
         this->m2.mergeToViaFind(that.m2, func);
         this->m3.mergeToViaFind(that.m3, func);
+        this->mh.mergeToViaFind(that.mh, func);
         this->ms.mergeToViaFind(that.ms, func);
     }
 
@@ -166,6 +208,11 @@ public:
             func(v.getKey(), v.getMapped());
         }
 
+        for (auto & v : this->mh)
+        {
+            func(v.getKey(), v.getMapped());
+        }
+
         for (auto & v : this->ms)
         {
             func(v.getKey(), v.getMapped());
@@ -182,6 +229,8 @@ public:
         for (auto & v : this->m2)
             func(v.getMapped());
         for (auto & v : this->m3)
+            func(v.getMapped());
+        for (auto & v : this->mh)
             func(v.getMapped());
         for (auto & v : this->ms)
             func(v.getMapped());

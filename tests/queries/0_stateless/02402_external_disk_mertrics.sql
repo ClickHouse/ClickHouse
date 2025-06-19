@@ -14,7 +14,7 @@ SET max_memory_usage = '410M';
 SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
 
-SELECT sum(k), sum(c) FROM (SELECT number AS k, count() AS c FROM (SELECT * FROM system.numbers LIMIT 2097152) GROUP BY k)
+SELECT sum(k), sum(c) FROM (SELECT number AS k, sum(number) AS c FROM (SELECT * FROM system.numbers LIMIT 2097152) GROUP BY k)
 SETTINGS log_comment='02402_external_disk_mertrics/aggregation'
 FORMAT Null;
 

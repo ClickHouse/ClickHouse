@@ -56,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool push_down_order_by_limit;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -90,6 +91,8 @@ struct QueryPlanOptimizationSettings
 
     VectorSearchFilterStrategy vector_search_filter_strategy;
     size_t max_limit_for_vector_search_queries;
+
+    size_t max_limit_to_push_down_topn_predicate;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
