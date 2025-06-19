@@ -3418,10 +3418,13 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     }
     if (rg.nextSmallNumber() < 4)
     {
+        br->set_sync(rg.nextSmallNumber() < 7 ? SyncOrAsync::ASYNC : SyncOrAsync::SYNC);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
         vals = vals ? vals : br->mutable_setting_values();
         generateSettingValues(rg, formatSettings, vals);
     }
-    br->set_async(rg.nextSmallNumber() < 4);
 }
 
 void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)

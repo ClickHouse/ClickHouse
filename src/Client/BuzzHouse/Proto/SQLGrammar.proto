@@ -3853,6 +3853,11 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
+enum SyncOrAsync {
+    SYNC = 1;
+    ASYNC = 2;
+}
+
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -3873,7 +3878,7 @@ message BackupRestore {
     required BackupOutput out = 5;
     repeated string out_params = 6;
     optional SettingValues setting_values = 7;
-    optional bool async = 8;
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
         InFormat informat = 9;
         OutFormat outformat = 10;

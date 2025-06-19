@@ -4850,9 +4850,10 @@ CONV_FN(BackupRestore, backup)
         ret += " SETTINGS ";
         SettingValuesToString(ret, backup.setting_values());
     }
-    if (backup.async())
+    if (backup.has_sync())
     {
-        ret += " ASYNC";
+        ret += " ";
+        ret += SyncOrAsync_Name(backup.sync());
     }
     if (backup.has_informat())
     {
