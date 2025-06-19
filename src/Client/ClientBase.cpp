@@ -194,15 +194,6 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
     }
 }
 
-void initFormatParsingThreadPoolIfNeeded()
-{
-    if (!DB::getFormatParsingThreadPool().isInitialized())
-    {
-        size_t max_parsing_threads = getNumberOfCPUCoresToUse();
-        DB::getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
-    }
-}
-
 }
 
 namespace DB
@@ -493,8 +484,6 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
     if (isEmbeeddedClient() && !external_tables.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
-
-    initFormatParsingThreadPoolIfNeeded();
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
@@ -1883,8 +1872,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_for_storage_file = std::move(reordered_description);
         }
 
-        initFormatParsingThreadPoolIfNeeded();
-
         StorageFile::CommonArguments args{
             WithContext(client_context),
             parsed_insert_query->table_id,
@@ -1981,8 +1968,6 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
         insert_format_max_block_size_from_config.has_value())
         insert_format_max_block_size = insert_format_max_block_size_from_config.value();
-
-    initFormatParsingThreadPoolIfNeeded();
 
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);

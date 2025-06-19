@@ -376,6 +376,10 @@ InputFormatPtr FormatFactory::getInput(
     if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
+    /// Some formats use this thread pool. Lazily initialize it.
+    /// This doesn't affect server and clickhouse-local, they initialize threads pools on startup.
+    getFormatParsingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
