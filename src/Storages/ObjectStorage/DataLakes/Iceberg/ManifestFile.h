@@ -129,7 +129,7 @@ public:
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
-    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
+    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFiles() const;
 
     bool hasBoundsInfoInManifests() const;

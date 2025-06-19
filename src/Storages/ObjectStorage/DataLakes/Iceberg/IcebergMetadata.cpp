@@ -1,3 +1,4 @@
+#include <optional>
 #include "Common/Exception.h"
 #include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
@@ -505,6 +506,7 @@ void IcebergMetadata::updateSnapshot(Poco::JSON::Object::Ptr metadata_object)
                     configuration_ptr->getPath());
             std::optional<size_t> total_rows;
             std::optional<size_t> total_bytes;
+            std::optional<size_t> total_position_deletes;
 
             if (snapshot->has(f_summary))
             {
@@ -514,12 +516,20 @@ void IcebergMetadata::updateSnapshot(Poco::JSON::Object::Ptr metadata_object)
 
                 if (summary_object->has(f_total_files_size))
                     total_bytes = summary_object->getValue<Int64>(f_total_files_size);
+
+                if (summary_object->has(f_total_position_deletes))
+                {
+                    total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
+                }
             }
 
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPath(), table_location)),
-                relevant_snapshot_id, total_rows, total_bytes};
+                relevant_snapshot_id,
+                total_rows,
+                total_bytes,
+                total_position_deletes};
 
             if (!snapshot->has(f_schema_id))
                 throw Exception(
@@ -824,6 +834,12 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
 {
     if (!relevant_snapshot)
         return {};
+    if (!local_context && filter_dag)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
+    }
     std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA)
         ? cached_unprunned_files_for_last_processed_snapshot
         : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
@@ -886,23 +902,25 @@ std::optional<size_t> IcebergMetadata::totalRows() const
         return 0;
     }
 
+
     /// All these "hints" with total rows or bytes are optional both in
     /// metadata files and in manifest files, so we try all of them one by one
-    if (relevant_snapshot->total_rows.has_value())
+    if (relevant_snapshot->getTotalRows())
     {
         ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return relevant_snapshot->total_rows;
+        return relevant_snapshot->getTotalRows();
     }
 
     Int64 result = 0;
     for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
-        auto count = manifest_file_ptr->getRowsCountInAllDataFilesExcludingDeleted();
-        if (!count.has_value())
+        auto data_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITIONAL_DELETE);
+        if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
-        result += count.value();
+        result += data_count.value() - position_deletes_count.value();
     }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
@@ -988,6 +1006,46 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
     , data_object(data_object_)
 {
+    for (const auto & position_delete : position_deletes_objects_)
+    {
+        for (const auto & entry : position_delete.common_partition_specification)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("IcebergDataObjectInfo"),
+                "Position delete object, partition entry: ({}, {}, {})",
+                entry.source_id,
+                entry.partition_name,
+                entry.transform_name);
+        }
+        for (const auto & field : position_delete.partition_key_value)
+        {
+            LOG_DEBUG(&Poco::Logger::get("IcebergDataObjectInfo"), "Position delete object, partition_key_value: {}", toString(field));
+        }
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergDataObjectInfo"),
+            "Position delete object: added_sequence_number: {}",
+            // position_delete.common_partition_specification,
+            position_delete.added_sequence_number);
+    }
+    for (const auto & entry : data_object_.common_partition_specification)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergDataObjectInfo"),
+            "Data object, partition entry: ({}, {}, {})",
+            entry.source_id,
+            entry.partition_name,
+            entry.transform_name);
+    }
+    for (const auto & field : data_object_.partition_key_value)
+    {
+        LOG_DEBUG(&Poco::Logger::get("IcebergDataObjectInfo"), "Data object, partition_key_value: {}", toString(field));
+    }
+    LOG_DEBUG(
+        &Poco::Logger::get("IcebergDataObjectInfo"),
+        "Data object: added_sequence_number: {}",
+        // position_delete.common_partition_specification,
+        data_object_.added_sequence_number);
+
     auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
     auto end_it = std::upper_bound(
         position_deletes_objects_.begin(),
@@ -998,6 +1056,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
             return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
                 < std::tie(lhs.common_partition_specification, rhs.partition_key_value);
         });
+    chassert(beg_it - position_deletes_objects_.begin() <= end_it - position_deletes_objects_.begin());
     position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
     if (!position_deletes_objects.empty() && iceberg_metadata.configuration.lock()->format != "Parquet")
     {

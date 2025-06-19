@@ -51,6 +51,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(schema_id, schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(current_schema_id, current-schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(table_uuid, table-uuid);
 DEFINE_ICEBERG_FIELD_ALIAS(total_records, total-records);
+DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
