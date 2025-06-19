@@ -271,6 +271,8 @@ private:
         const LogEntry & entry,
         const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
 
+    bool isMergeBlockedByApplyingPatches(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {

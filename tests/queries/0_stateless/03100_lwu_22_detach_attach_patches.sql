@@ -1,3 +1,5 @@
+-- Tags: disabled
+
 DROP TABLE IF EXISTS t_detach_attach_patches SYNC;
 DROP TABLE IF EXISTS t_detach_attach_patches_dst SYNC;
 

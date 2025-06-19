@@ -279,6 +279,37 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     return false;
 }
 
+bool ReplicatedMergeTreeQueue::isMergeBlockedByApplyingPatches(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const
+{
+    if (!storage.supportsLightweightUpdate())
+        return false;
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
+    if (!new_part_info.isPatch())
+        return false;
+
+    auto source_parts_set = NameSet(entry.source_parts.begin(), entry.source_parts.end());
+
+    for (const auto & merge_entry : queue)
+    {
+        if (merge_entry->type != LogEntry::MERGE_PARTS)
+            continue;
+
+        for (const auto & patch_part : merge_entry->patch_parts)
+        {
+            if (source_parts_set.contains(patch_part))
+            {
+                constexpr auto fmt_string = "Not executing log entry {} for patch part {} because source patch part {} is scheduled to be applied in merge for {}.";
+                LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, patch_part, merge_entry->new_part_name);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 void ReplicatedMergeTreeQueue::insertUnlocked(
     const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
     std::lock_guard<std::mutex> & state_lock)
@@ -1590,6 +1621,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
             }
+
+            if (isMergeBlockedByApplyingPatches(entry, out_postpone_reason, state_lock))
+                return false;
         }
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
