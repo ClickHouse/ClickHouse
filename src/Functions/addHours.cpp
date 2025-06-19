@@ -9,18 +9,18 @@ using FunctionAddHours = FunctionDateOrDateTimeAddInterval<AddHoursImpl>;
 
 REGISTER_FUNCTION(AddHours)
 {
-    FunctionDocumentation::Description description_addHours = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of hours to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addHours = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addHours(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addHours = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of hours to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of hours to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addHours = {"Returns `datetime` plus `num` hours", {"DateTime"}};
-    FunctionDocumentation::Examples examples_addHours = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` hours", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
         {"Add hours to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addHours = {1, 1};
-    FunctionDocumentation::Category category_addHours = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addHours = {
-        description_addHours,
-        syntax_addHours,
-        arguments_addHours,
-        returned_value_addHours,
-        examples_addHours,
-        introduced_in_addHours,
-        category_addHours
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddHours>(documentation_addHours);
+    factory.registerFunction<FunctionAddHours>(documentation);
 }
 
 }

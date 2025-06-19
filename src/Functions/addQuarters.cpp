@@ -9,17 +9,17 @@ using FunctionAddQuarters = FunctionDateOrDateTimeAddInterval<AddQuartersImpl>;
 
 REGISTER_FUNCTION(AddQuarters)
 {
-    FunctionDocumentation::Description description_addQuarters = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of quarters to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addQuarters = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addQuarters(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addQuarters = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of quarters to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of quarters to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addQuarters = {"Returns `datetime` plus `num` quarters", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` quarters", {"Date"}};
     FunctionDocumentation::Examples examples_addQuarters = {
         {"Add quarters to different date types", R"(
 WITH
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 quarter)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addQuarters = {20, 1};
-    FunctionDocumentation::Category category_addQuarters = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addQuarters = {
-        description_addQuarters,
-        syntax_addQuarters,
-        arguments_addQuarters,
-        returned_value_addQuarters,
-        examples_addQuarters,
-        introduced_in_addQuarters,
-        category_addQuarters
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddQuarters>(documentation_addQuarters);
+    factory.registerFunction<FunctionAddQuarters>(documentation);
 }
 
 }

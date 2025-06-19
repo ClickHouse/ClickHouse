@@ -9,18 +9,18 @@ using FunctionAddWeeks = FunctionDateOrDateTimeAddInterval<AddWeeksImpl>;
 
 REGISTER_FUNCTION(AddWeeks)
 {
-    FunctionDocumentation::Description description_addWeeks = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of weeks to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addWeeks = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addWeeks(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addWeeks = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of weeks to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of weeks to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addWeeks = {"Returns `datetime` plus `num` weeks", {"Date"}};
-    FunctionDocumentation::Examples examples_addWeeks = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` weeks", {"Date"}};
+    FunctionDocumentation::Examples examples = {
         {"Add weeks to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 week)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addWeeks = {1, 1};
-    FunctionDocumentation::Category category_addWeeks = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addWeeks = {
-        description_addWeeks,
-        syntax_addWeeks,
-        arguments_addWeeks,
-        returned_value_addWeeks,
-        examples_addWeeks,
-        introduced_in_addWeeks,
-        category_addWeeks
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddWeeks>(documentation_addWeeks);
+    factory.registerFunction<FunctionAddWeeks>(documentation);
 }
 
 }

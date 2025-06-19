@@ -9,18 +9,18 @@ using FunctionAddDays = FunctionDateOrDateTimeAddInterval<AddDaysImpl>;
 
 REGISTER_FUNCTION(AddDays)
 {
-    FunctionDocumentation::Description description_addDays = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of days to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addDays = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addDays(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addDays = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of days to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of days to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addDays = {"Returns `datetime` plus `num` days", {"Date"}};
-    FunctionDocumentation::Examples examples_addDays = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` days.", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Add days to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 day)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addDays = {1, 1};
-    FunctionDocumentation::Category category_addDays = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addDays = {
-        description_addDays,
-        syntax_addDays,
-        arguments_addDays,
-        returned_value_addDays,
-        examples_addDays,
-        introduced_in_addDays,
-        category_addDays
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddDays>(documentation_addDays);
+    factory.registerFunction<FunctionAddDays>(documentation);
 }
 
 }

@@ -9,18 +9,18 @@ using FunctionAddYears = FunctionDateOrDateTimeAddInterval<AddYearsImpl>;
 
 REGISTER_FUNCTION(AddYears)
 {
-    FunctionDocumentation::Description description_addYears = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of years to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addYears = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addYears(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addYears = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of years to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of years to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addYears = {"Returns `datetime` plus `num` years", {"Date"}};
-    FunctionDocumentation::Examples examples_addYears = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` years", {"Date"}};
+    FunctionDocumentation::Examples examples = {
         {"Add years to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addYears = {1, 1};
-    FunctionDocumentation::Category category_addYears = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addYears = {
-        description_addYears,
-        syntax_addYears,
-        arguments_addYears,
-        returned_value_addYears,
-        examples_addYears,
-        introduced_in_addYears,
-        category_addYears
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddYears>(documentation_addYears);
+    factory.registerFunction<FunctionAddYears>(documentation);
 }
 
 }

@@ -171,16 +171,16 @@ REGISTER_FUNCTION(TCPPort)
 
 REGISTER_FUNCTION(Timezone)
 {
-    FunctionDocumentation::Description description_timezone = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the time zone name of the current session or converts a time zone
 offset or name to a canonical time zone name.
     )";
-    FunctionDocumentation::Syntax syntax_timezone = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 timezone()
     )";
-    FunctionDocumentation::Arguments arguments_timezone = {};
-    FunctionDocumentation::ReturnedValue returned_value_timezone = {"Returns the canonical time zone name as a", {"String"}};
-    FunctionDocumentation::Examples examples_timezone = {
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the canonical time zone name as a", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Get current session time zone", R"(
 SELECT timezone()
         )",
@@ -190,24 +190,24 @@ SELECT timezone()
 └──────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timezone = {1, 1};
-    FunctionDocumentation::Category category_timezone = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_timezone = {description_timezone, syntax_timezone, arguments_timezone, returned_value_timezone, examples_timezone, introduced_in_timezone, category_timezone};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimezone>(documentation_timezone, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
 }
 
 REGISTER_FUNCTION(ServerTimezone)
 {
-    FunctionDocumentation::Description description_server_timezone = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
-    FunctionDocumentation::Syntax syntax_server_timezone = "serverTimeZone()";
-    FunctionDocumentation::Arguments arguments_server_timezone = {};
-    FunctionDocumentation::ReturnedValue returned_value_server_timezone = {"Returns the server timezone as a", {"String"}};
-    FunctionDocumentation::Examples examples_server_timezone = {
+    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Get server time zone", R"(
 SELECT serverTimeZone()
         )",
@@ -217,11 +217,11 @@ SELECT serverTimeZone()
 └──────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_server_timezone = {23, 6};
-    FunctionDocumentation::Category category_server_timezone = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_server_timezone = {description_server_timezone, syntax_server_timezone, arguments_server_timezone, returned_value_server_timezone, examples_server_timezone, introduced_in_server_timezone, category_server_timezone};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionServerTimezone>(documentation_server_timezone);
+    factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 

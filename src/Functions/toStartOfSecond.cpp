@@ -10,19 +10,19 @@ using FunctionToStartOfSecond = FunctionDateOrDateTimeToSomething<DataTypeDateTi
 
 REGISTER_FUNCTION(ToStartOfSecond)
 {
-    FunctionDocumentation::Description description_to_start_of_second = R"(
+    FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the seconds.
     )";
-    FunctionDocumentation::Syntax syntax_to_start_of_second = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toStartOfSecond(datetime, [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_to_start_of_second = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time to truncate sub-seconds from.", {"DateTime64"}},
         {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_second =
+    FunctionDocumentation::ReturnedValue returned_value =
         {"Returns the input value without sub-seconds.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_to_start_of_second = {
+    FunctionDocumentation::Examples examples = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
 SELECT toStartOfSecond(dt64);
@@ -40,19 +40,11 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 └────────────────────────────────────────┘
     )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_to_start_of_second = {20, 5};
-    FunctionDocumentation::Category category_to_start_of_second = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_start_of_second = {
-        description_to_start_of_second,
-        syntax_to_start_of_second,
-        arguments_to_start_of_second,
-        returned_value_to_start_of_second,
-        examples_to_start_of_second,
-        introduced_in_to_start_of_second,
-        category_to_start_of_second
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfSecond>(documentation_to_start_of_second);
+    factory.registerFunction<FunctionToStartOfSecond>(documentation);
 }
 
 }

@@ -10,18 +10,18 @@ using FunctionToStartOfMillisecond = FunctionDateOrDateTimeToSomething<DataTypeD
 
 REGISTER_FUNCTION(ToStartOfMillisecond)
 {
-    FunctionDocumentation::Description description_to_start_of_millisecond = R"(
+    FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the milliseconds.
     )";
-    FunctionDocumentation::Syntax syntax_to_start_of_millisecond = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toStartOfMillisecond(datetime, [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_to_start_of_millisecond = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},
         {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_millisecond = {"Input value with sub-milliseconds.", { "DateTime64"}};
-    FunctionDocumentation::Examples examples_to_start_of_millisecond = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Input value with sub-milliseconds.", { "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMillisecond(dt64);
@@ -39,17 +39,10 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 └─────────────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_to_start_of_millisecond = {22, 6};
-    FunctionDocumentation::Category category_to_start_of_millisecond = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_start_of_millisecond = {
-        description_to_start_of_millisecond,
-        syntax_to_start_of_millisecond,
-        arguments_to_start_of_millisecond,
-        returned_value_to_start_of_millisecond,
-        examples_to_start_of_millisecond,
-        introduced_in_to_start_of_millisecond,
-        category_to_start_of_millisecond
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
     factory.registerFunction<FunctionToStartOfMillisecond>();
 }
 
@@ -57,18 +50,18 @@ using FunctionToStartOfMicrosecond = FunctionDateOrDateTimeToSomething<DataTypeD
 
 REGISTER_FUNCTION(ToStartOfMicrosecond)
 {
-    FunctionDocumentation::Description description_to_start_of_microsecond = R"(
+    FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the microseconds.
     )";
-    FunctionDocumentation::Syntax syntax_to_start_of_microsecond = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toStartOfMicrosecond(datetime, [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_to_start_of_microsecond = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},
         {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_microsecond = {"Input value with sub-microseconds", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_to_start_of_microsecond = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Input value with sub-microseconds", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMicrosecond(dt64);
@@ -86,37 +79,29 @@ SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
 └─────────────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_to_start_of_microsecond = {22, 6};
-    FunctionDocumentation::Category category_to_start_of_microsecond = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_start_of_microsecond = {
-        description_to_start_of_microsecond,
-        syntax_to_start_of_microsecond,
-        arguments_to_start_of_microsecond,
-        returned_value_to_start_of_microsecond,
-        examples_to_start_of_microsecond,
-        introduced_in_to_start_of_microsecond,
-        category_to_start_of_microsecond
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfMicrosecond>(documentation_to_start_of_microsecond);
+    factory.registerFunction<FunctionToStartOfMicrosecond>(documentation);
 }
 
 using FunctionToStartOfNanosecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfNanosecondImpl>;
 
 REGISTER_FUNCTION(ToStartOfNanosecond)
 {
-    FunctionDocumentation::Description description_to_start_of_nanosecond = R"(
+    FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the nanoseconds.
         )";
-    FunctionDocumentation::Syntax syntax_to_start_of_nanosecond = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toStartOfNanosecond(datetime, [timezone])
         )";
-    FunctionDocumentation::Arguments arguments_to_start_of_nanosecond = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},
         {"timezone", "Optional. Timezone for the returned value. If not specified, the function uses the timezone of the `value` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_nanosecond = {"Input value with nanoseconds.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_to_start_of_nanosecond = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Input value with nanoseconds.", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Query without timezone", R"(
 WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfNanosecond(dt64);
@@ -134,19 +119,11 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 └────────────────────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_to_start_of_nanosecond = {22, 6};
-    FunctionDocumentation::Category category_to_start_of_nanosecond = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_start_of_nanosecond = {
-        description_to_start_of_nanosecond,
-        syntax_to_start_of_nanosecond,
-        arguments_to_start_of_nanosecond,
-        returned_value_to_start_of_nanosecond,
-        examples_to_start_of_nanosecond,
-        introduced_in_to_start_of_nanosecond,
-        category_to_start_of_nanosecond
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfNanosecond>(documentation_to_start_of_nanosecond);
+    factory.registerFunction<FunctionToStartOfNanosecond>(documentation);
 }
 
 }

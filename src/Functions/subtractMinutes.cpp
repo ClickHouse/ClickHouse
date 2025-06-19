@@ -10,19 +10,19 @@ using FunctionSubtractMinutes = FunctionDateOrDateTimeAddInterval<SubtractMinute
 
 REGISTER_FUNCTION(SubtractMinutes)
 {
-    FunctionDocumentation::Description description_subtractMinutes = R"(
+    FunctionDocumentation::Description description = R"(
 Subtracts a specified number of minutes from a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_subtractMinutes = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 subtractMinutes(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractMinutes =
+    FunctionDocumentation::Arguments arguments =
     {
         {"datetime", "Date or date with time to subtract specified number of minutes from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of minutes to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractMinutes = {"Returns `datetime` minus `num` minutes", {"DateTime", "DateTime64"}};
-    FunctionDocumentation::Examples examples_subtractMinutes = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` minutes", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Subtract minutes from different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -47,19 +47,11 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 minute)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_subtractMinutes = {1, 1};
-    FunctionDocumentation::Category category_subtractMinutes = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractMinutes = {
-        description_subtractMinutes,
-        syntax_subtractMinutes,
-        arguments_subtractMinutes,
-        returned_value_subtractMinutes,
-        examples_subtractMinutes,
-        introduced_in_subtractMinutes,
-        category_subtractMinutes
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSubtractMinutes>(documentation_subtractMinutes);
+    factory.registerFunction<FunctionSubtractMinutes>(documentation);
 }
 
 }

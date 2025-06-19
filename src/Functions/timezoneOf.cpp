@@ -77,16 +77,16 @@ private:
 
 REGISTER_FUNCTION(TimezoneOf)
 {
-    FunctionDocumentation::Description description_timezone_of = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) value.
     )";
-    FunctionDocumentation::Syntax syntax_timezone_of = "timeZoneOf(datetime)";
-    FunctionDocumentation::Arguments arguments_timezone_of = {
+    FunctionDocumentation::Syntax syntax = "timeZoneOf(datetime)";
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "A value of type.", {"DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone name to convert the `datetime` value's timezone to.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timezone_of = {"Returns the timezone name for `datetime`", {"String"}};
-    FunctionDocumentation::Examples examples_timezone_of = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the timezone name for `datetime`", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT timezoneOf(now());
         )",
@@ -96,11 +96,11 @@ SELECT timezoneOf(now());
 └───────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timezone_of = {21, 4};
-    FunctionDocumentation::Category category_timezone_of = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_timezone_of = {description_timezone_of, syntax_timezone_of, arguments_timezone_of, returned_value_timezone_of, examples_timezone_of, introduced_in_timezone_of, category_timezone_of};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimezoneOf>(documentation_timezone_of);
+    factory.registerFunction<FunctionTimezoneOf>(documentation);
     factory.registerAlias("timeZoneOf", "timezoneOf");
 }
 

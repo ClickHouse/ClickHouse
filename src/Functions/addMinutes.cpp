@@ -9,18 +9,18 @@ using FunctionAddMinutes = FunctionDateOrDateTimeAddInterval<AddMinutesImpl>;
 
 REGISTER_FUNCTION(AddMinutes)
 {
-    FunctionDocumentation::Description description_addMinutes = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of minutes to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addMinutes = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addMinutes(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addMinutes = {
+    FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date or date with time to add specified number of minutes to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of minutes to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addMinutes = {"Returns `datetime` plus `num` minutes", {"DateTime"}};
-    FunctionDocumentation::Examples examples_addMinutes = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` minutes", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
         {"Add minutes to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 minute)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addMinutes = {1, 1};
-    FunctionDocumentation::Category category_addMinutes = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addMinutes = {
-        description_addMinutes,
-        syntax_addMinutes,
-        arguments_addMinutes,
-        returned_value_addMinutes,
-        examples_addMinutes,
-        introduced_in_addMinutes,
-        category_addMinutes
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddMinutes>(documentation_addMinutes);
+    factory.registerFunction<FunctionAddMinutes>(documentation);
 }
 
 }

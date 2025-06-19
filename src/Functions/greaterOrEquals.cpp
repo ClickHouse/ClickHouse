@@ -14,35 +14,27 @@ extern template class FunctionComparison<EqualsOp, NameEquals>;
 REGISTER_FUNCTION(GreaterOrEquals)
 {
     // Documentation for greaterOrEquals
-    FunctionDocumentation::Description description_greaterOrEquals = "Compares two values for greater-than-or-equal-to relation.";
-    FunctionDocumentation::Syntax syntax_greaterOrEquals = R"(
+    FunctionDocumentation::Description description = "Compares two values for greater-than-or-equal-to relation.";
+    FunctionDocumentation::Syntax syntax = R"(
     greaterOrEquals(a, b)
     -- a >= b
 )";
-    FunctionDocumentation::Arguments arguments_greaterOrEquals = {
+    FunctionDocumentation::Arguments arguments = {
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_greaterOrEquals = {"Returns `1` if `a` is greater than or equal to `b`, otherwise `0`", {"UInt8"}};
-    FunctionDocumentation::Examples examples_greaterOrEquals = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is greater than or equal to `b`, otherwise `0`", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT 2 >= 1, 2 >= 2, 1 >= 2;", R"(
 ┌─greaterOrEquals(2, 1)─┬─greaterOrEquals(2, 2)─┬─greaterOrEquals(1, 2)─┐
 │                     1 │                     1 │                     0 │
 └───────────────────────┴───────────────────────┴───────────────────────┘
 )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_greaterOrEquals = {1, 1};
-    FunctionDocumentation::Category category_greaterOrEquals = FunctionDocumentation::Category::Comparison;
-    FunctionDocumentation documentation_greaterOrEquals = {
-        description_greaterOrEquals,
-        syntax_greaterOrEquals,
-        arguments_greaterOrEquals,
-        returned_value_greaterOrEquals,
-        examples_greaterOrEquals,
-        introduced_in_greaterOrEquals,
-        category_greaterOrEquals
-    };
-    factory.registerFunction<FunctionGreaterOrEquals>(documentation_greaterOrEquals);
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGreaterOrEquals>(documentation);
 }
 
 template <>

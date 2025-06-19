@@ -8,19 +8,19 @@ namespace DB
 using FunctionSubtractMilliseconds = FunctionDateOrDateTimeAddInterval<SubtractMillisecondsImpl>;
 REGISTER_FUNCTION(SubtractMilliseconds)
 {
-    FunctionDocumentation::Description description_subtractMilliseconds = R"(
+    FunctionDocumentation::Description description = R"(
 Subtracts a specified number of milliseconds from a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax_subtractMilliseconds = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 subtractMilliseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractMilliseconds =
+    FunctionDocumentation::Arguments arguments =
     {
         {"datetime", "Date with time to subtract specified number of milliseconds from.", {"DateTime", "DateTime64", "String"}},
         {"num", "Number of milliseconds to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractMilliseconds = {"Returns `datetime` minus `num` milliseconds", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_subtractMilliseconds = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` milliseconds", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Subtract milliseconds from different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -43,19 +43,11 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_subtractMilliseconds = {22, 6};
-    FunctionDocumentation::Category category_subtractMilliseconds = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractMilliseconds = {
-        description_subtractMilliseconds,
-        syntax_subtractMilliseconds,
-        arguments_subtractMilliseconds,
-        returned_value_subtractMilliseconds,
-        examples_subtractMilliseconds,
-        introduced_in_subtractMilliseconds,
-        category_subtractMilliseconds
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSubtractMilliseconds>(documentation_subtractMilliseconds);
+    factory.registerFunction<FunctionSubtractMilliseconds>(documentation);
 }
 
 }

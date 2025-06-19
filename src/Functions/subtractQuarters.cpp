@@ -10,19 +10,19 @@ using FunctionSubtractQuarters = FunctionDateOrDateTimeAddInterval<SubtractQuart
 
 REGISTER_FUNCTION(SubtractQuarters)
 {
-    FunctionDocumentation::Description description_subtractQuarters = R"(
+    FunctionDocumentation::Description description = R"(
 Subtracts a specified number of quarters from a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_subtractQuarters = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 subtractQuarters(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractQuarters =
+    FunctionDocumentation::Arguments arguments =
     {
         {"datetime", "Date or date with time to subtract specified number of quarters from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of quarters to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractQuarters = {"Returns `datetime` minus `num` quarters", {"Date", "Date32", "DateTime", "DateTime64"}};
-    FunctionDocumentation::Examples examples_subtractQuarters = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` quarters", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Subtract quarters from different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -47,19 +47,11 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 └───────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_subtractQuarters = {20, 1};
-    FunctionDocumentation::Category category_subtractQuarters = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractQuarters = {
-        description_subtractQuarters,
-        syntax_subtractQuarters,
-        arguments_subtractQuarters,
-        returned_value_subtractQuarters,
-        examples_subtractQuarters,
-        introduced_in_subtractQuarters,
-        category_subtractQuarters
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSubtractQuarters>(documentation_subtractQuarters);
+    factory.registerFunction<FunctionSubtractQuarters>(documentation);
 }
 
 }
