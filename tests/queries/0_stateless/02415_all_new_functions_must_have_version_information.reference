@@ -610,7 +610,6 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
-reverse
 reverseUTF8
 revision
 right
