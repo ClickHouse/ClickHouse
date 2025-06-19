@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 RETRIES=5
 
-CLICKHOUSE_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0"
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=1&wait_end_of_query=1&http_response_buffer_size=1000&buffer_size=1000"
 
 result=""
 lines_expected=5
