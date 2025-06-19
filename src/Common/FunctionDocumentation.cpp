@@ -33,8 +33,10 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 
         if (type == "String")
             result += "`](/sql-reference/data-types/string)";
-        else if (type == "FixedString")
+        else if (type.starts_with("FixedString"))
             result += "`](/sql-reference/data-types/fixedstring)";
+        else if (type == "String literal")
+            result += "`](/sql-reference/syntax#string)";
         else if (type.starts_with("Int") || type.starts_with("UInt") || type.starts_with("(U)Int")) /// "Int8", "Int16", ... || "UInt8", "UInt16", ... || "(U)Int*", "(U)Int8", "(U)Int16", ...
             result += "`](/sql-reference/data-types/int-uint)";
         else if (type.starts_with("Float") || type.starts_with("BFloat16")) /// "Float32", "Float64", "BFloat16"

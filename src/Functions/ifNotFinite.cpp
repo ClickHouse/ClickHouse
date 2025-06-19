@@ -73,8 +73,8 @@ You can get a similar result by using the [ternary operator](/sql-reference/func
     )";
     FunctionDocumentation::Syntax syntax = "ifNotFinite(x,y)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Value to check if infinite.", {"Float32", "Float64"}},
-        {"y", "Fallback value.", {"Float32", "Float64"}}
+        {"x", "Value to check if infinite.", {"Float*"}},
+        {"y", "Fallback value.", {"Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 - `x` if `x` is finite.

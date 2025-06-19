@@ -21,7 +21,7 @@ subtractSeconds(datetime, num)
         {"datetime", "Date or date with time to subtract specified number of seconds from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of seconds to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` seconds", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` seconds", {"DateTime", "DateTime64(3)"}};
     FunctionDocumentation::Examples examples = {
         {"Subtract seconds from different date types", R"(
 WITH

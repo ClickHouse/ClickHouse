@@ -16,8 +16,8 @@ if the right argument is 0.
     FunctionDocumentation::Syntax syntax = "moduloOrNull(x, y)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"x", "The dividend.", {"(U)Int*", "Float32/64"}},
-        {"y", "The divisor (modulus).", {"(U)Int*", "Float32/64"}}
+        {"x", "The dividend.", {"(U)Int*", "Float*"}},
+        {"y", "The divisor (modulus).", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the remainder of the division of `x` by `y`, or null when the divisor is zero.

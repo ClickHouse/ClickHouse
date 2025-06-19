@@ -34,7 +34,7 @@ toStartOfWeek(datetime[, mode[, timezone]])
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_week = {
         {"Round down to the nearest Sunday or Monday", R"(
     SELECT
@@ -80,7 +80,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "Optional. The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_last_day_of_week = {
         {"Round up to the nearest Saturday or Sunday", R"(
 SELECT

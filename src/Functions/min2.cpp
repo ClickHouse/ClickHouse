@@ -29,7 +29,7 @@ REGISTER_FUNCTION(Min2)
     FunctionDocumentation::Argument argument1 = {"x", "First value", {"(U)Int8/16/32/64", "Float*", "Decimal"}};
     FunctionDocumentation::Argument argument2 = {"y", "Second value", {"(U)Int8/16/32/64", "Float*", "Decimal"}};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the smaller value of `x` and `y`", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the smaller value of `x` and `y`.", {"Float64"}};
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT min2(-1, 2)", "-1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};

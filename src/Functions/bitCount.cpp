@@ -60,7 +60,7 @@ REGISTER_FUNCTION(BitCount)
     FunctionDocumentation::Description description = "Calculates the number of bits set to one in the binary representation of a number.";
     FunctionDocumentation::Syntax syntax = "bitCount(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "An integer or float value.", {"(U)Int32/64", "Float32/64"}},
+        {"x", "An integer or float value.", {"(U)Int*", "Float*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).

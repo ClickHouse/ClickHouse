@@ -19,7 +19,7 @@ addYears(datetime, num)
         {"datetime", "Date or date with time to add specified number of years to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of years to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` years", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` years", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add years to different date types", R"(
 WITH

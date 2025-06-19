@@ -69,15 +69,13 @@ In case you don't really need controlled precision and/or need fast computation,
 :::
     )";
     FunctionDocumentation::Syntax syntax = "multiplyDecimal(a, b[, result_scale])";
-    FunctionDocumentation::Arguments arguments =
-    {
+    FunctionDocumentation::Arguments arguments = {
         {"a", "First value.", {"Decimal"}},
         {"b", "Second value.", {"Decimal"}},
         {"result_scale", "Scale of result.", {"Int*", "UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The result of multiplication with the given scale. Type:", {"Decimal256"}};
-    FunctionDocumentation::Examples examples =
-    {
+    FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"},
         {"Difference with regular multiplication", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", R"(
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐

@@ -736,10 +736,10 @@ makeDate(year, day_of_year)
     )";
     FunctionDocumentation::Arguments arguments_makeDate =
     {
-        {"year", "Year number.", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"month", "Month number (1-12).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day", "Day of the month (1-31).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float32/64", "Decimal"}}
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate = {"Returns a `Date` value constructed from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_makeDate = {
@@ -777,10 +777,10 @@ makeDate32(year, day_of_year)
     )";
     FunctionDocumentation::Arguments arguments_makeDate32 =
     {
-        {"year", "Year number.", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"month", "Month number (1-12).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day", "Day of the month (1-31).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float32/64", "Decimal"}}
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate32 = {"Returns a `Date32` value constructed from the provided arguments", {"Date32"}};
     FunctionDocumentation::Examples examples_makeDate32 = {
@@ -815,12 +815,12 @@ makeDateTime(year, month, day, hour, minute, second[, timezone])
     )";
     FunctionDocumentation::Arguments arguments_makeDateTime =
     {
-        {"year", "Year number.", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"month", "Month number (1-12).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day", "Day of the month (1-31).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"hour", "Hour (0-23).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"minute", "Minute (0-59).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"second", "Second (0-59).", {"(U)Int*", "Float32/64", "Decimal"}},
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"hour", "Hour (0-23).", {"(U)Int*", "Float*", "Decimal"}},
+        {"minute", "Minute (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"second", "Second (0-59).", {"(U)Int*", "Float*", "Decimal"}},
         {"timezone", "Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDateTime = {"Returns a `DateTime` value constructed from the provided arguments", {"DateTime"}};
@@ -848,13 +848,13 @@ makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, t
     )";
     FunctionDocumentation::Arguments arguments_makeDateTime64 =
     {
-        {"year", "Year number.", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"month", "Month number (1-12).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"day", "Day of the month (1-31).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"hour", "Hour (0-23).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"minute", "Minute (0-59).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"second", "Second (0-59).", {"(U)Int*", "Float32/64", "Decimal"}},
-        {"fraction", "Fractional part of the second.", {"(U)Int*", "Float32/64", "Decimal"}},
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"hour", "Hour (0-23).", {"(U)Int*", "Float*", "Decimal"}},
+        {"minute", "Minute (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"second", "Second (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"fraction", "Fractional part of the second.", {"(U)Int*", "Float*", "Decimal"}},
         {"precision", "Precision for the fractional part (0-9).", {"UInt8"}},
         {"timezone", "Timezone name.", {"String"}}
     };
@@ -884,7 +884,7 @@ YYYYMMDDToDate(YYYYMMDD)
     )";
     FunctionDocumentation::Arguments arguments_yyyymmddtodate =
     {
-        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float32/64", "Decimal"}}
+        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate = {"Returns a `Date` value from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_yyyymmddtodate = {
@@ -913,7 +913,7 @@ YYYYMMDDToDate32(YYYYMMDD)
     )";
     FunctionDocumentation::Arguments arguments_yyyymmddtodate32 =
     {
-        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float32/64", "Decimal"}}
+        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate32 = {"Returns a `Date32` value from the provided arguments", {"Date32"}};    FunctionDocumentation::Examples examples_yyyymmddtodate32 = {
         {"Example", R"(
@@ -941,7 +941,7 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     )";
     FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime =
     {
-        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float32/64", "Decimal"}},
+        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float*", "Decimal"}},
         {"timezone", "Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
@@ -971,7 +971,7 @@ YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime64 =
     {
-        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float32/64", "Decimal"}},
+        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float*", "Decimal"}},
         {"precision", "Precision for the fractional part (0-9).", {"UInt8"}},
         {"timezone", "Timezone name.", {"String"}}
     };

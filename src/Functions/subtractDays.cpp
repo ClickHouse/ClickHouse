@@ -21,7 +21,7 @@ subtractDays(datetime, num)
         {"datetime", "Date or date with time to subtract specified number of days from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of days to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` days", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` days", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Subtract days from different date types", R"(
 WITH

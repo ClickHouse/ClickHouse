@@ -203,7 +203,7 @@ REGISTER_FUNCTION(ArrayStringConcat)
     FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, delimiter])";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The source array of strings.", {"Array(String)"}},
-        {"delimiter", "The delimiter to insert between elements. Defaults to empty string if not specified.", {"String"}}
+        {"delimiter", "Optional.The delimiter to insert between elements. Defaults to empty string if not specified.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"A string consisting of the array elements joined by the delimiter.", {"String"}};
     FunctionDocumentation::Examples examples = {

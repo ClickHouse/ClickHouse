@@ -19,7 +19,7 @@ addMinutes(datetime, num)
         {"datetime", "Date or date with time to add specified number of minutes to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of minutes to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` minutes", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` minutes", {"DateTime", "DateTime64(3)"}};
     FunctionDocumentation::Examples examples = {
         {"Add minutes to different date types", R"(
 WITH

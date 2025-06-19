@@ -104,7 +104,7 @@ REGISTER_FUNCTION(ArrayRandomSample)
     FunctionDocumentation::Syntax syntax = "arrayRandomSample(arr, samples)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array or multidimensional array from which to sample elements.", {"Array(T)"}},
-        {"samples", "The number of elements to include in the random sample.", {"UInt64"}}
+        {"samples", "The number of elements to include in the random sample.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array containing a random sample of elements from the input array", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {

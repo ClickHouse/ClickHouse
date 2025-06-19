@@ -19,7 +19,7 @@ addQuarters(datetime, num)
         {"datetime", "Date or date with time to add specified number of quarters to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of quarters to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` quarters", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` quarters", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add quarters to different date types", R"(
 WITH

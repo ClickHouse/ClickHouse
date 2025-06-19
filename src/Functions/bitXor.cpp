@@ -46,8 +46,8 @@ REGISTER_FUNCTION(BitXor)
     FunctionDocumentation::Description description = "Performs bitwise ""exclusive or"" (XOR) operation between two values.";
     FunctionDocumentation::Syntax syntax = "bitXor(a, b)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "First value.", {"(U)Int*", "Float32/64"}},
-        {"b", "Second value.", {"(U)Int*", "Float32/64"}},
+        {"a", "First value.", {"(U)Int*", "Float*"}},
+        {"b", "Second value.", {"(U)Int*", "Float*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of bitwise operation `a XOR b`"};
     FunctionDocumentation::Examples examples = {{"Usage example",

@@ -457,7 +457,7 @@ If a lambda function `func` is specified, returns the minimum element of the lam
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_min = {"The minimum element in the source array, or the minimum element of the lambda results if provided."};
+    FunctionDocumentation::ReturnedValue returned_value_min = {"Returns the minimum element in the source array, or the minimum element of the lambda results if provided."};
     FunctionDocumentation::Examples examples_min = {
         {"Basic example", "SELECT arrayMin([5, 3, 2, 7]);", "2"},
         {"Usage with lambda function", "SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "4"},
@@ -477,7 +477,7 @@ If a lambda function `func` is specified, returns the maximum element of the lam
     FunctionDocumentation::Arguments arguments_max = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
-        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_max = {"The maximum element in the source array, or the maximum element of the lambda results if provided."};
     FunctionDocumentation::Examples examples_max = {
@@ -499,9 +499,9 @@ If a lambda function `func` is specified, returns the sum of elements of the lam
     FunctionDocumentation::Arguments arguments_sum = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
-        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+        {", cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_sum = {"The sum of elements in the source array, or the sum of elements of the lambda results if provided."};
+    FunctionDocumentation::ReturnedValue returned_value_sum = {"Returns the sum of elements in the source array, or the sum of elements of the lambda results if provided."};
     FunctionDocumentation::Examples examples_sum = {
         {"Basic example", "SELECT arraySum([1, 2, 3, 4]);", "10"},
         {"Usage with lambda function", "SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);", "8"},
@@ -521,9 +521,9 @@ If a lambda function `func` is specified, returns the average of elements of the
     FunctionDocumentation::Arguments arguments_avg = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
-        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_avg = {"The average of elements in the source array, or the average of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the average of elements in the source array, or the average of elements of the lambda results if provided.", {"Float64"}};
     FunctionDocumentation::Examples examples_avg = {
         {"Basic example", "SELECT arrayAvg([1, 2, 3, 4]);", "2.5"},
         {"Usage with lambda function", "SELECT arrayAvg(x, y -> x*y, [2, 3], [2, 3]) AS res;", "6.5"},
@@ -543,7 +543,7 @@ If a lambda function `func` is specified, returns the product of elements of the
     FunctionDocumentation::Arguments arguments_prod = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
-        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_prod = {"The product of elements in the source array, or the product of elements of the lambda results if provided.", {"Float64"}};
     FunctionDocumentation::Examples examples_prod = {

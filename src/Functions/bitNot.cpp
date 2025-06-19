@@ -55,7 +55,7 @@ REGISTER_FUNCTION(BitNot)
     FunctionDocumentation::Description description = "Performs the bitwise NOT operation.";
     FunctionDocumentation::Syntax syntax = "bitNot(a)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "Value for which to apply bitwise NOT operation.", {"(U)Int*", "Float32/64", "String"}}
+        {"a", "Value for which to apply bitwise NOT operation.", {"(U)Int*", "Float*", "String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of `~a` i.e `a` with bits flipped."};
     FunctionDocumentation::Examples examples = {{"Usage example",

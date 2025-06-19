@@ -19,7 +19,7 @@ addMonths(datetime, num)
         {"datetime", "Date or date with time to add specified number of months to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of months to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` months", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` months", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add months to different date types", R"(
 WITH

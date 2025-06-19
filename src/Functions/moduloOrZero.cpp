@@ -50,8 +50,8 @@ exception with the modulo function.
     FunctionDocumentation::Syntax syntax = "moduloOrZero(a, b)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"a", "The dividend.", {"(U)Int*", "Float32/64"}},
-        {"b", "The divisor (modulus).", {"(U)Int*", "Float32/64"}}
+        {"a", "The dividend.", {"(U)Int*", "Float*"}},
+        {"b", "The divisor (modulus).", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the remainder of a % b, or `0` when the divisor is `0`."};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT moduloOrZero(5, 0)", "0"}};

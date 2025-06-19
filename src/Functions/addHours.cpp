@@ -19,7 +19,7 @@ addHours(datetime, num)
         {"datetime", "Date or date with time to add specified number of hours to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of hours to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` hours", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` hours", {"DateTime", "DateTime64(3)"}};
     FunctionDocumentation::Examples examples = {
         {"Add hours to different date types", R"(
 WITH

@@ -24,8 +24,8 @@ The function can take multiple arrays of the same size as arguments. In this cas
 )";
     FunctionDocumentation::Syntax syntax = "arrayEnumerateUniq(arr1[, arr2, ... , arrN])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1", "First array to process.", {"Array"}},
-        {"arr2, ...", "Optional. Additional arrays of the same size for tuple uniqueness.", {"Array"}}
+        {"arr1", "First array to process.", {"Array(T)"}},
+        {"arr2, ...", "Optional. Additional arrays of the same size for tuple uniqueness.", {"Array(UInt32)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array where each element is the position among elements with the same value or tuple.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {

@@ -149,7 +149,7 @@ Only the value's time zone attribute and the value's string representation chang
         {"date", "The value to convert.", {"DateTime", "DateTime64"}},
         {"timezone", "The target time zone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the same timestamp as the input, but with the specified time zone", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the same timestamp as the input, but with the specified time zone", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,

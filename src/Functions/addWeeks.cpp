@@ -19,7 +19,7 @@ addWeeks(datetime, num)
         {"datetime", "Date or date with time to add specified number of weeks to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of weeks to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` weeks", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` weeks", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add weeks to different date types", R"(
 WITH

@@ -21,7 +21,7 @@ subtractHours(datetime, num)
         {"datetime", "Date or date with time to subtract specified number of hours from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of hours to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` hours", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` hours", {"DateTime", "DateTime64(3)"}};
     FunctionDocumentation::Examples examples = {
         {"Subtract hours from different date types", R"(
 WITH

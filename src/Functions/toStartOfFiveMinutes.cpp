@@ -23,7 +23,7 @@ toStartOfFiveMinutes(datetime)
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "A date with time to round.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest five-minute interval", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest five-minute interval", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Example", R"(
 SELECT

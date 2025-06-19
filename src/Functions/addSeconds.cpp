@@ -19,7 +19,7 @@ addSeconds(datetime, num)
         {"datetime", "Date or date with time to add specified number of seconds to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
         {"num", "Number of seconds to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` seconds", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` seconds", {"DateTime", "DateTime64(3)"}};
     FunctionDocumentation::Examples examples = {
         {"Add seconds to different date types", R"(
 WITH

@@ -24,7 +24,7 @@ toStartOfFifteenMinutes(datetime)
     {
         {"datetime", "A date or date with time to convert.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest fifteen-minute interval", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest fifteen-minute interval", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples =
     {
         {"Example", R"(
