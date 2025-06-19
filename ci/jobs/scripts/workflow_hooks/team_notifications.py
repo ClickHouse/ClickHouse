@@ -1,7 +1,7 @@
 import sys
 
-from ci.praktika.info import Info
 from ci.praktika.gh import GH
+from ci.praktika.info import Info
 
 integrations_ecosystem_files = ["src/Core/TypeId.h"]
 
