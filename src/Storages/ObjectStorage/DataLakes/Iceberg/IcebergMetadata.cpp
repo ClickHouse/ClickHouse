@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h"
 #include <Interpreters/ExpressionActions.h>
+#include <IO/CompressedReadBufferWrapper.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
@@ -103,12 +104,19 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    LoggerPtr log)
+    LoggerPtr log,
+    CompressionMethod compression_method)
 {
     auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+        std::unique_ptr<ReadBuffer> buf;
+        if (compression_method != CompressionMethod::None)
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+        else
+            buf = std::move(source_buf);
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -269,7 +277,30 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
-static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & path)
+struct MetadataFileWithInfo
+{
+    Int32 version;
+    String path;
+    CompressionMethod compression_method;
+};
+
+static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+{
+    constexpr std::string_view metadata_suffix = ".metadata.json";
+
+    auto compression_method = chooseCompressionMethod(path, "auto");
+
+    /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
+    /// but somewhere in the middle of the file name, before metadata.json suffix.
+    /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
+    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
+    if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
+        compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
+
+    return compression_method;
+}
+
+static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;
@@ -284,7 +315,11 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
 
-    return std::make_pair(std::stoi(version_str), path);
+
+    return MetadataFileWithInfo{
+        .version = std::stoi(version_str),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 enum class MostRecentMetadataFileSelectionWay
@@ -295,7 +330,7 @@ enum class MostRecentMetadataFileSelectionWay
 
 struct ShortMetadataFileInfo
 {
-    UInt32 version;
+    Int32 version;
     UInt64 last_updated_ms;
     String path;
 };
@@ -307,7 +342,7 @@ struct ShortMetadataFileInfo
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-static std::pair<Int32, String> getLatestMetadataFileAndVersion(
+static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
@@ -331,10 +366,10 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        auto [version, metadata_file_path] = getMetadataFileAndVersion(path);
+        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
+            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
             if (table_uuid.has_value())
             {
                 if (metadata_file_object->has(f_table_uuid))
@@ -384,10 +419,10 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
                 [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
         }
     }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path};
+    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
 }
 
-static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
+static MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
@@ -452,7 +487,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path]
+    const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
 
     bool metadata_file_changed = false;
@@ -462,7 +497,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         metadata_file_changed = true;
     }
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log);
+    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, local_context, log, compression_method);
     chassert(format_version == metadata_object->getValue<int>(f_format_version));
 
     auto previous_snapshot_id = relevant_snapshot_id;
@@ -629,9 +664,9 @@ DataLakeMetadataPtr IcebergMetadata::create(
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
 
-    Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log);
+    Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
     IcebergSchemaProcessor schema_processor;
 
@@ -706,11 +741,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, getContext(), log.get());
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, getContext(), log.get());
 
     chassert(metadata_version == last_metadata_version);
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, getContext(), log);
+    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, manifest_cache, getContext(), log, compression_method);
 
     chassert(format_version == metadata_object->getValue<int>(f_format_version));
 

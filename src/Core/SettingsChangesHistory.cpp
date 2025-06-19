@@ -69,7 +69,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-
+            {"format_schema_source", "file", "file", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

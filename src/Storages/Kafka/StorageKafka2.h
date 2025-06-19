@@ -55,6 +55,9 @@ using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 /// manipulating the queues of librdkafka. By pulling from multiple topic-partitions
 /// the order of messages are not guaranteed, therefore they would have different
 /// hashes for deduplication.
+///
+/// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
+/// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
 class StorageKafka2 final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
@@ -160,6 +163,7 @@ private:
     struct PolledBatchInfo
     {
         BlocksList blocks;
+        int64_t intent_size;
         int64_t last_offset;
     };
 
