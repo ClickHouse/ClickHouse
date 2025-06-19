@@ -34,13 +34,14 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from functools import cache
 import urllib.parse
 
 # for crc32
 import zlib
 from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, contextmanager
 from datetime import datetime, timedelta
 from errno import ESRCH
 from subprocess import PIPE, Popen
@@ -286,7 +287,7 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = get_temp_file_path()
+        self.temp_file_path = "{0}.{2}{1}".format(*os.path.splitext(file_name), os.getpid())
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
@@ -297,12 +298,11 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
-        shutil.copyfile(self.file_name, self.temp_file_path)
-        shutil.copymode(self.file_name, self.temp_file_path)
+        shutil.copy2(self.file_name, self.temp_file_path)
 
         with (
-            open(self.file_name, "w", newline="", encoding="utf-8") as modified,
-            open(self.temp_file_path, "r", newline="", encoding="utf-8") as source,
+            open(self.file_name, "r", newline="", encoding="utf-8") as source,
+            open(self.temp_file_path, "w", newline="", encoding="utf-8") as modified,
         ):
             for line in source:
                 # Replace table engines if echo enabled to match changed reference
@@ -369,13 +369,12 @@ class SharedEngineReplacer:
     def __exit__(self, exc_type, exc_value, exc_tb):
         if not self._need_to_replace_something():
             return
-        shutil.move(self.temp_file_path, self.file_name)
+        os.unlink(self.temp_file_path)
 
-
-def get_temp_file_path():
-    return os.path.join(
-        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
-    )
+    def get_path(self):
+        if not self._need_to_replace_something():
+            return self.file_name
+        return self.temp_file_path
 
 
 def stringhash(s: str) -> int:
@@ -1202,6 +1201,11 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
+@cache
+def is_old_analyzer_used():
+    return clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip() == b"false"
+
+
 class TestResult:
     def __init__(
         self,
@@ -1242,9 +1246,13 @@ class TestCase:
         """
         Returns reference file name for specified test
         """
-
         name = removesuffix(name, ".gen")
-        for ext in [".reference", ".gen.reference"]:
+
+        file_extentions = [".reference", ".gen.reference"]
+        if is_old_analyzer_used():
+            file_extentions = [".oldanalyzer.reference", *file_extentions]
+
+        for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
             if os.path.isfile(reference_file):
                 return reference_file
@@ -2054,37 +2062,53 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
-                with SharedEngineReplacer(
-                    args,
-                    self.case_file,
-                    args.replace_replicated_with_shared,
-                    args.replace_non_replicated_with_shared,
-                    False,
-                    args.cloud,
-                ):
-                    with SharedEngineReplacer(
-                        args,
-                        self.reference_file,
-                        args.replace_replicated_with_shared,
-                        args.replace_non_replicated_with_shared,
-                        True,
-                        args.cloud,
-                    ):
-                        (
-                            proc,
-                            total_time,
-                        ) = self.run_single_test(server_logs_level, client_options)
-
-                        result = self.process_result_impl(proc, total_time)
-
-                        result.check_if_need_retry(
+                @contextmanager
+                def switch_to_smt():
+                    with (
+                        SharedEngineReplacer(
                             args,
-                            result.description,
-                            result.description,
-                            self.runs_count,
-                        )
-                        # to avoid breaking CSV parser
-                        result.description = result.description.replace("\0", "")
+                            self.case_file,
+                            args.replace_replicated_with_shared,
+                            args.replace_non_replicated_with_shared,
+                            False,
+                            args.cloud,
+                        ) as test_replacer,
+                        SharedEngineReplacer(
+                            args,
+                            self.reference_file,
+                            # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
+                            args.replace_replicated_with_shared or args.cloud,
+                            args.replace_non_replicated_with_shared or args.cloud,
+                            True,
+                            args.cloud,
+                        ) as reference_replacer,
+                    ):
+                        old_case_file = self.case_file
+                        old_reference_file = self.reference_file
+                        self.case_file = test_replacer.get_path()
+                        self.reference_file = reference_replacer.get_path()
+                        try:
+                            yield
+                        finally:
+                            self.case_file = old_case_file
+                            self.reference_file = old_reference_file
+
+                with switch_to_smt():
+                    (
+                        proc,
+                        total_time,
+                    ) = self.run_single_test(server_logs_level, client_options)
+
+                    result = self.process_result_impl(proc, total_time)
+
+                    result.check_if_need_retry(
+                        args,
+                        result.description,
+                        result.description,
+                        self.runs_count,
+                    )
+                    # to avoid breaking CSV parser
+                    result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 

@@ -491,7 +491,9 @@ class ClickHouseCluster:
         self.base_cmd += ["--project-name", self.project_name]
 
         self.base_zookeeper_cmd = None
+        self.base_minio_cmd = []
         self.base_mysql57_cmd = []
+        self.base_mysql8_cmd = []
         self.base_kafka_cmd = []
         self.base_kafka_sasl_cmd = []
         self.base_kerberized_kafka_cmd = []
@@ -500,7 +502,11 @@ class ClickHouseCluster:
         self.base_nats_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
+        self.base_postgres_cmd = []
+        self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_azurite_cmd = []
+        self.base_nginx_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_zookeeper = False
@@ -2512,7 +2518,7 @@ class ClickHouseCluster:
             if monitor is not None:
                 monitor.start(self)
 
-    def reset_rabbitmq(self, timeout=120):
+    def reset_rabbitmq(self, timeout=240):
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
@@ -3482,39 +3488,30 @@ class ClickHouseCluster:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
 
+    def process_integration_nodes(self, integration : str, nodes : list, action : str):
+        base_cmd = getattr(self, f"base_{integration}_cmd")
+
+        def process_single_node(node):
+            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
+            subprocess_check_call(base_cmd + [action, node])
+            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(nodes)
+        ) as executor:
+            futures = []
+            for n in nodes:
+                futures += [executor.submit(process_single_node, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
-
-        def kill_keeper(node):
-            logging.info("Killing zookeeper node: %s", node)
-            subprocess_check_call(self.base_zookeeper_cmd + ["kill", node])
-            logging.info("Killed zookeeper node: %s", node)
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=len(zk_nodes)
-        ) as executor:
-            futures = []
-            for n in zk_nodes:
-                futures += [executor.submit(kill_keeper, n)]
-
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
+        self.process_integration_nodes("zookeeper", zk_nodes, "kill")
 
     def start_zookeeper_nodes(self, zk_nodes):
-        def start_keeper(node):
-            logging.info("Starting zookeeper node: %s", node)
-            subprocess_check_call(self.base_zookeeper_cmd + ["start", node])
-            logging.info("Started zookeeper node: %s", node)
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=len(zk_nodes)
-        ) as executor:
-            futures = []
-            for n in zk_nodes:
-                futures += [executor.submit(start_keeper, n)]
-
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
+        self.process_integration_nodes("zookeeper", zk_nodes, "start")
 
     def query_all_nodes(self, sql, *args, **kwargs):
         return {

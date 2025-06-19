@@ -68,18 +68,21 @@ class BuzzHouseGenerator(Generator):
         if args.with_sqlite:
             buzz_config["sqlite"] = {"query_log_file": "/tmp/sqlite.sql"}
         if args.with_mongodb:
+            import urllib
+
             buzz_config["mongodb"] = {
                 "query_log_file": "/tmp/mongodb.doc",
                 "database": "test",
-                "hostname": cluster.mongo_host,
-                "port": cluster.mongo_port,
+                "hostname": "localhost",
+                "port": 27017,
                 "user": "root",
-                "password": mongo_pass,
+                "password": urllib.parse.quote_plus(mongo_pass),
             }
         if args.with_redis:
             buzz_config["redis"] = {
                 "hostname": cluster.redis_host,
-                "port": cluster.redis_port,
+                "port": 6379,
+                "user": "",
                 "password": "clickhouse",
             }
         if args.with_nginx:
