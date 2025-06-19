@@ -111,10 +111,13 @@ public:
 class StatementGenerator
 {
 public:
-    const FuzzConfig & fc;
+    static const std::unordered_map<OutFormat, InFormat> outIn;
+
+    FuzzConfig & fc;
     uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
 
 private:
+    std::vector<TableEngineValues> likeEngs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -282,8 +285,13 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String columnPathRef(const ColumnPathChain & entry) const;
+    void
+    colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg);
+    SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
+    SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
@@ -312,10 +320,10 @@ private:
     void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
-    void generateTableKey(RandomGenerator & rg, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
-    void setClusterInfo(RandomGenerator & rg, SQLBase & b);
-    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, bool add_pkey, TableEngine * te);
-    void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
+    void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
+    void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
+    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool add_pkey, TableEngine * te);
+    void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
@@ -326,7 +334,10 @@ private:
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
-    void generateNextDelete(RandomGenerator & rg, LightDelete * del);
+    void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
+    void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
+    template <typename T>
+    void generateNextUpdateOrDelete(RandomGenerator & rg, T * st);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
@@ -469,6 +480,7 @@ public:
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
+    void setInTransaction(const bool value) { in_transaction = value; }
 
     friend class QueryOracle;
 };

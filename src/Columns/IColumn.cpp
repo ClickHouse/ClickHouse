@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -648,6 +649,7 @@ template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
@@ -669,6 +671,7 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
+template class IColumnHelper<ColumnBLOB, IColumn>;
 
 void intrusive_ptr_add_ref(const IColumn * c)
 {
@@ -681,4 +684,5 @@ void intrusive_ptr_release(const IColumn * c)
     BOOST_ASSERT(c != nullptr);
     boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
+
 }

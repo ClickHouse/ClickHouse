@@ -12,7 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -142,7 +142,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     if (validate_content)
     {
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        LockMemoryExceptionInThread temporarily_lock_exceptions;
 
         std::string data;
         auto read_settings = getReadSettings();
@@ -152,7 +152,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
         auto read_buf = object_storage->readObject(metadata_object, read_settings);
         readStringUntilEOF(data, *read_buf);
-        if (data != path_from)
+        if (data != expected_path)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Incorrect data for object key {}, expected {}, got {}",
@@ -183,18 +183,30 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     constexpr bool validate_content = false;
 #endif
 
-    auto write_buf = createWriteBuf(path_from, path_to, validate_content);
-    writeString(path_to.string(), *write_buf);
-
-    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+    std::unordered_set<std::string> subdirs = {""};
+    path_map.iterateSubdirectories(path_from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
+    for (const auto & subdir : subdirs)
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
-    });
+        auto sub_path_to = path_to / subdir;
+        auto sub_path_from = path_from / subdir;
 
-    write_buf->finalize();
+        auto write_buf = createWriteBuf(sub_path_from, sub_path_to, validate_content);
+        writeString(sub_path_to.string(), *write_buf);
 
-    /// parent_path() removes the trailing '/'.
-    path_map.moveDirectory(path_from.parent_path(), path_to.parent_path());
+        fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
+        });
+
+        write_buf->finalize();
+
+        /// parent_path() removes the trailing '/'.
+        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
+
+        LOG_TEST(
+            getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moved directory '{}' to '{}'", sub_path_from, sub_path_to);
+    }
+
     write_finalized = true;
 }
 

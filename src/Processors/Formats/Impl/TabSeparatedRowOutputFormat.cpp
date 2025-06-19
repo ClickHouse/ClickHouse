@@ -93,6 +93,8 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
+            /// https://www.iana.org/assignments/media-types/text/tab-separated-values
+            factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

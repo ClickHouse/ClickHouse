@@ -236,15 +236,11 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else if (noption < 501)
     {
-        String buf;
         std::uniform_int_distribution<uint32_t> next_dist(0, 30);
         const uint32_t left = next_dist(rg.generator);
         const uint32_t right = next_dist(rg.generator);
 
-        buf += complex ? "(" : "";
-        buf += appendDecimal(rg, left, right);
-        buf += complex ? ")" : "";
-        lv->set_no_quote_str(std::move(buf));
+        lv->set_no_quote_str(appendDecimal(rg, complex && rg.nextSmallNumber() < 9, left, right));
     }
     else if (complex && this->allow_not_deterministic && noption < 551)
     {

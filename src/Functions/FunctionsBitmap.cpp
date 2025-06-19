@@ -190,21 +190,407 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
 
     factory.registerFunction<FunctionBitmapTransform>(documentation_bitmapTransform);
 
-    factory.registerFunction<FunctionBitmapSelfCardinality>();
-    factory.registerFunction<FunctionBitmapMin>();
-    factory.registerFunction<FunctionBitmapMax>();
-    factory.registerFunction<FunctionBitmapAndCardinality>();
-    factory.registerFunction<FunctionBitmapOrCardinality>();
-    factory.registerFunction<FunctionBitmapXorCardinality>();
-    factory.registerFunction<FunctionBitmapAndnotCardinality>();
+    /// Documentation for bitmapCardinality
+    FunctionDocumentation::Description description_bitmapCardinality = "Returns the number of bits set (the cardinality) in the bitmap.";
+    FunctionDocumentation::Syntax syntax_bitmapCardinality = "bitmapCardinality(bitmap)";
+    FunctionDocumentation::Arguments arguments_bitmapCardinality = {
+        {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapCardinality = "Returns the number of bits set in the bitmap. [`UInt64`](/sql-reference/data-types/int-uint)";
+    FunctionDocumentation::Examples examples_bitmapCardinality = {{"Usage example", "SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res",
+        R"(
+┌─res─┐
+│   4 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapCardinality = {20, 1};
+    FunctionDocumentation::Category category_bitmapCardinality = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapCardinality = {
+        description_bitmapCardinality,
+        syntax_bitmapCardinality,
+        arguments_bitmapCardinality,
+        returned_value_bitmapCardinality,
+        examples_bitmapCardinality,
+        introduced_in_bitmapCardinality,
+        category_bitmapCardinality
+    };
 
-    factory.registerFunction<FunctionBitmapAnd>();
-    factory.registerFunction<FunctionBitmapOr>();
-    factory.registerFunction<FunctionBitmapXor>();
-    factory.registerFunction<FunctionBitmapAndnot>();
+    factory.registerFunction<FunctionBitmapSelfCardinality>(documentation_bitmapCardinality);
 
-    factory.registerFunction<FunctionBitmapHasAll>();
-    factory.registerFunction<FunctionBitmapHasAny>();
-    factory.registerFunction<FunctionBitmapContains>();
+    /// Documentation for bitmapMin
+    FunctionDocumentation::Description description_bitmapMin = "Returns the position of the smallest bit set in a bitmap. If all bits are unset, or `UINT32_MAX` (`UINT64_MAX` if the bitmap contains more than `2^64` bits).";
+    FunctionDocumentation::Syntax syntax_bitmapMin = "bitmapMin(bitmap)";
+    FunctionDocumentation::Arguments arguments_bitmapMin = {
+        {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMin = "Returns the position of the smallest bit set in the bitmap, or `UINT32_MAX`/`UINT64_MAX`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapMin = {{"Usage example", "SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;",
+        R"(
+┌─res─┐
+│   2 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapMin = {20, 1};
+    FunctionDocumentation::Category category_bitmapMin = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapMin = {
+        description_bitmapMin,
+        syntax_bitmapMin,
+        arguments_bitmapMin,
+        returned_value_bitmapMin,
+        examples_bitmapMin,
+        introduced_in_bitmapMin,
+        category_bitmapMin
+    };
+
+    factory.registerFunction<FunctionBitmapMin>(documentation_bitmapMin);
+
+    /// Documentation for bitmapMax
+    FunctionDocumentation::Description description_bitmapMax = "Returns the position of the greatest bit set in a bitmap, or `0` if the bitmap is empty.";
+    FunctionDocumentation::Syntax syntax_bitmapMax = "bitmapMax(bitmap)";
+    FunctionDocumentation::Arguments arguments_bitmapMax = {
+        {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapMax = "Returns the position of the greatest bit set in the bitmap, otherwise `0`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapMax = {{"Usage example", "SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
+        R"(
+┌─res─┐
+│   5 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapMax = {20, 1};
+    FunctionDocumentation::Category category_bitmapMax = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapMax = {
+        description_bitmapMax,
+        syntax_bitmapMax,
+        arguments_bitmapMax,
+        returned_value_bitmapMax,
+        examples_bitmapMax,
+        introduced_in_bitmapMax,
+        category_bitmapMax
+    };
+
+    factory.registerFunction<FunctionBitmapMax>(documentation_bitmapMax);
+
+    /// Documentation for bitmapAndCardinality
+    FunctionDocumentation::Description description_bitmapAndCardinality = "Returns the cardinality of the logical conjunction (AND) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapAndCardinality = "bitmapAndCardinality(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapAndCardinality = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAndCardinality = "Returns the number of set bits in the intersection of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapAndCardinality = {{"Usage example", "SELECT bitmapAndCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
+        R"(
+┌─res─┐
+│   1 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapAndCardinality = {20, 1};
+    FunctionDocumentation::Category category_bitmapAndCardinality = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapAndCardinality = {
+        description_bitmapAndCardinality,
+        syntax_bitmapAndCardinality,
+        arguments_bitmapAndCardinality,
+        returned_value_bitmapAndCardinality,
+        examples_bitmapAndCardinality,
+        introduced_in_bitmapAndCardinality,
+        category_bitmapAndCardinality
+    };
+
+    factory.registerFunction<FunctionBitmapAndCardinality>(documentation_bitmapAndCardinality);
+
+    /// Documentation for bitmapOrCardinality
+    FunctionDocumentation::Description description_bitmapOrCardinality = "Returns the cardinality of the logical disjunction (OR) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapOrCardinality = "bitmapOrCardinality(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapOrCardinality = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapOrCardinality = "Returns the number of set bits in the union of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapOrCardinality = {{"Usage example", "SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
+        R"(
+┌─res─┐
+│   5 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapOrCardinality = {20, 1};
+    FunctionDocumentation::Category category_bitmapOrCardinality = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapOrCardinality = {
+        description_bitmapOrCardinality,
+        syntax_bitmapOrCardinality,
+        arguments_bitmapOrCardinality,
+        returned_value_bitmapOrCardinality,
+        examples_bitmapOrCardinality,
+        introduced_in_bitmapOrCardinality,
+        category_bitmapOrCardinality
+    };
+
+    factory.registerFunction<FunctionBitmapOrCardinality>(documentation_bitmapOrCardinality);
+
+    /// Documentation for bitmapXorCardinality
+    FunctionDocumentation::Description description_bitmapXorCardinality = "Returns the cardinality of the XOR (symmetric difference) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapXorCardinality = "bitmapXorCardinality(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapXorCardinality = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapXorCardinality = "Returns the number of set bits in the symmetric difference of the two bitmaps. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapXorCardinality = {{"Usage example", "SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
+        R"(
+┌─res─┐
+│   4 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapXorCardinality = {20, 1};
+    FunctionDocumentation::Category category_bitmapXorCardinality = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapXorCardinality = {
+        description_bitmapXorCardinality,
+        syntax_bitmapXorCardinality,
+        arguments_bitmapXorCardinality,
+        returned_value_bitmapXorCardinality,
+        examples_bitmapXorCardinality,
+        introduced_in_bitmapXorCardinality,
+        category_bitmapXorCardinality
+    };
+
+    factory.registerFunction<FunctionBitmapXorCardinality>(documentation_bitmapXorCardinality);
+
+    /// Documentation for bitmapAndnotCardinality
+    FunctionDocumentation::Description description_bitmapAndnotCardinality = "Returns the cardinality of the AND-NOT operation of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapAndnotCardinality = "bitmapAndnotCardinality(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapAndnotCardinality = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAndnotCardinality = "Returns the number of set bits in the result of `bitmap1 AND-NOT bitmap2`. [`UInt64`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_bitmapAndnotCardinality = {{"Usage example", "SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;",
+        R"(
+┌─res─┐
+│   2 │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapAndnotCardinality = {20, 1};
+    FunctionDocumentation::Category category_bitmapAndnotCardinality = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapAndnotCardinality = {
+        description_bitmapAndnotCardinality,
+        syntax_bitmapAndnotCardinality,
+        arguments_bitmapAndnotCardinality,
+        returned_value_bitmapAndnotCardinality,
+        examples_bitmapAndnotCardinality,
+        introduced_in_bitmapAndnotCardinality,
+        category_bitmapAndnotCardinality
+    };
+
+    factory.registerFunction<FunctionBitmapAndnotCardinality>(documentation_bitmapAndnotCardinality);
+
+    // Documentation for bitmapAnd
+    FunctionDocumentation::Description description_bitmapAnd = "Computes the logical conjunction (AND) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapAnd = "bitmapAnd(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapAnd = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAnd = "Returns a bitmap containing bits present in both input bitmaps. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)";
+    FunctionDocumentation::Examples examples_bitmapAnd = {{"Usage example", "SELECT bitmapToArray(bitmapAnd(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
+        R"(
+┌─res─┐
+│ [3] │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapAnd = {20, 1};
+    FunctionDocumentation::Category category_bitmapAnd = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapAnd = {
+        description_bitmapAnd,
+        syntax_bitmapAnd,
+        arguments_bitmapAnd,
+        returned_value_bitmapAnd,
+        examples_bitmapAnd,
+        introduced_in_bitmapAnd,
+        category_bitmapAnd
+    };
+
+    factory.registerFunction<FunctionBitmapAnd>(documentation_bitmapAnd);
+
+    /// Documentation for bitmapOr
+    FunctionDocumentation::Description description_bitmapOr = "Computes the logical disjunction (OR) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapOr = "bitmapOr(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapOr = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapOr = "Returns a bitmap containing set bits present in either input bitmap. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)";
+    FunctionDocumentation::Examples examples_bitmapOr = {{"Usage example", "SELECT bitmapToArray(bitmapOr(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
+        R"(
+┌─res─────────────┐
+│ [1, 2, 3, 4, 5] │
+└─────────────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapOr = {20, 1};
+    FunctionDocumentation::Category category_bitmapOr = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapOr = {
+        description_bitmapOr,
+        syntax_bitmapOr,
+        arguments_bitmapOr,
+        returned_value_bitmapOr,
+        examples_bitmapOr,
+        introduced_in_bitmapOr,
+        category_bitmapOr
+    };
+
+    factory.registerFunction<FunctionBitmapOr>(documentation_bitmapOr);
+
+    /// Documentation for bitmapXor
+    FunctionDocumentation::Description description_bitmapXor = "Computes the symmetric difference (XOR) of two bitmaps.";
+    FunctionDocumentation::Syntax syntax_bitmapXor = "bitmapXor(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapXor = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapXor = "Returns a bitmap containing set bits present in either input bitmap, but not in both. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)";
+    FunctionDocumentation::Examples examples_bitmapXor = {{"Usage example", "SELECT bitmapToArray(bitmapXor(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
+        R"(
+┌─res──────────┐
+│ [1, 2, 4, 5] │
+└──────────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapXor = {20, 1};
+    FunctionDocumentation::Category category_bitmapXor = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapXor = {
+        description_bitmapXor,
+        syntax_bitmapXor,
+        arguments_bitmapXor,
+        returned_value_bitmapXor,
+        examples_bitmapXor,
+        introduced_in_bitmapXor,
+        category_bitmapXor
+    };
+
+    factory.registerFunction<FunctionBitmapXor>(documentation_bitmapXor);
+
+    /// Documentation for bitmapAndnot
+    FunctionDocumentation::Description description_bitmapAndnot = "Computes the logical conjunction of two bitmaps and negates the result (AND-NOT).";
+    FunctionDocumentation::Syntax syntax_bitmapAndnot = "bitmapAndnot(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapAndnot = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapAndnot = "Returns a bitmap containing set bits present in the first bitmap but not in the second. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)";
+    FunctionDocumentation::Examples examples_bitmapAndnot = {{"Usage example", "SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
+        R"(
+┌─res────┐
+│ [1, 2] │
+└────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapAndnot = {20, 1};
+    FunctionDocumentation::Category category_bitmapAndnot = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapAndnot = {
+        description_bitmapAndnot,
+        syntax_bitmapAndnot,
+        arguments_bitmapAndnot,
+        returned_value_bitmapAndnot,
+        examples_bitmapAndnot,
+        introduced_in_bitmapAndnot,
+        category_bitmapAndnot
+    };
+
+    factory.registerFunction<FunctionBitmapAndnot>(documentation_bitmapAndnot);
+
+    /// Documentation for bitmapHasAll
+    FunctionDocumentation::Description description_bitmapHasAll = "Checks if the first bitmap contains all set bits of the second bitmap.";
+    FunctionDocumentation::Syntax syntax_bitmapHasAll = "bitmapHasAll(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapHasAll = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapHasAll = "Returns `1` if all set bits of the second bitmap are present in the first bitmap, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::Examples examples_bitmapHasAll = {{"Usage example", "SELECT bitmapHasAll(bitmapBuild([1, 2, 3]), bitmapBuild([2, 3])) AS res;",
+        R"(
+┌─res─┐
+│  1  │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapHasAll = {20, 1};
+    FunctionDocumentation::Category category_bitmapHasAll = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapHasAll = {
+        description_bitmapHasAll,
+        syntax_bitmapHasAll,
+        arguments_bitmapHasAll,
+        returned_value_bitmapHasAll,
+        examples_bitmapHasAll,
+        introduced_in_bitmapHasAll,
+        category_bitmapHasAll
+    };
+
+    factory.registerFunction<FunctionBitmapHasAll>(documentation_bitmapHasAll);
+
+    /// Documentation for bitmapHasAny
+    FunctionDocumentation::Description description_bitmapHasAny = "Checks if the first bitmap contains any set bits of the second bitmap.";
+    FunctionDocumentation::Syntax syntax_bitmapHasAny = "bitmapHasAny(bitmap1, bitmap2)";
+    FunctionDocumentation::Arguments arguments_bitmapHasAny = {
+        {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"bitmap2", "Second bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapHasAny = "Returns `1` if any bits of the second bitmap are present in the first bitmap, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::Examples examples_bitmapHasAny = {{"Usage example", "SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;",
+        R"(
+┌─res─┐
+│  1  │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapHasAny = {20, 1};
+    FunctionDocumentation::Category category_bitmapHasAny = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapHasAny = {
+        description_bitmapHasAny,
+        syntax_bitmapHasAny,
+        arguments_bitmapHasAny,
+        returned_value_bitmapHasAny,
+        examples_bitmapHasAny,
+        introduced_in_bitmapHasAny,
+        category_bitmapHasAny
+    };
+
+    factory.registerFunction<FunctionBitmapHasAny>(documentation_bitmapHasAny);
+
+    /// Documentation for bitmapContains
+    FunctionDocumentation::Description description_bitmapContains = "Checks if the bitmap contains a specific element.";
+    FunctionDocumentation::Syntax syntax_bitmapContains = "bitmapContains(bitmap, value)";
+    FunctionDocumentation::Arguments arguments_bitmapContains = {
+        {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
+        {"value", "Element to check for. [(U)Int8/16/32/64](/sql-reference/data-types/int-uint/)"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_bitmapContains = "Returns `1` if the bitmap contains the specified value, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::Examples examples_bitmapContains = {{"Usage example", "SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;",
+        R"(
+┌─res─┐
+│  1  │
+└─────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_bitmapContains = {20, 1};
+    FunctionDocumentation::Category category_bitmapContains = FunctionDocumentation::Category::Bitmap;
+    FunctionDocumentation documentation_bitmapContains = {
+        description_bitmapContains,
+        syntax_bitmapContains,
+        arguments_bitmapContains,
+        returned_value_bitmapContains,
+        examples_bitmapContains,
+        introduced_in_bitmapContains,
+        category_bitmapContains
+    };
+
+    factory.registerFunction<FunctionBitmapContains>(documentation_bitmapContains);
 }
 }

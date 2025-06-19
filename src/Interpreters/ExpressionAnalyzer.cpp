@@ -1,5 +1,7 @@
 #include <memory>
+
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>

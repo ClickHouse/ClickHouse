@@ -222,7 +222,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_sum,
-    const Names & partition_and_sorting_required_columns)
+    const Names & partition_and_sorting_required_columns,
+    const String & sum_function_name)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -299,7 +300,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init("sumWithOverflow", {column.type});
+                    desc.init(sum_function_name.c_str(), {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -711,10 +712,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
-    size_t max_block_size_bytes)
+    size_t max_block_size_bytes,
+    const String & sum_function_name)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns))
+          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

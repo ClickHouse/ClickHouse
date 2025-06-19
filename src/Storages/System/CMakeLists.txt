@@ -2,8 +2,8 @@
 # You can also regenerate it manually this way:
 # execute_process(COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh")
 
-get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
+get_property(OPENSSL_VERSION GLOBAL PROPERTY OPENSSL_VERSION_PROP)
 
 function(generate_system_build_options)
     include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)

@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <fmt/ranges.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -38,7 +39,8 @@ bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t list_batch_size) const
+    size_t list_batch_size,
+    ContextPtr /* context  */) const
 {
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
@@ -62,16 +64,16 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     bool supports_subset_of_columns)
 {
     auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+
     info.format_header.clear();
+    for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())
+        info.format_header.insert({column_type->createColumn(), column_type, column_name});
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
     /// So we add partition columns to read schema and put it together into format_header.
     /// Partition values will be added to result data right after data is read.
-
-    for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())
-        info.format_header.insert({column_type->createColumn(), column_type, column_name});
 
     const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
     auto get_physical_name = [&](const std::string & column_name)
@@ -94,25 +96,12 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         return it->second;
     };
 
-    const auto & table_schema = table_snapshot->getTableSchema();
-    for (const auto & column_name : table_snapshot->getPartitionColumns())
-    {
-        auto name_and_type = table_schema.tryGetByName(column_name);
-        if (!name_and_type)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Not found partition column {} in table schema", column_name);
-
-        info.format_header.insert({name_and_type->type->createColumn(), name_and_type->type, get_physical_name(column_name)});
-    }
-
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())
     {
         for (auto & [column_name, _] : info.requested_columns)
             column_name = get_physical_name(column_name);
     }
-
     return info;
 }
 

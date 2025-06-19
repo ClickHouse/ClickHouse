@@ -349,12 +349,7 @@ Result:
 
 ## ngrams {#ngrams}
 
-<DeprecatedBadge/>
-
-
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
-This function is deprecated. Prefer to use [tokens](#tokens) with the `ngram` tokenizer.
-The function might be removed at some point in future.
 
 **Syntax**
 
@@ -393,8 +388,15 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 **Arguments**
 
 - `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, and `noop`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
 - `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
+- `separators` — Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
+
+:::note
+In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+To do so, pass the separators in order of descending length.
+For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
+:::
 
 **Returned value**
 

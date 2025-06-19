@@ -111,6 +111,16 @@ public:
 
     virtual void check(const CachePriorityGuard::Lock &) const;
 
+    enum class IterationResult : uint8_t
+    {
+        BREAK,
+        CONTINUE,
+        REMOVE_AND_CONTINUE,
+    };
+
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    virtual void iterate(IterateFunc func, const CachePriorityGuard::Lock &) = 0;
+
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,

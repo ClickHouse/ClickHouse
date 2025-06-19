@@ -238,6 +238,7 @@ function run_tests()
         --check-zookeeper-session
         --no-stateless
         --hung-check
+        --trace
         --capture-client-stacktrace
         --queries "/repo/tests/queries"
         "${ADDITIONAL_OPTIONS[@]}"

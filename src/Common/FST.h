@@ -113,7 +113,7 @@ public:
 private:
     struct FlagValues
     {
-        unsigned int is_final : 1;
+        uint8_t is_final : 1;
         EncodingMethod encoding_method : 3;
     };
 

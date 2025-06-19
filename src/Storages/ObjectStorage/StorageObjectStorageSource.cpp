@@ -19,7 +19,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -139,7 +138,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
+            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -174,7 +174,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         return configuration->iterate(
             filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
             file_progress_callback,
-            query_settings.list_object_keys_size);
+            query_settings.list_object_keys_size,
+            local_context);
     }
     else
     {
@@ -267,35 +268,14 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
-                const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
-                if (object_with_partition_columns_info)
+                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
+                if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
-                    for (const auto & [name_and_type, value] : object_with_partition_columns_info->partitions_info)
-                    {
-                        if (!read_from_format_info.source_header.has(name_and_type.name))
-                            continue;
-
-                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-
-                        /// This column is filled with default value now, remove it.
-                        chunk.erase(column_pos);
-
-                        /// Add correct values.
-                        if (column_pos < chunk.getNumColumns())
-                            chunk.addColumn(column_pos, std::move(partition_column));
-                        else
-                            chunk.addColumn(std::move(partition_column));
-                    }
-                }
-                else
-                {
-#if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// By release 25.3.
                     /// (Because it does not make sense to support it in a nice way
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
@@ -334,9 +314,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
 
                     }
-#endif
                 }
             }
+#endif
 
             return chunk;
         }
@@ -518,7 +498,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
+        std::shared_ptr<const ActionsDAG> transformer;
+        if (object_info->data_lake_metadata)
+            transformer = object_info->data_lake_metadata->transform;
+        else
+            transformer = configuration->getSchemaTransformer(object_info->getPath());
+
+        if (transformer)
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
@@ -526,7 +512,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
         }
-
 
         if (read_from_format_info.columns_description.hasDefaults())
         {
@@ -597,12 +582,16 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    /// FIXME: Use async buffer if use_cache,
-    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    const bool use_async_buffer = use_prefetch || use_cache;
+    bool use_async_buffer = false;
+    ReadSettings nested_buffer_read_settings;
+    if (use_prefetch || use_cache)
+    {
+        nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
 
-    if (use_async_buffer)
-        modified_read_settings.remote_read_buffer_use_external_buffer = true;
+        /// FIXME: Use async buffer if use_cache,
+        /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
+        use_async_buffer = true;
+    }
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
     if (use_cache)
@@ -621,9 +610,9 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
             const auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
+            auto read_buffer_creator = [path = object_info.getPath(), object_size, nested_buffer_read_settings, object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
 
             modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
@@ -634,11 +623,11 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                modified_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
-                /* use_external_buffer */true,
+                /* use_external_buffer */use_async_buffer,
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
@@ -653,7 +642,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     }
 
     if (!impl)
-        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), modified_read_settings);
+        impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), nested_buffer_read_settings);
 
     if (!use_async_buffer)
         return impl;

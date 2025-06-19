@@ -17,6 +17,7 @@ struct MemoryTrackerSwitcher
         auto * thread_tracker = CurrentThread::getMemoryTracker();
 
         prev_untracked_memory = current_thread->untracked_memory;
+        prev_untracked_memory_blocker_level = current_thread->untracked_memory_blocker_level;
         prev_memory_tracker_parent = thread_tracker->getParent();
 
         current_thread->untracked_memory = 0;
@@ -36,11 +37,13 @@ struct MemoryTrackerSwitcher
         /// 'setParent' because it may flush untracked memory to the wrong parent.
         thread_tracker->setParent(prev_memory_tracker_parent);
         current_thread->untracked_memory = prev_untracked_memory;
+        current_thread->untracked_memory_blocker_level = prev_untracked_memory_blocker_level;
     }
 
 private:
     MemoryTracker * prev_memory_tracker_parent = nullptr;
     Int64 prev_untracked_memory = 0;
+    VariableContext prev_untracked_memory_blocker_level = VariableContext::Max;
 };
 
 }

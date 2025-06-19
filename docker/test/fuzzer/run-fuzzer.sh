@@ -384,9 +384,9 @@ EOF
         if rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
         then
             # Save the stack trace of the server to the description file and preserve in raw text output.
-            rg --text '\s<Fatal>\s' server.log >> description.txt || :
+            rg --text '\s<Fatal>\s' server.log >> fatal.log || :
         else
-            echo "Lost connection to server. See the logs." > description.txt
+            echo "Lost connection to server. See the logs." > fatal.log
         fi
 
         IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")

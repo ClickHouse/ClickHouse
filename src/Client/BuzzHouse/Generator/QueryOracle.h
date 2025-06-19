@@ -11,7 +11,7 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
-    const std::filesystem::path qfile, qfile_peer;
+    const std::filesystem::path qcfile, qsfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
@@ -31,7 +31,8 @@ private:
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
         : fc(ffc)
-        , qfile(ffc.db_file_path / "query.data")
+        , qcfile(ffc.client_file_path / "query.data")
+        , qsfile(ffc.server_file_path / "query.data")
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())

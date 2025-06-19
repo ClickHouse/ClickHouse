@@ -705,6 +705,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
+            /// If there are no real columns requested from this table, we will read the smallest column.
+            /// We should remember it to not include this column in the result.
+            bool is_smallest_column_requested = false;
 
             const auto & database_name = std::get<0>(table);
             const auto & table_name = std::get<3>(table);
@@ -719,7 +722,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
 
             auto modified_query_info
-                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, aliases);
+                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
 
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -770,7 +773,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                     column_names_as_aliases = alias_actions.getRequiredColumns().getNames();
                     if (column_names_as_aliases.empty())
+                    {
                         column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
+                        is_smallest_column_requested = true;
+                    }
                 }
             }
 
@@ -785,6 +791,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 required_max_block_size,
                 table,
                 column_names_to_read,
+                is_smallest_column_requested,
                 row_policy_data_opt,
                 modified_context,
                 current_streams);
@@ -797,7 +804,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child);
+                convertAndFilterSourceStream(common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -930,6 +937,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     const StorageSnapshotPtr & storage_snapshot_,
     Names required_column_names,
     Names & column_names_as_aliases,
+    bool & is_smallest_column_requested,
     Aliases & aliases) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
@@ -1032,7 +1040,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
             if (column_names_as_aliases.empty())
+            {
                 column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
+                is_smallest_column_requested = true;
+            }
         }
 
         if (!column_name_to_node.empty())
@@ -1195,6 +1206,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     UInt64 max_block_size,
     const StorageWithLockAndName & storage_with_lock,
     const Names & real_column_names_read_from_the_source_table,
+    bool & is_smallest_column_requested,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
     size_t streams_num) const
@@ -1224,7 +1236,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// If there are only virtual columns in query, we must request at least one other column.
         Names real_column_names = real_column_names_read_from_the_source_table;
         if (real_column_names.empty())
+        {
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
+            is_smallest_column_requested = true;
+        }
 
         storage->read(plan,
             real_column_names,
@@ -1505,7 +1520,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
-    ChildPlan & child)
+    ChildPlan & child,
+    bool is_smallest_column_requested)
 {
     Block before_block_header = child.plan.getCurrentHeader();
 
@@ -1570,12 +1586,18 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ColumnsWithTypeAndName converted_columns;
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
+    String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
         if (header.has(source_elem.name))
         {
             converted_columns.push_back(header.getByName(source_elem.name));
+        }
+        else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
+        {
+            /// This column is unneeded in the result.
+            converted_columns.push_back(source_elem);
         }
         else if (header.columns() == current_step_columns.size())
         {

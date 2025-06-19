@@ -65,6 +65,15 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    /// We allow exceptions to be thrown on update(),
+    /// because Cluster engine can only be used as table function,
+    /// so no lazy initialization is allowed.
+    configuration->update(
+        object_storage,
+        context_,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
+
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
@@ -74,10 +83,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 
@@ -88,13 +98,21 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows();
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes();
 }
 

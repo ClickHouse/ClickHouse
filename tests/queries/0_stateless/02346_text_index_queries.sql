@@ -12,8 +12,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
             ENGINE = MergeTree() ORDER BY k
-            SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-                     min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+            SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 
@@ -69,8 +68,7 @@ DROP TABLE IF EXISTS tab_x;
 
 CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default'))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-             min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab_x VALUES (101, 'x Alick a01 y'), (102, 'x Blick a02 y'), (103, 'x Click a03 y'), (104, 'x Dlick a04 y'), (105, 'x Elick a05 y'), (106, 'x Alick a06 y'), (107, 'x Blick a07 y'), (108, 'x Click a08 y'), (109, 'x Dlick a09 y'), (110, 'x Elick a10 y'), (111, 'x Alick b01 y'), (112, 'x Blick b02 y'), (113, 'x Click b03 y'), (114, 'x Dlick b04 y'), (115, 'x Elick b05 y'), (116, 'x Alick b06 y'), (117, 'x Blick b07 y'), (118, 'x Click b08 y'), (119, 'x Dlick b09 y'), (120, 'x Elick b10 y');
 
@@ -123,8 +121,7 @@ DROP TABLE IF EXISTS tab;
 
 create table tab (k UInt64, s Array(String), INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-             min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT rowNumberInBlock(), groupArray(s) FROM tab_x GROUP BY k%10;
 
@@ -151,8 +148,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE text(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-             min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, {'Alick':'Alick a01'}), (102, {'Blick':'Blick a02'}), (103, {'Click':'Click a03'}), (104, {'Dlick':'Dlick a04'}), (105, {'Elick':'Elick a05'}), (106, {'Alick':'Alick a06'}), (107, {'Blick':'Blick a07'}), (108, {'Click':'Click a08'}), (109, {'Dlick':'Dlick a09'}), (110, {'Elick':'Elick a10'}), (111, {'Alick':'Alick b01'}), (112, {'Blick':'Blick b02'}), (113, {'Click':'Click b03'}), (114, {'Dlick':'Dlick b04'}), (115, {'Elick':'Elick b05'}), (116, {'Alick':'Alick b06'}), (117, {'Blick':'Blick b07'}), (118, {'Click':'Click b08'}), (119, {'Dlick':'Dlick b09'}), (120, {'Elick':'Elick b10'});
 
@@ -193,8 +189,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-             min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick b10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 INSERT INTO tab VALUES (201, 'rick c01'), (202, 'mick c02'), (203, 'nick c03');
@@ -223,8 +218,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree()
     ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
-             min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Click 你'), (104, 'Dlick 你a好'), (105, 'Elick 好好你你'), (106, 'Alick 好a好a你a你');
 
@@ -254,7 +248,6 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default', max_rows_per_postings_list = 12040))
                      Engine=MergeTree
                      ORDER BY (k)
-                     SETTINGS min_bytes_for_full_part_storage = 0
                      AS
                          (SELECT
                              number,
@@ -268,7 +261,6 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(3, 123))
                      Engine=MergeTree
                      ORDER BY (k)
-                     SETTINGS min_bytes_for_full_part_storage = 0
                      AS
                          (SELECT
                             number,

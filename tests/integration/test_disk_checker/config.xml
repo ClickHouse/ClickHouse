@@ -1,0 +1,21 @@
+<clickhouse>
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <path>/var/lib/clickhouse/</path>
+    <storage_configuration>
+        <disks>
+            <test1>
+                <type>local</type>
+                <path>/var/lib/clickhouse/path1/</path>
+            </test1>
+        </disks>
+        <policies>
+            <test1>
+                <volumes>
+                    <main>
+                        <disk>test1</disk>
+                    </main>
+                </volumes>
+            </test1>
+        </policies>
+    </storage_configuration>
+</clickhouse>

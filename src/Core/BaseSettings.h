@@ -473,7 +473,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
         if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
         {
             using Flags = BaseSettingsHelpers::Flags;
-            Flags flags{0};
+            Flags flags{};
             if (is_custom)
                 flags = static_cast<Flags>(flags | Flags::CUSTOM);
             else if (is_important)
@@ -505,7 +505,7 @@ void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
     {
         BaseSettingsHelpers::writeString(field.getName(), out);
         using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{0};
+        Flags flags{};
         BaseSettingsHelpers::writeFlags(flags, out);
         accessor.writeBinary(*this, field.index, out);
     }
@@ -545,7 +545,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{0};
+        UInt64 flags{};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);

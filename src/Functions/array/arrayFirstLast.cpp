@@ -28,7 +28,7 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
-    static bool needBoolean() { return false; }
+    static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 

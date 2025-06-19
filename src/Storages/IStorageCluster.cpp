@@ -230,11 +230,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
-        pipes.emplace_back(std::make_shared<RemoteSource>(
-            remote_query_executor,
-            add_agg_info,
-            current_settings[Setting::async_socket_for_remote],
-            current_settings[Setting::async_query_sending_for_remote]));
+            Pipe pipe{std::make_shared<RemoteSource>(
+                remote_query_executor,
+                add_agg_info,
+                current_settings[Setting::async_socket_for_remote],
+                current_settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

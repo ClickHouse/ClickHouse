@@ -51,7 +51,7 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
         const uint32_t left = next_dist(rg.generator);
         const uint32_t right = next_dist(rg.generator);
 
-        ret = appendDecimal(rg, left, right);
+        ret = appendDecimal(rg, false, left, right);
     }
     return ret;
 }
@@ -101,12 +101,9 @@ String IntType::MySQLtypeName(RandomGenerator &, const bool) const
             return fmt::format("SMALLINT {}", is_unsigned ? " UNSIGNED" : "");
         case 32:
             return fmt::format("INT {}", is_unsigned ? " UNSIGNED" : "");
-        case 64:
-            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
         default:
-            chassert(0);
+            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
     }
-    return "";
 }
 
 String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
@@ -118,12 +115,9 @@ String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
             return "SMALLINT";
         case 32:
             return "INTEGER";
-        case 64:
-            return "BIGINT";
         default:
-            chassert(0);
+            return "BIGINT";
     }
-    return "";
 }
 
 String IntType::SQLitetypeName(RandomGenerator &, const bool) const
@@ -411,7 +405,7 @@ String DecimalType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     const uint32_t right = scale.value_or(0);
     const uint32_t left = precision.value_or(10) - right;
 
-    return appendDecimal(rg, left, right);
+    return appendDecimal(rg, true, left, right);
 }
 
 String StringType::typeName(const bool) const
@@ -1398,7 +1392,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextSmallNumber() : (rg.nextRandomUInt32() % 100));
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : ((rg.nextRandomUInt32() % 1009) + 1));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());
@@ -1433,7 +1427,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                     precision = std::optional<uint32_t>(38);
                     break;
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                    precision = std::optional<uint32_t>(78);
+                    precision = std::optional<uint32_t>(76);
                     break;
             }
             scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
@@ -1451,7 +1445,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
 
             if (rg.nextBool())
             {
-                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 77 : 65)) + 1);
+                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
                 if (dec)
                 {
                     ds->set_precision(precision.value());
@@ -1835,10 +1829,37 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     return nullptr;
 }
 
-String appendDecimal(RandomGenerator & rg, const uint32_t left, const uint32_t right)
+String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)
 {
     String ret;
 
+    if (use_func)
+    {
+        const uint32_t precision = left + right;
+
+        ret += "toDecimal";
+        if (precision <= 9)
+        {
+            ret += "32";
+        }
+        else if (precision <= 18)
+        {
+            ret += "64";
+        }
+        else if (precision <= 38)
+        {
+            ret += "128";
+        }
+        else if (precision <= 76)
+        {
+            ret += "256";
+        }
+        else
+        {
+            chassert(0);
+        }
+        ret += "('";
+    }
     ret += rg.nextBool() ? "-" : "";
     if (left > 0)
     {
@@ -1869,6 +1890,10 @@ String appendDecimal(RandomGenerator & rg, const uint32_t left, const uint32_t r
     else
     {
         ret += "0";
+    }
+    if (use_func)
+    {
+        ret += fmt::format("', {})", right);
     }
     return ret;
 }
@@ -2046,7 +2071,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            ret = appendDecimal(rg, left, right);
+            ret = appendDecimal(rg, false, left, right);
         }
         break;
         case 11:

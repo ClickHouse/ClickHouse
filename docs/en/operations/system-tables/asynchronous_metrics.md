@@ -128,14 +128,6 @@ Time in seconds spend in write operations requested from the block device, summe
 
 The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting.
 
-### CompiledExpressionCacheBytes {#compiledexpressioncachebytes}
-
-Total bytes used for the cache of JIT-compiled code.
-
-### CompiledExpressionCacheCount {#compiledexpressioncachecount}
-
-Total entries in the cache of JIT-compiled code.
-
 ### DictionaryMaxUpdateDelay {#dictionarymaxlastsuccessfulupdatetime}
 
 The maximum delay (in seconds) of dictionary update.
@@ -231,18 +223,6 @@ The difference in time the thread for calculation of the asynchronous metrics wa
 ### LoadAverage*N* {#loadaveragen}
 
 The whole system load, averaged with exponential smoothing over 1 minute. The load represents the number of threads across all the processes (the scheduling entities of the OS kernel), that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time. This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores, if the system is overloaded, and many processes are ready to run but waiting for CPU or IO.
-
-### MMapCacheCells {#mmapcachecells}
-
-The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.
-
-### MarkCacheBytes {#markcachebytes}
-
-Total size of mark cache in bytes
-
-### MarkCacheFiles {#markcachefiles}
-
-Total number of mark files cached in the mark cache
 
 ### MaxPartCountForPartition {#maxpartcountforpartition}
 
@@ -508,14 +488,6 @@ The value is similar to `OSUserTime` but divided to the number of CPU cores to b
 
 Number of threads in the server of the PostgreSQL compatibility protocol.
 
-### QueryCacheBytes {#querycachebytes}
-
-Total size of the query cache in bytes.
-
-### QueryCacheEntries {#querycacheentries}
-
-Total number of entries in the query cache.
-
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 
 Maximum difference in seconds between the most fresh replicated part and the most fresh data part still to be replicated, across Replicated tables. A very high value indicates a replica with no data.
@@ -579,14 +551,6 @@ The total amount of memory (in bytes) reserved for primary key values (only take
 ### TotalRowsOfMergeTreeTables {#totalrowsofmergetreetables}
 
 Total amount of rows (records) stored in all tables of MergeTree family.
-
-### UncompressedCacheBytes {#uncompressedcachebytes}
-
-Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided.
-
-### UncompressedCacheCells {#uncompressedcachecells}
-
-Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided.
 
 ### Uptime {#uptime}
 

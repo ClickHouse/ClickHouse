@@ -216,10 +216,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     {
         auto analysis_result = source->getAnalyzedResult();
         if (!analysis_result)
-        {
             analysis_result = source->selectRangesToRead();
-            source->setAnalyzedResult(analysis_result);
-        }
 
         size_t added_parts = all_parts.size();
         for (const auto & part : analysis_result->parts_with_ranges)

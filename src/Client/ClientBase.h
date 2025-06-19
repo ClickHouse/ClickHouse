@@ -12,17 +12,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/SimpleFileChannel.h>
-#include <Poco/SplitterChannel.h>
-#include <Poco/Util/Application.h>
-
-
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFile.h>
 
 #include <boost/program_options.hpp>
@@ -31,6 +21,8 @@
 #include <optional>
 #include <string_view>
 #include <string>
+
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace po = boost::program_options;
 
@@ -74,6 +66,8 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress);
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
+struct Settings;
+struct MergeTreeSettings;
 
 /**
  * The base class which encapsulates the core functionality of a client.
@@ -105,6 +99,11 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
+
+    virtual bool tryToReconnect(const uint32_t, const uint32_t)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
+    }
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -115,7 +114,7 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(std::string_view)
+    virtual bool processWithASTFuzzer(std::string_view)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
@@ -342,8 +341,8 @@ protected:
     std::vector<std::pair<String, String>> query_id_formats;
 
     /// Settings specified via command line args
-    Settings cmd_settings;
-    MergeTreeSettings cmd_merge_tree_settings;
+    std::unique_ptr<Settings> cmd_settings;
+    std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
     /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
@@ -416,9 +415,10 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    //Options for BuzzHouse
+    /// Options for BuzzHouse
     String buzz_house_options_path;
     bool buzz_house = false;
+    int error_code = 0;
 
     struct
     {

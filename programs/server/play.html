@@ -1011,6 +1011,20 @@ function queryToColor(str) {
     return 50 + Math.abs(hash % 200);
 }
 
+function toBase64(str) {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(str);
+    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+    return btoa(binary);
+}
+
+function fromBase64(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+    const decoder = new TextDecoder();
+    return decoder.decode(bytes);
+}
 
 let row_idx = 0;
 let elapsed_ns = 0;
@@ -1196,7 +1210,7 @@ async function postImpl(posted_request_num, query)
             /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
-        history_url += '#' + window.btoa(query);
+        history_url += '#' + toBase64(query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -1286,7 +1300,7 @@ window.onpopstate = function(event) {
 };
 
 if (window.location.hash) {
-    query_area.value = window.atob(window.location.hash.substr(1));
+    query_area.value = fromBase64(window.location.hash.substr(1));
 }
 
 let in_flight = false;
@@ -1294,7 +1308,7 @@ async function post()
 {
     ++request_num;
     document.body.scrollTo(0, 0);
-    let query = query_area.value;
+    let query = await getQueryUnderCursor();
     in_flight = true;
     let run = document.getElementById('run');
     run.innerText = 'Stop';
@@ -1602,10 +1616,10 @@ function updateProgress(progress) {
     let stats = document.getElementById('stats');
     let progress_elem = document.getElementById('progress');
 
-    const rows = progress.read_rows;
-    const bytes = progress.read_bytes;
-    const total_rows = progress.total_rows_to_read;
-    elapsed_ns = progress.elapsed_ns;
+    const rows = +progress.read_rows;
+    const bytes = +progress.read_bytes;
+    const total_rows = +progress.total_rows_to_read;
+    elapsed_ns = +progress.elapsed_ns;
 
     let formatted_rows = formatReadableRows(rows);
     let formatted_bytes = formatReadableBytes(bytes);
@@ -1864,6 +1878,107 @@ function redrawChart() {
 }
 
 new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
+
+let lexer_module;
+async function loadLexer() {
+    // Compiled with:
+    // clang++ -Os -fno-exceptions -fno-rtti -D LEXER_STANDALONE_BUILD --target=wasm32 -flto -nostdlib -Wl,--no-entry -Wl,--export-all src/Parsers/Lexer.cpp -o Lexer.wasm
+
+    const lexer_base64 = "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R3JBAXENBAJAIAJBAWoiCSADTw0AIAktAAAiBUEwayEBIAcEQCABQf8BcUEKSSAFQcEAa0EGSXINASAFQeEAa0EGTw0HDAELIAFB/wFxQQlLDQYLIAMgCUYNBAsgBiACQQFqIgI2AgBBACEIIAIgA0kNAAsMAgsgBiACQQFqIgI2AgBBACEIIAIgA0cNAAsLIAJBAWoiASADTw0AIAItAAAhBQJAIAcEQCAFQSByQfAARw0CDAELIAVBIHJB5QBHDQELIAYgATYCAAJAIAJBAmogA08NAAJAIAEtAABBK2sOAwABAAELIAYgAUEBaiIBNgIAIAEgA08NAgtBASECA0AgAS0AACIFQTBrQf8BcUEKTwRAIAIgBUHfAEdyQQFxDQMgAUEBaiICIANPDQMgAi0AAEEwa0H/AXFBCUsNAwsgBiABQQFqIgE2AgBBACECIAEgA0cNAAsMAQsgAiEBCwJ/AkACQCABIANPDQAgAS0AACICQd8ARiACQTBrQf8BcUEKSXJFIAJB3wFxQcEAa0H/AXFBGUtxDQAgAUEBaiEFA0AgBiAFIgE2AgAgASADTw0CIAFBAWohBSABLQAAIgdBMGshAiAHQd8ARiACQf8BcUEKSXIgB0HfAXFBwQBrQf8BcUEaSXINAAsgAUEBawwCCyAAIAE2AggMCgsgAUEBawshAwJAIAEgBE0NACAEQQFrIQYDQCAGQQFqIgYtAAAiAkEkRiACQd8ARnIgAkEwa0H/AXFBCklyRSACQd8BcUHBAGtB/wFxQRpPcUUEQCADIAZLDQEMAgsLIAAgATYCCCAAIAQ2AgQgAEEvOgAADwsMCQsgBiAEQQJqIgE2AgACQCABIANGDQADQCABLQAAQQpGDQEgAUEBaiIBIANHDQALIAMhAQsLIAAgATYCCCAAIAQ2AgQgAEEBOgAACyAGIAE2AgAPCyAAIAE2AgggACAENgIEIABBADoAAA8LIAAgBEEBaiIANgIIDAILIAAgBEECaiIANgIIDAELIAAgATYCCCAAIAQ2AgQgAEEoOgAADwsgBiAANgIADwsgACAENgIEIABBAzoAAA8LIAAgATYCCCAAIAQ2AgQgAEECOgAACyUAIABBADoAECAAIAM2AgwgACACNgIIIAAgATYCBCAAIAE2AgALNgEBfyMAQRBrIgMkACADQQRqIAAQASABIAMoAgg2AgAgAiADKAIMNgIAIAMtAAQgA0EQaiQACwcAIABBAUsLBwAgAEEnSwsHACAAQSdGCwsIAQBBgAgLARQAeQlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEFY2xhbmdZMjAuMC4wZ2l0IChnaXRAZ2l0aHViLmNvbTpsbHZtL2xsdm0tcHJvamVjdC5naXQgNmNiYzY0ZWQ5MjJjYzY5YmMyOTJkMzk0YmE1YzY4MWZhMzA5ZjQwNCkAaw90YXJnZXRfZmVhdHVyZXMGKw9tdXRhYmxlLWdsb2JhbHMrE25vbnRyYXBwaW5nLWZwdG9pbnQrC2J1bGstbWVtb3J5KwhzaWduLWV4dCsPcmVmZXJlbmNlLXR5cGVzKwptdWx0aXZhbHVl";
+
+    if (!lexer_module) {
+        const binary = atob(lexer_base64);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+
+        lexer_module = await WebAssembly.instantiate(bytes);
+    }
+}
+
+async function tokenize(query) {
+    await loadLexer();
+
+    let exports = lexer_module.instance.exports;
+    let buffer = exports.memory.buffer;
+    let memory_offset = 0;
+
+    /// Allocate memory for the lexer object
+    const lexer = new Uint8Array(buffer, memory_offset, exports.clickhouse_lexer_size);
+    memory_offset += exports.clickhouse_lexer_size;
+
+    /// Allocate the query
+    const bytes = new TextEncoder().encode(query);
+    const query_array = new Uint8Array(buffer, memory_offset, bytes.length);
+    query_array.set(bytes);
+    const query_begin = memory_offset;
+    memory_offset += bytes.length;
+    const query_end = memory_offset;
+
+    /// Initialize the lexer
+    exports.clickhouse_lexer_create(lexer, query_begin, query_end, 65536);
+
+    /// Allocate the out ptrs
+    const token_begin = memory_offset;
+    memory_offset += 4;
+    const token_end = memory_offset;
+    memory_offset += 4;
+
+    let result = [];
+
+    while (true) {
+        const token_type = exports.clickhouse_lexer_next_token(lexer, token_begin, token_end);
+        if (exports.clickhouse_lexer_token_is_error(token_type) || exports.clickhouse_lexer_token_is_end(token_type)) {
+            break;
+        }
+
+        const view = new DataView(buffer);
+        const begin = view.getUint32(token_begin, true);
+        const end = view.getUint32(token_end, true);
+
+        const token_bytes = new Uint8Array(buffer, begin, end - begin);
+        let token = new TextDecoder().decode(token_bytes);
+
+        result.push({type: token_type, significant: exports.clickhouse_lexer_token_is_significant(token_type), token: token});
+    }
+
+    return result;
+}
+
+async function getQueryUnderCursor() {
+    const all_queries = query_area.value;
+
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        return all_queries;
+    }
+
+    const tokens = await tokenize(all_queries);
+
+    const cursor_position = query_area.selectionStart;
+    let current_query_start = 0;
+    let current_offset = 0;
+
+    for (const elem of tokens) {
+        if (current_query_start == current_offset && !elem.significant) {
+            current_query_start += elem.token.length;
+        }
+        current_offset += elem.token.length;
+        if (elem.token == ';') {
+            if (current_offset >= cursor_position) {
+                query_area.setSelectionRange(current_query_start, current_offset);
+                query_area.focus();
+                return all_queries.substring(current_query_start, current_offset);
+            } else {
+                current_query_start = current_offset;
+            }
+        }
+
+    }
+
+    return all_queries;
+}
 
 /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
 let theme = current_url.searchParams.get('theme');
