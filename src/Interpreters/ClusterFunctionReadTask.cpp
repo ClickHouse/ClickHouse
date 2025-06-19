@@ -43,6 +43,15 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::stri
     is_empty = false;
 }
 
+ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
+{
+    if (is_empty)
+        return {};
+    auto object = std::make_shared<ObjectInfo>(path);
+    object->data_lake_metadata = data_lake_metadata;
+    return object;
+}
+
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protocol_version) const
 {
     writeVarUInt(protocol_version, out);

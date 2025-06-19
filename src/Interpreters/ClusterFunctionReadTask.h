@@ -19,12 +19,7 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
     bool is_empty = true;
 
-    ObjectInfoPtr getObjectInfo() const
-    {
-        auto object = std::make_shared<ObjectInfo>(path);
-        object->data_lake_metadata = data_lake_metadata;
-        return object;
-    }
+    ObjectInfoPtr getObjectInfo() const;
 
     void serialize(WriteBuffer & out, size_t protocol_version) const;
     void deserialize(ReadBuffer & in);
