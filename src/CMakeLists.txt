@@ -721,10 +721,6 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
 
-    if (TARGET ch_contrib::delta_kernel_rs)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
-    endif ()
-
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
     endif()

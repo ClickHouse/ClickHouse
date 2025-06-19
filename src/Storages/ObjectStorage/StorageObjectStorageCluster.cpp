@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -65,15 +64,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    /// We allow exceptions to be thrown on update(),
-    /// because Cluster engine can only be used as table function,
-    /// so no lazy initialization is allowed.
-    configuration->update(
-        object_storage,
-        context_,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
@@ -98,21 +88,13 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    configuration->update(object_storage, query_context);
     return configuration->totalRows();
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    configuration->update(object_storage, query_context);
     return configuration->totalBytes();
 }
 

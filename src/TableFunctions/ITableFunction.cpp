@@ -4,7 +4,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents

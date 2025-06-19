@@ -1,3 +1,4 @@
+#include <base/map.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>

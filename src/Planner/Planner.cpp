@@ -6,7 +6,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -142,7 +141,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool enable_parallel_blocks_marshalling;
 }
 
 namespace ServerSetting
@@ -1943,18 +1941,6 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
-
-    // Not all cases are supported here yet. E.g. for this query:
-    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6)) group by number
-    // we will have `BlocksMarshallingStep` added to the query plan, but not for
-    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6))
-    // because `to_stage` for it will be `QueryProcessingStage::Complete`.
-    if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
-        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
-        && query_context->getClientInfo().distributed_depth <= 1 // Makes sense for higher depths too, just not supported
-    )
-        query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);

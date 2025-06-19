@@ -38,7 +38,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
-#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -90,7 +89,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/Expect404ResponseScope.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -195,7 +193,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsFloat fault_probability_after_part_commit;
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
-    extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
@@ -2214,101 +2211,46 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         (*getSettings())[MergeTreeSetting::use_minimalistic_checksums_in_zookeeper]);
 }
 
-MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry) const
 {
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
 
-    auto detached_parts = getDetachedParts();
-
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-    auto partition_id = actual_part_info.getPartitionId();
-    std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & detached_part_info)
+
+    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
-        return !detached_part_info.valid_name || !detached_part_info.prefix.empty() || (!partition_id.empty() && detached_part_info.getPartitionId() != partition_id);
-    });
-
-    std::erase_if(detached_parts, [&](const DetachedPartInfo & detached_part_info)
-    {
-        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / detached_part_info.dir_name, getReadSettings())
-                    .withPartFormatFromDisk()
-                    .build();
-
-        try
+        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
-            Expect404ResponseScope scope; // 404 is not an error
-            part->loadChecksums(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log,
-                fmt::format("data race is possible when reading checksums.txt from detached part or part does not have a file checksums.txt, part {} is ignored", detached_part_info.dir_name));
-            return true;
-        }
+            const auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version);
 
-        return entry.part_checksum != part->checksums.getTotalChecksumHex();
-    });
+            if (!part_info || part_info->getPartitionId() != actual_part_info.getPartitionId())
+                continue;
 
-    if (detached_parts.empty())
-        return {};
+            const auto part_old_name = part_info->getPartNameV1();
+            const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-    for (auto & detached_part_info : detached_parts)
-    {
-        chassert(rename_parts.old_and_new_names.empty());
-        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+                .withPartFormatFromDisk()
+                .build();
 
-        try
-        {
-            rename_parts.tryRenameAll();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("data race is possible when moving detached part, part {} is ignored", detached_part_info.dir_name));
-            rename_parts.rollBackAll();
-            continue;
-        }
-
-        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
-            .withPartFormatFromDisk()
-            .build();
-
-        try
-        {
-            loadPartAndFixMetadataImpl(part, getContext());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("part is broken, part {} is ignored", detached_part_info.dir_name));
-
-            if (isRetryableException(std::current_exception()))
+            try
             {
-                tryLogCurrentException(log, fmt::format("unable to load part {}, however it does not look as broken, ignore it", detached_part_info.dir_name));
+                part->loadColumnsChecksumsIndexes(true, true);
             }
-            else
+            catch (const Exception&)
             {
-                tryLogCurrentException(log, fmt::format("part {} is broken, try to rename it as broken and ignore", detached_part_info.dir_name));
-                try
-                {
-                    part->renameToDetached("broken", /* ignore_error*/ false);
-                    rename_parts.old_and_new_names.front().old_name.clear();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, fmt::format("fail to rename part {} with broken prefix", detached_part_info.dir_name));
-                }
+                /// This method throws if the part data is corrupted or partly missing. In this case, we simply don't
+                /// process the part.
+                continue;
             }
 
-            // if isRetryableException(std::current_exception()) = true then we move part just back to previous place
-            // if isRetryableException(std::current_exception()) = false then we move part with prefix broken_ to exclude it from next attempts
-            // if part is moved with prefix broken_ successfully than rollBackAll is no op
-            // otherwise try to move it back, more likely the same exception would be thrown, that exception would be propagated
-            rename_parts.rollBackAll();
-            continue;
+            if (entry.part_checksum == part->checksums.getTotalChecksumHex())
+            {
+                part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
+                return part;
+            }
         }
-
-        return part;
     }
 
     return {};
@@ -2366,8 +2308,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         ProfileEventsScope profile_events_scope;
 
-        PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry))
         {
             LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
@@ -2377,9 +2318,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndReplace(part, transaction, /*rename_in_transaction=*/ true);
             transaction.renameParts();
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
-
-            chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
-            renamed_parts.old_and_new_names.front().old_name.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
@@ -4131,8 +4069,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         UInt64 max_source_parts_size_for_merge = CompactionStatistics::getMaxSourcePartsSizeForMerge(
             *this, (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
-        String max_source_part_size_for_mutation_log_comment;
-        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this, &max_source_part_size_for_mutation_log_comment);
+        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4211,13 +4148,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_size_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
-            if (max_source_part_size_for_mutation == 0)
-                max_source_part_size_for_mutation_log_comment = " (" + max_source_part_size_for_mutation_log_comment + ")";
             LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
-                " or there are not enough free threads for mutations{}, so won't select new parts to merge or mutate.",
-                merges_and_mutations_queued.mutations,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
-                max_source_part_size_for_mutation_log_comment);
+                " or there are not enough free threads for mutations, so won't select new parts to merge or mutate.",
+                max_source_part_size_for_mutation,
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value);
             return AttemptStatus::Limited;
         }
 
@@ -6050,7 +5984,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             query_settings[Setting::insert_quorum_timeout].totalMilliseconds(),
             query_settings[Setting::max_partitions_per_insert_block],
             query_settings[Setting::insert_quorum_parallel],
-            async_deduplicate,
+            deduplicate,
             query_settings[Setting::insert_quorum].is_auto,
             local_context);
 
@@ -6121,13 +6055,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 QueryProcessingStage::Complete,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
-            Pipe pipe{std::make_shared<RemoteSource>(
-                remote_query_executor,
-                false,
-                settings[Setting::async_socket_for_remote],
-                settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-            QueryPipeline remote_pipeline{std::move(pipe)};
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
+                remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
@@ -6876,12 +6805,11 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     return true;
 }
 
-void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
-    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
+void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     LOG_INFO(log, "Restoring replica metadata");
 
-    if (!is_called_during_attach && !initialization_done)
+    if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
     if (!is_readonly)
@@ -6937,12 +6865,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         for (const String& part_name : active_parts_names)
             attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
 
-    if (!is_called_during_attach)
-    {
-        /// Attach will continue with its own startup call, so we don't need to call it here
-        LOG_INFO(log, "Attached all partitions, starting table");
-        startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
-    }
+    LOG_INFO(log, "Attached all partitions, starting table");
+
+    startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -10996,7 +10921,7 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
     try
     {
@@ -11014,7 +10939,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTP
     catch (...)
     {
         /// We can continue making a backup with non-adjusted query.
-        tryLogCurrentException(log, fmt::format("Failed to apply metadata changes to the create query of table {}", getStorageID().getNameForLogs()));
+        tryLogCurrentException(log, "Failed to adjust the create query of this table for backup");
     }
 }
 

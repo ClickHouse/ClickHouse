@@ -3,7 +3,6 @@
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
