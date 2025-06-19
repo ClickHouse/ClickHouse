@@ -548,7 +548,12 @@ def test_merge_tree_custom_encrypted_disk_include(start_cluster):
         SETTINGS
             disk = disk(
                 type = encrypted,
-                disk = 'default',
+                disk = disk(
+                    type = s3,
+                    endpoint = 'http://minio1:9001/root/data/',
+                    access_key_id = 'minio',
+                    secret_access_key = '{minio_secret_key}'
+                ),
                 path = 'encrypted_test/',
                 include = 'disk_encrypted_keys',
                 algorithm = 'AES_256_CTR'
@@ -557,11 +562,16 @@ def test_merge_tree_custom_encrypted_disk_include(start_cluster):
     )
 
     node1.query(f"INSERT INTO {TABLE_NAME}_encrypted VALUES (1, 'test_data'), (2, 'more_data')")
-    
+
     result = node1.query(f"SELECT COUNT(*) FROM {TABLE_NAME}_encrypted")
     assert int(result.strip()) == 2
 
     result = node1.query(f"SELECT data FROM {TABLE_NAME}_encrypted WHERE id = 1")
     assert result.strip() == "test_data"
 
+    minio = cluster.minio_client
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    assert len(s3_objects) > 0, "Data should be written to S3"
+
     node1.query(f"DROP TABLE {TABLE_NAME}_encrypted SYNC")
+    remove_minio_objects(minio, "data/")
