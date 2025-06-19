@@ -217,20 +217,20 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const size_t ncols)
 {
     SQLRelation rel(rel_name);
 
-    for (const auto & entry : v.cols)
+    for (size_t i = 0; i < ncols; i++)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
     }
     return rel;
 }
 
 void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
 {
-    const SQLRelation rel = createViewRelation(rel_name, v);
+    const SQLRelation rel = createViewRelation(rel_name, v.cols.size());
 
     if (rel_name.empty())
     {

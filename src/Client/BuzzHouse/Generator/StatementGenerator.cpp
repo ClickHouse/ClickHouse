@@ -323,7 +323,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         if (!has_to)
         {
-            generateEngineDetails(rg, createViewRelation("", next), next, true, te);
+            generateEngineDetails(rg, createViewRelation("", view_ncols), next, true, te);
         }
         if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
