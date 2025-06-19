@@ -7,10 +7,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
-#include <Storages/MergeTree/KeyCondition.h>
-
 namespace DB
 {
 class ActionsDAG;
