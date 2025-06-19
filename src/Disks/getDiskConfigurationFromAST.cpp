@@ -42,6 +42,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     Poco::AutoPtr<Poco::XML::Element> root(xml_document->createElement("disk"));
     xml_document->appendChild(root);
 
+    std::string include_attribute_value;
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -61,19 +63,23 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         std::string key = key_identifier->name();
-        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
-        root->appendChild(key_element);
-
+        
         if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
             throwBadConfiguration("expected values to be literals or identifiers");
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
+
         if (key == "include")
         {
-            key_element->setAttribute("incl", value_str);
+            include_attribute_value = value_str;
+            continue;  // Skip creating an element for 'include'
         }
-        else if (startsWith(value_str, "from_env"))
+
+        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
+        root->appendChild(key_element);
+
+        if (startsWith(value_str, "from_env"))
         {
             value_str = value_str.substr(std::strlen("from_env"));
             boost::trim(value_str);
@@ -90,6 +96,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(value_str));
             key_element->appendChild(value_element);
         }
+    }
+
+    if (!include_attribute_value.empty())
+    {
+        root->setAttribute("incl", include_attribute_value);
     }
 
     return xml_document;
