@@ -62,9 +62,10 @@ toUnixTimestamp(date, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
         {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
-        {"timezone", "Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
+        {"timezone", "Optional.Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp as", {"UInt32"}};    FunctionDocumentation::Examples examples_to_unix_timestamp = {
+    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp as", {"UInt32"}};
+    FunctionDocumentation::Examples examples_to_unix_timestamp = {
         {"Usage example", R"(
 SELECT
 '2017-11-05 08:07:47' AS dt_str,

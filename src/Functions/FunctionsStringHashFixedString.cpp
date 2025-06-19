@@ -343,7 +343,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT RIPEMD160(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the RIPEMD160 hash of the given input string", {"FixedString"}},
+        = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
         .examples
         = {{"",
             "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
@@ -359,7 +359,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT MD4(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD4 hash of the given input string", {"FixedString"}},
+        = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
         .examples
         = {{"",
             "SELECT HEX(MD4('abc'));",
@@ -375,7 +375,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT MD5(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD5 hash of the given input string", {"FixedString"}},
+        = {"Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
         .examples
         = {{"",
             "SELECT HEX(MD5('abc'));",
@@ -391,7 +391,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA1(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA1 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA1('abc'));",
@@ -407,7 +407,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA224(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA224 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA224('abc'));",
@@ -423,7 +423,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA256 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA256('abc'));",
@@ -439,7 +439,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA384(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA384 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA384('abc'));",
@@ -455,7 +455,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA512(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA512('abc'));",
@@ -471,7 +471,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA512_256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512_256 hash of the given input string", {"FixedString"}},
+        = {"Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString"}},
         .examples
         = {{"",
             "SELECT HEX(SHA512_256('abc'));",
@@ -507,7 +507,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT keccak256(message)",
         .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the 32-byte Keccak-256 hash of the input string", {"FixedString"}},
+        = {"Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
         .examples
         = {{"",
             "SELECT hex(keccak256('hello'))",
