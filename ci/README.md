@@ -1,5 +1,15 @@
-The `./ci` directory contains refactored scripts from the legacy CI `./tests/ci` and is intended to eventually replace it.
-The `./ci/docker` directory includes refactored versions of the legacy test Docker images `./dockers` and is also planned to replace them.
-The new Pull Request CI workflow is defined in `./ci/workflow/pull_request.py`. Currently, it operates in "migration mode," executing legacy jobs from `./tests/ci`.
-The new Master CI workflow is defined in `./ci/workflow/master.py`. Currently, it also runs in "migration mode," executing legacy jobs from `./tests/ci`.
-Once all major legacy workflows are replaced with the new ones, legacy jobs can gradually be replaced by their refactored versions from `./ci/jobs/`, which are independent of CI infrastructure and can be run locally.
+The `./ci` directory contains praktika' CI scripts, configs, etc., They are intended to eventually replace legacy scripts from `./tests/ci`.
+
+The `./ci/praktika` is a praktika module. It provides generic CI functionality and must not include any ClickHouse specifics.
+
+The `./ci/workflows` is a special path for praktika from where it reads workflow definitions
+The `./ci/settings` is a special path for praktika from where it reads CI settings set per project
+
+The `./ci/jobs` directory that includes job scripts
+The `./ci/docker` directory that includes docker images for clickhouse tests
+The `./ci/defs` additional CI configuration files, job configs, docker configs, etc
+
+
+NOTE: CI is operating currently in migration mode:
+* Legacy scripts are still used for some jobs (Integration tests, Compatibility check, etc.) and they are called from praktika via command: `cd ./tests/ci && python3 ci.py --run-from-praktika`
+* Configuration for legacy jobs (`./tests/ci/ci_config.py`) that are still in use must be in line with new praktika' configuration (`./ci/workflows/*`) to work properly: Job names must match

@@ -1,8 +1,6 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
 
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
 set -x
 
 # core.COMM.PID-TID
@@ -16,105 +14,43 @@ set -o pipefail
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
-repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:=""}
-BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
+repo_dir="."
+temp_dir="$repo_dir/ci/tmp"
+work_dir="$temp_dir/fuzzer_wd"
 
-function git_clone_with_retry
-{
-    for _ in 1 2 3 4; do
-        if git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$1" 2>&1 | ts '%Y-%m-%d %H:%M:%S';then
-            return 0
-        else
-            sleep 0.5
-        fi
-    done
-    return 1
-}
-
-function clone
-{
-    # For local runs, start directly from the "fuzz" stage.
-    rm -rf "$repo_dir" ||:
-    mkdir "$repo_dir" ||:
-
-    git_clone_with_retry "$repo_dir"
-    (
-        cd "$repo_dir"
-        if [ "$PR_TO_TEST" != "0" ]; then
-            if git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/merge"; then
-                git checkout FETCH_HEAD
-                echo "Checked out pull/$PR_TO_TEST/merge ($(git rev-parse FETCH_HEAD))"
-            else
-                git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/head"
-                git checkout "$SHA_TO_TEST"
-                echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
-            fi
-            git diff --name-only master HEAD | tee ci-changed-files.txt
-        else
-            if [ -v SHA_TO_TEST ]; then
-                git fetch --depth 2 origin "$SHA_TO_TEST"
-                git checkout "$SHA_TO_TEST"
-                echo "Checked out nominal SHA $SHA_TO_TEST for master"
-            else
-                git fetch --depth 2 origin
-                echo "Using default repository head $(git rev-parse HEAD)"
-            fi
-            git diff --name-only HEAD~1 HEAD | tee ci-changed-files.txt
-        fi
-        cd -
-    )
-
-    ls -lath ||:
-}
-
-function wget_with_retry
-{
-    for _ in 1 2 3 4; do
-        if wget -nv -nd -c "$1";then
-            return 0
-        else
-            sleep 0.5
-        fi
-    done
-    return 1
-}
-
-function download
-{
-    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
-
-    chmod +x clickhouse
-    # clickhouse may be compressed - run once to decompress
-    ./clickhouse --query "SELECT 1" ||:
-    ln -s ./clickhouse ./clickhouse-server
-    ln -s ./clickhouse ./clickhouse-client
-    ln -s ./clickhouse ./clickhouse-local
-
-    # clickhouse-server is in the current dir
-    export PATH="$PWD:$PATH"
-}
+#function download
+#{
+#    chmod +x $temp_dirclickhouse
+#    # clickhouse may be compressed - run once to decompress
+#    ./clickhouse --query "SELECT 1" ||:
+#    ln -s ./clickhouse ./clickhouse-server
+#    ln -s ./clickhouse ./clickhouse-client
+#    ln -s ./clickhouse ./clickhouse-local
+#
+#    # clickhouse-server is in the current dir
+#    export PATH="$PWD:$PATH"
+#}
 
 function configure
 {
-    rm -rf db ||:
-    mkdir db ||:
-    cp -av --dereference "$repo_dir"/programs/server/config* db
-    cp -av --dereference "$repo_dir"/programs/server/user* db
+    rm -rf $work_dir ||:
+    mkdir -p $work_dir/db ||:
+    cp -av --dereference ./programs/server/config* $work_dir/db
+    cp -av --dereference ./programs/server/user* $work_dir/db
     # for log export
-    cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml db/users.d/
+    cp -av --dereference ./tests/config/users.d/ci_logs_sender.yaml $work_dir/db/users.d/
     # TODO figure out which ones are needed
-    cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
-    cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
-    cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
+    cp -av --dereference ./tests/config/config.d/listen.xml $work_dir/db/config.d
+    cp -av --dereference ./ci/jobs/scripts/ast_buzz_fuzzer/query-fuzzer-tweaks-users.xml $work_dir/db/users.d
+    cp -av --dereference ./ci/jobs/scripts/ast_buzz_fuzzer/allow-nullable-key.xml $work_dir/db/config.d
 
-    cat > db/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
+    cat > $work_dir/db/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 EOL
 
-    cat > db/config.d/core.xml <<EOL
+    cat > $work_dir/db/config.d/core.xml <<EOL
 <clickhouse>
     <core_dump>
         <!-- 100GiB -->
@@ -127,7 +63,7 @@ EOL
 </clickhouse>
 EOL
 
-    config_logs_export_cluster db/config.d/system_logs_export.yaml
+    python3 ./ci/jobs/scripts/clickhouse_proc.py logs_export_config || ( echo "Failed to create log export config" && exit 1 )
 }
 
 function filter_exists_and_template
@@ -159,7 +95,7 @@ function stop_server
 
 function fuzz
 {
-    /generate-test-j2.py --path ch/tests/queries/0_stateless
+    ./ci/jobs/scripts/ast_buzz_fuzzer/generate-test-j2.py --path ch/tests/queries/0_stateless
 
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
@@ -178,9 +114,9 @@ function fuzz
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
     clickhouse-server \
-        --config-file db/config.xml \
+        --config-file $work_dir/db/config.xml \
         --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path db \
+        --  --path $work_dir/db \
             --logger.console=0 \
             --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
     for _ in {1..30}
@@ -251,7 +187,7 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    setup_logs_replication
+    python3 ./ci/jobs/scripts/clickhouse_proc.py logs_export_start || ( echo "Failed to start log export" && exit 1 )
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
@@ -262,7 +198,7 @@ function fuzz
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find ch/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        QUERIES_FILE=$(find ./tests/queries/0_stateless -type f -name "*.sql" | sort -R)
         FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
@@ -439,25 +375,6 @@ EOF
 case "$stage" in
 "")
     ;&  # Did you know? This is "fallthrough" in bash. https://stackoverflow.com/questions/12010686/case-statement-fallthrough
-"clone")
-    time clone
-    if [ -v FUZZ_LOCAL_SCRIPT ]
-    then
-        # just fall through
-        echo Using the testing script from docker container
-        :
-    else
-        # Run the testing script from the repository
-        echo Using the testing script from the repository
-        export stage=download
-        time ch/docker/test/fuzzer/run-fuzzer.sh
-        # Keep the error code
-        exit $?
-    fi
-    ;&
-"download")
-    time download
-    ;&
 "configure")
     time configure
     ;&

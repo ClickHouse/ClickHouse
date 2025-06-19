@@ -302,6 +302,7 @@ class Shell:
         stdin_str=None,
         timeout=None,
         retries=1,
+        no_stdout=False,
         **kwargs,
     ):
         # Dry-run
@@ -328,7 +329,7 @@ class Shell:
                         start_new_session=True,  # Start a new process group for signal handling
                         bufsize=1,  # Line-buffered
                         errors="backslashreplace",
-                        executable="/bin/bash",
+                        executable=kwargs.pop("executable", "/bin/bash"),
                         **kwargs,
                     )
 
@@ -346,7 +347,8 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
-                            sys.stdout.write(line)
+                            if not no_stdout:
+                                sys.stdout.write(line)
                             output_fp.write(line)
                             if output is not None:
                                 output.append(line)
@@ -731,6 +733,7 @@ class Utils:
     @classmethod
     def add_to_PATH(cls, path):
         path_cur = os.getenv("PATH", "")
+        path = str(path)
         if path_cur:
             path += ":" + path_cur
         os.environ["PATH"] = path
