@@ -494,6 +494,8 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     if (isEmbeeddedClient() && !external_tables.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
 
+    initFormatParsingThreadPoolIfNeeded();
+
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
         data.emplace_back(table.getData(client_context));
