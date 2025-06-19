@@ -22,6 +22,23 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+_GH_authenticated = False
+
+
+def _GH_Auth(workflow):
+    global _GH_authenticated
+    if _GH_authenticated:
+        return
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
+
+    if not Shell.check(f"gh auth status", verbose=True):
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
+    _GH_authenticated = True
+
 
 class Runner:
     @staticmethod
@@ -479,52 +496,88 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
+        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-
-        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
-            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
             workflow_result = Result.from_fs(workflow.name)
-            workflow_storage_usage = StorageUsage.from_dict(
-                workflow_result.ext.get("storage_usage", {})
-            )
-            workflow_compute_usage = ComputeUsage.from_dict(
-                workflow_result.ext.get("compute_usage", {})
-            )
-            if workflow_storage_usage:
-                print(
-                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
                 )
-                ci_db.insert_storage_usage(workflow_storage_usage)
-            if workflow_compute_usage:
-                print(
-                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
                 )
-                ci_db.insert_compute_usage(workflow_compute_usage)
+                if workflow_storage_usage:
+                    print(
+                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_storage_usage(workflow_storage_usage)
+                if workflow_compute_usage:
+                    print(
+                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
-        if (
-            workflow.enable_commit_status_on_failure and not result.is_ok()
-        ) or job.enable_commit_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
 
-                pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
-            if not GH.post_commit_status(
-                name=job.name,
-                status=result.status,
-                description=result.info.splitlines()[0] if result.info else "",
-                url=report_url,
-            ):
-                env.add_info("Failed to post GH commit status for the job")
-                print(f"ERROR: Failed to post commit status for the job")
+        if (
+            workflow.enable_gh_summary_comment
+            or job.enable_commit_status
+            or (workflow.enable_commit_status_on_failure and not result.is_ok())
+        ):
+            _GH_Auth(workflow)
+
+            if workflow.enable_gh_summary_comment:
+                try:
+                    summary_body = GH.ResultSummaryForGH.from_result(
+                        workflow_result
+                    ).to_markdown()
+                    if not GH.post_updateable_comment(
+                        comment_tags_and_bodies={"summary": summary_body},
+                        only_update=True,
+                    ):
+                        print(f"ERROR: failed to post CI summary")
+                except Exception as e:
+                    print(f"ERROR: failed to post CI summary, ex: {e}")
+                    traceback.print_exc()
+
+            if (
+                workflow.enable_commit_status_on_failure and not result.is_ok()
+            ) or job.enable_commit_status:
+                if not GH.post_commit_status(
+                    name=job.name,
+                    status=result.status,
+                    description=result.info.splitlines()[0] if result.info else "",
+                    url=report_url,
+                ):
+                    env.add_info("Failed to post GH commit status for the job")
+                    print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
+
+        if (
+            workflow.enable_automerge
+            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and workflow.is_event_pull_request()
+        ):
+            try:
+                _GH_Auth(workflow)
+                workflow_result = Result.from_fs(workflow.name)
+                if workflow_result.is_ok():
+                    if not GH.merge_pr():
+                        print("ERROR: Failed to merge the PR")
+                else:
+                    print(
+                        f"NOTE: Workflow status [{workflow_result.status}] - do not merge"
+                    )
+            except Exception as e:
+                print(f"ERROR: Failed to merge the PR: [{e}]")
+                traceback.print_exc()
 
         return is_ok
 

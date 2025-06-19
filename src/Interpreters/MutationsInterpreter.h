@@ -233,6 +233,10 @@ private:
         bool affects_all_columns = false;
         std::optional<UInt64> mutation_version;
 
+        /// True if columns in column_to_updated are not changed, but they need
+        /// to be read (for example to materialize projection).
+        bool is_readonly = false;
+
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };

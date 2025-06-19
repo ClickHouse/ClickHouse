@@ -115,7 +115,7 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
             consumer->get_partition_queue(topic_partition));
 }
 
-// it do the poll when needed
+// it does the poll when needed
 ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count)
 {
     resetIfStopped();

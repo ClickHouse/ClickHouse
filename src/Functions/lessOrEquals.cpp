@@ -15,35 +15,27 @@ extern template class FunctionComparison<EqualsOp, NameEquals>;
 REGISTER_FUNCTION(LessOrEquals)
 {
     // Documentation for lessOrEquals
-    FunctionDocumentation::Description description_lessOrEquals = "Compares two values for less-than-or-equal-to relation.";
-    FunctionDocumentation::Syntax syntax_lessOrEquals = R"(
+    FunctionDocumentation::Description description = "Compares two values for less-than-or-equal-to relation.";
+    FunctionDocumentation::Syntax syntax = R"(
     lessOrEquals(a, b)
     -- a <= b
 )";
-    FunctionDocumentation::Arguments arguments_lessOrEquals = {
+    FunctionDocumentation::Arguments arguments = {
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_lessOrEquals = "Returns `1` if `a` is less than or equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
-    FunctionDocumentation::Examples examples_lessOrEquals = {
+    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if `a` is less than or equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT 1 <= 2, 2 <= 2, 3 <= 2;", R"(
 ┌─lessOrEquals(1, 2)─┬─lessOrEquals(2, 2)─┬─lessOrEquals(3, 2)─┐
 │                  1 │                  1 │                  0 │
 └────────────────────┴────────────────────┴────────────────────┘
 )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_lessOrEquals = {1, 1};
-    FunctionDocumentation::Category category_lessOrEquals = FunctionDocumentation::Category::Comparison;
-    FunctionDocumentation documentation_lessOrEquals = {
-        description_lessOrEquals,
-        syntax_lessOrEquals,
-        arguments_lessOrEquals,
-        returned_value_lessOrEquals,
-        examples_lessOrEquals,
-        introduced_in_lessOrEquals,
-        category_lessOrEquals
-    };
-    factory.registerFunction<FunctionLessOrEquals>(documentation_lessOrEquals);
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionLessOrEquals>(documentation);
 }
 
 template <>

@@ -2788,6 +2788,11 @@ CONV_FN(CreateDatabase, create_database)
         ret += " COMMENT ";
         ret += create_database.comment();
     }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
 }
 
 CONV_FN(CreateFunction, create_function)
@@ -3458,11 +3463,10 @@ CONV_FN(Delete, del)
 {
     if (del.has_single_partition())
     {
-        ret += "IN ";
+        ret += " IN ";
         SinglePartitionExprToString(ret, del.single_partition());
-        ret += " ";
     }
-    ret += "WHERE ";
+    ret += " WHERE ";
     WhereStatementToString(ret, del.where());
 }
 
@@ -4081,7 +4085,7 @@ CONV_FN(AlterItem, alter)
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
+            ret += "DELETE";
             DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
@@ -4841,6 +4845,15 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.async())
+    {
+        ret += " ASYNC";
+    }
     if (backup.has_informat())
     {
         ret += " FORMAT ";
@@ -4850,15 +4863,6 @@ CONV_FN(BackupRestore, backup)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
-    }
-    if (backup.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, backup.setting_values());
-    }
-    if (backup.async())
-    {
-        ret += " ASYNC";
     }
 }
 

@@ -886,7 +886,7 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
