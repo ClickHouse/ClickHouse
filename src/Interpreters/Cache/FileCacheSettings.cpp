@@ -176,7 +176,7 @@ void FileCacheSettings::loadFromConfig(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
-    std::set<std::string> ignore_keys = {"type", "disk", "name"};
+    std::set<std::string> ignore_keys = {"type", "disk", "name", "split_cache", "system_cache_settings", "data_cache_settings"};
     for (const std::string & key : config_keys)
     {
         if (ignore_keys.contains(key))
@@ -201,6 +201,17 @@ void FileCacheSettings::loadFromConfig(
     }
 
     validate();
+}
+
+void FileCacheSettings::loadFromConfigsWithPriority(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::vector<std::string> & config_prefixes,
+    const std::string & cache_path_prefix_if_relative,
+    const std::string & default_cache_path)
+{
+    for (auto&& config_prefix : config_prefixes) {
+        loadFromConfig(config, config_prefix, cache_path_prefix_if_relative, default_cache_path);
+    }
 }
 
 void FileCacheSettings::loadFromCollection(

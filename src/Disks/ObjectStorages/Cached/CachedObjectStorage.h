@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/FileCachesHolder.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include "config.h"
@@ -19,7 +20,7 @@ namespace DB
 class CachedObjectStorage final : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
+    CachedObjectStorage(ObjectStoragePtr object_storage_, const FileCachesHolder & holder_, const String & cache_config_name_);
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
@@ -117,7 +118,7 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    const FileCacheSettings & getCacheSettings() const { return cache_settings; }
+    const FileCacheSettings & getCacheSettings(CacheType cache_type) const { return holder.getCacheSetting(cache_type); }
 
 #if USE_AZURE_BLOB_STORAGE
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
@@ -149,8 +150,7 @@ private:
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr object_storage;
-    FileCachePtr cache;
-    FileCacheSettings cache_settings;
+    FileCachesHolder holder;
     std::string cache_config_name;
     LoggerPtr log;
 };

@@ -43,6 +43,14 @@ struct FileCacheSettings
         const std::string & cache_path_prefix_if_relative,
         const std::string & default_cache_path = "");
 
+    // load settings from mupltiple config prefixes
+    // last element of config_prefixes has the most priority
+    void loadFromConfigsWithPriority(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::vector<std::string> & config_prefixes,
+        const std::string & cache_path_prefix_if_relative,
+        const std::string & default_cache_path = "");
+
     void loadFromCollection(
         const NamedCollection & collection,
         const std::string & cache_path_prefix_if_relative);
