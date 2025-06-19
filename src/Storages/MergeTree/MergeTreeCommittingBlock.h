@@ -46,4 +46,7 @@ struct PlainCommittingBlockHolder
     ~PlainCommittingBlockHolder();
 };
 
+std::string serializeCommittingBlockOpToString(CommittingBlock::Op op);
+CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & representation);
+
 }

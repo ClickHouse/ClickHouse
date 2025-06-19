@@ -191,6 +191,8 @@ public:
     CancellationCode killMutation(const String & mutation_id) override;
 
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
+    bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const;
+    void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms);
 
     bool hasLightweightDeletedMask() const override;
 
@@ -811,7 +813,7 @@ private:
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
-    std::mutex currently_fetching_parts_mutex;
+    mutable std::mutex currently_fetching_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);
@@ -829,15 +831,19 @@ private:
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
-        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+        const String & partition_id,
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const String & zookeeper_block_id_path = "",
+        const String & zookeeper_path_prefix = "",
+        const std::optional<String> & znode_data = std::nullopt) const;
 
     template<typename T>
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         const T & zookeeper_block_id_path,
-        const String & zookeeper_path_prefix = "") const;
+        const String & zookeeper_path_prefix = "",
+        const std::optional<String> & znode_data = std::nullopt) const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
@@ -959,7 +965,10 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
-        const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
+        const MutationCommands & commands,
+        CommittingBlock::Op op,
+        ContextPtr query_context,
+        const zkutil::ZooKeeperPtr & zookeeper) const;
 
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);

@@ -43,6 +43,7 @@ private:
     friend class DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
     friend class MergeFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class StorageReplicatedMergeTree;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;

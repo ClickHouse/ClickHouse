@@ -11,7 +11,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint)
+CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint, bool with_data)
 {
     CommittingBlocks committing_blocks;
 
@@ -47,6 +47,10 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 
     auto locks_children = zookeeper->tryGetChildren(paths);
 
+    std::vector<String> block_partitions;
+    std::vector<Int64> block_numbers;
+    std::vector<String> block_data_paths;
+
     for (size_t i = 0; i < partitions.size(); ++i)
     {
         auto & response = locks_children[i];
@@ -67,8 +71,37 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
                 continue;
 
             Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-            committing_blocks[partitions[i]].insert(CommittingBlock(CommittingBlock::Op::Unknown, block_number));
+
+            block_partitions.push_back(partitions[i]);
+            block_numbers.push_back(block_number);
+            block_data_paths.push_back(fs::path(paths[i]) / entry);
         }
+    }
+
+    if (with_data)
+    {
+        auto blocks_data = zookeeper->tryGet(block_data_paths);
+
+        for (size_t i = 0; i < blocks_data.size(); ++i)
+        {
+            auto & response = blocks_data[i];
+            if (response.error == Coordination::Error::ZNONODE)
+            {
+                committing_blocks[block_partitions[i]].insert(CommittingBlock(CommittingBlock::Op::Unknown, block_numbers[i]));
+                continue;
+            }
+
+            if (response.error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(response.error, block_data_paths[i]);
+
+            auto block_data = deserializeCommittingBlockOpFromString(response.data);
+            committing_blocks[block_partitions[i]].insert(CommittingBlock(block_data, block_numbers[i]));
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < block_partitions.size(); ++i)
+            committing_blocks[block_partitions[i]].insert(CommittingBlock(CommittingBlock::Op::Unknown, block_numbers[i]));
     }
 
     return committing_blocks;

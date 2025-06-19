@@ -6522,16 +6522,22 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
 
 PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAffectedPartitions(
-    const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const
+    const MutationCommands & commands,
+    CommittingBlock::Op op,
+    ContextPtr query_context,
+    const zkutil::ZooKeeperPtr & zookeeper) const
 {
     const std::set<String> mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+    auto block_data = serializeCommittingBlockOpToString(op);
 
     if (mutation_affected_partition_ids.size() == 1)
     {
         const auto & affected_partition_id = *mutation_affected_partition_ids.cbegin();
-        auto block_number_holder = allocateBlockNumber(affected_partition_id, zookeeper);
+        auto block_number_holder = allocateBlockNumber(affected_partition_id, zookeeper, "", "", block_data);
+
         if (!block_number_holder.has_value())
             return {};
+
         auto block_number = block_number_holder->getNumber();  /// Avoid possible UB due to std::move
         return {{{affected_partition_id, block_number}}, std::move(block_number_holder)};
     }
@@ -6541,7 +6547,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         fs::path(zookeeper_path) / "block_numbers",
         "block-",
         fs::path(zookeeper_path) / "temp",
-        /*znode_data=*/ std::nullopt,
+        block_data,
         *zookeeper);
 
     PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
@@ -6767,7 +6773,7 @@ void StorageReplicatedMergeTree::alter(
 
 
             partition_block_numbers_holder =
-                allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, query_context, zookeeper);
+                allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, CommittingBlock::Op::Mutation, query_context, zookeeper);
 
             mutation_entry.block_numbers = partition_block_numbers_holder.getBlockNumbers();
             mutation_entry.create_time = time(nullptr);
@@ -7231,10 +7237,11 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     const String & partition_id,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_block_id_path,
-    const String & zookeeper_path_prefix) const
+    const String & zookeeper_path_prefix,
+    const std::optional<String> & znode_data) const
 {
     return allocateBlockNumber(
-        partition_id, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), zookeeper_block_id_path, zookeeper_path_prefix);
+        partition_id, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), zookeeper_block_id_path, zookeeper_path_prefix, znode_data);
 }
 
 template<typename T>
@@ -7242,7 +7249,8 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     const String & partition_id,
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const T & zookeeper_block_id_path,
-    const String & zookeeper_path_prefix) const
+    const String & zookeeper_path_prefix,
+    const std::optional<String> & znode_data) const
 {
     String zookeeper_table_path;
     if (zookeeper_path_prefix.empty())
@@ -7273,7 +7281,7 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     LOG_TEST(log, "Allocating block number at {}", fs::path(partition_path) / "block-");
 
     auto lock = createEphemeralLockInZooKeeper(
-        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path, std::nullopt);
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path, znode_data);
 
     if (lock && lock->isLocked())
         LOG_TRACE(log, "Allocated block number {} in partition {}", lock->getNumber(), partition_id);
@@ -8068,7 +8076,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         zookeeper->get(mutations_path, &mutations_stat);
 
         PartitionBlockNumbersHolder partition_block_numbers_holder =
-                allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, query_context, zookeeper);
+                allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, CommittingBlock::Op::Mutation, query_context, zookeeper);
 
         mutation_entry.block_numbers = partition_block_numbers_holder.getBlockNumbers();
         mutation_entry.create_time = time(nullptr);
@@ -8174,6 +8182,86 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     return CancellationCode::CancelSent;
 }
 
+bool StorageReplicatedMergeTree::haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const
+{
+    {
+        std::lock_guard lock(queue.state_mutex);
+
+        for (const auto & [partition_id, _] : *partitions)
+        {
+            /// It is the case when block numbers for committing operatrion is allocated
+            /// but node for virtual parts in partition is not created. It may happen on
+            /// the first insert into partition.
+            if (!committing_blocks.contains(partition_id) && !queue.current_parts.hasPartitionId(partition_id))
+                return true;
+        }
+    }
+
+    for (const auto & [partition_id, blocks] : committing_blocks)
+    {
+        auto it = partitions->find(partition_id);
+        if (it == partitions->end())
+            continue;
+
+        Int64 max_block_number = it->second;
+
+        for (const auto block : blocks)
+        {
+            if (block.number >= max_block_number)
+                break;
+
+            if (block.op == CommittingBlock::Op::Unknown || ops.contains(block.op))
+                return true;
+        }
+    }
+
+    NameSet currently_loading_part_names;
+    bool need_wait_updates = ops.contains(CommittingBlock::Op::Update);
+
+    {
+        std::lock_guard lock(currently_fetching_parts_mutex);
+        currently_loading_part_names = currently_fetching_parts;
+    }
+
+    /// Part may be loading by concurrent update of virtual parts.
+    /// In that case it will be neither in virtual parts nor in committing blocks.
+    /// So check also currently loading parts.
+    for (const auto & part_name : currently_loading_part_names)
+    {
+        auto info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto it = partitions->find(info.getPartitionId());
+
+        if (it != partitions->end() && info.getDataVersion() < it->second)
+            return true;
+
+        if (need_wait_updates && partitions->contains(info.getOriginalPartitionId()))
+            return true;
+    }
+
+    return false;
+}
+
+void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms)
+{
+    while (true)
+    {
+        std::optional<PartitionIdsHint> partition_ids_hint;
+        auto committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
+
+        if (haveCommittingOps(committing_blocks, partitions, ops))
+        {
+            LOG_DEBUG(log, "Have uncommitted inserts with allocated block number. Will retry updating virtual parts in {} ms to satisfy update_sequential_consistency", backoff_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            continue;
+        }
+
+        break;
+    }
+
+    if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", backoff_ms);
+}
+
 QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
     auto context_copy = Context::createCopy(query_context);
@@ -8182,7 +8270,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     LightweightUpdateHolderInKeeper update_holder;
     update_holder.zookeeper = zookeeper;
     update_holder.lock = getLockForLightweightUpdateInKeeper(commands, query_context, zookeeper, zookeeper_path);
-    update_holder.partition_block_numbers = allocateBlockNumbersInAffectedPartitions(commands, query_context, zookeeper);
+    update_holder.partition_block_numbers = allocateBlockNumbersInAffectedPartitions(commands, CommittingBlock::Op::Update, query_context, zookeeper);
 
     fiu_do_on(FailPoints::rmt_lightweight_update_sleep_after_block_allocation,
     {
@@ -8198,9 +8286,11 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     if (query_context->getSettingsRef()[Setting::update_sequential_consistency])
     {
+        static constexpr size_t backoff_ms = 50;
         auto sync_timeout = query_context->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
-        if (!waitForProcessingQueue(sync_timeout, SyncReplicaMode::LIGHTWEIGHT, {}))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout);
+
+        std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
+        waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(), ops, backoff_ms, sync_timeout);
     }
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
@@ -11262,12 +11352,14 @@ template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::all
     const String & partition_id,
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const String & zookeeper_block_id_path,
-    const String & zookeeper_path_prefix) const;
+    const String & zookeeper_path_prefix,
+    const std::optional<String> & znode_data) const;
 
 template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber<std::vector<String>>(
     const String & partition_id,
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::vector<String> & zookeeper_block_id_path,
-    const String & zookeeper_path_prefix) const;
+    const String & zookeeper_path_prefix,
+    const std::optional<String> & znode_data) const;
 
 }

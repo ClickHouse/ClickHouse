@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -16,6 +17,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds receive_timeout;
+}
 
 namespace MergeTreeSetting
 {
@@ -195,6 +201,16 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             LOG_DEBUG(log, "Zero copy lock taken, will mutate part {}", entry.new_part_name);
         }
+    }
+
+    if (storage.supportsLightweightUpdate())
+    {
+        static constexpr size_t backoff_ms = 100;
+        auto sync_timeout = storage.getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+
+        auto partitions = std::make_shared<PartitionIdToMaxBlock>();
+        partitions->emplace(new_part_info.getPartitionId(), new_part_info.mutation);
+        storage.waitForCommittingOpsToFinish(storage.getZooKeeper(), partitions, {CommittingBlock::Op::Update}, backoff_ms, sync_timeout);
     }
 
     task_context = Context::createCopy(storage.getContext());

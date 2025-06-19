@@ -1428,7 +1428,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::unique_lock<std::mutex> & state_lock) const
 {
-
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
     {
         constexpr auto fmt_string = "Not executing log entry {} of type {} "
