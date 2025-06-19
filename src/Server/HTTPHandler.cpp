@@ -151,41 +151,6 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
         credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
-void HTTPHandler::pushDelayedResults(Output & used_output)
-{
-    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
-    if (!cascade_buffer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
-
-    cascade_buffer->finalize();
-    auto write_buffers = cascade_buffer->getResultBuffers();
-
-    if (write_buffers.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
-
-    ConcatReadBuffer::Buffers read_buffers;
-    for (auto & write_buf : write_buffers)
-    {
-        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
-        {
-            if (auto reread_buf = write_buf_concrete->read())
-                read_buffers.emplace_back(std::move(reread_buf));
-        }
-
-        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
-        {
-            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
-                read_buffers.emplace_back(std::move(reread_buf));
-        }
-    }
-
-    if (!read_buffers.empty())
-    {
-        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
-        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
-    }
-}
-
 
 HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : server(server_)
@@ -282,10 +247,6 @@ void HTTPHandler::processQuery(
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
-    /// Initialize query scope, once query_id is initialized.
-    /// (To track as much allocations as possible)
-    query_scope.emplace(context);
-
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     auto param_could_be_skipped = [&] (const String & name)
@@ -333,6 +294,11 @@ void HTTPHandler::processQuery(
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope.emplace(context);
+
     const auto & settings = context->getSettingsRef();
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
@@ -357,19 +323,19 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsedLast<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
+        params.getParsedLast<size_t>("buffer_size", settings[Setting::http_response_buffer_size]),
         static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsedLast<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
+    bool buffer_until_eof = params.getParsedLast<bool>("wait_end_of_query", settings[Setting::http_wait_end_of_query]);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
+    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
-        = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
+        = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -462,7 +428,6 @@ void HTTPHandler::processQuery(
     }
     else
         in_post_maybe_compressed = std::move(in_post);
-
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
@@ -585,6 +550,7 @@ void HTTPHandler::processQuery(
                 current_output_format.finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
+
                 used_output.exception_is_written = true;
             }
         }
@@ -593,12 +559,6 @@ void HTTPHandler::processQuery(
     auto query_finish_callback = [&]()
     {
         releaseOrCloseSession(session_id, close_session);
-
-        if (used_output.hasDelayed())
-        {
-            /// TODO: set Content-Length if possible
-            pushDelayedResults(used_output);
-        }
 
         /// Flush all the data from one buffer to another, to track
         /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
@@ -648,6 +608,7 @@ try
 
     if (used_output.exception_is_written)
     {
+        LOG_DEBUG(log, "Exception has already been written to output format by current output formatter, nothing to do");
         /// everything has been held by output format write
         return true;
     }
@@ -1086,4 +1047,73 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     return factory;
 }
 
+void HTTPHandler::Output::pushDelayedResults()
+{
+    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
+    if (!cascade_buffer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
+
+    cascade_buffer->finalize();
+    auto write_buffers = cascade_buffer->getResultBuffers();
+
+    if (write_buffers.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
+
+    ConcatReadBuffer::Buffers read_buffers;
+    for (auto & write_buf : write_buffers)
+    {
+        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->read())
+                read_buffers.emplace_back(std::move(reread_buf));
+        }
+
+        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+                read_buffers.emplace_back(std::move(reread_buf));
+        }
+    }
+
+    if (!read_buffers.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
+        copyData(concat_read_buffer, *out_maybe_compressed);
+    }
+}
+
+void HTTPHandler::Output::finalize()
+{
+    if (finalized)
+        return;
+    finalized = true;
+
+    if (hasDelayed())
+        pushDelayedResults();
+
+    if (out_delayed_and_compressed_holder)
+        out_delayed_and_compressed_holder->finalize();
+    if (out_compressed_holder)
+        out_compressed_holder->finalize();
+    if (wrap_compressed_holder)
+        wrap_compressed_holder->finalize();
+    if (out_holder)
+        out_holder->finalize();
+}
+
+void HTTPHandler::Output::cancel()
+{
+    if (canceled)
+        return;
+    canceled = true;
+
+    if (out_delayed_and_compressed_holder)
+        out_delayed_and_compressed_holder->cancel();
+    if (out_compressed_holder)
+        out_compressed_holder->cancel();
+    if (wrap_compressed_holder)
+        wrap_compressed_holder->cancel();
+    if (out_holder)
+        out_holder->cancel();
+}
 }
