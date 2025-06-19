@@ -1,5 +1,5 @@
-#include "WebUIRequestHandler.h"
-#include "IServer.h"
+#include <Server/WebUIRequestHandler.h>
+#include <Server/IServer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 

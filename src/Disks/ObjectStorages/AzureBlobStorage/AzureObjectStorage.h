@@ -26,6 +26,7 @@ public:
 
     AzureObjectStorage(
         const String & name_,
+        AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
         const String & object_namespace_,
@@ -40,11 +41,16 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
+    std::string getRootPrefix() const override { return object_namespace; }
+
+    /// Object keys are unique within the object namespace (container + prefix).
     std::string getCommonKeyPrefix() const override { return ""; }
 
     std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
+
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return auth_method; }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -111,6 +117,7 @@ private:
         bool if_exists);
 
     const String name;
+    AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;

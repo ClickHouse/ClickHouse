@@ -8,6 +8,7 @@
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
@@ -58,6 +59,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -342,6 +344,8 @@ ClientBase::ClientBase(
     : stdin_fd(in_fd_)
     , stdout_fd(out_fd_)
     , stderr_fd(err_fd_)
+    , cmd_settings(std::make_unique<Settings>())
+    , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
@@ -1977,7 +1981,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);
 }
 
-void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data)
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -2130,6 +2134,7 @@ void ClientBase::processParsedSingleQuery(
 {
     resetOutput();
     have_error = false;
+    error_code = 0;
     cancelled = false;
     cancelled_printed = false;
     client_exception.reset();
@@ -2458,7 +2463,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2512,16 +2516,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
+                have_error |= buzz_house;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
+                have_error |= buzz_house;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
+                have_error |= buzz_house;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2580,7 +2587,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (query_fuzzer_runs)
                 {
-                    if (!processWithFuzzing(full_query))
+                    if (!processWithASTFuzzer(full_query))
                         return false;
 
                     this_query_begin = this_query_end;
@@ -2732,6 +2739,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     server_exception.reset();
 
                     have_error = false;
+                    error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
@@ -2752,6 +2760,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         all_queries_end,
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
+                }
+
+                if (buzz_house && have_error)
+                {
+                    // Test if error is disallowed by BuzzHouse
+                    const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
+                    error_code = exception ? exception->code() : 0;
                 }
 
                 // Report error.
@@ -2775,7 +2790,6 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2791,7 +2805,7 @@ bool ClientBase::processQueryText(const String & text)
 
     if (query_fuzzer_runs)
     {
-        processWithFuzzing(text);
+        processWithASTFuzzer(text);
         return true;
     }
 
@@ -2833,7 +2847,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage->engine->name.contains("MergeTree"))
         return false;
 
-    auto all_changed = cmd_merge_tree_settings.changes();
+    auto all_changed = cmd_merge_tree_settings->changes();
     if (all_changed.begin() == all_changed.end())
         return false;
 
@@ -2981,14 +2995,14 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description)
 {
     if (allow_repeated_settings)
-        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
+        cmd_settings->addToProgramOptionsAsMultitokens(options_description.main_description.value());
     else
-        cmd_settings.addToProgramOptions(options_description.main_description.value());
+        cmd_settings->addToProgramOptions(options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
         auto & main_options = options_description.main_description.value();
-        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
+        cmd_merge_tree_settings->addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
     }
 }
 
@@ -3430,7 +3444,7 @@ void ClientBase::runNonInteractive()
         {
             if (query_fuzzer_runs)
             {
-                if (!processWithFuzzing(query))
+                if (!processWithASTFuzzer(query))
                     return;
             }
             else
@@ -3448,7 +3462,7 @@ void ClientBase::runNonInteractive()
         String text;
         readStringUntilEOF(text, in);
         if (query_fuzzer_runs)
-            processWithFuzzing(text);
+            processWithASTFuzzer(text);
         else
             processQueryText(text);
     }

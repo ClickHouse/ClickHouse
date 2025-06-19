@@ -15,7 +15,8 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <base/map.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -137,15 +138,19 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         if (dict_structure)
         {
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->getKeysNames(), [](auto & name) { return name; }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->getKeysNames() | std::views::transform([](auto & name) { return name; })});
 
             if (dict_structure->id)
                 res_columns[i++]->insert(Array({"UInt64"}));
             else
-                res_columns[i++]->insert(collections::map<Array>(*dict_structure->key, [](auto & attr) { return attr.type->getName(); }));
+                res_columns[i++]->insert(Array{
+                    std::from_range_t{}, *dict_structure->key | std::views::transform([](auto & attr) { return attr.type->getName(); })});
 
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.name; }));
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.name; })});
+            res_columns[i++]->insert(Array{
+                std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.type->getName(); })});
         }
         else
         {

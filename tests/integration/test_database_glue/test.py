@@ -213,6 +213,7 @@ def test_list_tables(started_cluster):
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
 
 
 def test_select(started_cluster):
@@ -253,6 +254,8 @@ def test_select(started_cluster):
         assert num_rows == int(
             node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
         )
+
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
 
 
 def test_hide_sensitive_info(started_cluster):

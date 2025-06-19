@@ -282,6 +282,8 @@ Example:
 
 - `_path` — Path to the file.
 - `_file` — Name of the file.
+- `_size` — Size of the file.
+- `_time` — Time of the file creation.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
