@@ -681,6 +681,7 @@ class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExec
 public:
     DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
+        , running_tasks(context, is_cancelled, logger)
     {
         QueryStatusPtr query_status = context->getProcessListElement();
 
@@ -690,23 +691,7 @@ public:
 
     void cleanup() override
     {
-        for (auto & [stage_name, started_tasks] : stage_tasks)
-        {
-            while (!started_tasks.empty())
-            {
-                auto & task = started_tasks.front();
-                LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
-                try
-                {
-                    cancelTask(task.endpoint_uri, task.task_id, context);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-                started_tasks.pop_front();
-            }
-        }
+        running_tasks.cancel();
     }
 
 protected:
@@ -766,6 +751,89 @@ protected:
         String task_id;
     };
 
+    /// Tracks the statuses of running tasks, collects progress counters
+    class TaskTracker
+    {
+    public:
+        TaskTracker(ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_, LoggerPtr logger_)
+            : context(std::move(context_))
+            , query_status(context->getProcessListElement())
+            , is_cancelled(std::move(is_cancelled_))
+            , logger(std::move(logger_))
+        {}
+
+        void addTask(const String & stage_name, RunningTaskInfo task_info)
+        {
+            stage_tasks[stage_name].push_back(std::move(task_info));
+        }
+
+        void waitForStage(const String & stage_name)
+        {
+            auto & started_tasks = stage_tasks[stage_name];
+
+            String error_message;
+            while (!started_tasks.empty())
+            {
+                checkCancelled();
+
+                auto & task = started_tasks.front();
+                auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                    progress_callback(task_status.progress);
+
+                if (task_status.status == "Running")
+                    continue;
+
+                if (task_status.status != "Finished")
+                    error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
+
+                started_tasks.pop_front();
+            }
+
+            if (!error_message.empty())
+                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
+        }
+
+        void cancel()
+        {
+            for (auto & [stage_name, started_tasks] : stage_tasks)
+            {
+                while (!started_tasks.empty())
+                {
+                    auto & task = started_tasks.front();
+                    LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
+                    try
+                    {
+                        cancelTask(task.endpoint_uri, task.task_id, context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                    started_tasks.pop_front();
+                }
+            }
+        }
+
+    private:
+        void checkCancelled()
+        {
+            if (query_status)
+                query_status->checkTimeLimit();
+
+            if (*is_cancelled)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+        }
+
+        ContextPtr context;
+        QueryStatusPtr query_status;
+        std::shared_ptr<std::atomic<bool>> is_cancelled;
+        std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
+        LoggerPtr logger;
+    };
+
     RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
     {
         const String host = task_hosts.at(task_description.task.task_id);
@@ -817,45 +885,20 @@ protected:
                 task_description.exchange_stream_destinations.stream_hosts[output_stream_name] = exchange_stream_destination_hosts.at(output_stream_name);
             }
 
-            started_tasks.emplace_back(startTask(task_description));
+            running_tasks.addTask(stage_name, startTask(task_description));
         }
-
-        stage_tasks[stage_name] = std::move(started_tasks);
     }
 
     void waitForStage(const String & stage_name) override
     {
-        auto & started_tasks = stage_tasks[stage_name];
-
-        String error_message;
-        while (!started_tasks.empty())
-        {
-            checkCancelled();
-
-            auto & task = started_tasks.front();
-            auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
-
-            auto progress_callback = context->getProgressCallback();
-            if (progress_callback)
-                progress_callback(task_status.progress);
-
-            if (task_status.status == "Running")
-                continue;
-
-            if (task_status.status != "Finished")
-                error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
-
-            started_tasks.pop_front();
-        }
-
-        if (!error_message.empty())
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
+        running_tasks.waitForStage(stage_name);
     }
 
-    std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
     Strings hostnames;
     std::unordered_map<String, String> task_hosts;
     std::unordered_map<String, String> exchange_stream_destination_hosts;
+
+    TaskTracker running_tasks;
 };
 
 void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages)
