@@ -664,7 +664,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options)
     return schema;
 }
 
-void prepareGeoColumns(ColumnPtr & column, DataTypePtr & type)
+void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;
@@ -706,7 +706,7 @@ void prepareColumnForWrite(
     ColumnChunkWriteStates states;
     SchemaElements schemas;
     if (options.write_geometadata)
-        prepareGeoColumns(column, type);
+        prepareGeoColumn(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas);
 
     if (out_columns_to_write)
