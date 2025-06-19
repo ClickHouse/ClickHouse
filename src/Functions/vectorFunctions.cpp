@@ -1594,10 +1594,10 @@ Consecutively adds a tuple of intervals to a date or a date with time.
 addTupleOfIntervals(datetime, intervals)
     )";
     FunctionDocumentation::Arguments arguments_addTupleOfIntervals = {
-        {"datetime", "Date or date with time to add intervals to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"intervals", "Tuple of intervals to add to `datetime`. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
+        {"datetime", "Date or date with time to add intervals to.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"intervals", "Tuple of intervals to add to `datetime`.", {"Tuple(Interval)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = "Returns `date` with added `intervals`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`.", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_addTupleOfIntervals = {
         {"Add tuple of intervals to date", R"(
 WITH toDate('2018-01-01') AS date
@@ -1623,10 +1623,10 @@ Consecutively subtracts a tuple of intervals from a date or a date with time.
 subtractTupleOfIntervals(datetime, intervals)
     )";
     FunctionDocumentation::Arguments arguments_subtractTupleOfIntervals = {
-        {"datetime", "Date or date with time to subtract intervals from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"intervals", "Tuple of intervals to subtract from `datetime`. [`Tuple(T)`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
+        {"datetime", "Date or date with time to subtract intervals from.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"intervals", "Tuple of intervals to subtract from `datetime`.", {"Tuple(Interval)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = "Returns `date` with subtracted `intervals`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = {"Returns `date` with subtracted `intervals`.", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_subtractTupleOfIntervals = {
         {"Subtract tuple of intervals from date", R"(
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
@@ -1653,10 +1653,10 @@ Note: Intervals of the same type will be combined into a single interval. For in
 addInterval(interval_1, interval_2)
     )";
     FunctionDocumentation::Arguments arguments_addInterval = {
-        {"interval_1", "First interval or tuple of intervals. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
-        {"interval_2", "Second interval to be added. [`interval`](../data-types/special-data-types/interval.md)."}
+        {"interval_1", "First interval or tuple of intervals.", {"Interval", "Tuple(Interval)"}},
+        {"interval_2", "Second interval to be added.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addInterval = "Returns a tuple of intervals. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
+    FunctionDocumentation::ReturnedValue returned_value_addInterval = {"Returns a tuple of intervals.", {"Tuple(Interval)"}};
     FunctionDocumentation::Examples examples_addInterval = {
         {"Add intervals", R"(
 SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1692,10 +1692,10 @@ passed then the result will be `(1)` rather than `(2,1)`.
 subtractInterval(interval_1, interval_2)
     )";
     FunctionDocumentation::Arguments arguments_subtractInterval = {
-        {"interval_1", "First interval or interval of tuples. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
-        {"interval_2", "Second interval to be negated. [`interval`](../data-types/special-data-types/interval.md)."}
+        {"interval_1", "First interval or interval of tuples.", {"Interval", "Tuple(Interval)"}},
+        {"interval_2", "Second interval to be negated.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = "Returns a tuple of intervals. [`Tuple(T)`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
+    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = {"Returns a tuple of intervals.", {"Tuple(Interval)"}};
     FunctionDocumentation::Examples examples_subtractInterval = {
         {"Subtract intervals", R"(
 SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1735,9 +1735,9 @@ Calculates the sum of absolute values of a vector.
     )";
     FunctionDocumentation::Syntax syntax_l1_norm = "L1Norm(vector)";
     FunctionDocumentation::Arguments arguments_l1_norm = {
-        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_norm = "Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [`UInt`](/sql-reference/data-types/int-uint), [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
+    FunctionDocumentation::ReturnedValue returned_value_l1_norm = {"Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.", {"UInt*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_l1_norm = {
         {
             "Basic usage", 
@@ -1762,9 +1762,9 @@ Calculates the square root of the sum of the squares of the vector values.
     )";
     FunctionDocumentation::Syntax syntax_l2_norm = "L2Norm(vector)";
     FunctionDocumentation::Arguments arguments_l2_norm = {
-        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).", {"UInt*", "Float*"}};
     FunctionDocumentation::Examples examples_l2_norm = {
         {
             "Basic usage",
@@ -1789,9 +1789,9 @@ Calculates the square root of the sum of the squares of the vector values (the [
     )";
     FunctionDocumentation::Syntax syntax_l2_squared_norm = "L2SquaredNorm(vector)";
     FunctionDocumentation::Arguments arguments_l2_squared_norm = {
-        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_norm = "Returns the L2-norm squared. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_norm = {"Returns the L2-norm squared.", {"UInt*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_l2_squared_norm = {
         {
             "Basic usage",
@@ -1816,9 +1816,9 @@ Calculates the maximum of absolute values of a vector.
     )";
     FunctionDocumentation::Syntax syntax_linf_norm = "LinfNorm(vector)";
     FunctionDocumentation::Arguments arguments_linf_norm = {
-        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector", "Vector or tuple of numeric values.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_norm = "Returns the Linf-norm or the maximum absolute value. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_linf_norm = {"Returns the Linf-norm or the maximum absolute value.", {"Float64"}};
     FunctionDocumentation::Examples examples_linf_norm = {
         {
             "Basic usage",
@@ -1848,8 +1848,8 @@ Special cases:
     )";
     FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
     FunctionDocumentation::Arguments arguments_lp_norm = {
-        {"vector", "Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"p", "The power. Possible values are real numbers in the range `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+        {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}},
+        {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lp_norm = "Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [`Float64`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples_lp_norm = {
@@ -1883,10 +1883,10 @@ Calculates the distance between two points (the values of the vectors are the co
     )";
     FunctionDocumentation::Syntax syntax_l1_distance = "L1Distance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_l1_distance = {
-        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_distance = "Returns the 1-norm distance. [`UInt32`](/sql-reference/data-types/int-uint) or [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance.", {"UInt32", "Float64"}};
     FunctionDocumentation::Examples examples_l1_distance = {
         {
             "Basic usage",
@@ -1911,10 +1911,10 @@ Calculates the distance between two points (the values of the vectors are the co
     )";
     FunctionDocumentation::Syntax syntax_l2_distance = "L2Distance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_l2_distance = {
-        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance = "Returns the 2-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance = {"Returns the 2-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance = {
         {
             "Basic usage",
@@ -1939,10 +1939,10 @@ Calculates the sum of the squares of the difference between the corresponding el
     )";
     FunctionDocumentation::Syntax syntax_l2_squared_distance = "L2SquaredDistance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_l2_squared_distance = {
-        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = "Returns the sum of the squares of the difference between the corresponding elements of two vectors. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_squared_distance = {
         {
             "Basic usage",
@@ -1967,10 +1967,10 @@ Calculates the distance between two points (the values of the vectors are the co
     )";
     FunctionDocumentation::Syntax syntax_linf_distance = "LinfDistance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_linf_distance = {
-        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_distance = "Returns the Infinity-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_linf_distance = {
         {
             "Basic usage",
@@ -1995,11 +1995,11 @@ Calculates the distance between two points (the values of the vectors are the co
     )";
     FunctionDocumentation::Syntax syntax_lp_distance = "LpDistance(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_lp_distance = {
-        {"vector1", "First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"p", "The power. Possible values: real number from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+        {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}},
+        {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_lp_distance = "Returns the p-norm distance. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance.", {"Float64"}};
     FunctionDocumentation::Examples examples_lp_distance = {
         {
             "Basic usage",
@@ -2031,10 +2031,10 @@ Calculates the cosine distance between two vectors (the values of the tuples are
     )";
     FunctionDocumentation::Syntax syntax_cosine_distance = "cosineDistance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_cosine_distance = {
-        {"vector1", "First tuple. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."},
-        {"vector2", "Second tuple. [Tuple(T)](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)."}
+        {"vector1", "First tuple.", {"Tuple(T)", "Array(T)"}},
+        {"vector2", "Second tuple.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = "Returns the cosine of the angle between two vectors subtracted from one. [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = {"Returns the cosine of the angle between two vectors subtracted from one.", {"Float64"}};
     FunctionDocumentation::Examples examples_cosine_distance = {
         {
             "Basic usage",
@@ -2059,9 +2059,9 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
     )";
     FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(tuple)";
     FunctionDocumentation::Arguments arguments_l1_normalize = {
-        {"tuple", "[`Tuple(T)`](/sql-reference/data-types/tuple) of numbers."}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_l1_normalize = {
         {
             "Basic usage",
@@ -2087,9 +2087,9 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
     )";
     FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(tuple)";
     FunctionDocumentation::Arguments arguments_l2_normalize = {
-        {"tuple", "A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)."}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_l2_normalize = {
         {
             "Basic usage",
@@ -2115,9 +2115,9 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
     )";
     FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(tuple)";
     FunctionDocumentation::Arguments arguments_linf_normalize = {
-        {"tuple", "A tuple of numeric values.[`Tuple(T)`](/sql-reference/data-types/tuple)."}
+        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
     FunctionDocumentation::Examples examples_linf_normalize = {
         {
             "Basic usage",
@@ -2144,10 +2144,10 @@ Calculates the unit vector of a given vector (the values of the tuple are the co
         )";
         FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(tuple, p)";
         FunctionDocumentation::Arguments arguments_lp_normalize = {
-            {"tuple", "A tuple of numeric values.[`Tuple(T)`](/sql-reference/data-types/tuple)."},
-            {"p", "The power. Possible values are any number in the range range from `[1; inf)`. [`UInt`](/sql-reference/data-types/int-uint) or [`Float`](/sql-reference/data-types/float)."}
+            {"tuple", "A tuple of numeric values.", {"Tuple(T)"}},
+            {"p", "The power. Possible values are any number in the range range from `[1; inf)`.", {"UInt*", "Float*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = "Returns the unit vector. [`Tuple(T)`](/sql-reference/data-types/tuple) of [`Float64`](/sql-reference/data-types/float).";
+        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
                 "Basic usage",
