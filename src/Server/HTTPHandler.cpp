@@ -264,6 +264,28 @@ void HTTPHandler::processQuery(
 
     auto context = session->makeQueryContext();
 
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+        context->setCurrentRoles(roles);
+
+    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
+    if (!database.empty())
+        context->setCurrentDatabase(database);
+
+    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
+    if (!default_format.empty())
+        context->setDefaultFormat(default_format);
+
+    /// Anything else beside HTTP POST should be readonly queries.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope.emplace(context);
+
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     auto param_could_be_skipped = [&] (const String & name)
@@ -433,7 +455,7 @@ void HTTPHandler::processQuery(
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
     bool is_in_post_compressed = false;
-    if (params.getParsed<bool>("decompress", false))
+    if (params.getParsedLast<bool>("decompress", false))
     {
         in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
@@ -441,29 +463,6 @@ void HTTPHandler::processQuery(
     else
         in_post_maybe_compressed = std::move(in_post);
 
-    std::unique_ptr<ReadBuffer> in;
-
-    auto roles = params.getAll("role");
-    if (!roles.empty())
-        context->setCurrentRoles(roles);
-
-    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
-    if (!database.empty())
-        context->setCurrentDatabase(database);
-
-    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
-    if (!default_format.empty())
-        context->setDefaultFormat(default_format);
-
-    /// Anything else beside HTTP POST should be readonly queries.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
-
-    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    /// Initialize query scope, once query_id is initialized.
-    /// (To track as much allocations as possible)
-    query_scope.emplace(context);
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
@@ -517,7 +516,7 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
