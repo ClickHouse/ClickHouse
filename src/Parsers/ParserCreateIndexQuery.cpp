@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_INDEX;
+}
+
 bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_type(Keyword::TYPE);
@@ -88,11 +93,24 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     }
     else
     {
-        auto index_type = index->getType();
-        if (index_type && index_type->name == "vector_similarity")
-            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+
+        if (auto index_type = index->getType())
+        {
+            const std::string_view name = index_type->name;
+
+            if (name == "vector_similarity")
+                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+            else if (name == "text")
+                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+            else if (name == "full_text" || name == "inverted" || name == "gin")
+            {
+                /// This code should never execute, there is an exception before arriving here in MergeData.cpp
+                /// TODO: remove this block one year after text indexes became GA.
+                /// See comment in MergeTreeIndices.cpp
+                throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
+            }
+        }
     }
     node = index;
     return true;

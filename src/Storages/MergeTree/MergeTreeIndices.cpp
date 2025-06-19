@@ -155,6 +155,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     /// To support loading tables with old indexes during a transition period, register these legacy indexes.
     ///
     /// TODO: remove this block one year after text indexes became GA.
+    /// TODO: remove similar blocks in ParserCreateIndexQuery.cpp and ParserCreateQuery.cpp
     registerCreator("full_text", ginIndexCreator);
     registerValidator("full_text", ginIndexValidator);
     registerCreator("inverted", ginIndexCreator);
