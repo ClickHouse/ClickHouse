@@ -1,5 +1,5 @@
 -- Tags: no-object-storage, no-fasttest
-select * from system.codecs order by name ASC COLLATE 'en';
+select * from system.codecs order by all;
 
 select count() from system.codecs;
 
