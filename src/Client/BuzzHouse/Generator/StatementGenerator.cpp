@@ -3518,7 +3518,9 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
     kil->set_command(Kill_KillEnum_MUTATION);
     if (rg.nextSmallNumber() < 3)
     {
-        kil->set_option(Kill_KillOption_TEST);
+        std::uniform_int_distribution<uint32_t> opt_range(1, static_cast<uint32_t>(Kill::KillOption_MAX));
+
+        kil->set_option(static_cast<Kill_KillOption>(opt_range(rg.generator)));
     }
     if (rg.nextSmallNumber() < 3)
     {
