@@ -45,7 +45,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::stri
 
 ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 {
-    if (is_empty)
+    if (path.empty())
         return {};
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
