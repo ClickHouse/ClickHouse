@@ -1,5 +1,5 @@
 <clickhouse>
-    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <local_disk_check_period_ms>30000</local_disk_check_period_ms>
 
     <storage_configuration>
         <disks>

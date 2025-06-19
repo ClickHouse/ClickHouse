@@ -39,7 +39,7 @@ class Validator:
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH:
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
@@ -57,6 +57,13 @@ class Validator:
                 cls.evaluate_check(
                     isinstance(job, Job.Config),
                     f"Invalid job type [{job}]: type [{type(job)}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
 
@@ -218,6 +225,11 @@ class Validator:
                 cls.evaluate_check(
                     workflow.event == Workflow.Event.PULL_REQUEST,
                     ".enable_gh_summary_comment=True applicable for pull_request workflow only",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    ".enable_gh_summary_comment=True requires .enable_report==True",
                     workflow,
                 )
 
