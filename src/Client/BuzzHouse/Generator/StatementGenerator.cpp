@@ -3418,7 +3418,7 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     }
     if (rg.nextSmallNumber() < 4)
     {
-        br->set_sync(rg.nextSmallNumber() < 7 ? SyncOrAsync::ASYNC : SyncOrAsync::SYNC);
+        br->set_sync(rg.nextSmallNumber() < 7 ? BackupRestore_SyncOrAsync_ASYNC : BackupRestore_SyncOrAsync_SYNC);
     }
     if (rg.nextSmallNumber() < 4)
     {

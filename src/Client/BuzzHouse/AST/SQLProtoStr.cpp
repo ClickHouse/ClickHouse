@@ -4853,7 +4853,7 @@ CONV_FN(BackupRestore, backup)
     if (backup.has_sync())
     {
         ret += " ";
-        ret += SyncOrAsync_Name(backup.sync());
+        ret += BackupRestore_SyncOrAsync_Name(backup.sync());
     }
     if (backup.has_informat())
     {
@@ -4883,6 +4883,29 @@ CONV_FN(Rename, ren)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ren.setting_values());
+    }
+}
+
+CONV_FN(Kill, kil)
+{
+    ret += "KILL ";
+    ret += Kill_KillEnum_Name(kil.command());
+    ret += " WHERE ";
+    WhereStatementToString(ret, kil.where());
+    if (kil.has_option())
+    {
+        ret += " ";
+        ret += Kill_KillOption_Name(kil.option());
+    }
+    if (kil.has_informat())
+    {
+        ret += " FORMAT ";
+        ret += InFormat_Name(kil.informat()).substr(3);
+    }
+    else if (kil.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(kil.outformat()).substr(4);
     }
 }
 
@@ -4957,6 +4980,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kRename:
             RenameToString(ret, query.rename());
+            break;
+        case QueryType::kKill:
+            KillToString(ret, query.kill());
             break;
         default:
             ret += "SELECT 1";

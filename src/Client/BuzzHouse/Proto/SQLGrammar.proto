@@ -3853,11 +3853,6 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
-enum SyncOrAsync {
-    SYNC = 1;
-    ASYNC = 2;
-}
-
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -3878,6 +3873,10 @@ message BackupRestore {
     required BackupOutput out = 5;
     repeated string out_params = 6;
     optional SettingValues setting_values = 7;
+    enum SyncOrAsync {
+        SYNC = 1;
+        ASYNC = 2;
+    }
     optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
         InFormat informat = 9;
@@ -3893,6 +3892,25 @@ message Rename {
     required SQLObjectName new_object = 3;
     optional Cluster cluster = 4;
     optional SettingValues setting_values = 5;
+}
+
+message Kill {
+    enum KillEnum {
+        QUERY = 1;
+        MUTATION = 2;
+    }
+    required KillEnum command = 1;
+    required WhereStatement where = 2;
+    enum KillOption {
+        SYNC = 1;
+        ASYNC = 2;
+        TEST = 3;
+    }
+    optional KillOption option = 3;
+    oneof kill_format_oneof {
+        InFormat informat = 4;
+        OutFormat outformat = 5;
+    }
 }
 
 message SQLQueryInner {
@@ -3919,6 +3937,7 @@ message SQLQueryInner {
         BackupRestore backup_restore = 20;
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
+        Kill kill = 23;
     }
 }
 
