@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/VersionNumber.h>
-#include <string>
+#include <base/types.h>
 #include <vector>
 
 
@@ -42,31 +42,31 @@ namespace DB
   */
 struct FunctionDocumentation
 {
-    using Description = std::string;
+    using Description = String;
 
-    using Syntax = std::string;
+    using Syntax = String;
 
     struct Argument
     {
-        std::string name;                     /// E.g. "y"
-        std::string description;              /// E.g. "The divisor."
-        std::vector<std::string> types = {};  /// E.g. {"(U)Int*", "Float*"}
-                                              /// Default initialized only during a transition period, see 'argumentsAsString'.
+        String name;                     /// E.g. "y"
+        String description;              /// E.g. "The divisor."
+        std::vector<String> types = {};  /// E.g. {"(U)Int*", "Float*"}
+                                         /// Default initialized only during a transition period, see 'argumentsAsString'.
     };
     using Arguments = std::vector<Argument>;
 
     struct ReturnedValue
     {
-        std::string description;              /// E.g. "Returns the remainder of the division."
-        std::vector<std::string> types = {};  /// E.g. {"Float32"}
-                                              /// Default initialized only during a transition period
+        String description;              /// E.g. "Returns the remainder of the division."
+        std::vector<String> types = {};  /// E.g. {"Float32"}
+                                         /// Default initialized only during a transition period
     };
 
     struct Example
     {
-        std::string name;
-        std::string query;
-        std::string result;
+        String name;
+        String query;
+        String result;
     };
     using Examples = std::vector<Example>;
 
@@ -126,7 +126,7 @@ struct FunctionDocumentation
         TableFunction
     };
 
-    using Related = std::vector<std::string>;
+    using Related = std::vector<String>;
 
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
     Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
@@ -137,11 +137,11 @@ struct FunctionDocumentation
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
     Category category;                            /// E.g. Category::DatesAndTimes
 
-    std::string syntaxAsString() const;
-    std::string argumentsAsString() const;
-    std::string returnedValueAsString() const;
-    std::string examplesAsString() const;
-    std::string introducedInAsString() const;
-    std::string categoryAsString() const;
+    String syntaxAsString() const;
+    String argumentsAsString() const;
+    String returnedValueAsString() const;
+    String examplesAsString() const;
+    String introducedInAsString() const;
+    String categoryAsString() const;
 };
 }
