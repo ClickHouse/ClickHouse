@@ -10,25 +10,4 @@
 1
 2
 3
-QUERY id: 0
-  PROJECTION COLUMNS
-    id Int32
-  PROJECTION
-    LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: id, result_type: Int32, source_id: 3
-  JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.distributed_table_1
-  WHERE
-    FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 5, nodes: 2
-          COLUMN id: 6, column_name: id, result_type: Int32, source_id: 3
-          QUERY id: 7, is_subquery: 1, is_distinct: 1
-            PROJECTION COLUMNS
-              id Int32
-            PROJECTION
-              LIST id: 8, nodes: 1
-                COLUMN id: 9, column_name: id, result_type: Int32, source_id: 10
-            JOIN TREE
-              TABLE id: 10, alias: __table1, table_name: default.distributed_table_2
-  SETTINGS enable_add_distinct_to_in_subqueries=1
+1

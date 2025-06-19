@@ -1,0 +1,59 @@
+<test>
+    <!-- Global settings for all queries -->
+    <settings>
+        <!-- Use the new query-tree analyser that contains the optimisation -->
+        <allow_experimental_analyzer>1</allow_experimental_analyzer>
+
+        <!-- Execute sub-queries locally when possible (faster CI runs)       -->
+        <prefer_localhost_replica>1</prefer_localhost_replica>
+
+        <!-- Allow several Distributed tables inside one query                -->
+        <distributed_product_mode>allow</distributed_product_mode>
+    </settings>
+
+    <!-- A Distributed table that produces a huge number of duplicates.
+         Every shard returns the same sequence of numbers, providing
+         an excellent "worst case" for the DISTINCT optimisation.          -->
+    <create_query>
+        CREATE TABLE distributed_numbers
+        (
+            number UInt64
+        )
+        ENGINE = Distributed(
+            test_cluster_two_shard_three_replicas_localhost,
+            system, numbers
+        )
+    </create_query>
+
+    <!-- 1.  Optimisation OFF  -->
+    <query>
+        SELECT count()
+        FROM numbers(100000000)            -- 100 M rows on the left side
+        WHERE number % 100 IN              -- 100 different keys
+        (
+            SELECT number % 100
+            FROM distributed_numbers
+            WHERE number &lt; 500000000           -- 500 M duplicates per shard
+        )
+        SETTINGS enable_add_distinct_to_in_subqueries = 0,
+            max_rows_to_read = 1000000000000,
+            read_overflow_mode = 'break'
+    </query>
+
+    <!-- 2.  Optimisation ON  -->
+    <query>
+        SELECT count()
+        FROM numbers(100000000)
+        WHERE number % 100 IN
+        (
+            SELECT number % 100
+            FROM distributed_numbers
+            WHERE number &lt; 500000000
+        )
+        SETTINGS enable_add_distinct_to_in_subqueries = 1,
+            max_rows_to_read = 1000000000000,
+            read_overflow_mode = 'break'
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS distributed_numbers</drop_query>
+</test> 
