@@ -1,4 +1,6 @@
 #include <optional>
+#include <sstream>
+#include <string>
 #include "Common/Exception.h"
 #include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
@@ -848,11 +850,13 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
         return cached_files.value();
 
     std::vector<Iceberg::ManifestFileEntry> files;
-    for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries) {
+    for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
+    {
         auto manifest_file_ptr = getManifestFile(manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
         initializeSchemasFromManifestFile(manifest_file_ptr);
         const auto & files_in_manifest = manifest_file_ptr->getFiles(file_content_type);
-        for (const auto & manifest_file_entry : files_in_manifest) {
+        for (const auto & manifest_file_entry : files_in_manifest)
+        {
             ManifestFilesPruner pruner(
                 schema_processor, relevant_snapshot_schema_id,
                 use_partition_pruning ? filter_dag : nullptr,
@@ -1006,46 +1010,12 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
     , data_object(data_object_)
 {
-    for (const auto & position_delete : position_deletes_objects_)
-    {
-        for (const auto & entry : position_delete.common_partition_specification)
-        {
-            LOG_DEBUG(
-                &Poco::Logger::get("IcebergDataObjectInfo"),
-                "Position delete object, partition entry: ({}, {}, {})",
-                entry.source_id,
-                entry.partition_name,
-                entry.transform_name);
-        }
-        for (const auto & field : position_delete.partition_key_value)
-        {
-            LOG_DEBUG(&Poco::Logger::get("IcebergDataObjectInfo"), "Position delete object, partition_key_value: {}", toString(field));
-        }
-        LOG_DEBUG(
-            &Poco::Logger::get("IcebergDataObjectInfo"),
-            "Position delete object: added_sequence_number: {}",
-            // position_delete.common_partition_specification,
-            position_delete.added_sequence_number);
-    }
-    for (const auto & entry : data_object_.common_partition_specification)
-    {
-        LOG_DEBUG(
-            &Poco::Logger::get("IcebergDataObjectInfo"),
-            "Data object, partition entry: ({}, {}, {})",
-            entry.source_id,
-            entry.partition_name,
-            entry.transform_name);
-    }
-    for (const auto & field : data_object_.partition_key_value)
-    {
-        LOG_DEBUG(&Poco::Logger::get("IcebergDataObjectInfo"), "Data object, partition_key_value: {}", toString(field));
-    }
-    LOG_DEBUG(
-        &Poco::Logger::get("IcebergDataObjectInfo"),
-        "Data object: added_sequence_number: {}",
-        // position_delete.common_partition_specification,
-        data_object_.added_sequence_number);
-
+    //Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    // It is done to have an invariant that position deletes objects which corresponds
+    // to the data object form a subsegment in a position_deletes_objects_ vector.
+    // We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    // greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
+    // ManifestFileEntry has comparator by default which helps to do that.
     auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
     auto end_it = std::upper_bound(
         position_deletes_objects_.begin(),
@@ -1054,9 +1024,18 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
         [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
         {
             return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
-                < std::tie(lhs.common_partition_specification, rhs.partition_key_value);
+                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
         });
-    chassert(beg_it - position_deletes_objects_.begin() <= end_it - position_deletes_objects_.begin());
+    if (beg_it - position_deletes_objects_.begin() > end_it - position_deletes_objects_.begin())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "beginning: {}, end: {}, position_deletes_objects size: {}",
+            beg_it - position_deletes_objects_.begin(),
+            end_it - position_deletes_objects_.begin(),
+            position_deletes_objects_.size());
+    }
     position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
     if (!position_deletes_objects.empty() && iceberg_metadata.configuration.lock()->format != "Parquet")
     {

@@ -349,6 +349,7 @@ ManifestFileContent::ManifestFileContent(
                 }
                 catch (const DB::Exception &)
                 {
+                    reference_file_path = std::nullopt;
                 }
                 this->position_deletes_files.emplace_back(
                     file_path_key,

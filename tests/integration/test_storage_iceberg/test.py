@@ -1565,10 +1565,10 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_row_based_deletes(started_cluster, storage_type):
+def test_position_deletes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"""
@@ -1655,138 +1655,12 @@ def test_row_based_deletes(started_cluster, storage_type):
 
     assert get_array(
         instance.query(
-            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_partition_pruning = 1"
+            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1"
         )
     ) == [70]
 
     # Clean up
     instance.query(f"DROP TABLE {TABLE_NAME}")
-
-
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_position_deletes(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
-
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read', 'equality.field.ids' = '1')"
-    )
-
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 100
-    )
-
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 90
-    )
-
-    # check that filters are applied after deletes
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} WHERE id >= 10 SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 90
-    )
-
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 80
-    )
-
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 70
-    )
-
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)")
-
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 170
-    )
-
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 120
-    )
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
