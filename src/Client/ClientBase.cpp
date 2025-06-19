@@ -196,10 +196,10 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 
 void initFormatParsingThreadPoolIfNeeded()
 {
-    if (!getFormatParsingThreadPool().isInitialized())
+    if (!DB::getFormatParsingThreadPool().isInitialized())
     {
         size_t max_parsing_threads = getNumberOfCPUCoresToUse();
-        getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
+        DB::getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
     }
 }
 
