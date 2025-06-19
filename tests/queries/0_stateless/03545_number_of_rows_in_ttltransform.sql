@@ -2,23 +2,23 @@ CREATE TABLE t
 (
     `timestamp` DateTime,
     `id` String,
-    `value` UInt8,
+    `value` UInt16,
 )
 ENGINE = MergeTree
 ORDER BY (id, toStartOfDay(timestamp))
 TTL timestamp + toIntervalDay(1)
-GROUP BY id, toStartOfDay(timestamp)
-SET id = argMax(id, timestamp), value = argMax(value, timestamp), timestamp + toIntervalDay(10);
+    GROUP BY id, toStartOfDay(timestamp)
+    SET timestamp = max(timestamp), id = argMax(id, timestamp), value = max(value);
 
-INSERT INTO t VALUES (parseDateTimeBestEffort('2025-06-9 10:00'), 'pepe', 1);
-INSERT INTO t VALUES (parseDateTimeBestEffort('2025-06-10 10:00'), 'pepe', 2);
-INSERT INTO t VALUES (parseDateTimeBestEffort('2025-06-10 11:00'), 'pepe', 3);
+INSERT INTO t VALUES (parseDateTimeBestEffort('2000-06-9 10:00'), 'pepe', 1000);
+INSERT INTO t VALUES (parseDateTimeBestEffort('2000-06-10 10:00'), 'pepe', 1000);
+
+-- Inserts the maximum value, but with an older timestmap. The value should be taken in the aggregation.
+INSERT INTO t VALUES (parseDateTimeBestEffort('2000-06-10 11:00'), 'pepe', 11000);
+INSERT INTO t VALUES (parseDateTimeBestEffort('2000-06-10 12:00'), 'pepe', 1200);
+
+-- Inserts the latest timestamp, which should be the one taken in the aggregation.
+INSERT INTO t VALUES (parseDateTimeBestEffort('2000-06-10 13:00'), 'pepe', 1300);
 
 OPTIMIZE TABLE t FINAL;
-SELECT '-- TTL GROUP BY is applied';
-SELECT * FROM t ORDER BY ALL;
-
-INSERT INTO t VALUES (parseDateTimeBestEffort('2025-05-10 11:00'), 'pepe', 4);
-OPTIMIZE TABLE t FINAL;
-SELECT '-- TTL removes old elements';
 SELECT * FROM t ORDER BY ALL;
