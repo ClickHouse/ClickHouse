@@ -7,6 +7,7 @@
 #include <Functions/geometryConverters.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include "IO/WriteBuffer.h"
 
 namespace DB
 {
@@ -27,6 +28,7 @@ using GeometricObject = std::variant<
     Polygon<CartesianPoint>,
     MultiPolygon<CartesianPoint>>;
 
+/// Documentation about WKB format: https://libgeos.org/specifications/wkb/
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
 
 struct IWKBTransform
@@ -39,13 +41,16 @@ struct IWKBTransform
 struct WKBPointTransform : public IWKBTransform
 {
     static constexpr const char * name = "Point";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::Point;
 
     String dumpObject(const Field & geo_object) override;
+    static void dumpPointImpl(const Field & geo_object, WriteBuffer & buf);
 };
 
 struct WKBLineStringTransform : public IWKBTransform
 {
     static constexpr const char * name = "LineString";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::LineString;
 
     String dumpObject(const Field & geo_object) override;
 };
@@ -53,6 +58,7 @@ struct WKBLineStringTransform : public IWKBTransform
 struct WKBPolygonTransform : public IWKBTransform
 {
     static constexpr const char * name = "Polygon";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::Polygon;
 
     String dumpObject(const Field & geo_object) override;
 };
@@ -60,6 +66,7 @@ struct WKBPolygonTransform : public IWKBTransform
 struct WKBMultiLineStringTransform : public IWKBTransform
 {
     static constexpr const char * name = "MultiLineString";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::MultiLineString;
 
     String dumpObject(const Field & geo_object) override;
 };
@@ -67,6 +74,7 @@ struct WKBMultiLineStringTransform : public IWKBTransform
 struct WKBMultiPolygonTransform : public IWKBTransform
 {
     static constexpr const char * name = "MultiPolygon";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::MultiPolygon;
 
     String dumpObject(const Field & geo_object) override;
 };
