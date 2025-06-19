@@ -1906,6 +1906,9 @@ class TestCase:
                 + " --param_CLICKHOUSE_DATABASE_1="
                 + database
                 + "_1"
+                + " --param_CLICKHOUSE_DATABASE_2="
+                + database
+                + "_2"
             )
             for env_to_param in [
                 "CLICKHOUSE_USER_FILES",

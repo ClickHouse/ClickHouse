@@ -175,6 +175,10 @@ StorageMaterializedView::StorageMaterializedView(
         /// Decide whether to enable coordination.
         if (is_replicated_db)
         {
+            if (!has_inner_table && db.get() != DatabaseCatalog::instance().getDatabase(to_table_id.database_name).get())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It's not allowed to create a Refreshable Materialized View "
+                                "with target table in another Replicated database. They should be in the same database");
+
             if (fixed_uuid)
             {
                 /// In APPEND mode, both coordinated and uncoordinated mode make sense, so allow choosing it with a setting.
