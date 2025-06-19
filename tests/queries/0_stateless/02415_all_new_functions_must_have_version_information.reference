@@ -574,16 +574,6 @@ readWKTPolygon
 readWKTRing
 regexpExtract
 regexpQuoteMeta
-regionHierarchy
-regionIn
-regionToArea
-regionToCity
-regionToContinent
-regionToCountry
-regionToDistrict
-regionToName
-regionToPopulation
-regionToTopContinent
 reinterpret
 reinterpretAsDate
 reinterpretAsDateTime
