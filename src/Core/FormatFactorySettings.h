@@ -438,7 +438,7 @@ SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
 DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 ```
 
-```
+```response
 ┌─name─┬─type───────────┐
 │ a    │ Array(Dynamic) │
 └──────┴────────────────┘
@@ -449,7 +449,7 @@ SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 ```
 
-```
+```response
 ┌─name─┬─type─────────────────────────────────────────────────────────────┐
 │ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
 └──────┴──────────────────────────────────────────────────────────────────┘

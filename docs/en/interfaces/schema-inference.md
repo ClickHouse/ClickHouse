@@ -396,7 +396,7 @@ SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
 DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
 ```
 
-```
+```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr  │ Array(Dynamic) │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -420,7 +420,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Unnamed Tuples:
 
-If setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is disabled we treat Arrays with elements of different types as Unnamed Tuples in JSON formats.
+If setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types` is disabled, we treat Arrays with elements of different types as Unnamed Tuples in JSON formats.
 ```sql
 SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
