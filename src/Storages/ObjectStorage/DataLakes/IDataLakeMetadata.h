@@ -50,7 +50,7 @@ public:
     virtual bool update(const ContextPtr &) { return false; }
 
     virtual bool supportsSchemaEvolution() const { return false; }
-    virtual bool supportsWrites() const { return false; }
+    virtual bool supportsWrites() const { return true; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 

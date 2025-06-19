@@ -3122,3 +3122,29 @@ def test_cluster_table_function_with_partition_pruning(
     )
 
     instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_writes(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+    #instance.query(
+    #    f"INSERT INTO {TABLE_NAME} VALUES (1);"
+    #)
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);")
+
+    #assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
