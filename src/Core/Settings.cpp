@@ -6629,6 +6629,62 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_update_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_update_on_cluster, false, R"(Whether enable SQL intercept for update on cluster.
+        If enabled, SQL intercept will be applied to update on cluster queries. If disabled, SQL intercept will not be applied to update on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_update_on_cluster` setting.
+        For example, if `sql_intercept_mode` is `LOG`, then SQL intercept will be applied to update on cluster queries if `enable_sql_intercept_for_update_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode` is `THROW`, then SQL intercept will be applied to update on cluster queries if `enable_sql_intercept_for_update_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_delete_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_delete_on_cluster, false, R"(Whether enable SQL intercept for delete on cluster.
+        If enabled, SQL intercept will be applied to delete on cluster queries. If disabled, SQL intercept will not be applied to delete on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_delete_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_delete_on_cluster` is `LOG`, then SQL intercept will be applied to delete on cluster queries if `enable_sql_intercept_for_delete_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_delete_on_cluster` is `THROW`, then SQL intercept will be applied to update on cluster queries if `enable_sql_intercept_for_delete_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_add_column_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_add_column_on_cluster, false, R"(Whether enable SQL intercept for update on cluster.
+        If enabled, SQL intercept will be applied to add column on cluster queries. If disabled, SQL intercept will not be applied to add column on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_add_column_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_add_column_on_cluster` is `LOG`, then SQL intercept will be applied to add column on cluster queries if `sql_intercept_mode_for_add_column_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_add_column_on_cluster` is `THROW`, then SQL intercept will be applied to add column on cluster queries if `sql_intercept_mode_for_add_column_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_drop_column_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_drop_column_on_cluster, false, R"(Whether enable SQL intercept for drop column on cluster.
+        If enabled, SQL intercept will be applied to drop column on cluster queries. If disabled, SQL intercept will not be applied to drop column on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_drop_column_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_drop_column_on_cluster` is `LOG`, then SQL intercept will be applied to drop column on cluster queries if `sql_intercept_mode_for_drop_column_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_drop_column_on_cluster` is `THROW`, then SQL intercept will be applied to drop column on cluster queries if `sql_intercept_mode_for_drop_column_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_optimize_final_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_optimize_final_on_cluster, false, R"(Whether enable SQL intercept for optimize final on cluster.
+        If enabled, SQL intercept will be applied to optimize final on cluster queries. If disabled, SQL intercept will not be applied to optimize final on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_optimize_final_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_optimize_final_on_cluster` is `LOG`, then SQL intercept will be applied to optimize final on cluster queries if `sql_intercept_mode_for_optimize_final_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_optimize_final_on_cluster` is `THROW`, then SQL intercept will be applied to optimize final on cluster queries if `sql_intercept_mode_for_optimize_final_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_drop_table_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_drop_table_on_cluster, false, R"(Whether enable SQL intercept for drop table on cluster.
+        If enabled, SQL intercept will be applied to drop table on cluster queries. If disabled, SQL intercept will not be applied to drop table on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_drop_table_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_drop_table_on_cluster` is `LOG`, then SQL intercept will be applied to drop table on cluster queries if `sql_intercept_mode_for_drop_table_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_drop_table_on_cluster` is `THROW`, then SQL intercept will be applied to drop table on cluster queries if `sql_intercept_mode_for_drop_table_on_cluster` is enabled and throw an exception.)", 0) \
+    DECLARE(SQLInterceptMode, sql_intercept_mode_for_truncate_table_on_cluster, SQLInterceptMode::LOG, R"(The mode of SQL intercept for SQL queries. Possible values:
+        - 'LOG' - log the query and continue execution.
+        - 'THROW' - throw an exception and stop execution.)", 0) \
+    DECLARE(Bool, enable_sql_intercept_for_truncate_table_on_cluster, false, R"(Whether enable SQL intercept for truncate table on cluster.
+        If enabled, SQL intercept will be applied to truncate table on cluster queries. If disabled, SQL intercept will not be applied to truncate table on cluster queries.
+        The intercept policy is defined by the `sql_intercept_mode_for_truncate_table_on_cluster` setting.
+        For example, if `sql_intercept_mode_for_truncate_table_on_cluster` is `LOG`, then SQL intercept will be applied to truncate table on cluster queries if `sql_intercept_mode_for_truncate_table_on_cluster` is enabled and log a warnning message.
+        if `sql_intercept_mode_for_truncate_table_on_cluster` is `THROW`, then SQL intercept will be applied to truncate table on cluster queries if `sql_intercept_mode_for_truncate_table_on_cluster` is enabled and throw an exception.)", 0) \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
