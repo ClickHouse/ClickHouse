@@ -307,7 +307,25 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+    ScatteredBlocks dispatched_blocks;
+    if (!hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        // Use dispatchBlock only when single-level maps are used (as it was before)
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+    }
+    else
+    {
+        // For two-level maps, create the exact number of slots required
+        dispatched_blocks.reserve(slots);
+        dispatched_blocks.emplace_back(std::move(right_block)); // First slot gets the real block
+        
+        // Fill the remaining slots with empty blocks
+        for (size_t i = 1; i < slots; ++i)
+        {
+            dispatched_blocks.emplace_back(ScatteredBlock());
+        }
+    }
+    
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -375,7 +393,24 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     {
         /// materialize once and scatter the block across all slots
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        
+        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+        {
+            // Use dispatchBlock only when single-level maps are used (as it was before)
+            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        }
+        else
+        {
+            // For two-level maps, create the exact number of slots required
+            dispatched_blocks.reserve(slots);
+            dispatched_blocks.emplace_back(std::move(block)); // First slot gets the real block
+            
+            // Fill the remaining slots with empty blocks
+            for (size_t i = 1; i < slots; ++i)
+            {
+                dispatched_blocks.emplace_back(ScatteredBlock());
+            }
+        }
     }
 
     chassert(dispatched_blocks.size() == slots);

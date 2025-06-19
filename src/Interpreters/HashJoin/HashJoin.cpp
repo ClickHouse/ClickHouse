@@ -1373,25 +1373,15 @@ private:
 
                 for (size_t row = 0; row < mapped_block.rows(); ++row)
                 {
-                    try
+                    bool is_used = parent.isUsed(&mapped_block.getSourceBlock(), row);
+                    if (!is_used)
                     {
-                        /// check if the row is used - if any error happens, assume the row is used
-                        bool is_used = parent.isUsed(&mapped_block.getSourceBlock(), row);
-                        if (!is_used)
+                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
-                            for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
-                            {
-                                columns_keys_and_right[colnum]->insertFrom(*mapped_block.getByPosition(colnum).column, row);
-                            }
-
-                            ++rows_added;
+                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.getByPosition(colnum).column, row);
                         }
-                    }
-                    catch (...)
-                    {
-                        // If there is any error accessing the used flags, skip this row
-                        // to prevent out-of-bounds access
-                        continue;
+
+                        ++rows_added;
                     }
                 }
             }
@@ -1413,20 +1403,10 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                try
-                {
-                    // Safely check if the offset is used - if any error happens, assume the offset is used
-                    bool is_used = parent.isUsed(offset);
-                    if (is_used)
-                        continue;
-                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
-                }
-                catch (...)
-                {
-                    // If there's any error accessing the used flags, skip this row
-                    // to prevent out-of-bounds access
+                bool is_used = parent.isUsed(offset);
+                if (is_used)
                     continue;
-                }
+                AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
                 {
