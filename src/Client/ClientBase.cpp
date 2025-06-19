@@ -194,6 +194,15 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
     }
 }
 
+void initFormatParsingThreadPoolIfNeeded()
+{
+    if (!getFormatParsingThreadPool().isInitialized())
+    {
+        size_t max_parsing_threads = getNumberOfCPUCoresToUse();
+        getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
+    }
+}
+
 }
 
 namespace DB
@@ -1872,6 +1881,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_for_storage_file = std::move(reordered_description);
         }
 
+        initFormatParsingThreadPoolIfNeeded();
+
         StorageFile::CommonArguments args{
             WithContext(client_context),
             parsed_insert_query->table_id,
@@ -1969,11 +1980,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         insert_format_max_block_size_from_config.has_value())
         insert_format_max_block_size = insert_format_max_block_size_from_config.value();
 
-    if (!getFormatParsingThreadPool().isInitialized())
-    {
-        size_t max_parsing_threads = getNumberOfCPUCoresToUse();
-        getFormatParsingThreadPool().initialize(max_parsing_threads, /*max_free_threads*/ 0, /*queue_size*/ 10000);
-    }
+    initFormatParsingThreadPoolIfNeeded();
 
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
