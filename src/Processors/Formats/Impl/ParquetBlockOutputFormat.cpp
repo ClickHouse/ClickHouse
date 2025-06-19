@@ -390,7 +390,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     }
     for (auto & s : columns_to_write)
     {
-        writeColumnChunkBody(s, options, format_settings, out);
+        writeColumnChunkBody(s, options, out);
         finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
     }
 
@@ -563,7 +563,7 @@ void ParquetBlockOutputFormat::threadFunction()
             PODArray<char> serialized;
             {
                 auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
-                writeColumnChunkBody(task.state, options, format_settings, buf);
+                writeColumnChunkBody(task.state, options, buf);
             }
 
             lock.lock();
@@ -592,7 +592,6 @@ void registerOutputFormatParquet(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");
-    factory.setContentType("Parquet", "application/octet-stream");
 }
 
 }

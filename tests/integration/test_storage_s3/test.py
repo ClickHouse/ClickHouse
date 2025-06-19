@@ -693,13 +693,12 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     jobs = []
 
     glob1 = [2, 3, 4, 5]
-    glob2 = [1, 32, 48, 97, 11]
+    glob2 = [32, 48, 97, 11]
     nights = [x * 100 + y for x in glob1 for y in glob2]
 
     for night in nights:
         path = f"shard_{night // 100}/night_{night % 100}/tale.csv"
-        print(path)
-        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
+        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
             started_cluster.minio_ip,
             MINIO_INTERNAL_PORT,
             bucket,
@@ -712,7 +711,6 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     for job in jobs:
         job.join()
 
-    # Enum of multiple elements
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
@@ -721,26 +719,6 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == ["4\t4\t4\t4"]
-
-    # Enum of one element
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32}}/tale.csv', 'CSV', '{}')".format(
-        started_cluster.minio_redirect_host,
-        started_cluster.minio_redirect_port,
-        bucket,
-        table_format,
-    )
-    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
-    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
-
-    # Enum of one element of one char
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{1}}/tale.csv', 'CSV', '{}')".format(
-        started_cluster.minio_redirect_host,
-        started_cluster.minio_redirect_port,
-        bucket,
-        table_format,
-    )
-    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
-    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
 
     instance.query("SYSTEM FLUSH LOGS")
     list_request_count = instance.query(

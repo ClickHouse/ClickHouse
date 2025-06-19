@@ -26,7 +26,6 @@ Encode a string with [Base32](https://datatracker.ietf.org/doc/html/rfc4648) enc
             {"simple_encoding1", "SELECT base32Encode('a')", "ME======"},
             {"simple_encoding2", "SELECT base32Encode('Hello')", "JBSWY3DP"}
         },
-        .introduced_in = {25, 5},
         .category = FunctionDocumentation::Category::String});
 }
 }

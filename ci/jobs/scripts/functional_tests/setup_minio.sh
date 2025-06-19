@@ -159,10 +159,10 @@ main() {
   if ! (minio --version && mc --version); then
     download_minio
   fi
-  setup_aws_credentials
   start_minio
   setup_minio "$1"
   upload_data "${query_dir}" "$TEST_DIR"
+  setup_aws_credentials
 }
 
 main "$@"

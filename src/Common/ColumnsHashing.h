@@ -7,7 +7,6 @@
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
@@ -65,9 +64,7 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings)
-        : cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
-    {}
+    explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings) : cache(settings.max_threads) {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
