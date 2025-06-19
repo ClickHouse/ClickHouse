@@ -3,15 +3,15 @@
 10655	5	formal_parameter	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[10644,11]				0	[]	['type']	['ref4']	[9521]	['']
 1031	5	formal_parameter	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','structure_type','namespace','namespace','compile_unit']	[1015,744,83,42,11]				0	[]	['type','artificial']	['ref4','flag_present']	[8729,1]	['','']
 10614	12	subprogram	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['compile_unit']	[11]	wcstof		wchar.h	383	[]	['name','decl_file','decl_line','type','declaration','external']	['strp','data1','data2','ref4','flag_present','flag_present']	[0,22,383,10637,1,1]	['wcstof','wchar.h','','','','']
-4165	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['GNU_template_parameter_pack','structure_type','namespace','compile_unit']	[4155,4135,42,11]				0	[]	[]	[]	[]	[]
+4165	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['GNU_template_parameter_pack','structure_type','namespace','compile_unit']	[4155,4135,42,11]				0	[]	[]	[]	[]	[]
 4453	7	subprogram	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['structure_type','namespace','compile_unit']	[4340,42,11]	_Head_base		tuple	94	[]	['name','decl_file','decl_line','declaration','external']	['strp','data1','data1','flag_present','flag_present']	[0,12,94,1,1]	['_Head_base','tuple','','','']
 12314	11	subprogram	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['compile_unit']	[11]	isxdigit		ctype.h	118	[]	['name','decl_file','decl_line','type','declaration','external']	['strp','data1','data1','ref4','flag_present','flag_present']	[0,35,118,8690,1,1]	['isxdigit','ctype.h','','','','']
 988	16	subprogram	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['structure_type','namespace','namespace','compile_unit']	[744,83,42,11]	operator++	_ZNSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEppEi	chrono	558	[]	['linkage_name','name','decl_file','decl_line','type','declaration','external']	['strp','strp','data1','data2','ref4','flag_present','flag_present']	[0,0,6,558,744,1,1]	['_ZNSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEppEi','operator++','chrono','','','','']
-4338	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','structure_type','namespace','compile_unit']	[4315,4135,42,11]				0	[]	[]	[]	[]	[]
-16621068925129977565
+4338	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','structure_type','namespace','compile_unit']	[4315,4135,42,11]				0	[]	[]	[]	[]	[]
+7150441400212224502
 offset	12557109049662739353	4611
 size	8517422279110950867	30
-tag	17905751708343214984	template_type_parameter
+tag	16866956868813931816	template_type_parameter
 unit_name	3809634300092035316	tests/queries/0_stateless/data_dwarf/tiny.cpp
 unit_offset	14905628884015248742	0
 ancestor_tags	830906299496007322	['structure_type','compile_unit']
@@ -25,20 +25,20 @@ attr_name	3498641248020422385	['linkage_name','name','decl_file','decl_line','ty
 attr_form	13526257655047977794	['strp','ref4','data1','data1','data1']
 attr_int	11015789207279219965	[4432,11,0,0,1]
 attr_str	4424785029337272915	['putwc','wchar.h','','','','']
-13857	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[13827,12]				0	[]	[]	[]	[]	[]
+13857	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[13827,12]				0	[]	[]	[]	[]	[]
 2355	5	formal_parameter	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','class_type','namespace','compile_unit']	[2349,2076,43,12]				0	[]	['type','artificial']	['ref4','flag_present']	[7415,1]	['','']
 9267	7	imported_declaration	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['namespace','compile_unit']	[9241,12]			cstdlib	200	[]	['decl_file','decl_line','import']	['data1','data1','ref4']	[38,200,11139]	['cstdlib','','']
 8880	5	formal_parameter	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[8860,12]				0	[]	['type']	['ref4']	[8821]	['']
-2941	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','class_type','namespace','compile_unit']	[2915,2782,43,12]				0	[]	[]	[]	[]	[]
+2941	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','class_type','namespace','compile_unit']	[2915,2782,43,12]				0	[]	[]	[]	[]	[]
 4165	5	subprogram	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['structure_type','namespace','compile_unit']	[4093,43,12]	_Tuple_impl		tuple	434	[]	['name','decl_file','decl_line','declaration','explicit']	['strx1','data1','data2','flag_present','flag_present']	[0,11,434,1,1]	['_Tuple_impl','tuple','','','']
-3087	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','structure_type','namespace','compile_unit']	[3067,2943,43,12]				0	[]	[]	[]	[]	[]
+3087	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','structure_type','namespace','compile_unit']	[3067,2943,43,12]				0	[]	[]	[]	[]	[]
 73	7	structure_type	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['namespace','namespace','compile_unit']	[62,43,12]	duration<long, std::ratio<1L, 1L> >		chrono	459	[]	['calling_convention','name','byte_size','decl_file','decl_line']	['data1','strx1','data1','data1','data2']	[5,0,8,5,459]	['','duration<long, std::ratio<1L, 1L> >','','chrono','']
-9151	1	null	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[9131,12]				0	[]	[]	[]	[]	[]
+9151	1		tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[9131,12]				0	[]	[]	[]	[]	[]
 11619	5	formal_parameter	tests/queries/0_stateless/data_dwarf/tiny.cpp	0	['subprogram','compile_unit']	[11603,12]				0	[]	['type']	['ref4']	[11491]	['']
-17088623892243577903
+1699750621688091230
 offset	16023471350623073201	13857
 size	5435489408010792888	18
-tag	17905751708343214984	template_type_parameter
+tag	16866956868813931816	template_type_parameter
 unit_name	3809634300092035316	tests/queries/0_stateless/data_dwarf/tiny.cpp
 unit_offset	14905628884015248742	0
 ancestor_tags	830906299496007322	['structure_type','compile_unit']

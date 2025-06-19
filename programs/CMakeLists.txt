@@ -107,6 +107,7 @@ add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
 add_subdirectory (keeper-data-dumper)
+add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
 add_subdirectory (server)
@@ -206,6 +207,7 @@ clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-
 
 if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
+    clickhouse_program_install(clickhouse-keeper-utils keeper-utils)
 endif ()
 
 if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
