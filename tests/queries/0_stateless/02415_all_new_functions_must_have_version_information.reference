@@ -813,6 +813,12 @@ toStartOfWeek
 toString
 toStringCutToZero
 toTime
+toTime64
+toTime64OrNull
+toTime64OrZero
+toTimeOrNull
+toTimeOrZero
+toTimeWithFixedDate
 toTypeName
 toUInt128
 toUInt128OrDefault
