@@ -508,7 +508,7 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
 
 SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
     : MergedData(false, max_block_size_rows_, max_block_size_bytes_)
-    , def(def_)
+    , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
 {
 }
 
@@ -544,8 +544,6 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
 
     columns = std::move(new_columns);
 
-    current_row.resize(def.column_names.size());
-    current_row_columns.resize(def.column_names.size());
     initAggregateDescription();
 
     /// Just to make startGroup() simpler.
