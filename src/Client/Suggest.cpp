@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
@@ -100,6 +101,8 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
         /// LocalConnection creates QueryScope for each query
         if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
             query_scope.emplace(my_context);
+
+        setThreadName("Suggest");
 
         for (size_t retry = 0; retry < 10; ++retry)
         {
