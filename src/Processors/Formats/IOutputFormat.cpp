@@ -4,6 +4,8 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -93,6 +95,7 @@ void IOutputFormat::work()
     switch (current_block_kind)
     {
         case Main:
+            LOG_DEBUG(getLogger("OutputFormat"), "Consuming main chunk with {} rows", current_chunk.getNumRows());
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
             consume(std::move(current_chunk));
@@ -119,11 +122,16 @@ void IOutputFormat::work()
 
 void IOutputFormat::flushImpl()
 {
+    LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl, out count {} offset {} out type {}", out.count(), out.offset(), typeid(out).name());
+
     out.next();
 
     /// If output is a compressed buffer, we will flush the compressed chunk as well.
     if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
+    {
+        LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl for nested, out count {}", out_with_nested->getNestedBuffer()->count());
         out_with_nested->getNestedBuffer()->next();
+    }
 }
 
 void IOutputFormat::flush()

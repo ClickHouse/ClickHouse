@@ -450,10 +450,14 @@ void HTTPHandler::processQuery(
         {
             /// Other than query parameters are treated as settings.
             if (!customizeQueryParam(context, key, value))
+            {
+                if (key == "output_format_parallel_formatting")
+                    LOG_DEBUG(getLogger("HTTPHandler"), "Params: {} = {} Added", key, value);
+                //settings_changes.push_back({key, value});
                 settings_changes.setSetting(key, value);
+            }
         }
     }
-
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
     const auto & settings = context->getSettingsRef();
@@ -604,6 +608,7 @@ void HTTPHandler::processQuery(
         /// Flush all the data from one buffer to another, to track
         /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
         /// context
+        LOG_DEBUG(log, "Flushing output buffer to HTTP response");
         used_output.finalize();
     };
 
@@ -614,7 +619,7 @@ void HTTPHandler::processQuery(
         context,
         set_query_result,
         QueryFlags{},
-        {},
+        /*output_format_settings*/ {},
         handle_exception_in_output_format,
         query_finish_callback);
 }
