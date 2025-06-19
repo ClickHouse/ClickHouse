@@ -112,9 +112,9 @@ void StatementGenerator::generateSettingValues(
 void StatementGenerator::generateSettingValues(
     RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals)
 {
-    std::uniform_int_distribution<size_t> settings_range(1, 40);
+    std::uniform_int_distribution<size_t> settings_range(1, std::min<size_t>(settings.size(), 40));
 
-    generateSettingValues(rg, settings, std::min<size_t>(settings.size(), settings_range(rg.generator)), vals);
+    generateSettingValues(rg, settings, settings_range(rg.generator), vals);
 }
 
 void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl)
