@@ -131,8 +131,9 @@ struct FunctionDocumentation
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
     Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
     Syntax syntax {};                             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};                       /// E.g. ["haystack — String in which the search is performed. [`String`](/sql-reference/data-types/string)", "needle — Substring to be searched. [`String`](/sql-reference/data-types/string)."]
-    ReturnedValue returned_value {};              /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}},
+                                                  ///       {"needle", "Substring to be searched.", {"String"}}}
+    ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
     Category category;                            /// E.g. Category::DatesAndTimes
