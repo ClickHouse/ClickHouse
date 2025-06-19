@@ -350,7 +350,7 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
+            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
@@ -806,7 +806,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Fatal messages (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep '#######################################' clickhouse-server*.log| tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(

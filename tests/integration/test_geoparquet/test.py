@@ -61,9 +61,9 @@ def delete_if_exists(file_path):
         (
             "DROP TABLE IF EXISTS geom4;"
             "CREATE TABLE IF NOT EXISTS geom4 (point MultiLineString) ENGINE = Memory();"
-            "INSERT INTO geom4 VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], []]);"
+            "INSERT INTO geom4 VALUES([[(0, 0), (10, 0)], [(10, 10), (0, 10)], []]);"
             "SELECT * FROM geom4 ORDER BY point INTO OUTFILE '{file_name}' FORMAT Parquet;",
-            'MULTILINESTRING ((0 0, 10 0, 10 10, 0 10), EMPTY)',
+            'MULTILINESTRING ((0 0, 10 0), (10 10, 0 10), EMPTY)',
         ),
         (
             "DROP TABLE IF EXISTS geom5;"

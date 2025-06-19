@@ -18,6 +18,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
+#include "Common/WKB.h"
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
@@ -1237,17 +1238,18 @@ void writeFileFooter(FileWriteState & file,
             c.__set_TYPE_ORDER({});
     }
 
+    /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
     if (options.write_geometadata)
     {
         std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
         for (const auto & [column_name, type] : header.getNamesAndTypesList())
         {
             if (type->getCustomName() &&
-                (type->getCustomName()->getName() == "Point" ||
-                type->getCustomName()->getName() == "LineString" ||
-                type->getCustomName()->getName() == "Polygon" ||
-                type->getCustomName()->getName() == "MultiLineString" ||
-                type->getCustomName()->getName() == "MultiPolygon"))
+                (type->getCustomName()->getName() == WKBPointTransform::name ||
+                type->getCustomName()->getName() == WKBLineStringTransform::name ||
+                type->getCustomName()->getName() == WKBPolygonTransform::name ||
+                type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||
+                type->getCustomName()->getName() == WKBMultiPolygonTransform::name))
             {
                 Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
                 geom_meta->set("encoding", "WKB");
@@ -1259,8 +1261,8 @@ void writeFileFooter(FileWriteState & file,
 
                 geo_columns_metadata.push_back({column_name, geom_meta});
 
-                if (type->getCustomName()->getName() == "Polygon" ||
-                    type->getCustomName()->getName() == "MultiPolygon")
+                if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
+                    type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
                 {
                     geom_meta->set("edges", "planar");
                     geom_meta->set("orientation", "counterclockwise");
