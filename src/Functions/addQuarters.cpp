@@ -20,7 +20,7 @@ addQuarters(datetime, num)
         {"num", "Number of quarters to add.", {"(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` quarters", {"Date"}};
-    FunctionDocumentation::Examples examples_addQuarters = {
+    FunctionDocumentation::Examples examples = {
         {"Add quarters to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,

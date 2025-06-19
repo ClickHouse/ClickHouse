@@ -268,7 +268,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
         {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};    FunctionDocumentation::Examples examples_rotateleft = {
+    FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_rotateleft = {
         {"Usage example", "SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,1,2]"},
         {"Negative value of n", "SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;", "[5,6,1,2,3,4]"}
     };
@@ -293,7 +294,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
         {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};    FunctionDocumentation::Examples examples_rotateright =
+    FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_rotateright =
     {
         {"Usage example", "SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;", "[5,6,1,2,3,4]"},
         {"Negative value of n", "SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;", "[3,4,5,6,1,2]"},
@@ -324,7 +326,8 @@ If the number of elements is negative, the array is shifted to the right.
         {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
         {"default", "Optional. Default value for new elements."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};    FunctionDocumentation::Examples examples_shiftleft =
+    FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_shiftleft =
     {
         {"Usage example", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,0,0]"},
         {"Negative value of n", "SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;", "[0,0,1,2,3,4]"},
@@ -357,7 +360,10 @@ If the number of elements is negative, the array is shifted to the left.
         {"n", "Number of elements to shift.", {"(U)Int8/16/32/64"}},
         {"default", "Optional. Default value for new elements."},
     };
-    FunctionDocumentation::ReturnedValue returned_value_shiftright = {"An array shifted to the right by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_shiftright =
+    {
+        "An array shifted to the right by the specified number of elements", {"Array(T)"}
+    };
     FunctionDocumentation::Examples examples_shiftright =
     {
         {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0, 0, 1, 2, 3, 4]"},

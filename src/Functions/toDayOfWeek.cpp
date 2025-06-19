@@ -23,7 +23,7 @@ and whether the return value should be in the range from 0 to 6 or 1 to 7.
 | 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
 | 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
         )";
-    FunctionDocumentation::Syntax syntax_to_day_of_week = "toDayOfWeek(datetime[, mode[, timezone]])";
+    FunctionDocumentation::Syntax syntax = "toDayOfWeek(datetime[, mode[, timezone]])";
     FunctionDocumentation::Arguments arguments =
     {
         {"datetime", "Date or date with time to get the day of week from.", {"Date", "Date32", "DateTime", "DateTime64"}},

@@ -248,7 +248,7 @@ using FunctionParseReadableSizeOrZero = FunctionParseReadable<NameParseReadableS
 FunctionDocumentation parseReadableSize_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it throws an exception.",
     .syntax = "parseReadableSize(x)",
-    .arguments = 
+    .arguments =
     {
         {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
     },
@@ -272,7 +272,10 @@ FunctionDocumentation parseReadableSize_documentation {
 FunctionDocumentation parseReadableSizeOrNull_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `NULL`",
     .syntax = "parseReadableSizeOrNull(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}},
+    .arguments =
+    {
+        {"x", "Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}
+    },
     .returned_value = {"Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input", {"Nullable(UInt64)"}},
     .examples = {
         {
@@ -294,7 +297,7 @@ FunctionDocumentation parseReadableSizeOrNull_documentation {
 FunctionDocumentation parseReadableSizeOrZero_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`",
     .syntax = "parseReadableSizeOrZero(x)",
-    .arguments = 
+    .arguments =
     {
         {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
     },

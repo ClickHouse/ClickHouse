@@ -126,7 +126,6 @@ std::string FunctionDocumentation::argumentsAsString() const
     for (const auto & [name, description_, types] : arguments)
     {
         result += "- `" + name + "` — " + description_;
-
         /// We assume that if 'type' is empty(), 'description' already ends with the elegible type.
     	/// there may also be special cases where the exact argument type depends on something else or needs explanation
         if (!types.empty())
@@ -178,7 +177,8 @@ std::string FunctionDocumentation::introducedInAsString() const
 
 std::string FunctionDocumentation::categoryAsString() const
 {
-    static const std::unordered_map<Category, std::string> category_to_string = {
+    static const std::unordered_map<Category, std::string> category_to_string =
+    {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},

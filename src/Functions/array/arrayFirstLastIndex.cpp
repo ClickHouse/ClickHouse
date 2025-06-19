@@ -134,7 +134,8 @@ Returns the index of the first element in the source array for which `func(x[, y
         {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_first = {"Returns the index of the first element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};    FunctionDocumentation::Examples examples_first = {
+    FunctionDocumentation::ReturnedValue returned_value_first = {"Returns the index of the first element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};
+    FunctionDocumentation::Examples examples_first = {
         {"Usage example", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "2"},
         {"No match", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']) ", "0"}
     };
@@ -153,7 +154,8 @@ Returns the index of the last element in the source array for which `func(x[, y1
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_last = {"Returns the index of the last element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};    FunctionDocumentation::Examples examples_last = {
+    FunctionDocumentation::ReturnedValue returned_value_last = {"Returns the index of the last element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};
+    FunctionDocumentation::Examples examples_last = {
         {"Usage example", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['a', 'b', 'c']);", "3"},
         {"No match", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']);", "0"}
     };
