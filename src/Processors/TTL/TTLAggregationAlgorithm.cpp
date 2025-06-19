@@ -230,8 +230,9 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
 
-                /// In case the same column is used in the GROUP BY and in the SET clause, we need to make sure
-                /// it's only added once.
+                /// In case the same column is used in the GROUP BY and in the SET clause, we need
+                /// to make sure the values are only added once. Notice that the SET is properly
+                /// applied because it's done before the GROUP BY column insertion.
                 if (!columns_added.contains(it.column_name))
                 {
                     auto & result_column = result_columns[header.getPositionByName(it.column_name)];
