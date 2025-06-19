@@ -60,10 +60,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace VirtualColumnUtils
 {
@@ -164,7 +160,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool use_hive_partitioning)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool parse_hive_columns)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -181,8 +177,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
-    // todo arthur: this might be needed after all
-    if (use_hive_partitioning)
+    if (parse_hive_columns)
     {
         const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
         for (const auto & [key, value] : keys_and_values)
@@ -238,7 +233,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), !hive_columns.empty());
 
     filterBlockWithExpression(actions, block);
 
