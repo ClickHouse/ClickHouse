@@ -21,7 +21,6 @@ def start_cluster():
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/include_from_path.xml",
                 "configs/config.d/include_from.xml",
-                "configs/config.d/encrypted_keys.xml",
                 "configs/config.d/remote_servers.xml",
             ],
             env_variables={
@@ -38,7 +37,6 @@ def start_cluster():
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/include_from_path.xml",
                 "configs/config.d/include_from.xml",
-                "configs/config.d/encrypted_keys.xml",
                 "configs/config.d/remote_servers.xml",
             ],
             with_zookeeper=True,
