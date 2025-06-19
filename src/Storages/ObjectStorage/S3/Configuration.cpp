@@ -173,7 +173,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
     s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
-  
+
     static const auto default_partition_strategy_name = std::string(magic_enum::enum_name(PartitionStrategyFactory::StrategyType::WILDCARD));
     const auto partition_strategy_name = collection.getOrDefault<std::string>("partition_strategy", default_partition_strategy_name);
     const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
