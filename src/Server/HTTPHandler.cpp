@@ -608,6 +608,7 @@ void HTTPHandler::processQuery(
         /// Flush all the data from one buffer to another, to track
         /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
         /// context
+        LOG_DEBUG(log, "Flushing output buffer to HTTP response");
         used_output.finalize();
     };
 

@@ -4,6 +4,8 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -93,6 +95,7 @@ void IOutputFormat::work()
     switch (current_block_kind)
     {
         case Main:
+            LOG_DEBUG(getLogger("OutputFormat"), "Consuming main chunk with {} rows", current_chunk.getNumRows());
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
             consume(std::move(current_chunk));
@@ -119,6 +122,8 @@ void IOutputFormat::work()
 
 void IOutputFormat::flushImpl()
 {
+    LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl, out count {}", out.count());
+
     out.next();
 
     /// If output is a compressed buffer, we will flush the compressed chunk as well.

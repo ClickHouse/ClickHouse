@@ -31,6 +31,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/printPipeline.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -612,6 +614,8 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
 {
+    LOG_DEBUG(getLogger("QueryPipeline"), "Trying to get result rows and bytes from output format: {}", output_format ? output_format->getName() : "null");
+
     if (!output_format)
         return false;
 
