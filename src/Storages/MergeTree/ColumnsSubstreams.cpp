@@ -101,7 +101,7 @@ ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const
         left_column_to_position[left.columns_substreams[i].first] = i;
 
     std::unordered_map<std::string_view, size_t> right_column_to_position;
-    left_column_to_position.reserve(right.columns_substreams.size());
+    right_column_to_position.reserve(right.columns_substreams.size());
     for (size_t i = 0; i != right.columns_substreams.size(); ++i)
         right_column_to_position[right.columns_substreams[i].first] = i;
 
