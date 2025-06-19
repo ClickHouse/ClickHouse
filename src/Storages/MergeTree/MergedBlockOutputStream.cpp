@@ -332,15 +332,15 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
         }
-    }
 
-    const auto & source_parts = new_part->getSourcePartsSet();
-    if (!source_parts.empty())
-    {
-        write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+        const auto & source_parts = new_part->getSourcePartsSet();
+        if (!source_parts.empty())
         {
-            source_parts.writeBinary(buffer);
-        });
+            write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+            {
+                source_parts.writeBinary(buffer);
+            });
+        }
     }
 
     write_hashed_file("count.txt", [&](auto & buffer)

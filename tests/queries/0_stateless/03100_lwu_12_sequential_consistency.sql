@@ -25,6 +25,7 @@ INSERT INTO t_lwu_sequential_1 VALUES (1, 'abc'), (2, 'def');
 UPDATE t_lwu_sequential_2 SET s = 'foo' WHERE id = 1;
 
 SET select_sequential_consistency = 1;
+SYSTEM SYNC REPLICA t_lwu_sequential_1 LIGHTWEIGHT;
 
 SELECT * FROM t_lwu_sequential_1 ORDER BY id SETTINGS apply_patch_parts = 0;
 SELECT * FROM t_lwu_sequential_1 ORDER BY id SETTINGS apply_patch_parts = 1;

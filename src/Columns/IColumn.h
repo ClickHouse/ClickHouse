@@ -846,7 +846,7 @@ private:
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
-     /// Devirtualize insertFrom.
+    /// Devirtualize insertFrom.
     ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
 
     /// Devirtualize updateAt.
