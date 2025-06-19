@@ -3632,7 +3632,7 @@ message CreateDictionary {
     required DictionaryColumn col = 5;
     repeated DictionaryColumn other_cols = 6;
     required TableKey primary_key = 7;
-    required DictionarySource source = 8;
+    optional DictionarySource source = 8;
     required DictionaryLayout layout = 9;
     optional DictionaryRange range = 10;
     optional DictionaryLifetime lifetime = 11;

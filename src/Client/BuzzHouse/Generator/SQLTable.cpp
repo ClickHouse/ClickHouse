@@ -2051,7 +2051,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     /// Range requires 2 cols for min and max
     const uint32_t dictionary_ncols = std::max((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
-    DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
@@ -2098,7 +2097,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     if (dict_table && nopt < (dict_table + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
         if (t.isPostgreSQLEngine() && rg.nextSmallNumber() < 8)
@@ -2164,7 +2163,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         ExprSchemaTable * est = dsd->mutable_est();
 
         est->mutable_database()->set_database("system");
@@ -2173,7 +2172,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
 
         v.setName(dsd->mutable_est(), false);
@@ -2181,7 +2180,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
     {
-        source->set_null_src(true);
+        cd->mutable_source()->set_null_src(true);
     }
     else
     {
