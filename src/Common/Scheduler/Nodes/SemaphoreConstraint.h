@@ -85,22 +85,26 @@ public:
     {
         // Dequeue request from the child
         auto [request, child_now_active] = child->dequeueRequest();
-        if (!request)
-            return {nullptr, false};
 
         std::unique_lock lock(mutex);
-        if (request->addConstraint(this))
-        {
-            // Update state on request arrival
-            requests++;
-            cost += request->cost;
-        }
 
+        // Deactivate if necessary
         child_active = child_now_active;
         if (!active())
             busy_periods++;
-        incrementDequeued(request->cost);
-        return {request, active()};
+
+        if (request)
+        {
+            if (request->addConstraint(this))
+            {
+                // Update state on request arrival
+                requests++;
+                cost += request->cost;
+            }
+            incrementDequeued(request->cost);
+            return {request, active()};
+        }
+        return {nullptr, false};
     }
 
     void finishRequest(ResourceRequest * request) override

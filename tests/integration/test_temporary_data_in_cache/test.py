@@ -68,38 +68,65 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     q("OPTIMIZE TABLE t1 FINAL")
     q("SYSTEM STOP MERGES t1")
 
-    # Read some data to fill the cache
-    q("SELECT sum(x) FROM t1")
-
-    cache_size_with_t1 = get_cache_size()
-    assert cache_size_with_t1 > 8 * MB, dump_debug_info()
-
-    # Almost all disk space is occupied by t1 cache
-    free_space_with_t1 = get_free_space()
-    assert free_space_with_t1 < 4 * MB, dump_debug_info()
-
-    # Try to sort the table, but fail because of lack of disk space
-    with pytest.raises(QueryRuntimeException) as exc:
-        q(
-            "SELECT ignore(*) FROM numbers(10 * 1024 * 1024) ORDER BY sipHash64(number)",
-            settings={
-                "max_bytes_ratio_before_external_group_by": 0,
-                "max_bytes_ratio_before_external_sort": 0,
-                "max_bytes_before_external_group_by": "4M",
+    for test_case in [
+        {
+            "query": "SELECT ignore(*) FROM numbers(10 * 1024 * 1024) ORDER BY sipHash64(number)",
+            "settings": {
                 "max_bytes_before_external_sort": "4M",
-                "temporary_files_codec": "ZSTD",
+                "max_bytes_ratio_before_external_sort": 0,
             },
-        )
-    assert fnmatch.fnmatch(
-        str(exc.value), "*Failed to reserve * for temporary file*"
-    ), exc.value
+        },
+        {
+            "query": "SELECT sipHash64(number), groupArray(number) FROM numbers(10 * 1024 * 1024) GROUP BY sipHash64(number)",
+            "settings": {
+                "max_bytes_before_external_group_by": "4M",
+                "max_bytes_ratio_before_external_group_by": 0,
+            },
+        },
+        {
+            "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
+            "settings": {
+                "max_bytes_in_join": "4M",
+                "join_algorithm": "partial_merge",
+            },
+        },
+        {
+            "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
+            "settings": {
+                "max_bytes_in_join": "4M",
+                "join_algorithm": "grace_hash",
+            },
+        },
+    ]:
+        # Read some data to fill the cache
+        q("SELECT sum(x) FROM t1")
 
-    # Some data evicted from cache by temporary data
-    cache_size_after_eviction = get_cache_size()
-    assert cache_size_after_eviction < cache_size_with_t1, dump_debug_info()
+        cache_size_with_t1 = get_cache_size()
+        assert cache_size_with_t1 > 8 * MB, dump_debug_info()
 
-    # Disk space freed, at least 3 MB, because temporary data tried to write 4 MB
-    assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
+        # Almost all disk space is occupied by t1 cache
+        free_space_with_t1 = get_free_space()
+        assert free_space_with_t1 < 4 * MB, dump_debug_info()
+
+        # Try to sort the table, but fail because of lack of disk space
+        with pytest.raises(QueryRuntimeException) as exc:
+            q(
+                test_case["query"],
+                settings={
+                    "temporary_files_codec": "ZSTD",
+                    **test_case["settings"],
+                },
+            )
+        assert fnmatch.fnmatch(
+            str(exc.value), "*Failed to reserve * for temporary file*"
+        ), exc.value
+
+        # Some data evicted from cache by temporary data
+        cache_size_after_eviction = get_cache_size()
+        assert cache_size_after_eviction < cache_size_with_t1, dump_debug_info()
+
+        # Disk space freed, at least 3 MB, because temporary data tried to write 4 MB
+        assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
 
     # Read some data to fill the cache again
     q("SELECT avg(x) FROM t1")

@@ -36,8 +36,6 @@ public:
 private:
     PageCacheKey cache_key; // .offset is offset of `chunk` start
     PageCachePtr cache;
-    size_t block_size;
-    size_t lookahead_blocks;
     ReadSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 

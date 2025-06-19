@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Parsers/IAST.h>
 
@@ -84,6 +83,8 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+    if (which.isTime())
+        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
     if (which.isIPv4())
@@ -102,16 +103,6 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
         return column;
     }
-    if (which.isDateTime64())
-        return creator(static_cast<ColumnDateTime64 *>(nullptr));
-    if (which.isDecimal32())
-        return creator(static_cast<ColumnDecimal<Decimal32> *>(nullptr));
-    if (which.isDecimal64())
-        return creator(static_cast<ColumnDecimal<Decimal64> *>(nullptr));
-    if (which.isDecimal128())
-        return creator(static_cast<ColumnDecimal<Decimal128> *>(nullptr));
-    if (which.isDecimal256())
-        return creator(static_cast<ColumnDecimal<Decimal256> *>(nullptr));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary type for DataTypeLowCardinality: {}",
                     type->getName());

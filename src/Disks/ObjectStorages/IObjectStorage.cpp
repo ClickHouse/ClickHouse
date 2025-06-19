@@ -84,7 +84,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
 const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const

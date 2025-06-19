@@ -38,7 +38,6 @@ def main():
             Result.from_commands_run(
                 name="Start ClickHouse",
                 command=[start, log_export_config, setup_logs_replication],
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
@@ -51,7 +50,6 @@ def main():
             Result.from_commands_run(
                 name="Start ClickHouse",
                 command=commands,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()

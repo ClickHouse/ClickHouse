@@ -15,7 +15,6 @@
 #include "Poco/Net/SecureSocketImpl.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Context.h"
-#include "Poco/Net/X509Certificate.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/SecureStreamSocket.h"
 #include "Poco/Net/SecureStreamSocketImpl.h"
@@ -182,7 +181,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	}
 	SSL_set_bio(_pSSL, pBIO, pBIO);
 
-#if OPENSSL_VERSION_NUMBER >= 0x0908060L && !defined(OPENSSL_NO_TLSEXT)
+#if !defined(OPENSSL_NO_TLSEXT)
 	if (!_peerHostName.empty())
 	{
 		SSL_set_tlsext_host_name(_pSSL, _peerHostName.c_str());
@@ -424,15 +423,25 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	Context::VerificationMode mode = _pContext->verificationMode();
 	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled() ||
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
-	{
 		return X509_V_OK;
-	}
 
-	X509* pCert = SSL_get_peer_certificate(_pSSL);
+	X509* pCert = SSL_get1_peer_certificate(_pSSL);
 	if (pCert)
 	{
-		X509Certificate cert(pCert);
-		return cert.verify(hostName) ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
+        if (X509_check_host(pCert, hostName.c_str(), hostName.length(), 0, nullptr) == 1)
+        {
+            return X509_V_OK;
+        }
+        else
+        {
+            IPAddress ip;
+            if (IPAddress::tryParse(hostName, ip))
+            {
+                auto result = X509_check_ip_asc(pCert, hostName.c_str(), 0) == 1;
+                return result ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
+            }
+        }
+        return X509_V_ERR_APPLICATION_VERIFICATION;;
 	}
 	else return X509_V_OK;
 }
@@ -456,7 +465,7 @@ X509* SecureSocketImpl::peerCertificate() const
 {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
-		return SSL_get_peer_certificate(_pSSL);
+		return SSL_get1_peer_certificate(_pSSL);
 	else
 		return 0;
 }

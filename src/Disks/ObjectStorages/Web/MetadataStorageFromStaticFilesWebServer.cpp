@@ -1,10 +1,11 @@
 #include "MetadataStorageFromStaticFilesWebServer.h"
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/PartitionCommands.h>
+#include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -106,6 +107,11 @@ std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorage
     if (auto file_info = object_storage.tryGetFileInfo(path))
         return StoredObjects{StoredObject(remote_path, path, file_info->size)};
     return std::nullopt;
+}
+
+bool MetadataStorageFromStaticFilesWebServer::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return false;
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const

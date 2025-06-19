@@ -154,7 +154,8 @@ Computes an ASCII representation of an Internationalized Domain Name. Throws an 
 │ xn--strae-oqa.xn--mnchen-3ya.de │
 └─────────────────────────────────┘
             )"
-            }}
+            }},
+        .category = FunctionDocumentation::Category::Encoding
     });
 
     factory.registerFunction<FunctionTryIdnaEncode>(FunctionDocumentation{
@@ -171,7 +172,8 @@ Computes a ASCII representation of an Internationalized Domain Name. Returns an 
 │ xn--strae-oqa.xn--mnchen-3ya.de │
 └─────────────────────────────────┘
             )"
-            }}
+            }},
+        .category = FunctionDocumentation::Category::Encoding
     });
 
     factory.registerFunction<FunctionIdnaDecode>(FunctionDocumentation{
@@ -188,7 +190,8 @@ Computes the Unicode representation of ASCII-encoded Internationalized Domain Na
 │ straße.münchen.de │
 └───────────────────┘
             )"
-            }}
+            }},
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

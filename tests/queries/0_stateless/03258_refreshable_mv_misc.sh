@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# Tags: memory-engine
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -68,7 +68,7 @@ done
 # (The following string needs to be present in this comment to silence check-style warning: **current_database = currentDatabase()**.
 #  It's ok that we don't have this condition in the query, we're checking the db name in `tables` column instead.)
 $CLICKHOUSE_CLIENT -q "
-    system flush logs;
+    system flush logs query_log;
     select replaceAll(toString(type), 'Exception', 'Ex**ption'), interface, client_name, exception != '', has(tables, '${second_db}.v') from system.query_log where event_time > now() - interval 30 minute and log_comment like 'refresh of ${second_db}.v%' group by all order by all;
 "
 

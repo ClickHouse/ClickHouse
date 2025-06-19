@@ -14,7 +14,6 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -22,6 +21,7 @@
 #include <Columns/ColumnMap.h>
 
 #include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {

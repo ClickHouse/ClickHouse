@@ -392,6 +392,4 @@ if __name__ == "__main__":
             )
         )
 
-    Result.create_from(results=results).add_job_summary_to_info(
-        with_local_run_command=True, with_test_in_run_command=True
-    ).complete_job()
+    Result.create_from(results=results).complete_job()

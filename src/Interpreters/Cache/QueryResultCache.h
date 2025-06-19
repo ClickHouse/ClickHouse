@@ -5,7 +5,7 @@
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,6 +16,8 @@
 namespace DB
 {
 
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?
@@ -46,7 +48,7 @@ public:
 
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        IAST::Hash ast_hash;
+        IASTHash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query

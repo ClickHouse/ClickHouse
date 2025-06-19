@@ -53,7 +53,7 @@ struct AsyncLoaderTest
     explicit AsyncLoaderTest(std::vector<Initializer> initializers)
         : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false, /* log_events = */ false)
     {
-        loader.stop(); // All tests call `start()` manually to better control ordering
+        loader.pause(); // All tests call `unpause()` manually to better control ordering
     }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
@@ -181,7 +181,7 @@ TEST(AsyncLoader, Smoke)
 
         std::thread waiter_thread([&t, job5] { t.loader.wait(job5); });
 
-        t.loader.start();
+        t.loader.unpause();
 
         t.loader.wait(job3);
         t.loader.wait();
@@ -196,7 +196,7 @@ TEST(AsyncLoader, Smoke)
     ASSERT_EQ(jobs_done, 5);
     ASSERT_EQ(low_priority_jobs_done, 1);
 
-    t.loader.stop();
+    t.loader.pause();
 }
 
 TEST(AsyncLoader, CycleDetection)
@@ -348,7 +348,7 @@ TEST(AsyncLoader, CancelPendingDependency)
 TEST(AsyncLoader, CancelExecutingJob)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
     std::barrier sync(2);
 
@@ -380,7 +380,7 @@ TEST(AsyncLoader, CancelExecutingJob)
 TEST(AsyncLoader, CancelExecutingTask)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
+    t.loader.unpause();
     std::barrier sync(2);
 
     auto blocker_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
@@ -436,7 +436,7 @@ TEST(AsyncLoader, CancelExecutingTask)
 TEST(AsyncLoader, JobFailure)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
     std::string error_message = "test job failure";
 
@@ -466,7 +466,7 @@ TEST(AsyncLoader, JobFailure)
 TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
     std::string_view error_message = "test job failure";
 
@@ -522,7 +522,7 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     auto canceled_task = t.schedule({ canceled_job });
     canceled_task->remove();
 
-    t.loader.start();
+    t.loader.unpause();
 
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
     auto job1 = makeLoadJob({ canceled_job }, "job1", job_func);
@@ -559,7 +559,7 @@ TEST(AsyncLoader, IgnoreDependencyFailure)
 {
     AsyncLoaderTest t;
     std::atomic<bool> success{false};
-    t.loader.start();
+    t.loader.unpause();
 
     std::string_view error_message = "test job failure";
 
@@ -588,7 +588,7 @@ TEST(AsyncLoader, CustomDependencyFailure)
     int error_count = 0;
     std::atomic<size_t> good_count{0};
     std::barrier canceled_sync(4);
-    t.loader.start();
+    t.loader.unpause();
 
     std::string_view error_message = "test job failure";
 
@@ -675,7 +675,7 @@ TEST(AsyncLoader, WaitersLimit)
     };
 
     std::barrier sync(2);
-    t.loader.start();
+    t.loader.unpause();
 
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
         sync.arrive_and_wait(); // (A)
@@ -723,7 +723,7 @@ TEST(AsyncLoader, WaitersLimit)
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);
-    t.loader.start();
+    t.loader.unpause();
 
     for (int concurrency = 1; concurrency <= 10; concurrency++)
     {
@@ -750,7 +750,7 @@ TEST(AsyncLoader, TestConcurrency)
 TEST(AsyncLoader, TestOverload)
 {
     AsyncLoaderTest t(3);
-    t.loader.start();
+    t.loader.unpause();
 
     size_t max_threads = t.loader.getMaxThreads(/* pool = */ 0);
     std::atomic<int> executing{0};
@@ -765,12 +765,12 @@ TEST(AsyncLoader, TestOverload)
             executing--;
         };
 
-        t.loader.stop();
+        t.loader.pause();
         std::vector<LoadTaskPtr> tasks;
         tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
             tasks.push_back(t.schedule(t.chainJobSet(5, job_func)));
-        t.loader.start();
+        t.loader.unpause();
         t.loader.wait();
         ASSERT_EQ(executing, 0);
     }
@@ -818,7 +818,7 @@ TEST(AsyncLoader, StaticPriorities)
     jobs.push_back(makeLoadJob({ jobs[6] }, 9, "H", job_func)); // 7
     auto task = t.schedule({ jobs.begin(), jobs.end() });
 
-    t.loader.start();
+    t.loader.unpause();
     t.loader.wait();
     ASSERT_TRUE(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3");
 }
@@ -831,7 +831,7 @@ TEST(AsyncLoader, SimplePrioritization)
         {.max_threads = 1, .priority{-2}},
     });
 
-    t.loader.start();
+    t.loader.unpause();
 
     std::atomic<int> executed{0}; // Number of previously executed jobs (to test execution order)
     LoadJobPtr job_to_prioritize;
@@ -951,9 +951,9 @@ TEST(AsyncLoader, DynamicPriorities)
 
         job_to_prioritize = jobs[6]; // G
 
-        t.loader.start();
+        t.loader.unpause();
         t.loader.wait();
-        t.loader.stop();
+        t.loader.pause();
 
         if (prioritize)
         {
@@ -1000,7 +1000,7 @@ TEST(AsyncLoader, JobPrioritizedWhileWaited)
 
     job_to_wait = jobs[1];
 
-    t.loader.start();
+    t.loader.unpause();
 
     while (job_to_wait->waitersCount() == 0)
         std::this_thread::yield();
@@ -1011,7 +1011,7 @@ TEST(AsyncLoader, JobPrioritizedWhileWaited)
     sync.arrive_and_wait();
 
     t.loader.wait();
-    t.loader.stop();
+    t.loader.pause();
     ASSERT_EQ(t.loader.suspendedWorkersCount(1), 0);
     ASSERT_EQ(t.loader.suspendedWorkersCount(0), 0);
 }
@@ -1019,7 +1019,7 @@ TEST(AsyncLoader, JobPrioritizedWhileWaited)
 TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
+    t.loader.unpause();
 
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self)
     {
@@ -1041,7 +1041,7 @@ TEST(AsyncLoader, RandomIndependentTasks)
 TEST(AsyncLoader, RandomDependentTasks)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
+    t.loader.unpause();
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -1108,7 +1108,7 @@ TEST(AsyncLoader, SetMaxThreads)
     for (int i = 0; i < 1000; i++)
         tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
 
-    t.loader.start();
+    t.loader.unpause();
     while (sync_index < syncs.size())
     {
         // Wait for `max_threads` jobs to start executing
@@ -1132,7 +1132,7 @@ TEST(AsyncLoader, SetMaxThreads)
 TEST(AsyncLoader, SubJobs)
 {
     AsyncLoaderTest t(1);
-    t.loader.start();
+    t.loader.unpause();
 
     // An example of component with an asynchronous loading interface
     class MyComponent : boost::noncopyable {
@@ -1195,7 +1195,7 @@ TEST(AsyncLoader, SubJobs)
 TEST(AsyncLoader, RecursiveJob)
 {
     AsyncLoaderTest t(1);
-    t.loader.start();
+    t.loader.unpause();
 
     // An example of component with an asynchronous loading interface (a complicated one)
     class MyComponent : boost::noncopyable {

@@ -50,7 +50,7 @@ Result:
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notEmpty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 
@@ -1138,6 +1138,102 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 
 ```sql
 convertCharset(s, from, to)
+```
+
+## base32Encode {#base32encode}
+
+Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
+
+**Syntax**
+
+```sql
+base32Encode(plaintext)
+```
+
+**Arguments**
+
+- `plaintext` — [String](../data-types/string.md) column or constant.
+
+**Returned value**
+
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+```sql
+SELECT base32Encode('Encoded');
+```
+
+Result:
+
+```result
+┌─base32Encode('Encoded')─┐
+│ IVXGG33EMVSA====        │
+└─────────────────────────┘
+```
+
+## base32Decode {#base32decode}
+
+Accepts a string and decodes it using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) encoding scheme.
+
+**Syntax**
+
+```sql
+base32Decode(encoded)
+```
+
+**Arguments**
+
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, an exception is thrown.
+
+**Returned value**
+
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
+
+**Example**
+
+```sql
+SELECT base32Decode('IVXGG33EMVSA====');
+```
+
+Result:
+
+```result
+┌─base32Decode('IVXGG33EMVSA====')─┐
+│ Encoded                          │
+└──────────────────────────────────┘
+```
+
+## tryBase32Decode {#trybase32decode}
+
+Like `base32Decode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase32Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase32Decode('IVXGG33EMVSA====') as res, tryBase32Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
 ```
 
 ## base58Encode {#base58encode}
@@ -2497,3 +2593,216 @@ Result:
    └─────────┴─────────┴─────────┘
 ```
 
+## sparseGrams {#sparsegrams}
+
+Finds all substrings of a given string that have a length of at least `n`, 
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+
+**Syntax**
+
+```sql
+sparseGrams(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+```sql
+SELECT sparseGrams('alice', 3) AS result
+```
+Result:
+```result
+   ┌─result─────────────────────┐
+1. │ ['ali','lic','lice','ice'] │
+   └────────────────────────────┘
+```
+
+## sparseGramsUTF8 {#sparsegramsutf8}
+
+Finds all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
+
+**Syntax**
+
+```sql
+sparseGramsUTF8(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsUTF8('алиса', 3) AS result
+```
+Result:
+```result
+   ┌─result──────────────┐
+1. │ ['али','лис','иса'] │
+   └─────────────────────┘
+```
+## sparseGramsHashes {#sparsegramshashes}
+
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+
+**Syntax**
+
+```sql
+sparseGramsHashes(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsHashes('alice', 3) AS result
+```
+Result:
+```result
+   ┌─result────────────────────────────────────────┐
+1. │ [1265796434,3725069146,1689963195,3410985998] │
+   └───────────────────────────────────────────────┘
+```
+
+## sparseGramsHashesUTF8 {#sparsegramshashesutf8}
+
+Finds hashes of all substrings of a given string that have a length of at least `n`,
+where the hashes of the (n-1)-grams at the borders of the substring
+are strictly greater than those of any (n-1)-gram inside the substring.
+Uses [crc32](./string-functions.md#crc32) as a hash function.
+Expects UTF-8 string, throws an exception in case of invalid UTF-8 sequence.
+
+**Syntax**
+
+```sql
+sparseGramsUTF8(s[, min_ngram_length]);
+```
+
+**Arguments**
+
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+
+**Returned value**
+
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+
+**Example**
+
+```sql
+SELECT sparseGramsHashesUTF8('алиса', 3) AS result
+```
+Result:
+```result
+   ┌─result───────────────────────────┐
+1. │ [417784657,728683856,3071092609] │
+   └──────────────────────────────────┘
+```
+
+## stringBytesUniq {#stringbytesuniq}
+
+Counts the number of distinct bytes in a string.
+
+**Syntax**
+
+```sql
+stringBytesUniq(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+```sql
+SELECT stringBytesUniq('Hello');
+```
+
+Result:
+
+```result
+┌─stringBytesUniq('Hello')─┐
+│                        4 │
+└──────────────────────────┘
+```
+
+## stringBytesEntropy {#stringbytesentropy}
+
+Calculates Shannon's entropy of byte distribution in a string.
+
+**Syntax**
+
+```sql
+stringBytesEntropy(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
+
+**Example**
+
+```sql
+SELECT stringBytesEntropy('Hello, world!');
+```
+
+Result:
+
+```result
+┌─stringBytesEntropy('Hello, world!')─┐
+│                         3.07049960  │
+└─────────────────────────────────────┘
+```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

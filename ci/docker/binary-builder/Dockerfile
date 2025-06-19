@@ -5,7 +5,7 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /cctools /cctools
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \
@@ -84,19 +84,15 @@ RUN arch=${TARGETARCH:-amd64} \
 ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
-RUN mkdir /workdir && chmod 777 /workdir
 
-# Download toolchain and SDK for Darwin
-RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+# toolchain and SDK for Darwin
+RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz \
+  && mkdir -p /build/cmake/toolchain/darwin-x86_64 \
+  && tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1 \
+  && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
+  && rm /MacOSX11.0.sdk.tar.xz
 
-## toolchain and SDK for Darwin
-#RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz \
-#  && mkdir -p /build/cmake/toolchain/darwin-x86_64 \
-#  && tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1 \
-#  && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
-#  && rm /MacOSX11.0.sdk.tar.xz
-
-ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
+ARG CLANG_TIDY_SHA1=35edad32a0bfb3dafada7201afe28036624906ed
 RUN curl -Lo /usr/bin/clang-tidy-cache \
-        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
+        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
     && chmod +x /usr/bin/clang-tidy-cache

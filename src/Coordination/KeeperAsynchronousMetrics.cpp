@@ -5,6 +5,7 @@
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

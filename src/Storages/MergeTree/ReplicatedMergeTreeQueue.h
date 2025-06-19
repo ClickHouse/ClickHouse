@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "Storages/MergeTree/AlterConversions.h"
 
 
 namespace DB
@@ -68,6 +69,7 @@ private:
         size_t merges_with_ttl = 0;
     };
 
+    UInt64 getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
@@ -161,8 +163,7 @@ private:
     std::map<String, MutationStatus> mutations_by_znode;
 
     /// Unfinished mutations that are required for AlterConversions.
-    Int64 num_data_mutations_to_apply = 0;
-    Int64 num_metadata_mutations_to_apply = 0;
+    MutationCounters mutation_counters;
 
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
@@ -420,11 +421,11 @@ public:
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
-    struct MutationsSnapshot : public MergeTreeData::IMutationsSnapshot
+    struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
+        MutationsSnapshot(Params params_, MutationCounters counters_) : MutationsSnapshotBase(std::move(params_), std::move(counters_)) {}
 
         using Params = MergeTreeData::IMutationsSnapshot::Params;
         using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;
@@ -434,6 +435,7 @@ public:
         MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
+        bool hasMetadataMutations() const override { return params.min_part_metadata_version < params.metadata_version; }
     };
 
     /// Return mutation commands for part which could be not applied to
@@ -441,8 +443,7 @@ public:
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
 
-    UInt64 getNumberOnFlyDataMutations() const;
-    UInt64 getNumberOnFlyMetadataMutations() const;
+    MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.

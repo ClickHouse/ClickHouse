@@ -31,9 +31,7 @@ public:
         bool defaults_for_nullable_google_wrappers_,
         const String & google_protos_path);
 
-    String getName() const override { return "ProtobufListOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
+    String getName() const override { return "ProtobufList"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;

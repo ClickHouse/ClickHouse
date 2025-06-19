@@ -28,6 +28,7 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 class IDataType;
+class Block;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -468,12 +469,12 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
             new_size += source_column->size();
-        reserve(new_size);
+        reserve(new_size * factor);
     }
 
     /// Requests the removal of unused capacity.
@@ -566,6 +567,14 @@ public:
     {
         return getPtr();
     }
+
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
+
+    /// Fills column values from list of blocks and row numbers
+    /// `blocks` and `row_nums` must have same size
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -752,6 +761,9 @@ bool isColumnConst(const IColumn & column);
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
 
+/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
+bool isColumnLazy(const IColumn & column);
+
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
@@ -799,6 +811,14 @@ private:
 
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
+
+    /// Fills column values from list of blocks and row numbers
+    /// `blocks` and `row_nums` must have same size
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

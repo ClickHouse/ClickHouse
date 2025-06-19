@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -38,6 +39,11 @@ public:
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
 
+        /// We expect an even number of arguments, with the first argument being the expression,
+        /// and the last argument being the ELSE branch, with the rest being pairs of WHEN and THEN branches.
+        if (args.size() < 4 || args.size() % 2 != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects an even number of arguments: (expr, when1, then1, ..., else)", getName());
+
         /// See the comments in executeImpl() to understand why we actually have to
         /// get the return type of a transform function.
 
@@ -58,12 +64,19 @@ public:
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
 
-        bool all_when_values_constant = true;
+        bool all_when_then_values_constant = true;
         for (size_t i = 1; i < args.size() - 1; i += 2)
         {
+            // i is the WHEN value
             if (!isColumnConst(*args[i].column))
             {
-                all_when_values_constant = false;
+                all_when_then_values_constant = false;
+                break;
+            }
+            // i+1 is the THEN value
+            if (!isColumnConst(*args[i+1].column))
+            {
+                all_when_then_values_constant = false;
                 break;
             }
         }
@@ -110,7 +123,7 @@ public:
 
         /// If we have non-constant arguments, we execute the transform function, which is highly optimized, which uses precomputed lookup tables.
         /// Else we should use the multiIf implementation
-        if (all_when_values_constant)
+        if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
             return FunctionFactory::instance().get("transform", context)->build(transform_args)

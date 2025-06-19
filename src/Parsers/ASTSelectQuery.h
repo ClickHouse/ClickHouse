@@ -153,13 +153,15 @@ public:
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void replaceDatabaseAndTable(const StorageID & table_id);
-    void addTableFunction(ASTPtr & table_function_ptr);
+    void addTableFunction(const ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void setFinal();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
+
+    NameToNameMap getQueryParameters() const;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 

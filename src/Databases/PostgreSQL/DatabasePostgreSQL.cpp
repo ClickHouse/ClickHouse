@@ -6,9 +6,11 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -55,13 +57,13 @@ static const auto cleaner_reschedule_ms = 60000;
 static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
-        ContextPtr context_,
-        const String & metadata_path_,
-        const ASTStorage * database_engine_define_,
-        const String & dbname_,
-        const StoragePostgreSQL::Configuration & configuration_,
-        postgres::PoolWithFailoverPtr pool_,
-        bool cache_tables_)
+    ContextPtr context_,
+    const String & metadata_path_,
+    const ASTStorage * database_engine_define_,
+    const String & dbname_,
+    const StoragePostgreSQL::Configuration & configuration_,
+    postgres::PoolWithFailoverPtr pool_,
+    bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
@@ -69,9 +71,9 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , db_disk(getContext()->getDatabaseDisk())
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
+    auto db_disk = getDisk();
     db_disk->createDirectories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
@@ -234,6 +236,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
 void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -289,6 +292,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
@@ -307,14 +311,16 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 }
 
 
-void DatabasePostgreSQL::drop(ContextPtr /*context*/)
+void DatabasePostgreSQL::drop(ContextPtr)
 {
+    auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
 
 void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
 {
+    auto db_disk = getDisk();
     {
         std::lock_guard lock{mutex};
         /// Check for previously dropped tables
@@ -373,6 +379,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
+    auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
@@ -395,6 +402,10 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
+void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 {
@@ -450,7 +461,6 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
     if (storage_engine_arguments->children.empty())

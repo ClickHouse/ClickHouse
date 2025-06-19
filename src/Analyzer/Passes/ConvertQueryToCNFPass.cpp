@@ -47,7 +47,7 @@ enum class MatchState : uint8_t
     NONE,
 };
 
-MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::AtomicFormula & b)
+MatchState match(const Analyzer::CNFAtomicFormula & a, const Analyzer::CNFAtomicFormula & b)
 {
     using enum MatchState;
     if (a.node_with_hash != b.node_with_hash)
@@ -125,7 +125,7 @@ bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
+bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNFAtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
     if (constraint_atom_ids)
@@ -141,7 +141,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, 
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -172,7 +172,7 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     }
 }
 
-Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+Analyzer::CNFAtomicFormula replaceTermsToConstants(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     auto node = atom.node_with_hash.node->clone();
     replaceToConstants(node, graph);
@@ -312,7 +312,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
-                    result.insert(Analyzer::CNF::AtomicFormula{atom.negative, std::move(helper_node)});
+                    result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
                     return true;
                 }
             }
@@ -673,7 +673,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
                return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
                    && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
-           .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
+           .filterAlwaysFalseAtoms([&](const Analyzer::CNFAtomicFormula & atom)
            {
                /// remove always false atoms from CNF
                return !checkIfAtomAlwaysFalseFullMatch(atom, query_tree_constraints) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);

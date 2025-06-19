@@ -16,15 +16,18 @@
 #    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
+#    include <Interpreters/DatabaseCatalog.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ASTIdentifier.h>
+#    include <Parsers/IAST_erase.h>
 #    include <Parsers/ParserCreateQuery.h>
 #    include <Parsers/parseQuery.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Sources/MySQLSource.h>
 #    include <QueryPipeline/QueryPipelineBuilder.h>
+#    include <Storages/AlterCommands.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/MySQL/MySQLSettings.h>
 #    include <Storages/NamedCollectionsHelpers.h>
@@ -84,7 +87,6 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
-    , db_disk(getContext()->getDatabaseDisk())
 {
     try
     {
@@ -98,6 +100,7 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
+    auto db_disk = getDisk();
     db_disk->createDirectories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
@@ -353,8 +356,9 @@ void DatabaseMySQL::shutdown()
     local_tables_cache.clear();
 }
 
-void DatabaseMySQL::drop(ContextPtr /*context*/)
+void DatabaseMySQL::drop(ContextPtr)
 {
+    auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
@@ -403,6 +407,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     remove_or_detach_tables.erase(table_name);
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
+    auto db_disk = getDisk();
     db_disk->removeFileIfExists(remove_flag);
 }
 
@@ -422,6 +427,11 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
     return local_tables_cache[table_name].second;
 }
 
+void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
+
 String DatabaseMySQL::getMetadataPath() const
 {
     return metadata_path;
@@ -429,6 +439,7 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -447,6 +458,8 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
 
 void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
+    auto db_disk = getDisk();
+
     std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);

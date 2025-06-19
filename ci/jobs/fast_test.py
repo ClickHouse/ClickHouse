@@ -1,15 +1,15 @@
 import argparse
+import os
 import time
 from pathlib import Path
-
-from praktika.info import Info
-from praktika.result import Result
-from praktika.settings import Settings
-from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -137,12 +137,22 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
+        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
+        if not clickhouse_server_link.is_file():
+            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
+        Shell.check(f"chmod +x {clickhouse_bin_path}")
+    else:
+        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+        Shell.check("sccache --show-stats", verbose=True)
 
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
     results = []
     attach_files = []
+    job_info = ""
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -166,7 +176,6 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
@@ -178,7 +187,6 @@ def main():
                 name="Build ClickHouse",
                 command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
-                with_log=True,
             )
         )
         Shell.check("sccache --show-stats")
@@ -187,27 +195,23 @@ def main():
     if res and JobStages.BUILD in stages:
         commands = [
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
-            f"cp ./programs/clickhouse {Settings.OUTPUT_DIR}/binaries/clickhouse",
-            f"zstd --threads=0 --force programs/clickhouse-stripped -o {Settings.OUTPUT_DIR}/binaries/clickhouse-stripped.zst",
             "sccache --show-stats",
             "clickhouse-client --version",
-            "clickhouse-test --help",
+            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
                 name="Check and Compress binary",
                 command=commands,
                 workdir=build_dir,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
 
     if res and JobStages.CONFIG in stages:
         commands = [
-            f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
@@ -216,12 +220,12 @@ def main():
             Result.from_commands_run(
                 name="Install ClickHouse Config",
                 command=commands,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
 
     CH = ClickHouseProc(fast_test=True)
+    attach_debug = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -231,6 +235,8 @@ def main():
         results.append(
             Result.create_from(name=step_name, status=res, stopwatch=stop_watch_)
         )
+        if not results[-1].is_ok():
+            attach_debug = True
 
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -250,14 +256,20 @@ def main():
                 )
             )
         if not results[-1].is_ok():
-            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
+            attach_debug = True
+        job_info = results[-1].info
+
+    if attach_debug:
+        attach_files += [
+            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+        ]
 
     CH.terminate()
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=attach_files
-    ).add_job_summary_to_info(
-        with_local_run_command=True, with_test_in_run_command=True
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 

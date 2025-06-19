@@ -1,8 +1,21 @@
 import time
 
-import jwt
 import requests
-from praktika.utils import Shell
+
+try:
+    import jwt  # From pyjwt
+
+    assert hasattr(jwt, "encode"), "Invalid jwt module, 'encode' not found"
+    USING_PYJWT = True
+except (ImportError, AssertionError):
+    USING_PYJWT = False
+    print(
+        "Warning: pyjwt not available. Falling back to 'jwt' module (not recommended)"
+    )
+    from jwt import jwk_from_pem, JWT
+
+from .info import Info
+from .utils import Shell
 
 
 class GHAuth:
@@ -19,8 +32,8 @@ class GHAuth:
         response.raise_for_status()
         data = response.json()
         for installation in data:
-            if installation["account"]["login"] == "ClickHouse":
-                installation_id = installation["id"]  # type: int
+            if installation["account"]["login"] == Info().repo_owner:
+                installation_id = installation["id"]
                 break
         else:
             raise KeyError("No installations found")
@@ -56,15 +69,40 @@ class GHAuth:
         return cls._get_access_token_by_jwt(encoded_jwt, installation_id)
 
     @classmethod
+    def _get_access_token_deprecated(cls, app_key, app_id):
+        def _generate_jwt(client_id, pem):
+            pem = str.encode(pem)
+            signing_key = jwk_from_pem(pem)
+            payload = {
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 600,
+                "iss": client_id,
+            }
+            # Create JWT
+            jwt_instance = JWT()
+            encoded_jwt = jwt_instance.encode(payload, signing_key, alg="RS256")
+            return encoded_jwt
+
+        jwt_token = _generate_jwt(app_id, app_key)
+        installation_id = cls._get_installation_id(jwt_token)
+        return cls._get_access_token_by_jwt(jwt_token, installation_id)
+
+    @classmethod
     def auth(cls, app_id, app_key) -> None:
-        access_token = cls._get_access_token(app_key, app_id)
+        if USING_PYJWT:
+            access_token = cls._get_access_token(app_key, app_id)
+        else:
+            access_token = cls._get_access_token_deprecated(app_key, app_id)
         Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
 
 
 # if __name__ == "__main__":
-#     from praktika.mangle import _get_workflows
-#     wf = _get_workflows("PR")
-#     pem = wf[0].get_secret("clickhouse_github_secret_key.clickhouse-app-key").get_value()
-#     assert pem
-#     app_id = wf[0].get_secret("clickhouse_github_secret_key.clickhouse-app-id").get_value()
+#     pem = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-key",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
+#     app_id = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-id",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
 #     GHAuth.auth(app_id, pem)

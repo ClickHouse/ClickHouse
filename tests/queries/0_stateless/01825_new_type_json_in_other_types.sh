@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} -q "
         id UInt32,
         data Tuple(String, Map(String, Array(JSON)), JSON)
     )
-    ENGINE = MergeTree ORDER BY id" --allow_experimental_json_type 1
+    ENGINE = MergeTree ORDER BY id" --enable_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_nested FORMAT JSONEachRow"
 {
@@ -76,7 +76,7 @@ $CLICKHOUSE_CLIENT -q "
 
 echo "============="
 
-$CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -q "
+$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     WITH (data.2)['aa'] AS aa, (data.2)['bb'] AS bb
     SELECT aa.k1 AS k1,
            aa.k4 AS k4
@@ -87,4 +87,3 @@ echo "============="
 $CLICKHOUSE_CLIENT -q "SELECT data.3 AS obj FROM t_json_nested ORDER BY id FORMAT JSONEachRow"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested"
-

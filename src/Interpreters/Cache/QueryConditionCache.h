@@ -16,7 +16,7 @@ namespace DB
 ///
 /// Note: The cache may store more than the minimal number of matching marks.
 /// For example, assume a very selective predicate that matches just a single row in a single mark.
-/// One would expect that the cache records just the single mark as potentially matching:
+/// One would expect that the cache records just a single mark as potentially matching:
 ///     000000010000000000000000000
 /// But it is equally correct for the cache to store this: (it is just less efficient for pruning)
 ///     000001111111110000000000000
@@ -35,6 +35,10 @@ private:
         const String part_name;
         const size_t condition_hash;
 
+        /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
+        ///    in system.query_condition_cache:
+        const String condition;
+
         bool operator==(const Key & other) const;
     };
 
@@ -43,13 +47,18 @@ private:
         MatchingMarks matching_marks;
         std::shared_mutex mutex; /// (*)
 
-        explicit Entry(size_t mark_count);
-    };
+        explicit Entry(size_t mark_count); /// (**)
 
-    /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already.
-    ///     The reason is that ClickHouse scans ranges within the same part in parallel. The first scan creates
-    ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scan find the existing Key and update
-    ///     its Entry for the new ranges. This can only be done safely in a synchronized fashion.
+        /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already.
+        ///     The reason is that ClickHouse scans ranges within the same part in parallel. The first scan creates
+        ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scans find the existing Key and update
+        ///     its Entry for the new ranges. This can only be done safely in a synchronized fashion.
+
+        /// (**) About error handling: There could be an exception after the i-th scan and cache entries could
+        ///     (theoretically) be left in a corrupt state. If we are not careful, future scans queries could then
+        ///     skip too many ranges. To prevent this, it is important to initialize all marks of each entry as
+        ///     non-matching. In case of an exception, future scans will then not skip them.
+    };
 
     struct KeyHasher
     {
@@ -61,6 +70,7 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+
 public:
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
 
@@ -68,7 +78,7 @@ public:
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
     void write(
-        const UUID & table_id, const String & part_name, size_t condition_hash,
+        const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.

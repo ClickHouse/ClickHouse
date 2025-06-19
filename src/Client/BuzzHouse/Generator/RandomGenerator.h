@@ -26,10 +26,10 @@ private:
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32;
+    std::uniform_int_distribution<int32_t> ints32, time_hours;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes;
+        hours, minutes, subseconds, time64_hours;
 
     std::uniform_int_distribution<int64_t> ints64;
 
@@ -64,10 +64,6 @@ private:
     const DB::Strings common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--",   "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",    "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "FALSE"};
-
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
         "FF",
@@ -98,6 +94,7 @@ public:
         , ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
+        , time_hours(-999, 999)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
@@ -109,12 +106,18 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
+        , subseconds(0, UINT32_C(1000000000))
+        , time64_hours(0, 999)
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
         , generator(seed)
     {
     }
+
+    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
+                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
+                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
 
     uint64_t getSeed() const;
 
@@ -150,11 +153,17 @@ public:
     /// Range [1900-01-01, 2299-12-31]
     String nextDate32();
 
+    /// Range [-999:59:59, 999:59:59]
+    String nextTime();
+
+    /// Range [000:00:00, 999:59:59.99999999]
+    String nextTime64(bool has_subseconds);
+
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime();
+    String nextDateTime(bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64();
+    String nextDateTime64(bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)

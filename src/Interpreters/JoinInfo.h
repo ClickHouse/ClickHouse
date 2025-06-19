@@ -7,12 +7,13 @@
 #include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Core/Settings.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
+
+struct Settings;
 
 enum class PredicateOperator : UInt8
 {
@@ -75,6 +76,20 @@ struct JoinExpressionActions
     {
     }
 
+    JoinExpressionActions clone() const
+    {
+        return  JoinExpressionActions(
+            std::make_unique<ActionsDAG>(left_pre_join_actions->clone()),
+            std::make_unique<ActionsDAG>(right_pre_join_actions->clone()),
+            std::make_unique<ActionsDAG>(post_join_actions->clone())
+        );
+    }
+
+    bool hasCorrelatedExpressions() const noexcept
+    {
+        return left_pre_join_actions->hasCorrelatedColumns() || right_pre_join_actions->hasCorrelatedColumns() || post_join_actions->hasCorrelatedColumns();
+    }
+
     ActionsDAGPtr left_pre_join_actions;
     ActionsDAGPtr right_pre_join_actions;
     ActionsDAGPtr post_join_actions;
@@ -103,7 +118,11 @@ public:
     void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
     static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
 
+    JoinActionRef clone(const ActionsDAG * actions_dag_) const;
+
 private:
+    JoinActionRef(const ActionsDAG * actions_dag_, const String & column_name_);
+
     const ActionsDAG * actions_dag = nullptr;
     String column_name;
 };
@@ -136,6 +155,8 @@ struct JoinCondition
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
+
+    JoinCondition clone(const JoinExpressionActions & expression_actions) const;
 };
 
 struct JoinExpression
@@ -154,6 +175,8 @@ struct JoinExpression
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
+
+    JoinExpression clone(const JoinExpressionActions & expression_copy) const;
 };
 
 struct JoinInfo
@@ -169,6 +192,11 @@ struct JoinInfo
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
+
+    JoinInfo clone(const JoinExpressionActions & expression_actions) const
+    {
+        return JoinInfo{ expression.clone(expression_actions), kind, strictness, locality};
+    }
 
     void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
     static JoinInfo deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
@@ -219,6 +247,7 @@ struct JoinSettings
     /* Hash/Parallel hash join settings */
     bool collect_hash_table_stats_during_joins;
     UInt64 max_size_to_preallocate_for_joins;
+    UInt64 parallel_hash_join_threshold;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;

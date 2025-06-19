@@ -140,7 +140,7 @@ All overflow will be clamped to zero
             {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
         },
-        .category{"Encoding"}
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713";
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713, user14_02713, user15_02713";
 
 $CLICKHOUSE_CLIENT --param_password=qwerty1 -q "CREATE USER user1_02713 IDENTIFIED BY {password:String}";
 $CLICKHOUSE_CLIENT --param_password=qwerty2 -q "CREATE USER user2_02713 IDENTIFIED WITH PLAINTEXT_PASSWORD BY {password:String}";
@@ -29,6 +29,12 @@ $CLICKHOUSE_CLIENT --param_cert1=qwerty11 --param_cert2=qwerty12 -q "CREATE USER
 $CLICKHOUSE_CLIENT --param_server=basic_server -q "CREATE USER user12_02713 IDENTIFIED WITH http SERVER {server:String}"
 $CLICKHOUSE_CLIENT --param_server=basic_server -q "CREATE USER user13_02713 IDENTIFIED WITH http SERVER {server:String} SCHEME 'Basic'"
 
+$CLICKHOUSE_CLIENT --param_password=qwerty14 -q "CREATE USER user14_02713 IDENTIFIED WITH SCRAM_SHA256_PASSWORD BY {password:String}";
+
+# The `param_hash` is the SCRAM SHA256 digest to create new user `user15_02713` with password `qwerty15` used later below.
+$CLICKHOUSE_CLIENT --param_hash=730f506ba74834a27799ded2cc4d94fdfeb43d27244059662ce45a59279976ae \
+    -q "CREATE USER user15_02713 IDENTIFIED WITH SCRAM_SHA256_HASH BY {hash:String}";
+
 $CLICKHOUSE_CLIENT --user=user1_02713 --password=qwerty1 -q "SELECT 1";
 $CLICKHOUSE_CLIENT --user=user2_02713 --password=qwerty2 -q "SELECT 2";
 $CLICKHOUSE_CLIENT --user=user3_02713 --password=qwerty3 -q "SELECT 3";
@@ -37,6 +43,8 @@ $CLICKHOUSE_CLIENT --user=user5_02713 --password=qwerty5 -q "SELECT 5";
 $CLICKHOUSE_CLIENT --user=user6_02713 --password=qwerty6 -q "SELECT 6";
 $CLICKHOUSE_CLIENT --user=user7_02713 --password=qwerty7 -q "SELECT 7";
 $CLICKHOUSE_CLIENT --user=user8_02713 --password=qwerty8 -q "SELECT 8";
+$CLICKHOUSE_CLIENT --user=user14_02713 --password=qwerty14 -q "SELECT 14";
+$CLICKHOUSE_CLIENT --user=user15_02713 --password=qwerty15 -q "SELECT 15";
 
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user9_02713";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user10_02713";
@@ -44,4 +52,4 @@ $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user11_02713";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user12_02713";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user13_02713";
 
-$CLICKHOUSE_CLIENT -q "DROP USER user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713, user8_02713, user9_02713, user10_02713, user11_02713, user12_02713, user13_02713";
+$CLICKHOUSE_CLIENT -q "DROP USER user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713, user8_02713, user9_02713, user10_02713, user11_02713, user12_02713, user13_02713, user14_02713, user15_02713";

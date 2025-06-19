@@ -63,7 +63,25 @@ ColumnPtr ArrayAllImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
 REGISTER_FUNCTION(ArrayAll)
 {
-    factory.registerFunction<FunctionArrayAll>();
+    FunctionDocumentation::Description description = R"(
+Returns `1` if lambda `func(x [, y1, y2, ... yN])` returns true for all elements. Otherwise, it returns `0`.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayAll(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments = {
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if the lambda function returns true for all elements, `0` otherwise. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples = {
+        {"All elements match", "SELECT arrayAll(x, y -> x=y, [1, 2, 3], [1, 2, 3])", "1"},
+        {"Not all elements match", "SELECT arrayAll(x, y -> x=y, [1, 2, 3], [1, 1, 1])", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayAll>(documentation);
 }
 
 }

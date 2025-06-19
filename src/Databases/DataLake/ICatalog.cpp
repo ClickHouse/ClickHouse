@@ -38,6 +38,9 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
 
+    if (capitalize_first_letter(storage_type_str) == "S3a")
+        storage_type_str = "S3";
+
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
     if (!storage_type)

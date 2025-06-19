@@ -146,7 +146,7 @@ private:
     }
 
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
-    void PRESERVE_MOST NO_INLINE addMemoryChunk(size_t min_size)
+    void NO_INLINE addMemoryChunk(size_t min_size)
     {
         size_t next_size = nextSize(min_size + pad_right);
         if (head.empty())

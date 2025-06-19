@@ -23,19 +23,6 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
-    MergeTreeReaderPtr getReader(
-        const NamesAndTypesList & columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        const MarkRanges & mark_ranges,
-        const VirtualFields & virtual_fields,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        DeserializationPrefixesCache * deserialization_prefixes_cache,
-        const AlterConversionsPtr & alter_conversions,
-        const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
-
     bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;

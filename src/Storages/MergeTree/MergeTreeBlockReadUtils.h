@@ -12,6 +12,12 @@ namespace DB
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
 
+NameSet injectRequiredColumns(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool with_subcolumns,
+    Names & columns);
+
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 MergeTreeReadTaskColumns getReadTaskColumns(

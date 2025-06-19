@@ -4,8 +4,6 @@ import os
 from pathlib import Path
 from typing import List
 
-from praktika.utils import Shell
-
 from ._environment import _Environment
 from .gh import GH
 from .info import Info
@@ -14,7 +12,8 @@ from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .utils import Utils
+from .usage import ComputeUsage, StorageUsage
+from .utils import Shell, Utils
 
 
 @dataclasses.dataclass
@@ -99,7 +98,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
+        if not S3.copy_file_from_s3(
+            s3_path=s3_path, local_path=local_path, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -111,7 +112,9 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
+        if not S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
+        ):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -139,9 +142,11 @@ class HtmlRunnerHooks:
                 # fetch running status with start_time for current job
                 result = Result.from_fs(job.name)
             else:
-                result = Result.generate_pending(job.name)
+                result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.generate_pending(_workflow.name, results=results)
+        summary_result = Result.create_new(
+            _workflow.name, Result.Status.RUNNING, results=results
+        )
         summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
@@ -156,15 +161,15 @@ class HtmlRunnerHooks:
         print(f"CI Status page url [{report_url_current_sha}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
-            from praktika.gh_auth_deprecated import GHAuth
+            from .gh_auth import GHAuth
 
             pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
             app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-            GHAuth.auth(app_key=pem, app_id=app_id)
+            GHAuth.auth(app_id=app_id, app_key=pem)
 
-        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
+        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={"report": body, "summary": ""},
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,
@@ -196,19 +201,28 @@ class HtmlRunnerHooks:
                         branch=cache_record.branch,
                         sha=cache_record.sha,
                         job_name=skipped_job,
+                        workflow_name=cache_record.workflow,
                     )
-                    result = Result.generate_skipped(
-                        skipped_job, [report_link], "reused from cache"
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        [report_link],
+                        "reused from cache",
                     )
                 else:
-                    result = Result.generate_skipped(
-                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        info=filtered_job_and_reason[skipped_job],
                     )
                 results.append(result)
             if results:
-                assert _ResultS3.update_workflow_results(
-                    _workflow.name, new_sub_results=results
-                )
+                assert (
+                    _ResultS3.update_workflow_results(
+                        _workflow.name, new_sub_results=results
+                    )
+                    is None
+                ), "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
@@ -225,6 +239,14 @@ class HtmlRunnerHooks:
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
         _ResultS3.upload_result_files_to_s3(result).dump()
+        storage_usage = None
+        if StorageUsage.exist():
+            StorageUsage.add_uploaded(
+                result.file_name()
+            )  # add Result file beforehand to upload actual storage usage data
+            print("Storage usage data found - add to Result")
+            storage_usage = StorageUsage.from_fs()
+            result.ext["storage_usage"] = storage_usage
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()
@@ -272,9 +294,11 @@ class HtmlRunnerHooks:
                 new_sub_results.append(
                     Result(
                         name=dependee,
-                        status=Result.Status.SKIPPED,
-                        info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
+                        status=Result.Status.DROPPED,
+                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
                         + f" [{_job.name}]",
+                        start_time=Utils.timestamp(),
+                        duration=0,
                     )
                 )
 
@@ -282,15 +306,21 @@ class HtmlRunnerHooks:
             new_info=new_result_info,
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
+            storage_usage=storage_usage,
+            compute_usage=ComputeUsage().set_usage(
+                runner_str="_".join(_job.runs_on),
+                duration=result.duration,
+                job_name=_job.name,
+            ),
         )
 
         if updated_status:
             if Settings.USE_CUSTOM_GH_AUTH:
-                from praktika.gh_auth_deprecated import GHAuth
+                from .gh_auth import GHAuth
 
                 pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
                 app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_key=pem, app_id=app_id)
+                GHAuth.auth(app_id=app_id, app_key=pem)
 
             print(f"Update GH commit status [{result.name}]: [{updated_status}]")
             GH.post_commit_status(
