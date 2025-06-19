@@ -143,8 +143,5 @@ struct FunctionDocumentation
     std::string examplesAsString() const;
     std::string introducedInAsString() const;
     std::string categoryAsString() const;
-
-
 };
-
 }
