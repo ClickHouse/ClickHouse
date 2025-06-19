@@ -100,7 +100,7 @@ private:
             return out_maybe_delayed_and_compressed && out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        void pushDelayedResults();
+        void pushDelayedResults() const;
 
         void finalize();
 

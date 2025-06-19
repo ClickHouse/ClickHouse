@@ -1047,7 +1047,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     return factory;
 }
 
-void HTTPHandler::Output::pushDelayedResults()
+void HTTPHandler::Output::pushDelayedResults() const
 {
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
