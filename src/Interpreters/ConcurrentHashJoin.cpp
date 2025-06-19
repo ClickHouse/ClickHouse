@@ -73,7 +73,7 @@ extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
 namespace
 {
 
-using BlockHashes = std::vector<UInt64>;
+using BlockHashes = std::vector<UInt8>;
 
 class DeduplicateNullStream : public IBlocksStream
 {
@@ -373,11 +373,12 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     }
     else
     {
+        /// materialize once and scatter the block across all slots
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
 
-    chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
+    chassert(dispatched_blocks.size() == slots);
 
     block = {};
 
