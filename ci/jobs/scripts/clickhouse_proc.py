@@ -974,7 +974,9 @@ quit
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
-        command_args_post = "-- --zookeeper.implementation=testkeeper"
+        #
+        # NOTE: we also need to override logger.level, but logger.level will not work
+        command_args_post = "-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog=/dev/null --logger.console=1"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
