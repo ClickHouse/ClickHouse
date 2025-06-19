@@ -306,10 +306,7 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
+    ColumnCheckpointPtr getCheckpoint() const override;
 
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
