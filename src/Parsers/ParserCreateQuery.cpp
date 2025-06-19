@@ -36,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
-    extern const int ILLEGAL_INDEX;
 }
 
 namespace
@@ -193,14 +192,6 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
             else if (index_type_name == "text")
                 index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-            else if (index_type_name == "full_text" || index_type_name == "inverted" || index_type_name == "gin")
-            {
-                /// This code should never execute, there is an exception before arriving here in MergeData.cpp
-                /// TODO: remove this block one year after text indexes became GA.
-                /// See comment in MergeTreeIndices.cpp
-                throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
-            }
-
         }
     }
 

@@ -3767,7 +3767,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     /// -------------------------------------------------------------------------------------------------------
     /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
-    /// TODO: remove similar blocks in ParserCreateIndexQuery.cpp and ParserCreateQuery.cpp
     if (AlterCommands::hasLegacyFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
 
