@@ -100,6 +100,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -188,6 +189,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 merge_tree_storage_snapshot_sleep_ms;
 }
 
 namespace MergeTreeSetting
@@ -197,6 +200,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
+    extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -717,6 +721,7 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::Summing
         || merging_params.mode == MergingParams::Aggregating
         || merging_params.mode == MergingParams::Replacing
+        || merging_params.mode == MergingParams::Coalescing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
@@ -1193,7 +1198,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                         "Version column for MergeTree cannot be specified "
                         "in modes except Replacing or VersionedCollapsing.");
 
-    if (!columns_to_sum.empty() && mode != MergingParams::Summing)
+    if (!columns_to_sum.empty() && mode != MergingParams::Summing && mode != MergingParams::Coalescing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
 
     /// Check that if the sign column is needed, it exists and is of type Int8.
@@ -1288,7 +1293,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
-    if (mode == MergingParams::Summing)
+    if (mode == MergingParams::Summing || mode == MergingParams::Coalescing)
     {
         auto columns_to_sum_sorted = columns_to_sum;
         std::sort(columns_to_sum_sorted.begin(), columns_to_sum_sorted.end());
@@ -1309,10 +1314,12 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                     column_to_sum);
         }
 
-        auto allow_summing_columns_in_partition_or_order_key = settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key];
+        auto allow_columns_in_partition_or_order_key = mode == MergingParams::Summing
+            ? settings[MergeTreeSetting::allow_summing_columns_in_partition_or_order_key]
+            : settings[MergeTreeSetting::allow_coalescing_columns_in_partition_or_order_key];
 
-        /// Check that summing columns are not in partition key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
+        /// Check that summing columns are not in partition key
+        if (!allow_columns_in_partition_or_order_key && metadata.isPartitionKeyDefined())
         {
             auto partition_key_columns = metadata.getPartitionKey().expression->getRequiredColumns();
             std::sort(partition_key_columns.begin(), partition_key_columns.end());
@@ -1328,7 +1335,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         }
 
         /// Check that summing columns are not in sorting key.
-        if (!allow_summing_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
+        if (!allow_columns_in_partition_or_order_key && metadata.isSortingKeyDefined())
         {
             auto sorting_key_columns = metadata.getSortingKey().expression->getRequiredColumns();
             std::sort(sorting_key_columns.begin(), sorting_key_columns.end());
@@ -1463,6 +1470,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
+        case Coalescing:    return "Coalescing";
     }
 }
 
@@ -4325,11 +4333,14 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
     }
 }
 
-MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+void MergeTreeData::PartsTemporaryRename::rollBackAll()
 {
     // TODO what if server had crashed before this destructor was called?
     if (!renamed)
         return;
+
+    std::exception_ptr first_exception;
+
     for (const auto & [old_name, new_name, disk] : old_and_new_names)
     {
         if (old_name.empty())
@@ -4343,7 +4354,28 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+
+            if (!first_exception)
+                first_exception = std::current_exception();
         }
+    }
+
+    old_and_new_names.clear();
+    renamed = false;
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+{
+    try
+    {
+        rollBackAll();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -5474,12 +5506,12 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
     return nullptr;
 }
 
-static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context, int32_t metadata_version, bool sync)
+void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const
 {
     /// Remove metadata version file and take it from table.
     /// Currently we cannot attach parts with different schema, so
     /// we can assume that it's equal to table's current schema.
-    part->writeMetadataVersion(local_context, metadata_version, sync);
+    part->writeMetadataVersion(local_context, getInMemoryMetadataPtr()->getMetadataVersion(), (*getSettings())[MergeTreeSetting::fsync_after_insert]);
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
@@ -7025,7 +7057,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .withPartFormatFromDisk()
             .build();
 
-        loadPartAndFixMetadataImpl(part, local_context, getInMemoryMetadataPtr()->getMetadataVersion(), (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+        loadPartAndFixMetadataImpl(part, local_context);
         loaded_parts.push_back(part);
     }
 
@@ -8197,19 +8229,10 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
+    else if (data_part->getState() == MergeTreeDataPartState::Active)
+        broken_part_callback(data_part->name);
     else
-    {
-        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
-        {
-            auto lock = lockParts();
-            state = data_part->getState();
-        }
-
-        if (state == MergeTreeDataPartState::Active)
-            broken_part_callback(data_part->name);
-        else
-            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
-    }
+        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -9228,8 +9251,29 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
 {
+    auto query_context = CurrentThread::get().getQueryContext();
+    if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        return IStorage::getInMemoryMetadataPtr();
+
+    auto [cache, lock] = query_context->getStorageMetadataCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
+        return it->second;
+
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+}
+
+StorageSnapshotPtr
+MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
+{
+    if (without_data)
+    {
+        auto lock = lockParts();
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
+    }
+
     auto snapshot_data = std::make_unique<SnapshotData>();
     ColumnsDescription object_columns_copy;
 
@@ -9255,10 +9299,33 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns_copy), std::move(snapshot_data));
 }
 
-StorageSnapshotPtr MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    auto lock = lockParts();
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::make_unique<SnapshotData>());
+    /// Inject artificial delay when taking storage snapshot.
+    /// Useful for simulating concurrent mutations during snapshot acquisition.
+    /// E.g. tests/queries/0_stateless/03443_shared_storage_snapshots.sh
+    UInt64 merge_tree_storage_snapshot_sleep_ms = query_context->getSettingsRef()[Setting::merge_tree_storage_snapshot_sleep_ms];
+    if (merge_tree_storage_snapshot_sleep_ms > 0)
+    {
+        LOG_DEBUG(log, "Injecting {}ms artificial delay before taking storage snapshot", merge_tree_storage_snapshot_sleep_ms);
+        std::this_thread::sleep_for(std::chrono::milliseconds(merge_tree_storage_snapshot_sleep_ms));
+        LOG_DEBUG(log, "Finished {}ms artificial delay before taking storage snapshot", merge_tree_storage_snapshot_sleep_ms);
+    }
+
+    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
+        return createStorageSnapshot(metadata_snapshot, query_context, false);
+
+    auto [cache, lock] = query_context->getStorageSnapshotCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
+        return it->second;
+    return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+}
+
+StorageSnapshotPtr
+MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return createStorageSnapshot(metadata_snapshot, query_context, true);
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

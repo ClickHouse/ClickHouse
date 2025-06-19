@@ -3,6 +3,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/LiveView/StorageLiveView.h>
@@ -1168,6 +1169,9 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+
+    if (!inner_storage->supportsSparseSerialization())
+        result.addSink(std::make_shared<RemovingSparseTransform>(header));
 
     auto constraints = buildConstraints(inner_metadata, inner_storage);
     if (!constraints.empty())

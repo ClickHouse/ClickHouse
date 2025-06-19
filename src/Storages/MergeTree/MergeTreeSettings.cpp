@@ -267,7 +267,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -1592,6 +1592,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
     \

@@ -1,4 +1,3 @@
-#include <base/map.h>
 #include <base/range.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
@@ -22,6 +21,7 @@
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
+#include <ranges>
 
 namespace DB
 {
@@ -228,7 +228,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
 
 Field DataTypeTuple::getDefault() const
 {
-    return Tuple(collections::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+    return Tuple(std::from_range_t{}, elems | std::views::transform([](const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
