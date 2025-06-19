@@ -78,7 +78,18 @@ void collectColumnPaths(
     {
         for (const auto & entry : ntp->subtypes)
         {
-            collectColumnPaths("c" + std::to_string(entry.cname), entry.subtype, flags, next, paths);
+            const String nsub = "c" + std::to_string(entry.cname);
+
+            collectColumnPaths(nsub, entry.subtype, flags, next, paths);
+            if ((flags & collect_generated) != 0)
+            {
+                /// The size entry also exists for nested cols
+                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype));
+                next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
+                paths.push_back(next);
+                next.path.pop_back();
+                next.path.pop_back();
+            }
         }
     }
     else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
@@ -1251,7 +1262,7 @@ void StatementGenerator::generateEngineDetails(
         SettingValues * svs = nullptr;
         const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!engineSettings.empty() && rg.nextSmallNumber() < 5)
+        if (!engineSettings.empty() && rg.nextBool())
         {
             /// Add table engine settings
             svs = svs ? svs : te->mutable_setting_values();
@@ -1263,36 +1274,32 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared))
+        if (b.isAnyS3Engine())
         {
             svs = svs ? svs : te->mutable_setting_values();
-            if (b.isAnyS3Engine())
-            {
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-                sv->set_property("input_format_with_names_use_header");
-                sv->set_value("0");
-            }
-            else if (
-                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
-                && (!fc.storage_policies.empty() || !fc.keeper_disks.empty()))
-            {
-                /// Requires storage setting
-                const auto & ovals = svs->other_values();
+            sv->set_property("input_format_with_names_use_header");
+            sv->set_value("0");
+        }
+        else if (
+            b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+            && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
+            && (!svs
+                || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
+                    && (!svs->other_values_size()
+                        || std::find_if(
+                               svs->other_values().begin(),
+                               svs->other_values().end(),
+                               [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
+                            == svs->other_values().end()))))
+        {
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
 
-                if (std::find_if(
-                        ovals.begin(),
-                        ovals.end(),
-                        [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
-                    == ovals.end())
-                {
-                    SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-                    const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
-
-                    sv->set_property(pick);
-                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
-                }
-            }
+            sv->set_property(pick);
+            sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
         }
     }
     setClusterInfo(rg, b);
@@ -1862,10 +1869,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_version = 0;
         const uint32_t to_addcols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
         const uint32_t to_addidxs
-            = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+            = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
-            = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
-        const uint32_t to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+            = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
         const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
@@ -2021,7 +2028,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 break;
             }
         }
-        if (has_date_cols || rg.nextMediumNumber() < 6)
+        if (has_date_cols || rg.nextSmallNumber() < 7)
         {
             generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
@@ -2252,8 +2259,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         sv->set_property("SIZE_IN_CELLS");
         sv->set_value(
-            std::to_string(
-                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+            std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key
