@@ -138,7 +138,7 @@ profiles:
         os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+            f"CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
         )
 
         Shell.check(
@@ -806,7 +806,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Fatal messages (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep '#######################################' clickhouse-server*.log| tee /dev/stderr | grep -q .",
             )
         )
         results.append(

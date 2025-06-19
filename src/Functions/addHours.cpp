@@ -9,18 +9,18 @@ using FunctionAddHours = FunctionDateOrDateTimeAddInterval<AddHoursImpl>;
 
 REGISTER_FUNCTION(AddHours)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_addHours = R"(
 Adds a specified number of hours to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_addHours = R"(
 addHours(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Arguments arguments_addHours = {
         {"datetime", "Date or date with time to add specified number of hours to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
         {"num", "Number of hours to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` plus `num` hours. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_addHours = "Returns `datetime` plus `num` hours. [`DateTime`](../data-types/datetime.md)/[`DateTime64(3)`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_addHours = {
         {"Add hours to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,11 +45,19 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_addHours = {1, 1};
+    FunctionDocumentation::Category category_addHours = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addHours = {
+        description_addHours,
+        syntax_addHours,
+        arguments_addHours,
+        returned_value_addHours,
+        examples_addHours,
+        introduced_in_addHours,
+        category_addHours
+    };
 
-    factory.registerFunction<FunctionAddHours>(documentation);
+    factory.registerFunction<FunctionAddHours>(documentation_addHours);
 }
 
 }

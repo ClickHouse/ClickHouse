@@ -11,15 +11,15 @@ using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonth
 
 REGISTER_FUNCTION(ToMonth)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_to_month = R"(
 Returns the month component (1-12) of a `Date` or `DateTime` value.
     )";
-    FunctionDocumentation::Syntax syntax = "toMonth(datetime)";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_to_month = "toMonth(datetime)";
+    FunctionDocumentation::Arguments arguments_to_month = {
         {"datetime", "A Date or DateTime value to get the month from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the month of the given date/time. [`UInt8`](/sql-reference/data-types/int-uint).";
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_to_month = "Returns the month of the given date/time. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::Examples examples_to_month = {
         {"Usage example", R"(
 SELECT toMonth(toDateTime('2023-04-21 10:20:30'))
             )",
@@ -29,11 +29,11 @@ SELECT toMonth(toDateTime('2023-04-21 10:20:30'))
 └────────────────────────────────────────────┘
             )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_to_month = {1, 1};
+    FunctionDocumentation::Category category_to_month = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_to_month = {description_to_month, syntax_to_month, arguments_to_month, returned_value_to_month, examples_to_month, introduced_in_to_month, category_to_month};
 
-    factory.registerFunction<FunctionToMonth>(documentation);
+    factory.registerFunction<FunctionToMonth>(documentation_to_month);
 
     /// MySQL compatibility alias.
     factory.registerAlias("MONTH", "toMonth", FunctionFactory::Case::Insensitive);

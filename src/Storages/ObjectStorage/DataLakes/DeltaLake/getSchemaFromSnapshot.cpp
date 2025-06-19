@@ -406,14 +406,6 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 
             types.push_back(type);
         }
-        else if (field.type == DB::TypeIndex::DateTime64)
-        {
-            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
-            if (field.nullable)
-                type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
-        }
         else if (DB::isSimpleDataType(field.type))
         {
             auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);

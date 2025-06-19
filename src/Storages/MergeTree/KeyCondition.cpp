@@ -1776,8 +1776,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
-    "toTime",
-    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
