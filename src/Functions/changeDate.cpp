@@ -351,8 +351,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeYear('2024-01-01'::DateTime, 2023)", "2023-01-01 00:00:00"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {
@@ -363,8 +367,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified month component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeMonth('2024-01-01'::DateTime, 12)", "2024-12-01 00:00:00"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
     }
     {
@@ -375,8 +383,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified day component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeDay('2024-01-31'::DateTime, 15)", "2024-01-15 00:00:00"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
     }
     {
@@ -387,8 +399,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified hours component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeHour('2024-01-01 12:00:00'::DateTime, 5)", "2024-01-01 05:00:00"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
     }
     {
@@ -399,8 +415,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified minutes component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeMinute('2024-01-01 12:30:00'::DateTime, 45)", "2024-01-01 12:45:00"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
     }
     {
@@ -411,8 +431,12 @@ REGISTER_FUNCTION(ChangeDate)
             {"value", "The new value.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified seconds component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeSecond('2024-01-01 12:30:45'::DateTime, 15)", "2024-01-01 12:30:15"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
     }
 }
