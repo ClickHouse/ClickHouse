@@ -415,6 +415,44 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
+bool FuzzConfig::hasMutations()
+{
+    String buf;
+
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out);
+        if (std::getline(infile, buf))
+        {
+            return !buf.empty() && buf[0] != '0';
+        }
+    }
+    return false;
+}
+
+String FuzzConfig::getRandomMutation(const uint64_t rand_val)
+{
+    String res;
+
+    /// The system.mutations table doesn't support sampling, so pick up a random part with a window function
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT z.y FROM (SELECT row_number() OVER () AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
+                "WHERE z.x = (SELECT max2({}, 1) % (max2(count(), 1)::UInt64) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
+                "FORMAT RawBlob;",
+                rand_val,
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
+}
+
 String FuzzConfig::tableGetRandomPartitionOrPart(
     const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
@@ -426,7 +464,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     if (processServerQuery(
             true,
             fmt::format(
-                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
+                "SELECT z.y FROM (SELECT row_number() OVER () AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT max2({}, 1) % (max2(count(), 1)::UInt64) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "

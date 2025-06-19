@@ -4893,6 +4893,10 @@ CONV_FN(Kill, kil)
 {
     ret += "KILL ";
     ret += Kill_KillEnum_Name(kil.command());
+    if (kil.has_cluster())
+    {
+        ClusterToString(ret, true, kil.cluster());
+    }
     ret += " WHERE ";
     WhereStatementToString(ret, kil.where());
     if (kil.has_option())
@@ -4909,6 +4913,11 @@ CONV_FN(Kill, kil)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(kil.outformat()).substr(4);
+    }
+    if (kil.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, kil.setting_values());
     }
 }
 

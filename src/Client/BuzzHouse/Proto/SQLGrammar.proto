@@ -3900,17 +3900,19 @@ message Kill {
         MUTATION = 2;
     }
     required KillEnum command = 1;
-    required WhereStatement where = 2;
+    optional Cluster cluster = 2;
+    required WhereStatement where = 3;
     enum KillOption {
         SYNC = 1;
         ASYNC = 2;
         TEST = 3;
     }
-    optional KillOption option = 3;
+    optional KillOption option = 4;
     oneof kill_format_oneof {
-        InFormat informat = 4;
-        OutFormat outformat = 5;
+        InFormat informat = 5;
+        OutFormat outformat = 6;
     }
+    optional SettingValues setting_values = 7;
 }
 
 message SQLQueryInner {

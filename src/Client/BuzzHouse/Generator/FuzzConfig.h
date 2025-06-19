@@ -179,6 +179,10 @@ public:
 
     void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
+    bool hasMutations();
+
+    String getRandomMutation(const uint64_t rand_val);
+
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
     String

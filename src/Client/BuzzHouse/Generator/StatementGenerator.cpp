@@ -3507,6 +3507,25 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     }
 }
 
+void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
+{
+    BinaryExpr * bexpr = kil->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+
+    bexpr->set_op(BinaryOperator::BINOP_EQ);
+    bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("mutation_id");
+    bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit(fc.getRandomMutation(rg.nextRandomUInt64()));
+
+    kil->set_command(Kill_KillEnum_MUTATION);
+    if (rg.nextSmallNumber() < 3)
+    {
+        kil->set_option(Kill_KillOption_TEST);
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, kil->mutable_setting_values());
+    }
+}
+
 void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_parallel, SQLQueryInner * sq)
 {
     const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
@@ -3557,9 +3576,10 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                                 && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
     const uint32_t light_update = 6 * static_cast<uint32_t>(has_tables);
     const uint32_t select_query = 800 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t kill = 2 * static_cast<uint32_t>(fc.hasMutations());
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-        + create_dictionary + rename + light_update + select_query;
+        + create_dictionary + rename + light_update + kill + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -3703,11 +3723,20 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
     }
     else if (
+        kill
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
+               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
+               + create_dictionary + rename + light_update + kill + 1))
+    {
+        generateNextKill(rg, sq->mutable_kill());
+    }
+    else if (
         select_query
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
                + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + light_update + select_query + 1))
+               + create_dictionary + rename + light_update + kill + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }
