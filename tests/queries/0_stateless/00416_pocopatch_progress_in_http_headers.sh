@@ -6,6 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 RETRIES=5
 
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0"
+
 result=""
 lines_expected=5
 counter=0
@@ -57,7 +59,7 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" -H 'Accept-Encoding: gzip' -d 'CREAT
 result=""
 counter=0
 while [ $counter -lt $RETRIES ] && [ -z "$result" ]; do
-    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=1&http_headers_progress_interval_ms=0&send_progress_in_http_headers=1" -d 'INSERT INTO insert_number_query (record) SELECT number FROM system.numbers LIMIT 10' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Summary|^[0-9]' | sed 's/,\"elapsed_ns[^}]*//')
+    result=$(${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=1&http_headers_progress_interval_ms=0&send_progress_in_http_headers=1" -d 'INSERT INTO insert_number_query (record) SELECT number FROM system.numbers LIMIT 10' 2>&1 | grep -E 'Content-Encoding|X-ClickHouse-Summary|^[0-9]' | grep -v 'Access-Control-Expose-Headers' | sed 's/,\"elapsed_ns[^}]*//')
     let counter=counter+1
 done
 echo "$result"

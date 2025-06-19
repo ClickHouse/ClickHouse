@@ -118,6 +118,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
+    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "nextImpl, out count {}, offset {}", count(), offset());
+
     if (!offset())
         return;
 

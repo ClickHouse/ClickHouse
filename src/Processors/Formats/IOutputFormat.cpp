@@ -122,13 +122,16 @@ void IOutputFormat::work()
 
 void IOutputFormat::flushImpl()
 {
-    LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl, out count {}", out.count());
+    LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl, out count {} offset {} out type {}", out.count(), out.offset(), typeid(out).name());
 
     out.next();
 
     /// If output is a compressed buffer, we will flush the compressed chunk as well.
     if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
+    {
+        LOG_DEBUG(getLogger("IOutputFormat"), "call flushImpl for nested, out count {}", out_with_nested->getNestedBuffer()->count());
         out_with_nested->getNestedBuffer()->next();
+    }
 }
 
 void IOutputFormat::flush()
