@@ -264,6 +264,55 @@ void HTTPHandler::processQuery(
 
     auto context = session->makeQueryContext();
 
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+
+    auto param_could_be_skipped = [&] (const String & name)
+    {
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return true;
+
+        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// belong to the Settings class.
+        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
+            "database", "default_format"};
+
+        if (reserved_param_names.contains(name))
+            return true;
+
+        /// For external data we also want settings.
+        if (has_external_data)
+        {
+            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            for (const String & suffix : reserved_param_suffixes)
+            {
+                if (endsWith(name, suffix))
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
+    /// Settings can be overridden in the query.
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : params)
+    {
+        if (!param_could_be_skipped(key))
+        {
+            /// Other than query parameters are treated as settings.
+            if (!customizeQueryParam(context, key, value))
+                settings_changes.setSetting(key, value);
+        }
+    }
+
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+    context->applySettingsChanges(settings_changes);
+    const auto & settings = context->getSettingsRef();
+
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
     {
@@ -282,21 +331,21 @@ void HTTPHandler::processQuery(
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
-    bool internal_compression = params.getParsed<bool>("compress", false);
+    bool internal_compression = params.getParsedLast<bool>("compress", false);
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
+        params.getParsedLast<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
         static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
+    bool buffer_until_eof = params.getParsedLast<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
+    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
 
@@ -408,55 +457,6 @@ void HTTPHandler::processQuery(
 
     /// Anything else beside HTTP POST should be readonly queries.
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
-
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
-
-    auto param_could_be_skipped = [&] (const String & name)
-    {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
-            return true;
-
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "database", "default_format"};
-
-        if (reserved_param_names.contains(name))
-            return true;
-
-        /// For external data we also want settings.
-        if (has_external_data)
-        {
-            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
-            for (const String & suffix : reserved_param_suffixes)
-            {
-                if (endsWith(name, suffix))
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
-    /// Settings can be overridden in the query.
-    SettingsChanges settings_changes;
-    for (const auto & [key, value] : params)
-    {
-        if (!param_could_be_skipped(key))
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
-                settings_changes.setSetting(key, value);
-        }
-    }
-
-    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
-    context->applySettingsChanges(settings_changes);
-    const auto & settings = context->getSettingsRef();
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
