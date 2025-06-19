@@ -87,7 +87,7 @@ public:
 
 protected:
 
-    virtual void preparePartToSwap(TemporaryClonedPart & /* cloned_part */ ) const {}
+    virtual void preparePartToSwap(TemporaryClonedPart & /*cloned_part*/) const {}
 
     virtual std::pair<MutableDataPartStoragePtr, bool> clonePartImpl(
         const MergeTreeDataPartPtr & part, const DiskPtr & disk,

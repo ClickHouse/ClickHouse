@@ -747,8 +747,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToRemoteDisk(
 
     LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
 
-    auto clear_storage_if_exists = [](DataPartStorageOnDiskBase & data_part_storage) {
-        data_part_storage.removeSharedRecursive(/*keep_shared=*/ true);
+    auto clear_storage_if_exists = [](DataPartStorageOnDiskBase & data_part_storage)
+    {
+        data_part_storage.removeSharedRecursive(/*keep_in_remote_fs=*/ true);
     };
 
     MergeTreeData::DataPart::Checksums data_checksums;
@@ -780,7 +781,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     LOG_DEBUG(log, "Downloading part {} onto disk {}.", part_name, disk->getName());
 
-    auto clear_storage_if_exists = [](DataPartStorageOnDiskBase & data_part_storage) {
+    auto clear_storage_if_exists = [](DataPartStorageOnDiskBase & data_part_storage)
+    {
         data_part_storage.removeRecursive();
     };
 
