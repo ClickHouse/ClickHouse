@@ -1,6 +1,7 @@
 #pragma once
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 
@@ -396,6 +397,97 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     }
 }
 
+template <bool need_filter>
+void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]])
+{
+    if constexpr (need_filter)
+        filter[pos] = 1;
+}
+
+template <
+    JoinKind KIND,
+    JoinStrictness STRICTNESS,
+    bool need_filter,
+    bool flag_per_row,
+    typename MapsTemplate,
+    typename Map,
+    typename KeyGetter,
+    typename AddedColumns>
+void processMatch(
+    const typename KeyGetter::FindResult & find_result,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags & used_flags,
+    size_t i,
+    size_t ind,
+    IColumn::Offset & current_offset,
+    KnownRowsHolder<flag_per_row> & known_rows)
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+
+    auto & mapped = find_result.getMapped();
+    if constexpr (join_features.is_asof_join)
+    {
+        const IColumn & left_asof_key = added_columns.leftAsofKey();
+
+        auto row_ref = mapped->findAsof(left_asof_key, ind);
+        if (row_ref && row_ref->block)
+        {
+            setUsed<need_filter>(added_columns.filter, i);
+            if constexpr (flag_per_row)
+                used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->block, row_ref->row_num, 0);
+            else
+                used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
+
+            added_columns.appendFromBlock(row_ref, join_features.add_missing);
+        }
+        else
+            addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+    }
+    else if constexpr (join_features.is_all_join)
+    {
+        setUsed<need_filter>(added_columns.filter, i);
+        used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
+        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+    }
+    else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
+    {
+        /// Use first appeared left key + it needs left columns replication
+        bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
+        if (used_once)
+        {
+            auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+            setUsed<need_filter>(added_columns.filter, i);
+            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+        }
+    }
+    else if constexpr (join_features.is_any_join && join_features.inner)
+    {
+        bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
+
+        /// Use first appeared left key only
+        if (used_once)
+        {
+            setUsed<need_filter>(added_columns.filter, i);
+            added_columns.appendFromBlock(&mapped, join_features.add_missing);
+        }
+    }
+    else if constexpr (join_features.is_any_join && join_features.full)
+    {
+        /// TODO
+    }
+    else if constexpr (join_features.is_anti_join)
+    {
+        if constexpr (join_features.right && join_features.need_flags)
+            used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
+    }
+    else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
+    {
+        setUsed<need_filter>(added_columns.filter, i);
+        used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
+        added_columns.appendFromBlock(&mapped, join_features.add_missing);
+    }
+}
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
@@ -458,76 +550,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             if (find_result.isFound())
             {
                 right_row_found = true;
-                auto & mapped = find_result.getMapped();
-                if constexpr (join_features.is_asof_join)
-                {
-                    const IColumn & left_asof_key = added_columns.leftAsofKey();
+                processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
+                    find_result, added_columns, used_flags, i, ind, current_offset, known_rows);
 
-                    auto row_ref = mapped->findAsof(left_asof_key, ind);
-                    if (row_ref && row_ref->block)
-                    {
-                        setUsed<need_filter>(added_columns.filter, i);
-                        if constexpr (flag_per_row)
-                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->block, row_ref->row_num, 0);
-                        else
-                            used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-
-                        added_columns.appendFromBlock(row_ref, join_features.add_missing);
-                    }
-                    else
-                        addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
-                }
-                else if constexpr (join_features.is_all_join)
-                {
-                    setUsed<need_filter>(added_columns.filter, i);
-                    used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                    auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-                    addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
-                }
-                else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
-                {
-                    /// Use first appeared left key + it needs left columns replication
-                    bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
-                    if (used_once)
-                    {
-                        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-                        setUsed<need_filter>(added_columns.filter, i);
-                        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
-                    }
-                }
-                else if constexpr (join_features.is_any_join && join_features.inner)
-                {
-                    bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
-
-                    /// Use first appeared left key only
-                    if (used_once)
-                    {
-                        setUsed<need_filter>(added_columns.filter, i);
-                        added_columns.appendFromBlock(&mapped, join_features.add_missing);
-                    }
-
+                if constexpr ((join_features.is_any_join && join_features.inner) || (join_features.is_any_or_semi_join))
                     break;
-                }
-                else if constexpr (join_features.is_any_join && join_features.full)
-                {
-                    /// TODO
-                }
-                else if constexpr (join_features.is_anti_join)
-                {
-                    if constexpr (join_features.right && join_features.need_flags)
-                        used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                }
-                else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
-                {
-                    setUsed<need_filter>(added_columns.filter, i);
-                    used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-                    added_columns.appendFromBlock(&mapped, join_features.add_missing);
-
-                    if (join_features.is_any_or_semi_join)
-                    {
-                        break;
-                    }
-                }
             }
         }
 
@@ -546,14 +573,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     added_columns.applyLazyDefaults();
     return i;
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <bool need_filter>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]])
-{
-    if constexpr (need_filter)
-        filter[pos] = 1;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

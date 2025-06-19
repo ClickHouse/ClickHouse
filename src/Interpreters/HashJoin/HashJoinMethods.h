@@ -143,9 +143,6 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
-    template <bool need_filter>
-    static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
-
     template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
