@@ -350,7 +350,7 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
+            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
@@ -667,7 +667,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 """
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        return Shell.check(command, strict=True)
+        return Shell.check(command)
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):
@@ -806,7 +806,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Fatal messages (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep '#######################################' clickhouse-server*.log| tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
@@ -974,7 +974,9 @@ quit
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
-        command_args_post = "-- --zookeeper.implementation=testkeeper"
+        #
+        # NOTE: we also need to override logger.level, but logger.level will not work
+        command_args_post = "-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog=/dev/null --logger.console=1"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
