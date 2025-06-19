@@ -171,9 +171,12 @@ possible_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+        "metadata_keep_free_space_bytes": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
+        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "object_metadata_cache_size": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+            0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "s3_check_objects_after_upload": lambda: random.randint(0, 1),
         "s3_max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 0, 16),
@@ -193,16 +196,14 @@ object_storages_properties = {
     "azure": {
         "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
         "max_single_part_upload_size": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+            0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
         "metadata_keep_free_space_bytes": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+            0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
-        "min_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
-        ),
+        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "min_upload_part_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "skip_access_check": lambda: random.randint(0, 1),
         "thread_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
         "use_native_copy": lambda: random.randint(0, 1),
@@ -214,22 +215,20 @@ object_storages_properties = {
 cache_storage_properties = {
     "allow_dynamic_cache_resize": lambda: random.randint(0, 1),
     "background_download_max_file_segment_size": threshold_generator(
-        0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
+        0.2, 0.2, 0, 10 * 1024 * 1024
     ),
     "background_download_queue_size_limit": threshold_generator(0.2, 0.2, 0, 128),
     "background_download_threads": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
-    "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024 * 1024),
+    "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "cache_on_write_operations": lambda: random.randint(0, 1),
     "cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "enable_bypass_cache_with_threshold": lambda: random.randint(0, 1),
     "enable_filesystem_query_cache_limit": lambda: random.randint(0, 1),
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "keep_free_space_remove_batch": threshold_generator(
-        0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
-    ),
+    "keep_free_space_remove_batch": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": lambda: random.randint(0, 1),
     "load_metadata_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
@@ -243,12 +242,15 @@ cache_storage_properties = {
 
 policy_properties = {
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
-    "max_data_part_size_bytes": threshold_generator(
-        0.2, 0.2, 0, 10 * 1024 * 1024 * 1024
-    ),
+    "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": lambda: random.randint(0, 1),
     "prefer_not_to_merge": lambda: random.randint(0, 1),
+}
+
+
+all_disks_properties = {
+    "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
 }
 
 
@@ -451,6 +453,9 @@ def add_single_disk(
                     if enc_algorithm == "aes_192_ctr"
                     else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
                 )
+
+    if random.randint(1, 100) <= 50:
+        add_settings_from_dict(all_disks_properties, next_disk)
     return (prev_disk, final_type)
 
 
