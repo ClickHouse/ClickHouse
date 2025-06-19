@@ -1,19 +1,13 @@
 <test>
-    <!-- Global settings for all queries -->
     <settings>
-        <!-- Use the new query-tree analyser that contains the optimisation -->
         <allow_experimental_analyzer>1</allow_experimental_analyzer>
-
-        <!-- Execute sub-queries locally when possible (faster CI runs)       -->
         <prefer_localhost_replica>1</prefer_localhost_replica>
-
-        <!-- Allow several Distributed tables inside one query                -->
         <distributed_product_mode>allow</distributed_product_mode>
     </settings>
 
     <!-- A Distributed table that produces a huge number of duplicates.
          Every shard returns the same sequence of numbers, providing
-         an excellent "worst case" for the DISTINCT optimisation.          -->
+         an excellent "worst case" for the DISTINCT optimization.          -->
     <create_query>
         CREATE TABLE distributed_numbers
         (
@@ -25,7 +19,7 @@
         )
     </create_query>
 
-    <!-- 1.  Optimisation OFF  -->
+    <!-- 1.  Optimization OFF  -->
     <query>
         SELECT count()
         FROM numbers(100000000)            -- 100 M rows on the left side
@@ -40,7 +34,7 @@
             read_overflow_mode = 'break'
     </query>
 
-    <!-- 2.  Optimisation ON  -->
+    <!-- 2.  Optimization ON  -->
     <query>
         SELECT count()
         FROM numbers(100000000)
