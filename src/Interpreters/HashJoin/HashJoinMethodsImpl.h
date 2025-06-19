@@ -384,7 +384,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
                 std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
         else
             return joinRightColumns<KeyGetter, Map, need_filter, false>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+                key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
     }
     else
     {
@@ -393,7 +393,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
                 std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
         else
             return joinRightColumns<KeyGetter, Map, need_filter, false>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
+                key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
     }
 }
 
@@ -487,6 +487,88 @@ void processMatch(
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
         added_columns.appendFromBlock(&mapped, join_features.add_missing);
     }
+}
+
+/// Joins right table columns which indexes are present in right_indexes using specified map.
+/// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+    KeyGetter & key_getter, const Map & map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+
+    auto & block = added_columns.src_block;
+    size_t rows = block.rows();
+    if constexpr (need_filter)
+        added_columns.filter = IColumn::Filter(rows, 0);
+    if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
+        added_columns.output_by_row_list = true;
+
+    Arena pool;
+
+    if constexpr (join_features.need_replication)
+        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+
+    const auto & join_keys = added_columns.join_on_keys.at(0);
+
+    IColumn::Offset current_offset = 0;
+    size_t max_joined_block_rows = added_columns.max_joined_block_rows;
+    size_t i = 0;
+    for (; i < rows; ++i)
+    {
+        size_t ind = 0;
+        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+            ind = selector.getData()[i];
+        else
+            ind = selector.first + i;
+
+        if constexpr (join_features.need_replication)
+        {
+            if (unlikely(current_offset >= max_joined_block_rows))
+            {
+                added_columns.offsets_to_replicate->resize(i);
+                added_columns.filter.resize(i);
+                break;
+            }
+        }
+
+        bool right_row_found = false;
+        KnownRowsHolder<flag_per_row> dummy_known_rows;
+        if (join_keys.null_map && (*join_keys.null_map)[ind])
+        {
+            // skip nulls
+        }
+        else
+        {
+            bool row_acceptable = !join_keys.isRowFiltered(ind);
+            using FindResult = typename KeyGetter::FindResult;
+            auto find_result = row_acceptable ? key_getter.findKey(map, ind, pool) : FindResult();
+
+            if (find_result.isFound())
+            {
+                right_row_found = true;
+                processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
+                    find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows);
+
+                // if constexpr ((join_features.is_any_join && join_features.inner) || (join_features.is_any_or_semi_join))
+                //     break;
+            }
+        }
+
+        if (!right_row_found)
+        {
+            if constexpr (join_features.is_anti_join && join_features.left)
+                setUsed<need_filter>(added_columns.filter, i);
+            addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+        }
+
+        if constexpr (join_features.need_replication)
+            (*added_columns.offsets_to_replicate)[i] = current_offset;
+    }
+
+    added_columns.applyLazyDefaults();
+    return i;
 }
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.

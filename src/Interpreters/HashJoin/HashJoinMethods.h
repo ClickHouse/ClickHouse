@@ -143,6 +143,16 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
+    /// Joins right table columns which indexes are present in right_indexes using specified map.
+    /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
+    static size_t joinRightColumns(
+        KeyGetter & key_getter,
+        const Map & map,
+        AddedColumns & added_columns,
+        JoinStuff::JoinUsedFlags & used_flags,
+        const Selector & selector);
+
     template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
