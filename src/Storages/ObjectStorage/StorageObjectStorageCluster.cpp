@@ -225,7 +225,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         predicate,
         filter,
         virtual_columns,
-        hive_partition_columns_to_read_from_file_path
+        hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/true,
