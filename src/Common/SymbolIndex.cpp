@@ -503,9 +503,9 @@ void SymbolIndex::load()
     }), data.symbols.end());
 }
 
-const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
+const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * offset) const
 {
-    return find(address, data.symbols);
+    return find(offset, data.symbols);
 }
 
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
