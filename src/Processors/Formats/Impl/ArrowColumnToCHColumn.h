@@ -4,8 +4,6 @@
 
 #include "config.h"
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
-
 #include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
@@ -93,5 +91,3 @@ private:
 };
 
 }
-
-#endif

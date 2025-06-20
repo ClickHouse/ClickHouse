@@ -3,8 +3,6 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
-
 #include <optional>
 
 #include <arrow/io/interfaces.h>
@@ -174,5 +172,3 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
     const std::string & magic_bytes);
 
 }
-
-#endif

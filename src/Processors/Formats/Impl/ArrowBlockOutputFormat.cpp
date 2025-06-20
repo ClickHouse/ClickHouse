@@ -1,7 +1,5 @@
 #include "ArrowBlockOutputFormat.h"
 
-#if USE_ARROW
-
 #include <Formats/FormatFactory.h>
 #include <Processors/Port.h>
 
@@ -152,15 +150,3 @@ void registerOutputFormatArrow(FormatFactory & factory)
 }
 
 }
-
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerOutputFormatArrow(FormatFactory &)
-{
-}
-}
-
-#endif

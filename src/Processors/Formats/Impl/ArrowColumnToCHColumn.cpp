@@ -1,8 +1,6 @@
 #include "ArrowColumnToCHColumn.h"
 #include "Common/Exception.h"
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
-
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -1657,5 +1655,3 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 }
 
 }
-
-#endif

@@ -1,8 +1,6 @@
 #include "ArrowBlockInputFormat.h"
 #include <optional>
 
-#if USE_ARROW
-
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -295,16 +293,3 @@ void registerArrowSchemaReader(FormatFactory & factory)
 }
 
 }
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerInputFormatArrow(FormatFactory &)
-{
-}
-
-void registerArrowSchemaReader(FormatFactory &) {}
-}
-
-#endif

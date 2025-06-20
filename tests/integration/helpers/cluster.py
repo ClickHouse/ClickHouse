@@ -509,6 +509,8 @@ class ClickHouseCluster:
         self.base_nginx_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
+        self.with_arrowflight = False
+        self.arrowflight_host = "arrowflight1"
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -1390,6 +1392,19 @@ class ClickHouseCluster:
         )
         return self.base_mongo_cmd
 
+    def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_arrowflight = True
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
+        )
+        self.base_arrowflight_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml"),
+        )
+        return self.base_arrowflight_cmd
+
     def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_coredns = True
         env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
@@ -1639,6 +1654,7 @@ class ClickHouseCluster:
         with_postgresql_java_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
+        with_arrowflight=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -1766,6 +1782,7 @@ class ClickHouseCluster:
             macros=macros or {},
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
+            with_arrowflight=with_arrowflight,
             with_mysql_client=with_mysql_client,
             with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
@@ -1963,6 +1980,11 @@ class ClickHouseCluster:
         if with_mongo and not self.with_mongo:
             cmds.append(
                 self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+            
+        if with_arrowflight and not self.with_arrowflight:
+            cmds.append(
+                self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_coredns and not self.with_coredns:
@@ -2864,6 +2886,10 @@ class ClickHouseCluster:
         self.wait_for_url(
             f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
         )
+        
+    def wait_arrowflight_to_start(self):
+        time.sleep(5) # TODO
+        
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3307,6 +3333,18 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Prometheus...")
                 self.wait_prometheus_to_start()
 
+            if self.with_arrowflight and self.base_arrowflight_cmd:
+                arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Arrowflight instance by command %s",
+                    " ".join(map(str, arrowflight_start_cmd)),
+                )
+                run_and_check(arrowflight_start_cmd)
+
+                logging.error(f'Trying to connect to Arrowflight...')
+                self.wait_arrowflight_to_start()
+
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
                 (
@@ -3622,6 +3660,7 @@ class ClickHouseInstance:
         macros,
         with_zookeeper,
         zookeeper_config_path,
+        with_arrowflight,
         with_mysql_client,
         with_mysql57,
         with_mysql8,
@@ -3746,6 +3785,7 @@ class ClickHouseInstance:
         self.mongo_secure_config_dir = p.abspath(
             p.join(base_path, "mongo_secure_config")
         )
+        self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
@@ -5053,6 +5093,9 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
+            
+        if self.with_arrowflight:
+            depends_on.append("arrowflight1")
 
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
