@@ -57,6 +57,7 @@ bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*s
         return chunk->key.offset <= offset && chunk->key.offset + chunk->key.size > offset;
     }
 
+    size_t block_size = settings.page_cache_block_size;
     cache_key.offset = offset / block_size * block_size;
     cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
 
