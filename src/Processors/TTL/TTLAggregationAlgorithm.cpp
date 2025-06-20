@@ -217,25 +217,24 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             for (const auto & it : description.set_parts)
                 it.expression->execute(agg_block);
 
+            /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
+            /// the SET values over the GROUP BY because doing it the other way causes unexpected
+            /// results.
             std::unordered_set<String> columns_added;
-            for (const auto & name : description.group_by_keys)
-            {
-                const IColumn * values_column = agg_block.getByName(name).column.get();
-                auto & result_column = result_columns[header.getPositionByName(name)];
-                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-                columns_added.emplace(name);
-            }
-
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
+                auto & result_column = result_columns[header.getPositionByName(it.column_name)];
+                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                columns_added.emplace(it.column_name);
+            }
 
-                /// In case the same column is used in the GROUP BY and in the SET clause, we need
-                /// to make sure the values are only added once. Notice that the SET is properly
-                /// applied because it's done before the GROUP BY column insertion.
-                if (!columns_added.contains(it.column_name))
+            for (const auto & name : description.group_by_keys)
+            {
+                if (!columns_added.contains(name))
                 {
-                    auto & result_column = result_columns[header.getPositionByName(it.column_name)];
+                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
                     result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
                 }
             }
