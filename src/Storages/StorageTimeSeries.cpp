@@ -52,8 +52,8 @@ namespace
     /// Creates an inner target table or just makes its storage ID.
     /// This function is used by the constructor of StorageTimeSeries to find (or create) its target tables.
     StorageID initTarget(
-        ViewTarget::Kind kind,
-        const ViewTarget * target_info,
+        ASTViewTarget::Kind kind,
+        const ASTViewTarget * target_info,
         const ContextPtr & context,
         const StorageID & time_series_storage_id,
         const ColumnsDescription & time_series_columns,
@@ -62,11 +62,11 @@ namespace
     {
         StorageID target_table_id = StorageID::createEmpty();
 
-        bool is_external_target = target_info && !target_info->table_id.empty();
+        bool is_external_target = target_info && !target_info->getTableID().empty();
         if (is_external_target)
         {
             /// A target table is specified.
-            target_table_id = target_info->table_id;
+            target_table_id = target_info->getTableID();
 
             if (mode < LoadingStrictnessLevel::ATTACH)
             {
@@ -93,7 +93,7 @@ namespace
             else
             {
                 /// Create the inner target table.
-                auto inner_table_engine = target_info ? target_info->inner_engine : nullptr;
+                auto inner_table_engine = target_info ? std::dynamic_pointer_cast<ASTStorage>(target_info->inner_engine->shared_from_this()) : nullptr;
                 target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine);
             }
         }
@@ -154,15 +154,15 @@ StorageTimeSeries::StorageTimeSeries(
 
     has_inner_tables = false;
 
-    for (auto target_kind : {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics})
+    for (auto target_kind : {ASTViewTarget::Kind::Data, ASTViewTarget::Kind::Tags, ASTViewTarget::Kind::Metrics})
     {
-        const ViewTarget * target_info = query.targets ? query.targets->tryGetTarget(target_kind) : nullptr;
+        const ASTViewTarget * target_info = query.targets ? query.targets->tryGetTarget(target_kind) : nullptr;
         auto & target = targets.emplace_back();
         target.kind = target_kind;
         target.table_id = initTarget(target_kind, target_info, local_context, getStorageID(), columns, *storage_settings, mode);
-        target.is_inner_table = target_info && target_info->table_id.empty();
+        target.is_inner_table = target_info && target_info->getTableID().empty();
 
-        if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
+        if (target_kind == ASTViewTarget::Kind::Metrics && !target.is_inner_table)
         {
             auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
             auto metadata = table->getInMemoryMetadataPtr();
@@ -234,7 +234,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 }
 
 
-StorageID StorageTimeSeries::getTargetTableId(ViewTarget::Kind target_kind) const
+StorageID StorageTimeSeries::getTargetTableId(ASTViewTarget::Kind target_kind) const
 {
     for (const auto & target : targets)
     {
@@ -244,12 +244,12 @@ StorageID StorageTimeSeries::getTargetTableId(ViewTarget::Kind target_kind) cons
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", toString(target_kind));
 }
 
-StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
+StoragePtr StorageTimeSeries::getTargetTable(ASTViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return DatabaseCatalog::instance().getTable(getTargetTableId(target_kind), local_context);
 }
 
-StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
+StoragePtr StorageTimeSeries::tryGetTargetTable(ASTViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(target_kind), local_context);
 }
