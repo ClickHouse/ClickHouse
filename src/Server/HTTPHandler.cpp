@@ -324,12 +324,12 @@ void HTTPHandler::processQuery(
     /// If wait_end_of_query is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
     auto buffer_size_http = settings[Setting::http_response_buffer_size];
-    /// setting overrides depricated buffer_size parameter
+    /// setting overrides deprecated buffer_size parameter
     if (!params.has("http_response_buffer_size"))
         buffer_size_http = params.getParsedLast<size_t>("buffer_size", buffer_size_http);
 
     bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
-    /// setting overrides depricated wait_end_of_query parameter
+    /// setting overrides deprecated wait_end_of_query parameter
     if (!params.has("http_wait_end_of_query"))
         wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
 
