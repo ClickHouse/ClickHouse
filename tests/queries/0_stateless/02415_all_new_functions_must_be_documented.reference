@@ -69,11 +69,9 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -125,7 +123,6 @@ cutQueryStringAndFragment
 cutURLParameter
 cutWWW
 dateDiff
-dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -176,23 +173,16 @@ firstSignificantSubdomainCustomRFC
 flattenTuple
 floor
 format
-formatDateTime
-formatDateTimeInJodaSyntax
 formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromModifiedJulianDay
-fromModifiedJulianDayOrNull
-fromUTCTimestamp
-fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
 generateUUIDv4
@@ -289,7 +279,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -350,9 +339,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -507,7 +493,6 @@ splitByString
 splitByWhitespace
 sqrt
 startsWith
-subDate
 substring
 substringIndex
 substringIndexUTF8
@@ -519,8 +504,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeSlot
-timeSlots
 toBool
 toColumnTypeName
 toDate
@@ -612,8 +595,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toModifiedJulianDay
-toModifiedJulianDayOrNull
 toNullable
 toRelativeDayNum
 toRelativeHourNum
@@ -658,7 +639,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -669,9 +649,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 toYearWeek
 today
 transactionID
@@ -730,5 +707,4 @@ wyHash64
 xor
 xxHash32
 xxHash64
-yesterday
 zookeeperSessionUptime
