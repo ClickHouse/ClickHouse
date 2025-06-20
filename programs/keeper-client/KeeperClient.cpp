@@ -146,6 +146,10 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("port"));
 
     options.addOption(
+    Poco::Util::Option("secure", "s", "use secure connection. default `false`")
+        .binding("secure"));
+
+    options.addOption(
         Poco::Util::Option("password", "", "password to connect to keeper server")
             .argument("<password>")
             .binding("password"));
@@ -410,9 +414,16 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
             String prefix = "zookeeper." + key;
             String host = clickhouse_config.configuration->getString(prefix + ".host");
-            String port = clickhouse_config.configuration->getString(prefix + ".port");
+            String port;
+            if (clickhouse_config.configuration->has(prefix + ".port"))
+                port = clickhouse_config.configuration->getString(prefix + ".port");
+            else if (clickhouse_config.configuration->has(prefix + ".tcp_port_secure"))
+                port = clickhouse_config.configuration->getString(prefix + ".tcp_port_secure");
+            else
+                port = "9181";
 
-            if (clickhouse_config.configuration->has(prefix + ".secure"))
+            if ((clickhouse_config.configuration->has(prefix + ".secure")
+                || config().getBool("secure")) && !host.starts_with("secure://"))
                 host = "secure://" + host;
 
             zk_args.hosts.push_back(host + ":" + port);

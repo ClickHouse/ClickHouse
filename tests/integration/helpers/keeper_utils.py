@@ -7,7 +7,8 @@ import socket
 import subprocess
 import time
 from os import path as p
-from typing import Iterable, List, Optional, Sequence, Union
+from collections.abc import Generator
+from typing import List, Optional, Sequence, Union, Self
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
@@ -77,7 +78,15 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30):
+    def __init__(
+            self,
+            bin_path: str,
+            host: str,
+            port: int,
+            secure: bool = False,
+            connection_tries: int = 30,
+            connection_timeout: float = 60.0,
+    ):
         self.bin_path = bin_path
         self.host = host
         self.port = port
@@ -86,19 +95,22 @@ class KeeperClient(object):
 
         while True:
             try:
-                self.proc = subprocess.Popen(
-                    [
-                        bin_path,
-                        "keeper-client",
-                        "--host",
-                        host,
-                        "--port",
-                        str(port),
-                        "--log-level",
-                        "error",
-                        "--tests-mode",
-                        "--no-confirmation",
-                    ],
+                args = [
+                    bin_path,
+                    "keeper-client",
+                    "--host",
+                    host,
+                    "--port",
+                    str(port),
+                    "--log-level",
+                    "error",
+                    "--tests-mode",
+                    "--no-confirmation",
+                ]
+                if secure:
+                    args.append("--secure")
+
+                self.proc = subprocess.Popen(args,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -115,7 +127,7 @@ class KeeperClient(object):
 
                 self.stopped = False
 
-                self.get("/keeper", 60.0)
+                self.get("/keeper", connection_timeout)
                 break
             except Exception as e:
                 retry_count += 1
@@ -244,12 +256,13 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None
-    ) -> "KeeperClient":
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, **kwargs,
+    ) -> Generator[Self]:
         client = cls(
             cluster.server_bin_path,
             cluster.get_instance_ip(keeper_node),
             port or cluster.zookeeper_port,
+            **kwargs,
         )
 
         try:
