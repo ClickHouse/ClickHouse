@@ -250,6 +250,17 @@ DelayedCreatingSetsStep::DelayedCreatingSetsStep(
     output_header = std::move(input_header);
 }
 
+QueryPlanRawPtrs DelayedCreatingSetsStep::getChildPlans()
+{
+    QueryPlanRawPtrs res;
+    for (const auto & subquery : subqueries)
+    {
+        if (auto * child_plan = subquery->getQueryPlan())
+            res.push_back(child_plan);
+    }
+    return res;
+}   
+
 QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &)
 {
     throw Exception(
