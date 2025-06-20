@@ -2803,6 +2803,17 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
+    // Handle "?? <free_text>" command
+    if (text.starts_with("??"))
+    {
+        size_t skip_prefix_size = 2; // Length of "??"
+        auto free_text = text.substr(skip_prefix_size);
+        // Trim leading whitespace from the free text
+        free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
+        std::cout << "received " << free_text << std::endl;
+        return true;
+    }
+
     if (query_fuzzer_runs)
     {
         processWithASTFuzzer(text);
