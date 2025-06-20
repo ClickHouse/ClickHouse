@@ -40,7 +40,8 @@ bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t list_batch_size) const
+    size_t list_batch_size,
+    ContextPtr /* context  */) const
 {
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
