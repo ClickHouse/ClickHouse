@@ -122,6 +122,7 @@ class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class ZooKeeperConnectionLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -1182,8 +1183,6 @@ public:
     bool hasZooKeeper() const;
     /// Has ready or expired auxiliary ZooKeeper
     bool hasAuxiliaryZooKeeper(const String & name) const;
-    /// Reset current zookeeper session. Do not create a new one.
-    void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
@@ -1340,6 +1339,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
+    std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1462,8 +1462,6 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-    /// Removes context of current distributed DDL.
-    void resetZooKeeperMetadataTransaction();
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
