@@ -109,6 +109,24 @@ public:
         return current_metadata->getSchemaTransformer(data_path);
     }
 
+    bool hasDataTransformer(const ObjectInfoPtr & object_info) const override
+    {
+        if (!current_metadata)
+            return false;
+        return current_metadata->hasDataTransformer(object_info);
+    }
+
+    std::shared_ptr<ISimpleTransform> getDataTransformer(
+        const ObjectInfoPtr & object_info,
+        const Block & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getDataTransformer(object_info, header, format_settings, context_);
+    }
+
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();

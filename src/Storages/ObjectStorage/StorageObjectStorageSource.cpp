@@ -532,6 +532,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
     });
 
+    if (configuration->hasDataTransformer(object_info))
+    {
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return configuration->getDataTransformer(object_info, header, format_settings, context_);
+        });
+    }
+
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
