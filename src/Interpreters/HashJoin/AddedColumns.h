@@ -182,7 +182,7 @@ public:
 
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
-    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
+    IColumn::Offsets offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
     size_t join_data_avg_perkey_rows = 0;

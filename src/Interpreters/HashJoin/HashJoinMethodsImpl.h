@@ -183,7 +183,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     if constexpr (join_features.need_replication)
     {
-        IColumn::Offsets & offsets = *added_columns.offsets_to_replicate;
+        IColumn::Offsets & offsets = added_columns.offsets_to_replicate;
 
         chassert(block);
         chassert(offsets.size() == block.rows());
@@ -530,7 +530,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     Arena pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
     IColumn::Offset current_offset = 0;
     size_t i = 0;
@@ -546,7 +546,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             if (unlikely(current_offset >= max_joined_block_rows))
             {
-                added_columns.offsets_to_replicate->resize(i);
+                added_columns.offsets_to_replicate.resize(i);
                 added_columns.filter.resize(i);
                 break;
             }
@@ -588,7 +588,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
 
         if constexpr (join_features.need_replication)
-            (*added_columns.offsets_to_replicate)[i] = current_offset;
+            added_columns.offsets_to_replicate[i] = current_offset;
     }
 
     added_columns.applyLazyDefaults();
@@ -637,7 +637,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     Arena pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
     IColumn::Offset current_offset = 0;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
@@ -654,7 +654,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             if (unlikely(current_offset >= max_joined_block_rows))
             {
-                added_columns.offsets_to_replicate->resize(i);
+                added_columns.offsets_to_replicate.resize(i);
                 added_columns.filter.resize(i);
                 break;
             }
@@ -692,7 +692,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if constexpr (join_features.need_replication)
         {
-            (*added_columns.offsets_to_replicate)[i] = current_offset;
+            added_columns.offsets_to_replicate[i] = current_offset;
         }
     }
 
@@ -836,7 +836,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
     std::unique_ptr<Arena> pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(left_block_rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(left_block_rows);
 
     std::vector<size_t> row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
@@ -1028,7 +1028,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
             if constexpr (join_features.need_replication)
             {
-                (*added_columns.offsets_to_replicate)[left_start_row + i - 1] = total_added_rows;
+                added_columns.offsets_to_replicate[left_start_row + i - 1] = total_added_rows;
             }
             prev_replicated_row = row_replicate_offset[i];
         }
@@ -1063,7 +1063,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
     if constexpr (join_features.need_replication)
     {
-        added_columns.offsets_to_replicate->resize_assume_reserved(it);
+        added_columns.offsets_to_replicate.resize_assume_reserved(it);
         added_columns.filter.resize_assume_reserved(it);
     }
     added_columns.applyLazyDefaults();
