@@ -6947,7 +6947,7 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForInternalUsage() const
     return getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Patch}, lock);
 }
 
-DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id, const DataPartsLock & /*lock*/)
+DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id, const DataPartsLock & /*lock*/) const
 {
     DataPartsVector res;
     auto range = getDataPartsStateRange(DataPartState::Active, DataPartKind::Patch);
@@ -6961,7 +6961,7 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & pa
     return res;
 }
 
-DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id)
+DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & partition_id) const
 {
     auto lock = lockParts();
     return getPatchPartsVectorForPartition(partition_id, lock);

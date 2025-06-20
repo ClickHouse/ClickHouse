@@ -8264,7 +8264,7 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
     }
 
     if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", backoff_ms);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout_ms);
 }
 
 QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
@@ -8742,8 +8742,17 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const bool & always_use_copy_instead_of_hardlinks,
     const ContextPtr & query_context)
 {
-    /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
+    DataPartsVector src_all_parts;
+    DataPartsVector src_patch_parts;
+
+    {
+        /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
+        auto parts_lock = src_data.lockParts();
+        src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id, parts_lock);
+        src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
+    }
+
+    assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     std::optional<ZooKeeperMetadataTransaction> txn;
@@ -9058,11 +9067,16 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         DataPartPtr covering_part;
         DataPartsVector src_all_parts;
+        DataPartsVector src_patch_parts;
+
         {
             /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
             auto parts_lock = src_data.lockParts();
             src_all_parts = src_data.getActivePartsToReplace(drop_range, drop_range_fake_part_name, covering_part, parts_lock);
+            src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
         }
+
+        assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
@@ -9611,6 +9625,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
+        if (detach && supportsLightweightUpdate())
+        {
+            auto patch_parts = getPatchPartsVectorForPartition(part_info.getPartitionId());
+            if (!assertNoPatchesForParts({part}, patch_parts, "DETACH PART " + part_name, throw_if_noop))
+                return false;
+        }
+
         Coordination::Requests ops;
         /// NOTE Don't need to remove block numbers too, because no in-progress inserts in the range are possible
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.getPartitionId(), part_info.min_block, part_info.max_block);
@@ -9683,6 +9704,24 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     clearLockedBlockNumbersInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
+
+    if (detach && supportsLightweightUpdate())
+    {
+        auto sync_timeout_ms = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+        if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout_ms);
+
+        DataPartsVector parts_to_detach;
+        DataPartsVector patches_in_partition;
+
+        {
+            auto parts_lock = lockParts();
+            parts_to_detach = grabActivePartsToRemoveForDropRange(NO_TRANSACTION_RAW, drop_range_info, parts_lock);
+            patches_in_partition = getPatchPartsVectorForPartition(partition_id, parts_lock);
+        }
+
+        assertNoPatchesForParts(parts_to_detach, patches_in_partition, "DETACH PARTITION " + partition_id);
+    }
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
 

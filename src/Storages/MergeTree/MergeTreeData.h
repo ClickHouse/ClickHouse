@@ -638,8 +638,8 @@ public:
     /// Returns patch parts in Active state
     DataPartsVector getPatchPartsVectorForInternalUsage() const;
     /// Returns patch parts in Active state that relate to partition_id.
-    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id, const DataPartsLock & lock);
-    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id);
+    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id, const DataPartsLock & lock) const;
+    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
