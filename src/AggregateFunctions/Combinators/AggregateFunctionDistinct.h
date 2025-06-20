@@ -137,7 +137,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             {
                 Set::LookupResult it;
                 bool inserted;
-                history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
+                history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 const char * pos = it->getValue().data;
                 for (auto & column : argument_columns)
                     pos = column->deserializeAndInsertFromArena(pos);
