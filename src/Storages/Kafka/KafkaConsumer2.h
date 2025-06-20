@@ -85,6 +85,13 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
+    // Returns the topic partitions that the consumer got from rebalancing the consumer group. If the consumer received
+    // no topic partitions or all of them were revoked, it returns a null pointer.
+    TopicPartitions const * getKafkaAssignment() const;
+
+    // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
+    // Returns true if it received new assignment and internal state should be updated by updateOffsets
+    bool needsOffsetUpdate() const { return needs_offset_update; }
     void updateOffsets(const TopicPartitions & topic_partitions);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
@@ -102,8 +109,7 @@ public:
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
 
-    // Build the full list of partitions for our subscribed topics.
-    TopicPartitions getAllTopicPartitions() const;
+    void subscribeIfNotSubscribedYet();
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -126,12 +132,15 @@ private:
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
     const std::atomic<bool> & stopped;
+    bool is_subscribed = false;
 
     // order is important, need to be destructed before consumer
     Messages messages;
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
+    std::optional<TopicPartitions> assignment;
+    bool needs_offset_update{false};
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 

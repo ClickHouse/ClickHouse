@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>

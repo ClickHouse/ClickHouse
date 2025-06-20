@@ -1,8 +1,6 @@
 #include <IO/WriteHelpers.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -207,6 +205,7 @@ StorageRedis::StorageRedis(
     const String & primary_key_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , table_id(table_id_)
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
@@ -356,7 +355,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
 
     RedisArray values = multiGet(keys);
     if (values.isNull() || values.size() == 0)
-        return Chunk(std::move(columns), 0);
+        return {};
 
     if (null_map)
     {
@@ -404,9 +403,6 @@ std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, 
 
 RedisArray StorageRedis::multiGet(const RedisArray & keys) const
 {
-    if (keys.isNull() || keys.size() == 0)
-        return {};
-
     auto connection = getRedisConnection(pool, configuration);
 
     RedisCommand cmd_mget("MGET");
@@ -426,7 +422,7 @@ void StorageRedis::multiSet(const RedisArray & data) const
 
     auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
@@ -444,7 +440,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
             "Try to delete {} rows but actually deleted {} rows from redis table {}.",
             keys.size(),
             ret,
-            getStorageID().getFullNameNotQuoted());
+            table_id.getFullNameNotQuoted());
 
     return ret;
 }
@@ -490,7 +486,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
 }
 
 void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const

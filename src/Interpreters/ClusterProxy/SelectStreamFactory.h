@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -57,8 +57,6 @@ public:
         ASTPtr query;
         QueryTreeNodePtr query_tree;
         PlannerContextPtr planner_context;
-
-        std::shared_ptr<QueryPlan> query_plan;
 
         /// Used to check the table existence on remote node
         StorageID main_table;

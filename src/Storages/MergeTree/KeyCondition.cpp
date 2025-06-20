@@ -58,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -124,7 +125,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
 
-    while (pos < end)
+    while (pos != end)
     {
         switch (*pos)
         {
@@ -147,22 +148,19 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '$':
                     case '.':
                     case '[':
-                    case ']':
                     case '?':
                     case '*':
                     case '+':
-                    case '\\':
                     case '{':
-                    case '}':
-                    case '-':
                         fixed_prefix += *pos;
-                        ++pos;
                     break;
                     default:
                         /// all other escape sequences are not supported
                             pos = end;
+                    break;
                 }
 
+                ++pos;
                 break;
             }
 
@@ -591,30 +589,19 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
 }
 
-static bool isTrivialCast(const ActionsDAG::Node & node)
-{
-    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
-        return false;
-
-    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
-    if (!column_const)
-        return false;
-
-    Field field = column_const->getField();
-    if (field.getType() != Field::Types::String)
-        return false;
-
-    auto type_name = field.safeGet<String>();
-    return node.children[0]->result_type->getName() == type_name;
-}
-
-static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
+static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted,
     const ContextPtr & context,
     const bool need_inversion)
 {
+    {
+        auto it = to_inverted.find(&node);
+        if (it != to_inverted.end())
+            return *it->second;
+    }
+
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
@@ -622,12 +609,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     {
         case (ActionsDAG::ActionType::INPUT):
         {
-            auto & input = inputs_mapping[&node];
-            if (input == nullptr)
-                /// Note: inputs order is not important here. Will match columns by names.
-                input = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
-
-            res = input;
+            /// Note: inputs order is not important here. Will match columns by names.
+            res = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
             break;
         }
         case (ActionsDAG::ActionType::COLUMN):
@@ -651,13 +634,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
+            const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -666,7 +649,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
+                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -680,29 +663,19 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                            arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
                     }
                 }
 
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
-            else if (name == "materialize")
-            {
-                /// Remove "materialize" from index analysis.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
-            }
-            else if (isTrivialCast(node))
-            {
-                /// Remove trivial cast and keep its first argument.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
-            }
             else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -723,7 +696,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
+                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -761,33 +734,14 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     }
                 }
             }
-            break;
-        }
-        case ActionsDAG::ActionType::PLACEHOLDER:
-        {
-            /// I guess it should work as INPUT.
-            res = &inverted_dag.addPlaceholder(node.result_name, node.result_type);
-            break;
         }
     }
 
     if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
+    to_inverted[&node] = res;
     return *res;
-}
-
-static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
-{
-    ActionsDAG res;
-
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
-
-    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
-
-    res.getOutputs() = {predicate};
-
-    return res;
 }
 
 const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
@@ -819,6 +773,26 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
     }
 
     return true;
+}
+
+ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+{
+    ActionsDAG res;
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
+
+    for (auto & node : nodes)
+        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
+
+    if (nodes.size() > 1)
+    {
+        auto function_builder = FunctionFactory::instance().get("and", context);
+        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
+    }
+
+    res.getOutputs().swap(nodes);
+
+    return res;
 }
 
 /** Calculate expressions, that depend only on constants.
@@ -889,26 +863,8 @@ void KeyCondition::getAllSpaceFillingCurves()
     }
 }
 
-ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
-{
-    if (!predicate_)
-        return;
-
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-    * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-    * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-    * when parsing the AST into internal RPN representation.
-    * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-    * are pushed down and applied (when possible) to leaf nodes.
-    */
-    dag = cloneDAGWithInversionPushDown(predicate_, context);
-
-    predicate = dag->getOutputs()[0];
-}
-
-
 KeyCondition::KeyCondition(
-    const ActionsDAGWithInversionPushDown & filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
@@ -933,7 +889,7 @@ KeyCondition::KeyCondition(
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
-    if (!filter_dag.predicate)
+    if (!filter_dag)
     {
         has_filter = false;
         relaxed = true;
@@ -943,7 +899,19 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+      * when parsing the AST into internal RPN representation.
+      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+      * are pushed down and applied (when possible) to leaf nodes.
+      */
+    auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
+    assert(inverted_dag.getOutputs().size() == 1);
+
+    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
+
+    RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);
     });
@@ -1776,8 +1744,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
-    "toTime",
-    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
@@ -1982,6 +1948,19 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
     , key_column(key_column_)
     , polygon(std::make_shared<Polygon>())
 {
+}
+
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+{
+    try
+    {
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
+    }
 }
 
 
@@ -2243,12 +2222,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
-
-                        const_value = converted;
+                        castValueToType(common_type, const_value, const_type, node.getColumnName());
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2895,31 +2869,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    const Field field{};
-    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
-    {
-        bool all_always_monotonic = true;
-        bool all_strict = true;
-
-        for (const auto & func : chain)
-        {
-            if (!func || !func->hasInformationAboutMonotonicity())
-                return {false, false};
-
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
-                return {false, false};
-
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            all_always_monotonic &= monotonicity.is_always_monotonic;
-            all_strict &= monotonicity.is_strict;
-
-            if (!all_always_monotonic && !all_strict)
-                break;
-        }
-
-        return {all_always_monotonic, all_strict};
-    };
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
 
     enum Constraint
     {
@@ -2932,56 +2884,32 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
-            || element.function == RPNElement::Function::ALWAYS_TRUE)
+        if (element.function == RPNElement::Function::FUNCTION_AND)
         {
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            for (const auto & mapping : element.set_index->getIndexesMapping())
-            {
-                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
-                if (!is_chain_always_monotonic)
-                    return false;
-
-                chassert(mapping.key_index < key_columns.size());
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    column_constraints[mapping.key_index] = Constraint::POINT;
-                else
-                {
-                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
-                    if (column_constraints[mapping.key_index] != Constraint::POINT)
-                        column_constraints[mapping.key_index] = Constraint::RANGE;
-                }
-            }
-
+            column_constraints[element.key_column] = Constraint::POINT;
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
         {
-            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
-            if (!is_chain_always_monotonic)
-                return false;
-
-            chassert(element.key_column < key_columns.size());
             if (element.range.left == element.range.right)
             {
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    column_constraints[element.key_column] = Constraint::POINT;
+                column_constraints[element.key_column] = Constraint::POINT;
             }
-
             if (column_constraints[element.key_column] != Constraint::POINT)
+            {
                 column_constraints[element.key_column] = Constraint::RANGE;
+            }
+            continue;
+        }
 
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
             continue;
         }
 

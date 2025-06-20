@@ -1,3 +1,4 @@
+#include <Columns/Collator.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>

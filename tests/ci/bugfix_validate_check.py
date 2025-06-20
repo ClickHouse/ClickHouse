@@ -92,10 +92,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     # args = parse_args()
     stopwatch = Stopwatch()
-    if (
-        CI.Labels.PR_BUGFIX not in PRInfo().labels
-        and CI.Labels.PR_CRITICAL_BUGFIX not in PRInfo().labels
-    ):
+    if CI.Labels.PR_BUGFIX not in PRInfo().labels:
         JobReport(
             description="",
             test_results=[],
@@ -107,17 +104,17 @@ def main():
         return
 
     jobs_to_validate = [
-        #CI.JobNames.STATELESS_TEST_RELEASE,
+        CI.JobNames.STATELESS_TEST_RELEASE,
         CI.JobNames.INTEGRATION_TEST,
     ]
     functional_job_report_file = Path(TEMP_PATH) / "functional_test_job_report.json"
     integration_job_report_file = Path(TEMP_PATH) / "integration_test_job_report.json"
     jobs_report_files = {
-        #CI.JobNames.STATELESS_TEST_RELEASE: functional_job_report_file,
+        CI.JobNames.STATELESS_TEST_RELEASE: functional_job_report_file,
         CI.JobNames.INTEGRATION_TEST: integration_job_report_file,
     }
     jobs_scripts = {
-        #CI.JobNames.STATELESS_TEST_RELEASE: "functional_test_check.py",
+        CI.JobNames.STATELESS_TEST_RELEASE: "functional_test_check.py",
         CI.JobNames.INTEGRATION_TEST: "integration_test_check.py",
     }
 
