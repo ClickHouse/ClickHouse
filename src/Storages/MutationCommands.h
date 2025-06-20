@@ -95,6 +95,8 @@ public:
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
+
+    bool hasOnlyLightweightDeleteCommand() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

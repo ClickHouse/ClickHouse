@@ -88,12 +88,54 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+struct ProjectionMutationContext
+{
+    String name;
+    MergeTreeData::DataPartPtr source_part;
+    StorageMetadataPtr metadata_snapshot;
+
+    QueryPipelineBuilder mutating_pipeline_builder;
+    QueryPipeline mutating_pipeline;
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+
+    MergeTreeData::MutableDataPartPtr new_part;
+    IMergedBlockOutputStreamPtr out;
+
+    Block updated_header;
+    NameSet files_to_skip;
+    String mrk_extension;
+
+    enum class MutationKind : uint8_t
+    {
+        ALL,
+        SOME
+    };
+
+    MutationKind kind;
+
+    void prepareAllPart(bool always_use_copy_instead_of_hardlinks,
+        CompressionCodecPtr compression_codec, const WriteSettings & write_settings);
+
+    void finalizeAllPart(MergeTreeData::MutableDataPartPtr parent_new_data_part,
+        bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context);
+
+    void prepareSomePart(bool always_use_copy_instead_of_hardlinks, CompressionCodecPtr compression_codec);
+
+    void finalizeSomePart(bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context);
+
+    void setNewPartAndFilesToSkip(MergeTreeData::MutableDataPartPtr parent_new_data_part, const MutationCommands & commands);
+};
+
+using ProjectionMutationContextPtr = std::shared_ptr<ProjectionMutationContext>;
+
 enum class ExecuteTTLType : uint8_t
 {
     NONE = 0,
     NORMAL = 1,
     RECALCULATE= 2,
 };
+
 
 namespace MutationHelpers
 {
@@ -926,7 +968,8 @@ void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
-    bool sync)
+    bool sync,
+    const std::vector<ProjectionMutationContextPtr> & projection_mutation_contexts)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
@@ -1014,6 +1057,13 @@ void finalizeMutatedPart(
     if (!new_data_part->storage.getPrimaryIndexCache())
         new_data_part->setIndex(*source_part->getIndex());
 
+    for (const auto & mutation_context : projection_mutation_contexts)
+    {
+        chassert(!new_data_part->isProjectionPart());
+        if (!new_data_part->hasProjection(mutation_context->name))
+            new_data_part->addProjectionPart(mutation_context->name, std::move(mutation_context->new_part));
+    }
+
     /// Load rest projections which are hardlinked
     bool noop;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
@@ -1030,6 +1080,7 @@ void finalizeMutatedPart(
 }
 
 }
+
 
 struct MutationContext
 {
@@ -1113,9 +1164,156 @@ struct MutationContext
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows;
     UInt64 execute_elapsed_ns = 0;
+
+    /// For projection masks, used in lightweight delete.
+    std::vector<ProjectionMutationContextPtr> projection_mutation_contexts;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
+
+void ProjectionMutationContext::prepareAllPart(bool always_use_copy_instead_of_hardlinks,
+    CompressionCodecPtr compression_codec, const WriteSettings & write_settings)
+{
+    chassert (mutating_pipeline_builder.initialized());
+    if (kind == ProjectionMutationContext::MutationKind::ALL)
+    {
+        auto builder = std::make_unique<QueryPipelineBuilder>(std::move(mutating_pipeline_builder));
+
+        out = std::make_shared<MergedBlockOutputStream>(
+            new_part,
+            metadata_snapshot,
+            new_part->getColumns(),
+            MergeTreeIndices{},
+            ColumnsStatistics{},
+            compression_codec,
+            source_part->index_granularity,
+            Tx::PrehistoricTID,
+            source_part->getBytesUncompressedOnDisk(),
+            /*reset_columns=*/ true,
+            /*blocks_are_granules_size=*/ false,
+            write_settings);
+
+        mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        mutating_pipeline.disableProfileEventUpdate();
+        mutating_executor = std::make_unique<PullingPipelineExecutor>(mutating_pipeline);
+    }
+    else
+    {
+        prepareSomePart(always_use_copy_instead_of_hardlinks, compression_codec);
+    }
+}
+
+void ProjectionMutationContext::finalizeAllPart(
+    MergeTreeData::MutableDataPartPtr parent_new_data_part,
+    bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context)
+{
+    if (kind == ProjectionMutationContext::MutationKind::ALL)
+    {
+        mutating_executor.reset();
+        mutating_pipeline.reset();
+
+        static_pointer_cast<MergedBlockOutputStream>(out)->finalizePart(new_part, need_sync, nullptr, nullptr);
+
+        if (!parent_new_data_part->hasProjection(name))
+            parent_new_data_part->addProjectionPart(name, std::move(new_part));
+
+        out.reset();
+    }
+    else if (kind == ProjectionMutationContext::MutationKind::SOME)
+    {
+        finalizeSomePart(need_sync, compression_codec, context);
+    }
+}
+
+void ProjectionMutationContext::prepareSomePart(
+    bool always_use_copy_instead_of_hardlinks, CompressionCodecPtr compression_codec)
+{
+    chassert (mutating_pipeline_builder.initialized());
+
+    new_part->getDataPartStorage().createDirectories();
+
+    /// Create hardlinks for unchanged files
+    for (auto it = source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
+    {
+        if (files_to_skip.contains(it->name()))
+            continue;
+
+        String destination = it->name();
+
+        if (it->isFile())
+        {
+            if (always_use_copy_instead_of_hardlinks)
+            {
+                new_part->getDataPartStorage().copyFileFrom(
+                    source_part->getDataPartStorage(), it->name(), destination);
+            }
+            else
+            {
+                new_part->getDataPartStorage().createHardLinkFrom(
+                    source_part->getDataPartStorage(), it->name(), destination);
+            }
+        }
+    }
+
+    new_part->checksums = source_part->checksums;
+
+    auto builder = std::make_unique<QueryPipelineBuilder>(std::move(mutating_pipeline_builder));
+
+    out = std::make_shared<MergedColumnOnlyOutputStream>(
+        new_part,
+        metadata_snapshot,
+        updated_header.getNamesAndTypesList(),
+        MergeTreeIndices{},
+        ColumnsStatistics{},
+        compression_codec,
+        source_part->index_granularity,
+        source_part->getBytesUncompressedOnDisk());
+
+    mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    mutating_pipeline.disableProfileEventUpdate();
+    mutating_executor = std::make_unique<PullingPipelineExecutor>(mutating_pipeline);
+}
+
+void ProjectionMutationContext::finalizeSomePart(
+    bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context)
+{
+    if (mutating_executor)
+    {
+        mutating_executor.reset();
+        mutating_pipeline.reset();
+
+        auto changed_checksums =
+            static_pointer_cast<MergedColumnOnlyOutputStream>(out)->fillChecksums(new_part, new_part->checksums);
+        new_part->checksums.add(std::move(changed_checksums));
+
+        static_pointer_cast<MergedColumnOnlyOutputStream>(out)->finish(need_sync);
+
+        out.reset();
+    }
+
+    MutationHelpers::finalizeMutatedPart(source_part, new_part, ExecuteTTLType::NONE,
+        compression_codec, context, metadata_snapshot, need_sync, {});
+}
+
+void ProjectionMutationContext::setNewPartAndFilesToSkip(
+    MergeTreeData::MutableDataPartPtr parent_new_data_part, const MutationCommands & commands)
+{
+    new_part = parent_new_data_part->getProjectionPartBuilder(name, false).withPartType(source_part->getType()).build();
+
+    auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
+        source_part, updated_header, metadata_snapshot->getColumns().getAllPhysical(),
+        source_part->getSerializationInfos(), commands, {});
+
+    new_part->setColumns(projection_new_columns, projection_new_infos, metadata_snapshot->getMetadataVersion());
+
+    mrk_extension = source_part->index_granularity_info.mark_type.getFileExtension();
+
+    if (kind != ProjectionMutationContext::MutationKind::SOME)
+        return;
+
+    files_to_skip = MutationHelpers::collectFilesToSkip(source_part, new_part, updated_header, {}, mrk_extension, {}, {});
+}
+
 
 // This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
@@ -1171,6 +1369,14 @@ public:
                 if (iterateThroughAllProjections())
                     return true;
 
+                state = State::NEED_MASK_PROJECTION_PARTS;
+                return true;
+            }
+            case State::NEED_MASK_PROJECTION_PARTS:
+            {
+                if (iterateThroughAllProjectionsToMask())
+                    return true;
+
                 state = State::SUCCESS;
                 return true;
             }
@@ -1190,6 +1396,7 @@ private:
     void finalizeTempProjections();
     bool iterateThroughAllProjections();
     void constructTaskForProjectionPartsMerge();
+    bool iterateThroughAllProjectionsToMask();
     void finalize();
 
     enum class State : uint8_t
@@ -1197,7 +1404,7 @@ private:
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
         NEED_MERGE_PROJECTION_PARTS,
-
+        NEED_MASK_PROJECTION_PARTS,
         SUCCESS
     };
 
@@ -1362,6 +1569,26 @@ bool PartMergerWriter::iterateThroughAllProjections()
     return true;
 }
 
+bool PartMergerWriter::iterateThroughAllProjectionsToMask()
+{
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = (*ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+
+    for (const auto & mutation_context : ctx->projection_mutation_contexts)
+    {
+        Block cur_block;
+        while (watch.elapsedMilliseconds() < step_time_ms && mutation_context->mutating_executor->pull(cur_block))
+            mutation_context->out->write(cur_block);
+
+        if (watch.elapsedMilliseconds() >= step_time_ms)
+            /// Need execute again
+            return true;
+    }
+
+    /// Done
+    return false;
+}
+
 void PartMergerWriter::finalize()
 {
     if (ctx->count_lightweight_deleted_rows)
@@ -1387,6 +1614,13 @@ public:
             {
                 prepare();
 
+                state = State::NEED_PREPARE_PROJECTIONS;
+                return true;
+            }
+            case State::NEED_PREPARE_PROJECTIONS:
+            {
+                prepareProjections();
+
                 state = State::NEED_EXECUTE;
                 return true;
             }
@@ -1394,6 +1628,13 @@ public:
             {
                 if (part_merger_writer_task->execute())
                     return true;
+
+                state = State::NEED_FINALIZE_PROJECTIONS;
+                return true;
+            }
+            case State::NEED_FINALIZE_PROJECTIONS:
+            {
+                finalizeProjections();
 
                 state = State::NEED_FINALIZE;
                 return true;
@@ -1520,9 +1761,13 @@ private:
                 removed_projections.insert(command.column_name);
         }
 
-        bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        bool lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         bool lightweight_delete_drop = lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
+
+        std::unordered_set<String> projections_to_mutate;
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+            projections_to_mutate.insert(mutation_context->name);
 
         const auto & projections = ctx->metadata_snapshot->getProjections();
         for (const auto & projection : projections)
@@ -1534,8 +1779,10 @@ private:
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_full_part_storage
                     && ctx->source_part->hasProjection(projection.name)
-                    && !ctx->source_part->hasBrokenProjection(projection.name)))
-                && !lightweight_delete_drop;
+                    && !ctx->source_part->hasBrokenProjection(projection.name))
+                )
+                && !lightweight_delete_drop
+                && !projections_to_mutate.contains(projection.name);
 
             if (need_recalculate)
             {
@@ -1686,6 +1933,24 @@ private:
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
 
+    void prepareProjections()
+    {
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+        {
+            mutation_context->prepareAllPart(
+                (*(ctx->source_part->storage.getSettings()))[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+                ctx->data->getContext()->chooseCompressionCodec(0, 0),
+                ctx->data->getContext()->getWriteSettings());
+        }
+    }
+
+    void finalizeProjections()
+    {
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+        {
+            mutation_context->finalizeAllPart(ctx->new_data_part, ctx->need_sync, ctx->compression_codec, ctx->context);
+        }
+    }
 
     void finalize()
     {
@@ -1703,7 +1968,9 @@ private:
     enum class State : uint8_t
     {
         NEED_PREPARE,
+        NEED_PREPARE_PROJECTIONS,
         NEED_EXECUTE,
+        NEED_FINALIZE_PROJECTIONS,
         NEED_FINALIZE,
 
         SUCCESS
@@ -1734,6 +2001,12 @@ public:
             case State::NEED_PREPARE:
             {
                 prepare();
+                state = State::NEED_PREPARE_PROJECTIONS;
+                return true;
+            }
+            case State::NEED_PREPARE_PROJECTIONS:
+            {
+                prepareProjections();
                 state = State::NEED_EXECUTE;
                 return true;
             }
@@ -1741,6 +2014,13 @@ public:
             {
                 if (part_merger_writer_task && part_merger_writer_task->execute())
                     return true;
+
+                state = State::NEED_FINALIZE_PROJECTIONS;
+                return true;
+            }
+            case State::NEED_FINALIZE_PROJECTIONS:
+            {
+                finalizeProjections();
 
                 state = State::NEED_FINALIZE;
                 return true;
@@ -1840,6 +2120,17 @@ private:
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
+                /// For projection to mask, new files (checksums, columns...) are needed.
+                NameSet files_to_skip;
+                for (const auto & mutation_context : ctx->projection_mutation_contexts)
+                {
+                    if (it->name() != mutation_context->name + ".proj")
+                        continue;
+
+                    files_to_skip = mutation_context->files_to_skip;
+                    break;
+                }
+
                 // it's a projection part directory
                 ctx->new_data_part->getDataPartStorage().createProjection(destination);
 
@@ -1848,6 +2139,9 @@ private:
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
+                    if (files_to_skip.contains(p_it->name()))
+                        continue;
+
                     if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                     {
                         projection_data_part_storage_dst->copyFileFrom(
@@ -1923,6 +2217,32 @@ private:
         }
     }
 
+    void prepareProjections()
+    {
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+        {
+            if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expect to mutate some part for projection, but turns out of all part.");
+
+            auto settings = ctx->source_part->storage.getSettings();
+            mutation_context->prepareSomePart(
+                (*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+                ctx->data->getContext()->chooseCompressionCodec(0, 0));
+        }
+    }
+
+    void finalizeProjections()
+    {
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
+        {
+            if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expect to mutate some part for projection, but turns out of all part.");
+
+            mutation_context->finalizeSomePart(ctx->need_sync, ctx->compression_codec, ctx->context);
+        }
+    }
 
     void finalize()
     {
@@ -1954,13 +2274,16 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type,
+            ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync, ctx->projection_mutation_contexts);
     }
 
     enum class State : uint8_t
     {
         NEED_PREPARE,
+        NEED_PREPARE_PROJECTIONS,
         NEED_EXECUTE,
+        NEED_FINALIZE_PROJECTIONS,
         NEED_FINALIZE,
 
         SUCCESS
@@ -2104,6 +2427,13 @@ bool MutateTask::execute()
             if (!prepare())
                 return false;
 
+            state = State::NEED_PREPARE_PROJECTIONS;
+            return true;
+        }
+        case State::NEED_PREPARE_PROJECTIONS:
+        {
+            prepareProjections();
+
             state = State::NEED_EXECUTE;
             return true;
         }
@@ -2203,6 +2533,120 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         return true;
 
     return false;
+}
+
+void MutateTask::processProjectionsWithLightweightDelete(std::vector<MutationCommands> & projection_commands)
+{
+    ASTPtr lightweight_delete_condition = ctx->commands_for_part.front().predicate->clone();
+    if (!lightweight_delete_condition)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected lightweight_delete_condition is nullptr");
+
+    IdentifierNameSet lightweight_delete_columns;
+    lightweight_delete_condition->collectIdentifierNames(lightweight_delete_columns);
+
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = ctx->source_part->getMetadataVersion(),
+    };
+
+    auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
+
+    auto context_for_reading = Context::createCopy(ctx->context);
+    context_for_reading->setSetting("force_index_by_date", false);
+    context_for_reading->setSetting("force_primary_key", false);
+    context_for_reading->setSetting("apply_mutations_on_fly", false);
+    context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
+    context_for_reading->setSetting("use_concurrency_control", false);
+    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_for_reading->setSetting("max_threads", 1);
+    context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
+    context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
+
+    MutationsInterpreter::Settings settings(true);
+    settings.apply_deleted_mask = false;
+
+    const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+    for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
+    {
+        if (!ctx->source_part->hasProjection(proj_desc.name))
+            continue;
+
+        if (ctx->source_part->hasBrokenProjection(proj_desc.name))
+        {
+            if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                == LightweightMutationProjectionMode::REBUILD)
+                ctx->materialized_projections.insert(proj_desc.name);
+
+            continue;
+        }
+
+        /// TODO: might extend to more cases in the future.
+        if (proj_desc.type == ProjectionDescription::Type::Aggregate
+            || proj_desc.type == ProjectionDescription::Type::Normal)
+        {
+            const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
+            NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
+            bool is_subset_of_groupby = std::all_of(
+                lightweight_delete_columns.begin(),
+                lightweight_delete_columns.end(),
+                [&](const auto & col) { return groupby_columns.contains(col); });
+
+            if (!is_subset_of_groupby)
+            {
+                if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::REBUILD)
+                    ctx->materialized_projections.insert(proj_desc.name);
+
+                continue;
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown projection type");
+        }
+
+        ctx->materialized_projections.erase(proj_desc.name);
+
+        ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
+        auto mutation_context = ctx->projection_mutation_contexts.back();
+
+        mutation_context->name = proj_desc.name;
+        mutation_context->metadata_snapshot = proj_desc.metadata;
+        mutation_context->source_part = projections_name_and_part.find(proj_desc.name)->second;
+
+        auto & commands= projection_commands.emplace_back();
+
+        MutationHelpers::splitAndModifyMutationCommands(
+            mutation_context->source_part,
+            proj_desc.metadata,
+            alter_conversions,
+            ctx->commands_for_part,
+            commands,
+            ctx->for_file_renames,
+            false,
+            ctx->log);
+
+        chassert(!commands.empty());
+
+        auto projection_interpreter = std::make_unique<MutationsInterpreter>(
+            *ctx->data, mutation_context->source_part, alter_conversions,
+            proj_desc.metadata, commands,
+            proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+
+        mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
+        mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
+
+        mutation_context->kind = MutationHelpers::haveMutationsOfDynamicColumns(
+            mutation_context->source_part, ctx->commands_for_part)
+            || !isWidePart(mutation_context->source_part)
+            || !isFullPartStorage(mutation_context->source_part->getDataPartStorage())
+            || (projection_interpreter && projection_interpreter->isAffectingAllColumns())
+            ? ProjectionMutationContext::MutationKind::ALL : ProjectionMutationContext::MutationKind::SOME;
+    }
 }
 
 bool MutateTask::prepare()
@@ -2341,6 +2785,8 @@ bool MutateTask::prepare()
 
     bool lightweight_delete_mode = false;
 
+    std::vector<MutationCommands> projection_commands;
+
     if (!ctx->for_interpreter.empty())
     {
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
@@ -2364,9 +2810,9 @@ bool MutateTask::prepare()
             *ctx->stage_progress,
             [&my_ctx = *ctx]() { my_ctx.checkOperationIsNotCanceled(); });
 
-        lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
-        /// the condition as early as from here.
+        /// the condition as early as from here, especially needed for the mutate some case.
         if (lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::REBUILD)
         {
@@ -2521,6 +2967,22 @@ bool MutateTask::prepare()
     }
 
     return true;
+}
+
+void MutateTask::prepareProjections()
+{
+    if (bool lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
+        !lightweight_delete_mode)
+        return;
+
+    std::vector<MutationCommands> projection_commands;
+
+    if (!ctx->for_interpreter.empty())
+        processProjectionsWithLightweightDelete(projection_commands);
+
+    size_t proj_cmds_idx = 0;
+    for (const auto & mutation_context : ctx->projection_mutation_contexts)
+        mutation_context->setNewPartAndFilesToSkip(ctx->new_data_part, projection_commands[proj_cmds_idx++]);
 }
 
 const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
