@@ -6,6 +6,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <ctime>
 
 namespace DB
 {

@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: profile events may differ with parallel replicas.
+
 SET insert_keeper_fault_injection_probability = 0.0;
 SET allow_experimental_lightweight_update = 1;
 

@@ -332,7 +332,7 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
         first_result_offset,
         last_result_offset);
 
-    size_t size_to_reserve = std::min(patch_end - patch_begin, num_rows);
+    size_t size_to_reserve = std::min(static_cast<size_t>(patch_end - patch_begin), num_rows);
 
     patch_to_apply->result_indices.reserve(size_to_reserve);
     patch_to_apply->patch_indices.reserve(size_to_reserve);
