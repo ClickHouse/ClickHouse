@@ -4,7 +4,6 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
-#include <Common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -134,7 +133,7 @@ REGISTER_FUNCTION(PolygonsIntersects)
                 └───────────────────┘
         )"}},
         .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::DateAndTime});
+        .category = FunctionDocumentation::Category::Geo});
 
     factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>(FunctionDocumentation{
         .description = R"(
@@ -162,7 +161,7 @@ REGISTER_FUNCTION(PolygonsIntersects)
                 └───────────────────┘
         )"}},
         .introduced_in = {25, 6},
-        .category = FunctionDocumentation::Category::DateAndTime});
+        .category = FunctionDocumentation::Category::Geo});
 
     factory.registerFunction<FunctionPolygonsIntersects<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>();
