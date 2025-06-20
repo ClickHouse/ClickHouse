@@ -368,6 +368,11 @@ def dolor_cleanup():
             os.unlink(server_settings)
         except FileNotFoundError:
             pass
+    if modified_user_settings:
+        try:
+            os.unlink(user_settings)
+        except FileNotFoundError:
+            pass
     try:
         os.unlink(server_path)
     except FileNotFoundError:
