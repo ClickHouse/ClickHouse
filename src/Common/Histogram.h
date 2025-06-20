@@ -5,13 +5,13 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
 namespace DB::Histogram
 {
-    using Value = Int64;
+    using Value = Float64;
     using Buckets = std::vector<Value>;
     using Labels = std::vector<String>;
     using LabelValues = std::vector<String>;
@@ -53,8 +53,8 @@ namespace DB::Histogram
         const Labels & getLabels() const;
 
     private:
-        mutable std::mutex mutex;
-        MetricsMap metrics TSA_GUARDED_BY(mutex);
+        mutable std::shared_mutex mutex;
+        MetricsMap metrics;
         const Buckets buckets;
         const Labels labels;
     };
