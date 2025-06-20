@@ -200,6 +200,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::File, "File"},
+        {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},
         {Category::Introspection, "Introspection"},

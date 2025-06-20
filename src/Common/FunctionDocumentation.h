@@ -94,6 +94,7 @@ struct FunctionDocumentation
         Encoding,
         Encryption,
         File,
+        Financial,
         Hash,
         IPAddress,
         Introspection,
