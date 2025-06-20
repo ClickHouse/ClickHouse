@@ -862,7 +862,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 }
             }
 
-            if (!internal_buffer.empty())
+            if (use_external_buffer && !internal_buffer.empty())
                 internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment.isDownloader());

@@ -225,6 +225,9 @@ sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</com
 value=$(($RANDOM % 2))
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
+value=$(($RANDOM % 2))
+sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -290,9 +293,11 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+    value=$(($RANDOM % 2))
+    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
@@ -337,6 +342,13 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
 
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
+fi
+
+# Enable remote_database_disk in DEBUG and ASAN build
+build_opts=$(clickhouse-server local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+    echo "Installed remote_database_disk.xml config"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml
