@@ -366,13 +366,14 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 10);
+        const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
         {
-            const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
+            const auto & toPickFrom = rg.nextMediumNumber() < 6 ? hotSettings : queryOracleSettings;
             const String & setting = rg.pickRandomly(toPickFrom);
             const CHSetting & chs = queryOracleSettings.at(setting);
             SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();

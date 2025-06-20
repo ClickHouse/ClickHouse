@@ -24,7 +24,7 @@
 namespace DB
 {
 
-class IcebergMetadata : public IDataLakeMetadata, private WithContext
+class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
@@ -59,15 +59,15 @@ public:
         const ConfigurationObserverPtr & configuration,
         const ContextPtr & local_context);
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
     {
-        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(local_context, data_path);
         return version_if_outdated.has_value() ? schema_processor.getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
     {
-        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(local_context, data_path);
         return version_if_outdated.has_value()
             ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), relevant_snapshot_schema_id)
             : nullptr;
@@ -82,16 +82,17 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
-    IcebergHistory getHistory() const;
+    IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::optional<size_t> totalRows() const override;
-    std::optional<size_t> totalBytes() const override;
+    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -106,7 +107,9 @@ private:
     Int32 last_metadata_version;
     Int32 format_version;
 
+    mutable std::atomic<bool> schema_id_by_data_file_initialized{false};
     mutable std::unordered_map<String, Int32> schema_id_by_data_file;
+    mutable std::mutex schema_id_by_data_file_mutex;
 
 
     Int32 relevant_snapshot_schema_id;
@@ -118,24 +121,24 @@ private:
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed);
 
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
-    void updateSnapshot(Poco::JSON::Object::Ptr metadata_object);
+    void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object);
 
-    ManifestFileCacheKeys getManifestList(const String & filename) const;
+    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
     mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object);
 
-    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
+    std::optional<Int32> getSchemaVersionByFileIfOutdated(ContextPtr local_context, String data_path) const;
 
-    void initializeSchemasFromManifestFile(ManifestFileCacheKeys manifest_list_ptr) const;
+    void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const;
 
-    Iceberg::ManifestFilePtr getManifestFile(const String & filename, Int64 inherited_sequence_number) const;
+    void initializeSchemasFromManifestFile(Iceberg::ManifestFilePtr manifest_file_ptr) const;
+
+    Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-
-    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };

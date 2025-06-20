@@ -37,6 +37,7 @@ exceptiongroup==1.2.1
 execnet==2.1.1
 fsspec==2024.12.0
 geomet==0.2.1.post1
+geopandas==1.0.1
 grpcio-tools==1.60.0
 grpcio==1.60.0
 gssapi==1.8.3
@@ -94,7 +95,7 @@ python-snappy==0.7.3
 pytz==2023.3.post1
 redis==5.0.1
 requests-kerberos==0.14.0
-requests==2.32.3
+requests==2.32.4
 rich==13.9.4
 s3transfer==0.11.4
 setuptools==78.1.1

@@ -21,7 +21,7 @@ enum class ArrayFirstLastIndexStrategy : uint8_t
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
-    static bool needBoolean() { return false; }
+    static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
@@ -134,7 +134,7 @@ Returns the index of the first element in the source array for which `func(x[, y
         {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_first = "Returns the index of the first element of the source array for which `func` is true, otherwise returns `0`. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_first = {"Returns the index of the first element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};
     FunctionDocumentation::Examples examples_first = {
         {"Usage example", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "2"},
         {"No match", "SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']) ", "0"}
@@ -150,11 +150,11 @@ Returns the index of the last element in the source array for which `func(x[, y1
 )";
     FunctionDocumentation::Syntax syntax_last = "arrayLastIndex(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_last = "Returns the index of the last element of the source array for which `func` is true, otherwise returns `0`. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_last = {"Returns the index of the last element of the source array for which `func` is true, otherwise returns `0`", {"UInt32"}};
     FunctionDocumentation::Examples examples_last = {
         {"Usage example", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['a', 'b', 'c']);", "3"},
         {"No match", "SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']);", "0"}

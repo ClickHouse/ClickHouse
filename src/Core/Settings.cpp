@@ -1031,6 +1031,14 @@ The table below shows the behavior of this setting for various date-time functio
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 )", 0) \
+    DECLARE(Bool, use_legacy_to_time, false, R"(
+When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, uses a new toTime function, that converts different type of data into the Time type.
+The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_time64_type, false, R"(
+Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
+)", EXPERIMENTAL, enable_time_time64_type) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
@@ -4004,6 +4012,9 @@ Rewrite aggregate functions that semantically equals to count() as count().
     DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
 Delete injective functions of one argument inside uniq*() functions.
 )", 0) \
+    DECLARE(Bool, count_matches_stop_at_empty_match, false, R"(
+Stop counting once a pattern matches zero-length in the `countMatches` function.
+)", 0) \
     DECLARE(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, R"(
 Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
 
@@ -4922,6 +4933,45 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
+This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
+
+This is required for queries where internal consistency of data parts is important. Example:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+```
+
+Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
+
+:::note
+Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
+As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
+
+This setting currently applies only to tables from the MergeTree family.
+:::
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
+Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
+Used for testing and debugging purposes only.
+
+Possible values:
+- 0 - No delay (default)
+- N - Delay in milliseconds
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
@@ -5472,7 +5522,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiif), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -6073,7 +6123,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
     DECLARE(Bool, use_variant_as_common_type, false, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
 
@@ -6598,6 +6648,7 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 
@@ -6808,10 +6859,10 @@ Possible values:
  - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL) \
     \
-    /** Experimental tsToGrid aggregate function. */ \
-    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
-Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
-)", EXPERIMENTAL) \
+    /** Experimental timeSeries* aggregate functions. */ \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
+Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
+)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

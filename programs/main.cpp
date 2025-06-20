@@ -63,6 +63,7 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
+int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 #endif
 
 // install
@@ -116,6 +117,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 #if USE_NURAFT
     {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
+    {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
     {"install", mainEntryClickHouseInstall},

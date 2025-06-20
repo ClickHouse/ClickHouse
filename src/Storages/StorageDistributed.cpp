@@ -1301,7 +1301,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1327,8 +1328,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 nullptr,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
-                remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
+            Pipe pipe{std::make_shared<RemoteSource>(
+                remote_query_executor,
+                false,
+                settings[Setting::async_socket_for_remote],
+                settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            QueryPipeline remote_pipeline{std::move(pipe)};
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
