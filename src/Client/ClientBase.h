@@ -417,6 +417,9 @@ protected:
 
     /// Options for BuzzHouse
     String buzz_house_options_path;
+    
+    /// Text to prepopulate in the next query prompt
+    String next_query_to_prepopulate;
     bool buzz_house = false;
     int error_code = 0;
 

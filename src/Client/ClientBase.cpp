@@ -83,6 +83,8 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <thread>
+#include <chrono>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -2810,7 +2812,12 @@ bool ClientBase::processQueryText(const String & text)
         auto free_text = text.substr(skip_prefix_size);
         // Trim leading whitespace from the free text
         free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
-        std::cout << "received " << free_text << std::endl;
+        std::cout << "thinking..." << std::endl;
+        std::cout.flush();
+        // Sleep for 3 seconds
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        // Set the next query to be prepopulated
+        next_query_to_prepopulate = "SELECT 1";
         return true;
     }
 
@@ -3314,16 +3321,22 @@ void ClientBase::runInteractive()
     do
     {
         String input;
-        {
-            /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
-            /// But keep it disabled outside of query input, because it breaks password input
-            /// (e.g. if we need to reconnect and show a password prompt).
-            /// (Alternatively, we could make the password input ignore the control sequences.)
-            lr->enableBracketedPaste();
-            SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
+        
+        /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+        /// But keep it disabled outside of query input, because it breaks password input
+        /// (e.g. if we need to reconnect and show a password prompt).
+        /// (Alternatively, we could make the password input ignore the control sequences.)
+        lr->enableBracketedPaste();
+        SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
-            input = lr->readLine(getPrompt(), ":-] ");
+        // Check if we have a prepopulated query to show
+        if (!next_query_to_prepopulate.empty())
+        {
+            lr->setInitialText(next_query_to_prepopulate);
+            next_query_to_prepopulate.clear();
         }
+
+        input = lr->readLine(getPrompt(), ":-] ");
 
         if (input.empty())
             break;

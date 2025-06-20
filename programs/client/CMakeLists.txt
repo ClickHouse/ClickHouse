@@ -21,6 +21,10 @@ if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
 endif()
 
+if (TARGET ch_contrib::liboai)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::liboai)
+endif()
+
 # Always use internal readpassphrase
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
