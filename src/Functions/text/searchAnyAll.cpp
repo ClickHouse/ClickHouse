@@ -171,39 +171,29 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
 
     std::vector<String> needles;
     {
-        const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get());
-        const ColumnArray * col_needles_non_const = checkAndGetColumn<ColumnArray>(col_needles.get());
-        if (col_needles_const)
+        const Array & needles_array = [&col_needles]
         {
-            const Array & needles_array = col_needles_const->getValue<Array>();
-            for (const auto & needle_field : needles_array)
+            if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+                return col_needles_const->getValue<Array>();
+            else if (const ColumnArray * col_needles_non_const = checkAndGetColumn<ColumnArray>(col_needles.get()))
             {
-                const auto & needle = needle_field.safeGet<String>();
-                const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
-                for (const auto & token : tokens)
-                    needles.emplace_back(token);
+                Field needles_field;
+                col_needles_non_const->get(0, needles_field);
+                return needles_field.safeGet<Array>();
             }
-        }
-        else if (col_needles_non_const)
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Needles argument of function '{}' should be Array(String), got: {}",
+                    name,
+                    col_needles->getFamilyName());
+        }();
+        for (const auto & needle_field : needles_array)
         {
-            Field needles_field;
-            col_needles_non_const->get(0, needles_field);
-            Array & needles_array = needles_field.safeGet<Array>();
-            for (const auto & needle_field : needles_array)
-            {
-                const auto & needle = needle_field.safeGet<String>();
-                const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
-                for (const auto & token : tokens)
-                    needles.emplace_back(token);
-            }
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Needles argument of function '{}' should be Array(String), got: {}",
-                name,
-                col_needles->getFamilyName());
+            const auto & needle = needle_field.safeGet<String>();
+            const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
+            for (const auto & token : tokens)
+                needles.emplace_back(token);
         }
     }
     if (needles.size() > supported_number_of_needles)
