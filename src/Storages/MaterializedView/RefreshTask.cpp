@@ -1018,7 +1018,10 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
     ///     If this fails, retry until we see a different table by the same name.
 
     StoragePtr prev_storage;
-    bool prev_table_dropped_locally = false;
+    /// (Without maybe_unused, clang-tidy-19 seems to produce incorrect error
+    ///  "Value stored to 'prev_table_dropped_locally' is never read" about the assignment
+    ///  prev_table_dropped_locally = false further down.)
+    [[maybe_unused]] bool prev_table_dropped_locally = false;
     std::exception_ptr exception;
 
     for (int attempt = 0; attempt < 10; ++attempt)
@@ -1048,9 +1051,6 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             continue;
         }
         prev_table_dropped_locally = false;
-
-        /// Without this, clang-tidy-19 says "Value stored to 'prev_table_dropped_locally' is never read" about the line above.
-        volatile bool clang_tidy_workaround = prev_table_dropped_locally;
 
         if (coordination.coordinated)
         {
