@@ -441,8 +441,8 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT z.y FROM (SELECT row_number() OVER () AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
-                "WHERE z.x = (SELECT max2({}, 1) % (max2(count(), 1)::UInt64) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
+                "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
                 "FORMAT RawBlob;",
                 rand_val,
                 fuzz_server_out.generic_string())))
@@ -464,8 +464,8 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     if (processServerQuery(
             true,
             fmt::format(
-                "SELECT z.y FROM (SELECT row_number() OVER () AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT max2({}, 1) % (max2(count(), 1)::UInt64) FROM \"system\".\"{}\" WHERE "
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
                 "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
