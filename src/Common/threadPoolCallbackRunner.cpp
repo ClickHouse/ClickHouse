@@ -23,9 +23,11 @@ void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max
 
     /// We could dynamically add and remove threads based on load, but it's not clear whether it's
     /// worth the added complexity.
-    threads = max_threads;
     for (size_t i = 0; i < max_threads; ++i)
+    {
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
+        ++threads; // only if scheduleOrThrowOnError didn't throw
+    }
 }
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast(Mode mode_) : mode(mode_)
