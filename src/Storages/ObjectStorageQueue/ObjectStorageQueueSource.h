@@ -178,7 +178,8 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        int error_code = 0);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
