@@ -1597,7 +1597,7 @@ addTupleOfIntervals(datetime, intervals)
         {"datetime", "Date or date with time to add intervals to.", {"Date", "Date32", "DateTime", "DateTime64"}},
         {"intervals", "Tuple of intervals to add to `datetime`.", {"Tuple(Interval)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`.", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_addTupleOfIntervals = {
         {"Add tuple of intervals to date", R"(
 WITH toDate('2018-01-01') AS date
@@ -1626,7 +1626,7 @@ subtractTupleOfIntervals(datetime, intervals)
         {"datetime", "Date or date with time to subtract intervals from.", {"Date", "Date32", "DateTime", "DateTime64"}},
         {"intervals", "Tuple of intervals to subtract from `datetime`.", {"Tuple(Interval)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = {"Returns `date` with subtracted `intervals`.", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = {"Returns `date` with subtracted `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_subtractTupleOfIntervals = {
         {"Subtract tuple of intervals from date", R"(
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
@@ -1656,7 +1656,7 @@ addInterval(interval_1, interval_2)
         {"interval_1", "First interval or tuple of intervals.", {"Interval", "Tuple(Interval)"}},
         {"interval_2", "Second interval to be added.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addInterval = {"Returns a tuple of intervals.", {"Tuple(Interval)"}};
+    FunctionDocumentation::ReturnedValue returned_value_addInterval = {"Returns a tuple of intervals", {"Tuple(Interval)"}};
     FunctionDocumentation::Examples examples_addInterval = {
         {"Add intervals", R"(
 SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1695,7 +1695,7 @@ subtractInterval(interval_1, interval_2)
         {"interval_1", "First interval or interval of tuples.", {"Interval", "Tuple(Interval)"}},
         {"interval_2", "Second interval to be negated.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = {"Returns a tuple of intervals.", {"Tuple(Interval)"}};
+    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = {"Returns a tuple of intervals", {"Tuple(T)"}};
     FunctionDocumentation::Examples examples_subtractInterval = {
         {"Subtract intervals", R"(
 SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1740,7 +1740,7 @@ Calculates the sum of absolute values of a vector.
     FunctionDocumentation::ReturnedValue returned_value_l1_norm = {"Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance.", {"UInt*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_l1_norm = {
         {
-            "Basic usage", 
+            "Basic usage",
             R"(
 SELECT L1Norm((1, 2))
             )",
