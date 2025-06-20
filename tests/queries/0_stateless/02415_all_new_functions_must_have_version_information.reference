@@ -112,12 +112,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-changeDay
-changeHour
-changeMinute
-changeMonth
-changeSecond
-changeYear
 char
 cityHash64
 coalesce
@@ -602,7 +596,6 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
-reverse
 reverseUTF8
 revision
 right
