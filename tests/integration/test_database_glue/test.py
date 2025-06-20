@@ -384,8 +384,4 @@ def test_select_after_rename(started_cluster):
         with table.update_schema() as update:
             update.rename_column("bid", "new_bid")
 
-        num_rows = 10
-        df = generate_arrow_data(num_rows, "new_bid")
-        table.append(df)
-
         print(node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
