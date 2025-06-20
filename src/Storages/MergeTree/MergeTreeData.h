@@ -1326,7 +1326,7 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints;
 
-    MergeTreePartsMover parts_mover;
+    MergeTreePartsMoverPtr parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.
