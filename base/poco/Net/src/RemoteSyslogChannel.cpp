@@ -34,6 +34,7 @@ const std::string RemoteSyslogChannel::PROP_FACILITY("facility");
 const std::string RemoteSyslogChannel::PROP_FORMAT("format");
 const std::string RemoteSyslogChannel::PROP_LOGHOST("loghost");
 const std::string RemoteSyslogChannel::PROP_HOST("host");
+const std::string RemoteSyslogChannel::STRUCTURED_DATA("structured-data");
 
 
 RemoteSyslogChannel::RemoteSyslogChannel():
@@ -138,7 +139,14 @@ void RemoteSyslogChannel::log(const Message& msg)
 		m += ' ';
 		m += msg.getSource();
 		m += ' ';
-		m += "-";
+		if (msg.has(STRUCTURED_DATA))
+		{
+			m += msg.get(STRUCTURED_DATA);
+		}
+		else
+		{
+			m += "-";
+		}
 	}
 	m += ' ';
 	m += msg.getText();

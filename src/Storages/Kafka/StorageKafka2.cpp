@@ -837,11 +837,13 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
 
         LOG_TRACE(
             log,
-            "Locked topic partition: {}:{} at offset {} with intent size {}",
+            "Locked topic partition: {}:{} at offset {} with intent size {}, offset present: {}, intent size present: {}",
             partition_to_lock.topic,
             partition_to_lock.partition_id,
             lock_info.committed_offset.value_or(0),
-            lock_info.intent_size.value_or(0));
+            lock_info.intent_size.value_or(0),
+            lock_info.committed_offset.has_value(),
+            lock_info.intent_size.has_value());
 
         return lock_info;
     }
@@ -983,6 +985,14 @@ void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const
 
 void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
 {
+    if (intent <= 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Intent for topic-partition [{}:{}] must be greater than 0, but got {}",
+            topic_partition.topic,
+            topic_partition.partition_id,
+            intent);
+
     LOG_TEST(
         log,
         "Saving intent of {} for topic-partition [{}:{}] at offset {}",
@@ -1022,6 +1032,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
+    size_t intent_size = 0;
     size_t failed_poll_attempts = 0;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1077,6 +1088,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         exception_message.reset();
         if (auto buf = consumer.consume(topic_partition, message_count))
         {
+            ++intent_size;
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
@@ -1188,6 +1200,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         result_block.insert(column);
 
     batch_info.blocks.emplace_back(std::move(result_block));
+    batch_info.intent_size = intent_size;
     return batch_info;
 }
 
@@ -1392,7 +1405,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
     ++consumer_info.poll_count;
 
     auto * lock_info = consumer_info.findTopicPartitionLock(topic_partition);
-    auto [blocks, last_read_offset] = pollConsumer(
+    auto [blocks, intent_size, last_read_offset] = pollConsumer(
         *consumer_info.consumer, topic_partition, lock_info->intent_size, consumer_info.watch, kafka_context);
 
     if (blocks.empty())
@@ -1415,7 +1428,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
-    lock_info->intent_size = last_read_offset - lock_info->committed_offset.value_or(0);
+    lock_info->intent_size = intent_size;
     saveIntent(keeper_to_use, topic_partition, *lock_info->intent_size);
     std::atomic_size_t rows = 0;
     {
