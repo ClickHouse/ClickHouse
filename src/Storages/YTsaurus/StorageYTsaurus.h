@@ -32,7 +32,8 @@ public:
         YTsaurusStorageConfiguration configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment);
+        const String & comment,
+        ContextPtr context);
 
     std::string getName() const override { return "YTsaurus"; }
     bool isRemote() const override { return true; }

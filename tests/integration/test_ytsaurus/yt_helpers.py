@@ -54,7 +54,7 @@ class YTsaurusCLI:
                 + ("dynamic=%true;" if dynamic else "")
                 + "schema= ["
                 + ";".join(
-                    f"{{name = {name}; type = {type}; {'sort_order=ascending' if name in sorted_columns else ''}}}"
+                    f"{{required = true; name = {name}; type = {type}; {'sort_order=ascending' if name in sorted_columns else ''}}}"
                     for name, type in schema.items()
                 )
                 + ']}"'

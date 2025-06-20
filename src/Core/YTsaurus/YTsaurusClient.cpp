@@ -151,6 +151,7 @@ Poco::Dynamic::Var YTsaurusClient::getMetadata(const String & path)
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
+
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
     return json;
@@ -173,32 +174,46 @@ Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path
 Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_path)
 {
     auto schema = getTableAttribute(cypress_path, "schema");
-    return schema.extract<Poco::JSON::Array::Ptr>();
+    auto schema_json = schema.extract<Poco::JSON::Object::Ptr>();
+    if (!schema_json->has("$value"))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$value\" property in yt table schema");
+    }
+    return schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
 }
 
 bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const ColumnsDescription & columns)
 {
     auto schema_json = getTableSchema(table_path);
+    chassert(schema_json);
     for (const auto& yt_column : *schema_json) {
         try
         {
             const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
             auto yt_column_name = yt_column_json->getValue<String>("name");
             const auto * column_ptr = columns.tryGet(yt_column_name);
-            if (column_ptr == nullptr)
-            {
-                return false;
-            }
+            chassert(column_ptr != nullptr);
             auto data_type = convertYTSchema(yt_column_json);
-            if (column_ptr->type != data_type)
+            if (column_ptr->type->getName() != "Dynamic" &&
+                data_type->getName() != "Dynamic" &&
+                column_ptr->type->getName() != data_type->getName())
             {
+                LOG_ERROR(log, "Table schema mismatch. Clickhouse expecting: {}, Real: {}", column_ptr->type->getName(), data_type->getName());
                 return false;
             }
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            LOG_DEBUG(log, "Couldn't extract schema from {}", table_path);
-            return false;
+            if (e.code() == ErrorCodes::INCORRECT_DATA)
+            {
+                LOG_DEBUG(log, "Couldn't extract schema from {}: {}", table_path, e.what());
+                return false;
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
         }
     }
     return true;

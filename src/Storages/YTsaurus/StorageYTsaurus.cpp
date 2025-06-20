@@ -36,12 +36,19 @@ StorageYTsaurus::StorageYTsaurus(
     YTsaurusStorageConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment)
+    const String & comment,
+    ContextPtr context)
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
     , log(getLogger(" (" + table_id_.table_name + ")"))
 {
+    YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
+    LOG_DEBUG(log, "Compare schema from yt table {} and CH", cypress_path);
+    if (!client->checkSchemaCompatibility(cypress_path, columns_))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse schema differ from yt table schema");
+    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -61,9 +68,10 @@ Pipe StorageYTsaurus::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
+    ColumnsDescription columns_description = storage_snapshot->metadata->getColumns();
     for (const String & column_name : column_names)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+        auto column_data = columns_description.getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -102,7 +110,8 @@ void registerStorageYTsaurus(StorageFactory & factory)
             StorageYTsaurus::getConfiguration(args.engine_args, args.getLocalContext()),
             args.columns,
             args.constraints,
-            args.comment);
+            args.comment,
+            args.getContext());
     },
     {
         .source_access_type = AccessType::YTSAURUS,

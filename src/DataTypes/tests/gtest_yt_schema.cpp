@@ -45,6 +45,7 @@ bool checkColumnType(const String & yt_json_str, const DB::DataTypePtr & correct
     return checkColumnType(json, correct_type);
 }
 
+
 TEST(YTDataType, CheckSimpleTypeConversation) {
 
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint64", false), CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeUInt64))));
@@ -78,16 +79,15 @@ TEST(YTDataType, CheckSimpleTypeConversation) {
 
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("any", true), CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON))); // need to specify type_v3
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("null", true), CH_TYPE(DB::DataTypeNothing)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("void", true), CH_TYPE(DB::DataTypeNothing)));
-
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("null", true), CH_TYPE(DB::DataTypeNothing)), DB::Exception);
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("void", true), CH_TYPE(DB::DataTypeNothing)), DB::Exception);
     ASSERT_THROW(checkColumnType(createSimpleTypeJson("incorrect", false), CH_TYPE(DB::DataTypeNothing)), DB::Exception); // wrong typename
 
     ASSERT_TRUE(checkColumnType("{\"type_v3\": \"bool\"}", CH_TYPE(DB::DataTypeUInt8)));
-    ASSERT_TRUE(checkColumnType("{\"type_v3\": \"yson\"}", CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON)));
+    ASSERT_THROW(checkColumnType("{\"type_v3\": \"yson\"}", CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON)), DB::Exception);
 }
 
-TEST(YTDataType, CheckComplexTypeConversation) {
+TEST(YTDataType, CheckDecimal) {
     { // Decimal
         // {
         //     "type_v3": {
@@ -105,6 +105,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
         json->set("type_v3", decimal);
         ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeDecimal<DB::Decimal32>, 1, 0)));
     }
+}
+
+TEST(YTDataType, CheckOptional) {
 
     { // Optional
         {
@@ -206,7 +209,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
             ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeTuple, data_types)));
         }
     }
+}
 
+TEST(YTDataType, CheckList) {
     { // List
         // {
         //     "type_v3": {
@@ -227,7 +232,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
         json->set("type_v3", list1);
         ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeArray, CH_TYPE(DB::DataTypeArray, CH_TYPE(DB::DataTypeFloat64)))));
     }
+}
 
+TEST(YTDataType, CheckStruct) {
     { // Struct
         // {
         //     "type_v3": {
@@ -272,6 +279,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
             )
         ));
     }
+}
+
+TEST(YTDataType, CheckTuple) {
 
     { // Tuple
         // {
@@ -316,6 +326,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
         DB::DataTypes data_types{CH_TYPE(DB::DataTypeInt16), CH_TYPE(DB::DataTypeUInt32), CH_TYPE(DB::DataTypeInt16)};
         ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeTuple, data_types)));
     }
+}
+
+TEST(YTDataType, CheckVariant) {
 
     { // Variant
         // {
@@ -354,6 +367,9 @@ TEST(YTDataType, CheckComplexTypeConversation) {
 
         ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeVariant, data_types)));
     }
+}
+
+TEST(YTDataType, CheckTagged) {
     
     { // Tagged
         

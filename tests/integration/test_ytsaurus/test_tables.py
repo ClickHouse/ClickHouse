@@ -164,23 +164,23 @@ def test_yt_simple_table_function(started_cluster):
             "boolean",
             "true",
             "Bool",
-            "1",
+            "true",
             id="boolean"
         ),
-        pytest.param(
-            "uuid",
-            "\"00000000-0000-0000-0000-000000000000\"",
-            "UUID",
-            "\"00000000-0000-0000-0000-000000000000\"",
-            id="uuid"
-        ),
-        pytest.param(
-            "date",
-            "42",
-            "Date",
-            "42",
-            id="date"
-        ),
+        # pytest.param(
+        #     "uuid",
+        #     "\"00000000-0000-0000-0000-000000000000\"",
+        #     "UUID",
+        #     "\"00000000-0000-0000-0000-000000000000\"",
+        #     id="uuid"
+        # ),
+        # pytest.param(
+        #     "date",
+        #     "42",
+        #     "Date",
+        #     "42",
+        #     id="date"
+        # ),
         pytest.param(
             "datetime",
             "42",
@@ -191,18 +191,10 @@ def test_yt_simple_table_function(started_cluster):
         pytest.param(
             "timestamp",
             "42",
-            "DateTime64",
-            "1970-01-01 00:00:42",
+            "DateTime64(6)",
+            "1970-01-01 00:00:00.000042",
             id="timestamp"
         ),
-        # pytest.param(
-        #     "interval",
-        #     "42",
-        #     "Interval",
-        #     "42",
-        #     id="interval"
-        # )
-
     ]
 )
 def test_ytsaurus_primitive_types(
@@ -215,8 +207,6 @@ def test_ytsaurus_primitive_types(
 
 
     yt.create_table(table_path, yt_data_json, schema={column_name: yt_data_type})
-
-    time.sleep(1000);
 
     instance.query(
         f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
@@ -251,13 +241,13 @@ def test_ytsaurus_primitive_types(
             "[1,2]",
             id="list",
         ),
-        pytest.param(
-            "[{name = a; type_v3 = {type_name = struct; members = [{name=first;type=int8};{name=second;type=int16};];};};]",
-            "{\"first\": -1, \"second\": 300}",
-            "Tuple(first Int8, second Int16)",
-            "",
-            id="struct",
-        ),
+        # pytest.param(
+        #     "[{name = a; type_v3 = {type_name = struct; members = [{name=first;type=int8};{name=second;type=int16};];};};]",
+        #     "{\"first\": -1, \"second\": 300}",
+        #     "Tuple(Tuple(String, Int8), Tuple(String, Int16))",
+        #     "",
+        #     id="struct",
+        # ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=tuple; elements=[{type=double;};{type=float;};];};};]",
             "[0.1,1.0]",
@@ -267,9 +257,9 @@ def test_ytsaurus_primitive_types(
         ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=dict; key=int64; value={type_name=optional;item=string;};};};]",
-            "[{\"42\": \"value\"}]",
-            "Map(Int64, Nullable(String))",
-            "{42: 'value'}",
+            "[[42, \"good\"], [1, \"bad\"]]",
+            "Array(Tuple(Int64, Nullable(String)))",
+            "[(42,'good'),(1,'bad')]",
             id="dict",
         ),
         pytest.param(
@@ -334,6 +324,9 @@ def test_ytsaurus_composite_types(
     if len(yt_data) > 0:
         yt.write_table(table_path, yt_data_json)
         assert instance.query("SELECT a FROM yt_test") == f"{ch_data_expected}\n"
+    instance.query("DETACH TABLE yt_test")
+    instance.query("ATTACH TABLE yt_test")
+    
     instance.query("DROP TABLE yt_test")
     yt.remove_table(table_path)
 

@@ -71,7 +71,7 @@ StoragePtr TableFunctionYTsaurus::executeImpl(
 
     auto columns = getActualTableStructure(context, is_insert_query);
     auto storage = std::make_shared<StorageYTsaurus>(
-        StorageID(getDatabaseName(), table_name), std::move(*configuration), columns, ConstraintsDescription(), String{});
+        StorageID(getDatabaseName(), table_name), std::move(*configuration), columns, ConstraintsDescription(), String{}, context);
     storage->startup();
     return storage;
 }

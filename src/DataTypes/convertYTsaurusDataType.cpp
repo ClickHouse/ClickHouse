@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/Exception.h>
+#include "DataTypes/DataTypeFactory.h"
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
 namespace DB
@@ -28,121 +29,126 @@ namespace ErrorCodes
 }
 
 
-/// https://ytsaurus.tech/docs/ru/user-guide/storage/data-types#schema_primitive
+/// https://ytsaurus.tech/docs/en/user-guide/storage/data-types#schema_primitive
 DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
 {
     DataTypePtr data_type_ptr;
     if (data_type == "int64")
     {
-        data_type_ptr = std::make_shared<DataTypeInt64>();
+        data_type_ptr = DataTypeFactory::instance().get("Int64");
     }
     else if (data_type == "int32")
     {
-        data_type_ptr = std::make_shared<DataTypeInt32>();
+        data_type_ptr = DataTypeFactory::instance().get("Int32");
     }
     else if (data_type == "int16")
     {
-        data_type_ptr = std::make_shared<DataTypeInt16>();
+        data_type_ptr = DataTypeFactory::instance().get("Int16");
     }
     else if (data_type == "int8")
     {
-        data_type_ptr = std::make_shared<DataTypeInt8>();
+        data_type_ptr = DataTypeFactory::instance().get("Int8");
     }
     else if (data_type == "uint64")
     {
-        data_type_ptr = std::make_shared<DataTypeUInt64>();
+        data_type_ptr = DataTypeFactory::instance().get("UInt64");
     }
     else if (data_type == "uint32")
     {
-        data_type_ptr = std::make_shared<DataTypeUInt32>();
+        data_type_ptr = DataTypeFactory::instance().get("UInt32");
     }
     else if (data_type == "uint16")
     {
-        data_type_ptr = std::make_shared<DataTypeUInt16>();
+        data_type_ptr = DataTypeFactory::instance().get("UInt16");
     }
     else if (data_type == "uint8")
     {
-        data_type_ptr = std::make_shared<DataTypeUInt8>();
+        data_type_ptr = DataTypeFactory::instance().get("UInt8");
     }
     else if (data_type == "float")
     {
-        data_type_ptr = std::make_shared<DataTypeFloat32>();
+        data_type_ptr = DataTypeFactory::instance().get("Float");
     }
     else if (data_type == "double")
     {
-        data_type_ptr = std::make_shared<DataTypeFloat64>();
+        data_type_ptr = DataTypeFactory::instance().get("Float64");
     }
     else if ((data_type == "boolean" && !type_v3) || (data_type == "bool" && type_v3))
     {
-        data_type_ptr = std::make_shared<DataTypeUInt8>();
+        data_type_ptr = DataTypeFactory::instance().get("Bool");
     }
     else if (data_type == "string")
     {
-        data_type_ptr = std::make_shared<DataTypeString>();
+        data_type_ptr = DataTypeFactory::instance().get("String");
     }
     else if (data_type == "utf8")
     {
-        data_type_ptr = std::make_shared<DataTypeString>();
+        data_type_ptr = DataTypeFactory::instance().get("String");
     }
-    else if ((data_type == "json" && !type_v3) || (data_type == "yson" && type_v3))
+    else if (data_type == "json")
     {
-        data_type_ptr = std::make_shared<DataTypeObject>(DB::DataTypeObject::SchemaFormat::JSON);
+        data_type_ptr = DataTypeFactory::instance().get("JSON");
     }
     else if (data_type == "uuid")
     {
-        data_type_ptr = std::make_shared<DataTypeUUID>();
+        data_type_ptr = DataTypeFactory::instance().get("UUID");
     }
     else if (data_type == "date32")
     {
-        data_type_ptr = std::make_shared<DataTypeDate>();
+        data_type_ptr = DataTypeFactory::instance().get("Date");
     }
     else if (data_type == "datetime64")
     {
-        data_type_ptr = std::make_shared<DataTypeDateTime>(); // In seconds
+        data_type_ptr = DataTypeFactory::instance().get("DateTime"); // In seconds
     }
     else if (data_type == "timestamp64")
     {
-        data_type_ptr = std::make_shared<DataTypeDateTime64>(6); // In microseconds
+        data_type_ptr = DataTypeFactory::instance().get("DateTime64(6)"); // In microseconds
     }
     else if (data_type == "interval64")
     {
-        data_type_ptr = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Microsecond); // In YT all intervals are in microseconds
+        data_type_ptr = DataTypeFactory::instance().get("Int64");
     }
     else if (data_type == "date")
     {
-        data_type_ptr = std::make_shared<DataTypeDate>();
+        data_type_ptr = DataTypeFactory::instance().get("Date");
     }
     else if (data_type == "datetime")
     {
-        data_type_ptr = std::make_shared<DataTypeDateTime>();
+        data_type_ptr = DataTypeFactory::instance().get("DateTime");
     }
     else if (data_type == "timestamp")
     {
-        data_type_ptr = std::make_shared<DataTypeDateTime64>(6); // In microseconds
+        data_type_ptr = DataTypeFactory::instance().get("DateTime64(6)"); // In microseconds
     }
     else if (data_type == "interval")
     {
-        data_type_ptr = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Microsecond); // In YT all intervals are in microseconds
+        data_type_ptr = DataTypeFactory::instance().get("Int64");
     }
-    else if (data_type == "any")
+    else if (data_type == "any" || data_type == "yson")
     {
-        data_type_ptr = std::make_shared<DataTypeObject>(DB::DataTypeObject::SchemaFormat::JSON);
+        data_type_ptr = DataTypeFactory::instance().get("Dynamic");
     }
     else if (data_type == "null")
     {
-        data_type_ptr = std::make_shared<DataTypeNothing>();
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"null\"");
     }
     else if (data_type == "void")
     {
-        data_type_ptr = std::make_shared<DataTypeNothing>();
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"void\"");
     }
 
     return data_type_ptr;
 }
 
+bool isTypeComplex(const Poco::Dynamic::Var & item)
+{
+    return !item.isString();
+}
+
 DataTypePtr convertYTItemType(const Poco::Dynamic::Var & item)
 {
-    if (item.isString())
+    if (!isTypeComplex(item))
     {
         return convertYTPrimitiveType(item.extract<String>(), false);
     }
@@ -186,9 +192,20 @@ DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
     }
+    /// ClickHouse/docs/en/engines/table-engines/integrations/ytsaurus.md *See Also*
     if (nested_type->isNullable() || !nested_type->canBeInsideNullable())
     {
-        return nested_type;
+        switch (nested_type->getTypeId())
+        {
+            case TypeIndex::Array:
+            case TypeIndex::Nullable:
+            case TypeIndex::Tuple:
+            case TypeIndex::Dynamic:
+                return nested_type;
+
+            default:
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
+        }
     }
     return std::make_shared<DataTypeNullable>(nested_type);
 }
@@ -215,7 +232,8 @@ DataTypePtr convertYTDict(const Poco::JSON::Object::Ptr &json)
 {
     auto key = convertYTItemType(json->get("key"));
     auto value = convertYTItemType(json->get("value"));
-    return std::make_shared<DataTypeMap>(key, value);
+    DataTypes types = {key, value};
+    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(types));
 }
 
 DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)
@@ -249,7 +267,7 @@ DataTypePtr convertYTStruct(const Poco::JSON::Object::Ptr &json)
         auto member_json = member.extract<Poco::JSON::Object::Ptr>();
         if (!member_json->get("name") || !member_json->has("type"))
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus. Missing field `member`.");
         }
         types.push_back(std::make_shared<DB::DataTypeTuple>(
             std::vector<DataTypePtr>{
@@ -324,7 +342,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
     if (json->has("type"))
     {
         data_type_ptr = convertYTPrimitiveType(json->getValue<String>("type"), false);
-        if (data_type_ptr)
+        if (data_type_ptr && data_type_ptr->getName() != "Dynamic")
         {
             if (!json->has("required"))
             {
@@ -338,7 +356,17 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
 
             if (data_type_ptr->isNullable() || !data_type_ptr->canBeInsideNullable())
             {
-                return data_type_ptr;
+                switch (data_type_ptr->getTypeId())
+                {
+                    case TypeIndex::Array:
+                    case TypeIndex::Nullable:
+                    case TypeIndex::Tuple:
+                    case TypeIndex::Dynamic:
+                        return data_type_ptr;
+
+                    default:
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
+                }
             }
 
             auto nullable_data_type_ptr = std::make_shared<DataTypeNullable>(std::move(data_type_ptr));
@@ -351,12 +379,22 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT schema json('type_v3' was not found)");
     }
     auto value = json->get("type_v3");
-    if (value.isString())
+    try
     {
-        return convertYTPrimitiveType(value.extract<String>(), true);
-    }
-    try {
-        return convertYTTypeV3(value.extract<Poco::JSON::Object::Ptr>());
+        if (!isTypeComplex(value))
+        {
+            chassert(value.isString());
+            auto data_type = convertYTPrimitiveType(value.extract<String>(), true);
+            if (!data_type)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect primitive type");
+            }
+            return data_type;
+        }
+        else
+        {
+            return convertYTTypeV3(value.extract<Poco::JSON::Object::Ptr>());
+        }
     }
     catch (const std::exception & e)
     {
