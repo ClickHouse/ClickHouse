@@ -243,15 +243,6 @@ bool GlueCatalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    getTableMetadata(database_name, table_name, result);
-    return true;
-}
-
-void GlueCatalog::getTableMetadata(
-    const std::string & database_name,
-    const std::string & table_name,
-    TableMetadata & result) const
-{
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
@@ -313,10 +304,29 @@ void GlueCatalog::getTableMetadata(
     }
     else
     {
+        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+            return false; // Table does not exist
+
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Exception calling GetTable for table {}: {}",
             database_name + "." + table_name, outcome.GetError().GetMessage());
+    }
+
+    return true;
+}
+
+void GlueCatalog::getTableMetadata(
+    const std::string & database_name,
+    const std::string & table_name,
+    TableMetadata & result) const
+{
+    if (!tryGetTableMetadata(database_name, table_name, result))
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Table {} does not exist in Glue catalog",
+            database_name + "." + table_name);
     }
 }
 
