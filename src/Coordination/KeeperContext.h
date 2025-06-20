@@ -110,6 +110,11 @@ public:
         return precommit_sleep_probability_for_testing;
     }
 
+    bool shouldInjectAuth() const
+    {
+        return inject_auth;
+    }
+
     bool isOperationSupported(Coordination::OpNum operation) const;
 private:
     /// local disk defined using path or disk name
@@ -173,6 +178,8 @@ private:
     double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
+
+    bool inject_auth = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
