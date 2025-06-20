@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 }
 
 namespace
@@ -742,6 +743,9 @@ TableJoin::createConvertingActions(
       * This will be semantically transformed to:
       *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
       */
+    if (isSpecialStorage() && std::ranges::any_of(clauses, [](const auto & clause) { return !clause.nullsafe_compare_key_indexes.empty(); }))
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Null-safe comparison is not supported for StorageJoin");
+
     auto [left_keys_nullsafe_comparison, right_keys_nullsafe_comparison] = getKeysForNullSafeComparion(
         left_dag ? left_dag->getResultColumns() : left_sample_columns,
         right_dag ? right_dag->getResultColumns() : right_sample_columns);

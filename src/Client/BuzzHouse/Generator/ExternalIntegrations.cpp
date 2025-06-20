@@ -974,7 +974,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            buf = appendDecimal(rg, left, right);
+            buf = appendDecimal(rg, false, left, right);
         }
         if constexpr (is_document<T>)
         {
@@ -1016,7 +1016,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
-        String buf = appendDecimal(rg, left, right);
+        String buf = appendDecimal(rg, false, left, right);
 
         if (rg.nextBool())
         {
