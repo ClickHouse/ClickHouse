@@ -58,11 +58,12 @@ void abortOnFailedAssertion(const String & description)
 
 bool terminate_on_any_exception = false;
 static int terminate_status_code = 128 + SIGABRT;
-std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-static size_t handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+static size_t handle_error_code(
+    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -74,7 +75,11 @@ static size_t handle_error_code(const std::string & msg, int code, bool remote, 
 #endif
 
     if (Exception::callback)
-        Exception::callback(msg, code, remote, trace);
+    {
+        /// Only anonymized exception message (format_string) is send to the monitoring callback,
+        /// So it does not include customer queries.
+        Exception::callback(format_string, code, remote, trace);
+    }
 
     return ErrorCodes::increment(code, remote, msg, trace);
 }
@@ -103,7 +108,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
+    error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -113,7 +118,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(message(), code, remote, getStackFramePointers());
+    error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -646,6 +651,12 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
+std::string getExceptionMessageForLogging(Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    e.markAsLogged();
     return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
 }
 

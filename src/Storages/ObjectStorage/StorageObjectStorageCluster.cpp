@@ -65,6 +65,15 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
+    /// We allow exceptions to be thrown on update(),
+    /// because Cluster engine can only be used as table function,
+    /// so no lazy initialization is allowed.
+    configuration->update(
+        object_storage,
+        context_,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
+
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
@@ -89,14 +98,22 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
-    return configuration->totalRows();
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
-    return configuration->totalBytes();
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
+    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
@@ -159,12 +176,26 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * filter,
+    const ContextPtr & local_context,
+    const size_t number_of_replicas) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        configuration,
+        configuration->getQuerySettings(local_context),
+        object_storage,
+        /* distributed_processing */false,
+        local_context,
+        predicate,
+        filter,
+        virtual_columns,
+        nullptr,
+        local_context->getFileProgressCallback(),
+        /*ignore_archive_globs=*/true,
+        /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 
