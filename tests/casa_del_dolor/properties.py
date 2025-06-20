@@ -165,6 +165,19 @@ possible_properties = {
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": lambda: random.randint(0, 1),
+    "zookeeper": {
+        "use_compression": lambda: random.randint(0, 1),
+        "zookeeper_load_balancing": lambda: random.choice(
+            [
+                "random",
+                "in_order",
+                "nearest_hostname",
+                "hostname_levenshtein_distance",
+                "first_or_random",
+                "round_robin",
+            ]
+        ),
+    },
 }
 
 
@@ -267,6 +280,22 @@ def add_settings_from_dict(d: dict[str, Parameter], xml_element: ET.Element):
     for setting, generator in selected_props.items():
         new_element = ET.SubElement(xml_element, setting)
         new_element.text = str(generator())
+
+
+def apply_properties_recursively(next_root: ET.Element, next_properties: dict):
+    is_modified = False
+    selected_props = sample_from_dict(
+        next_properties, random.randint(1, len(next_properties))
+    )
+    for setting, next_child in selected_props.items():
+        if next_root.find(setting) is None:
+            is_modified = True
+            new_element = ET.SubElement(next_root, setting)
+            if isinstance(next_child, dict):
+                apply_properties_recursively(new_element, next_child)
+            else:
+                new_element.text = str(next_child())
+    return is_modified
 
 
 def add_single_cluster(
@@ -673,14 +702,7 @@ def modify_server_settings(
 
     # Select random properties to the XML
     if random.randint(1, 100) <= args.server_settings_prob:
-        selected_props = sample_from_dict(
-            possible_properties, random.randint(1, len(possible_properties))
-        )
-        for setting, generator in selected_props.items():
-            if root.find(setting) is None:
-                modified = True
-                new_element = ET.SubElement(root, setting)
-                new_element.text = str(generator())
+        modified = apply_properties_recursively(root, possible_properties) or modified
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
