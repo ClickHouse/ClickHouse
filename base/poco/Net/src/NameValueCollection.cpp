@@ -128,12 +128,12 @@ NameValueCollection::ConstIterator NameValueCollection::find(const std::string& 
 NameValueCollection::ConstIterator NameValueCollection::findLast(const std::string& name) const
 {
 	ConstIterator last = _map.end();
-    for (ConstIterator it = _map.find(name); it != _map.end(); it++)
+	for (ConstIterator it = _map.find(name); it != _map.end(); it++)
 		if (it->first == name)
 			last = it;
 		else
 			break; // No more entries with the same name
-    return last;
+	return last;
 }
 
 
