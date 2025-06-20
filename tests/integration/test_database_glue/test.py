@@ -125,7 +125,7 @@ def create_table(
 
 
 
-def generate_arrow_data(num_rows=5, column_bid="bid"):
+def generate_arrow_data(num_rows=5):
     datetimes = []
     symbols = []
     bids = []
@@ -170,7 +170,7 @@ def generate_arrow_data(num_rows=5, column_bid="bid"):
     table = pa.table({
         "datetime": pa.array(datetimes, type=pa.timestamp("us")),
         "symbol": pa.array(symbols, type=pa.string()),
-        column_bid: pa.array(bids, type=pa.float64()),
+        "bid": pa.array(bids, type=pa.float64()),
         "ask": pa.array(asks, type=pa.float64()),
         "details": struct_array,
         "map_string_decimal": map_array,
