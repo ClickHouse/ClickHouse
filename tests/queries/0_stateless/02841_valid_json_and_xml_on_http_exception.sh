@@ -10,8 +10,8 @@ CH_URL_BASE="$CLICKHOUSE_URL&http_write_exception_in_output_format=1&enable_anal
 
 for wait_end_of_query in 0 1
 do
-    echo "wait_end_of_query=$wait_end_of_query"
-    CH_URL="$CH_URL_BASE&wait_end_of_query=$wait_end_of_query"
+    echo "http_wait_end_of_query=$wait_end_of_query"
+    CH_URL="$CH_URL_BASE&http_wait_end_of_query=$wait_end_of_query"
 
     echo "One block"
     for parallel in 0 1

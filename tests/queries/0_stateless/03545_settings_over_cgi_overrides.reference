@@ -2,18 +2,11 @@ buffer_size=WRONG -- should fail
 CANNOT_PARSE_INPUT_ASSERTION_FAILED
 buffer_size=WRONG&buffer_size=0 -- WRONG value is overrided, last value is used
 OK
-wait_end_of_query=0&http_wait_end_of_query=1 -- receive partial result end exception
-0	1
-1	1
-2	1
-3	1
-4	1
-5	1
-6	1
-7	1
-8	1
-9	1
-__exception__
-Code: 153.  Division by zero: while executing 'FUNCTION intDiv(minus(10_UInt8, __table1.number) : 0, minus(10_UInt8, __table1.number) :: 0) -> intDiv(minus(10_UInt8, __table1.number), minus(10_UInt8, __table1.number)) Int64 : 2'. (ILLEGAL_DIVISION) (version 25.7.1.1)
+wait_end_of_query=0 -- receive partial result end exception
+["0", 0]
+["1", 0]
+["2", 0]
+["3", 0]
+["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 3) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 wait_end_of_query=0&http_wait_end_of_query=1 -- do not receive result, only exception. http_wait_end_of_query overrides wait_end_of_query
-Code: 153.  Division by zero: while executing 'FUNCTION intDiv(minus(10_UInt8, __table1.number) : 0, minus(10_UInt8, __table1.number) :: 0) -> intDiv(minus(10_UInt8, __table1.number), minus(10_UInt8, __table1.number)) Int64 : 2'. (ILLEGAL_DIVISION) (version 25.7.1.1)
+["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 3) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
