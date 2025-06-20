@@ -139,10 +139,11 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (distributed_processing)
     {
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
-            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
-
-        if (is_archive)
-            return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
+            local_context->getReadTaskCallback(),
+            local_context->getSettingsRef()[Setting::max_threads],
+            is_archive,
+            object_storage,
+            local_context);
 
         return distributed_iterator;
     }
@@ -908,8 +909,15 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_, size_t max_threads_count)
-    : callback(callback_)
+    const ReadTaskCallback & callback_,
+    size_t max_threads_count,
+    bool is_archive_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , callback(callback_)
+    , is_archive(is_archive_)
+    , object_storage(object_storage_)
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -938,16 +946,59 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
 StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+
+    ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
         auto key = callback();
         if (key.empty())
             return nullptr;
 
-        return std::make_shared<ObjectInfo>(key, std::nullopt);
+        object_info = std::make_shared<ObjectInfo>(key, std::nullopt);
+    }
+    else
+    {
+        object_info =  buffer[current_index];
     }
 
-    return buffer[current_index];
+    if (!is_archive)
+        return object_info;
+
+    auto [path_to_archive, path_in_archive] = S3::URI::getURIAndArchivePattern(object_info->getPath());
+    if (!path_in_archive.has_value())
+        return object_info;
+
+    return createObjectInfoInArchive(path_to_archive, path_in_archive.value());
+}
+
+ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
+    const std::string & path_to_archive,
+    const std::string & path_in_archive)
+{
+    auto archive_object = std::make_shared<ObjectInfo>(path_to_archive, std::nullopt);
+    if (!archive_object->metadata)
+        archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+
+    std::shared_ptr<IArchiveReader> archive_reader;
+    if (auto it = archive_readers.find(path_to_archive); it != archive_readers.end())
+    {
+        archive_reader = it->second;
+    }
+    else
+    {
+        archive_reader = DB::createArchiveReader(
+            path_to_archive,
+            [=, this]()
+            {
+                return StorageObjectStorageSource::createReadBuffer(*archive_object, object_storage, getContext(), log);
+            },
+            archive_object->metadata->size_bytes);
+
+        archive_readers.emplace(path_to_archive, archive_reader);
+    }
+
+    return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
+        archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
 }
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
@@ -1015,7 +1066,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             {
                 archive_object = archives_iterator->next(processor);
                 if (!archive_object)
+                {
+                    LOG_TEST(log, "Archives are processed");
                     return {};
+                }
 
                 if (!archive_object->metadata)
                     archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
@@ -1032,6 +1086,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             }
 
             path_in_archive = file_enumerator->getFileName();
+            LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
             current_file_info = file_enumerator->getFileInfo();

@@ -194,7 +194,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         virtual_columns,
         nullptr,
         local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/true,
+        /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);

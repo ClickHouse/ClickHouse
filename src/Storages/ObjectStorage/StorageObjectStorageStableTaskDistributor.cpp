@@ -88,22 +88,13 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
 
             if (!object_info)
             {
+                LOG_TEST(log, "Iterator is exhausted");
                 iterator_exhausted = true;
                 break;
             }
         }
 
-        String file_path;
-
-        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
-        if (archive_object_info)
-        {
-            file_path = archive_object_info->getPathToArchive();
-        }
-        else
-        {
-            file_path = object_info->getPath();
-        }
+        String file_path = object_info->getPath();
 
         size_t file_replica_idx = getReplicaForFile(file_path);
         if (file_replica_idx == number_of_current_replica)
@@ -117,6 +108,13 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
 
             return file_path;
         }
+        LOG_TEST(
+            log,
+            "Found file {} for replica {} (number of current replica: {})",
+            file_path,
+            file_replica_idx,
+            number_of_current_replica
+        );
 
         // Queue file for its assigned replica
         {
