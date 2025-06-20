@@ -24,6 +24,10 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#if USE_CLIENT_AI
+#include <Client/AI/IAIProvider.h>
+#endif
+
 namespace po = boost::program_options;
 
 
@@ -151,6 +155,10 @@ protected:
 
     void clearTerminal();
     void showClientVersion();
+
+#if USE_CLIENT_AI
+    void initAIProvider();
+#endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -422,6 +430,11 @@ protected:
     String next_query_to_prepopulate;
     bool buzz_house = false;
     int error_code = 0;
+
+#if USE_CLIENT_AI
+    /// Cached AI provider for SQL generation
+    AIProviderPtr ai_provider;
+#endif
 
     struct
     {

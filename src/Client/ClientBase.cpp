@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/InternalTextLogs.h>
@@ -5,6 +7,8 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Client/AI/AIProviderFactory.h>
+#include <Client/AI/IAIProvider.h>
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
@@ -2805,6 +2809,7 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
+#if USE_CLIENT_AI
     // Handle "?? <free_text>" command
     if (text.starts_with("??"))
     {
@@ -2812,14 +2817,34 @@ bool ClientBase::processQueryText(const String & text)
         auto free_text = text.substr(skip_prefix_size);
         // Trim leading whitespace from the free text
         free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
-        std::cout << "thinking..." << std::endl;
-        std::cout.flush();
-        // Sleep for 3 seconds
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-        // Set the next query to be prepopulated
-        next_query_to_prepopulate = "SELECT 1";
+
+        if (!ai_provider)
+        {
+            error_stream << "AI provider is not initialized" << std::endl;
+            return true;
+        }
+        
+        if (free_text.empty())
+        {
+            error_stream << "Please provide a natural language query after ??" << std::endl;
+            return true;
+        }
+        
+        try
+        {
+            std::string generated_sql = ai_provider->generateSQL(free_text);
+            
+            /// Prepopulate the next query with the generated SQL
+            next_query_to_prepopulate = generated_sql;
+        }
+        catch (const std::exception & e)
+        {
+            error_stream << "AI query generation failed: " << e.what() << std::endl;
+        }
+
         return true;
     }
+#endif
 
     if (query_fuzzer_runs)
     {
@@ -2829,6 +2854,31 @@ bool ClientBase::processQueryText(const String & text)
 
     return executeMultiQuery(text);
 }
+
+#if USE_CLIENT_AI
+void ClientBase::initAIProvider()
+{
+    AIConfiguration ai_config;
+            
+    if (getClientConfiguration().has("ai.api_key")) {
+        ai_config.api_key = getClientConfiguration().getString("ai.api_key");
+    }
+
+    if (getClientConfiguration().has("ai.model_provider")) {
+        ai_config.model_provider = getClientConfiguration().getString("ai.model_provider");
+    }
+    
+    if (getClientConfiguration().has("ai.model")) {
+        ai_config.model = getClientConfiguration().getString("ai.model");
+    }
+
+    try {
+        ai_provider = AIProviderFactory::createProvider(ai_config);
+    } catch (const std::exception & e) {
+        error_stream << "Failed to initialize AI provider: " << e.what() << std::endl;
+    }
+}
+#endif
 
 
 String ClientBase::getPrompt() const
@@ -3196,6 +3246,10 @@ void ClientBase::runInteractive()
 
     initQueryIdFormats();
 
+#if USE_CLIENT_AI
+    initAIProvider();
+#endif
+
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
@@ -3441,6 +3495,10 @@ void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
         initQueryIdFormats();
+
+#if USE_CLIENT_AI
+    initAIProvider();
+#endif
 
     if (!buzz_house && !queries_files.empty())
     {

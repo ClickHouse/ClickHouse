@@ -183,6 +183,10 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
+if (ENABLE_CLIENT_AI)
+    add_headers_and_sources(dbms Client/AI)
+endif()
+
 if (OS_LINUX)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
@@ -658,6 +662,10 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
+endif()
+
+if (TARGET ch_contrib::liboai)
+    dbms_target_link_libraries(PUBLIC ch_contrib::liboai)
 endif()
 
 if (TARGET ch_contrib::prometheus_protobufs)
