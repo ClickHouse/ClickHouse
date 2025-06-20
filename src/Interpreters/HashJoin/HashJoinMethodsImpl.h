@@ -386,10 +386,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         else
         {
             if (added_columns.join_on_keys.at(0).null_map)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
             else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
         }
     }
@@ -401,10 +401,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         else
         {
             if (added_columns.join_on_keys.at(0).null_map)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
             else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
         }
     }
@@ -597,7 +597,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
     KeyGetter & key_getter, const Map & map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     switch (added_columns.join_on_keys.at(0).join_mask_column.getKind())

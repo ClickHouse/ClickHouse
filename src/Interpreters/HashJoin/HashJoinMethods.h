@@ -159,7 +159,7 @@ private:
         const Selector & selector);
 
     template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static size_t joinRightColumns(
+    static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map & map,
         AddedColumns & added_columns,
