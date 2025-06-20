@@ -56,6 +56,11 @@ namespace CurrentMetrics
     extern const Metric SendExternalTables;
 }
 
+namespace ProfileEvents
+{
+    extern const Event DistributedConnectionReconnectCount;
+}
+
 namespace DB
 {
 namespace Setting
@@ -688,6 +693,7 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     }
     else if (!ping(timeouts))
     {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
     }
