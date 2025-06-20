@@ -1028,7 +1028,10 @@ if __name__ == "__main__":
     if command == "logs_export_config":
         ch.create_log_export_config()
     elif command == "logs_export_start":
-        ch.start_log_exports()
+        # FIXME: the start_time must be preserved globally in ENV or something like that
+        # to get the same values in different DBs
+        # As a wild idea, it could be stored in a Info.check_start_timestamp
+        ch.start_log_exports(check_start_time=Utils.timestamp())
     elif command == "logs_export_stop":
         ch.stop_log_exports()
     elif command == "start_minio":
