@@ -37,6 +37,7 @@ WITH
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1%'
        AND type = 'QueryFinish'
+       AND initial_query_id = query_id
      ORDER BY event_time DESC LIMIT 1) AS with_distinct_recv_bytes,
 
     -- Get the value for without_distinct
@@ -45,6 +46,7 @@ WITH
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0%'
        AND type = 'QueryFinish'
+       AND initial_query_id = query_id
      ORDER BY event_time DESC LIMIT 1) AS without_distinct_recv_bytes
 
 SELECT
