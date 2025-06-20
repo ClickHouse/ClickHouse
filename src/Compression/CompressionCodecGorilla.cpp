@@ -124,6 +124,12 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
 
+    std::string getDescription() const override
+    {
+        return "Calculates XOR between current and previous value; suitable for slowly changing numbers.";
+    }
+
+
 private:
     const UInt8 data_bytes_size;
 };

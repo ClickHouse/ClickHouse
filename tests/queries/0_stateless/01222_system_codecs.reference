@@ -1,0 +1,24 @@
+AES_128_GCM_SIV	150	0	0	1	0	0	Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).
+AES_256_GCM_SIV	151	0	0	1	0	0	Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).
+DEFLATE_QPL	153	1	1	0	0	0	Requires hardware support for Intel’s QuickAssist Technology for DEFLATE compression; enhanced performance for specific hardware.
+Delta	146	0	0	0	0	0	Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.
+DoubleDelta	148	1	0	0	0	0	Stores difference between neighboring delta values; suitable for time series data.
+FPC	152	1	0	0	1	0	High Throughput Compression of Double-Precision Floating-Point Data.
+GCD	154	0	0	0	0	0	Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.
+Gorilla	149	1	0	0	1	0	Calculates XOR between current and previous value; suitable for slowly changing numbers.
+LZ4	130	1	1	0	0	0	Extremely fast; good compression; balanced speed and efficiency.
+LZ4HC	130	1	1	0	0	0	LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.
+Multiple	145	0	0	0	0	0	Apply multiple codecs consecutively defined by user.
+NONE	2	0	0	0	0	0	No compression at all. Can be used on the columns that can not be compressed anyway.
+T64	147	1	0	0	0	0	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
+ZSTD	144	1	1	0	0	0	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.
+ZSTD_QAT	144	1	1	0	0	0	Requires hardware support for QuickAssist Technology (QAT) hardware; provides accelerated compression tasks.
+15
+name
+method_byte
+is_compression
+is_generic_compression
+is_encryption
+is_timeseries_codec
+is_experimental
+description
