@@ -449,7 +449,7 @@ void optimizeExchanges(QueryPlan::Node & root)
                 {
                     Header expression_header = frame.node->step->getOutputHeader();
 
-                    /// If gather step has maintain_sort_description then we need to check that those columns are preserved
+                    /// If Gather step has maintain_sort_description then we need to check that all those columns are present in Expression step results.
                     bool can_move_gather_up = true;
                     if (gather_step->getMaintainSortDescription())
                     {
@@ -457,7 +457,10 @@ void optimizeExchanges(QueryPlan::Node & root)
                         for (const auto & column : sort_description)
                         {
                             if (!expression_header.has(column.column_name))
+                            {
                                 can_move_gather_up = false;
+                                break;
+                            }
                         }
                     }
 
