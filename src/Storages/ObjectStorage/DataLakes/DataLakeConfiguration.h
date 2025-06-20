@@ -91,22 +91,28 @@ public:
         return std::nullopt;
     }
 
-    std::optional<size_t> totalRows() override
+    std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->totalRows();
+        return current_metadata->totalRows(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(data_path);
+        return current_metadata->totalBytes(local_context);
     }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(data_path);
+        return current_metadata->getInitialSchemaByPath(local_context, data_path);
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override
+    {
+        assertInitialized();
+        return current_metadata->getSchemaTransformer(local_context, data_path);
     }
 
     bool hasExternalDynamicMetadata() override

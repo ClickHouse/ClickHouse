@@ -332,7 +332,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
 
-    return configuration->totalRows();
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
@@ -343,7 +343,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
 
-    return configuration->totalBytes();
+    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
