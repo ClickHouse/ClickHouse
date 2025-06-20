@@ -185,10 +185,9 @@ The function also works for [strings](string-functions.md#notempty) or [UUID](uu
     )";
     FunctionDocumentation::Syntax syntax_empty = "empty(arr)";
     FunctionDocumentation::Syntax syntax_not_empty = "notEmpty(arr)";
-    FunctionDocumentation::Arguments arguments = {{"arr", "Input array. [`Array(T)`](/sql-reference/data-types/array)."}};
-    FunctionDocumentation::ReturnedValue returned_value_empty = "Returns `1` for an empty array or `0` for a non-empty array. [`UInt8`](../data-types/int-uint.md).";
-    FunctionDocumentation::ReturnedValue returned_value_not_empty = "Returns `1` for a non-empty array or `0` for an empty array. [`UInt8`](../data-types/int-uint.md).";
-    FunctionDocumentation::Examples examples_empty = {{"Usage example", "SELECT empty([]);", "1"}};
+    FunctionDocumentation::Arguments arguments = {{"arr", "Input array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value_empty = {"Returns `1` for an empty array or `0` for a non-empty array", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value_not_empty = {"Returns `1` for a non-empty array or `0` for an empty array", {"UInt8"}};    FunctionDocumentation::Examples examples_empty = {{"Usage example", "SELECT empty([]);", "1"}};
     FunctionDocumentation::Examples examples_not_empty = {{"Usage example", "SELECT notEmpty([1,2]);", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

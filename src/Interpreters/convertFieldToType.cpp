@@ -566,7 +566,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src; /// Already in needed type.
 
         const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
+        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->hasExplicitNames())
         {
             const auto & names = from_type_tuple->getElementNames();
             const auto & tuple = src.safeGet<Tuple>();

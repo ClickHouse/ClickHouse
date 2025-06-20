@@ -16,10 +16,10 @@ Adds a specified number of weeks to a date, a date with time or a string-encoded
 addWeeks(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date or date with time to add specified number of weeks to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of weeks to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+        {"datetime", "Date or date with time to add specified number of weeks to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of weeks to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` plus `num` weeks. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` weeks", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add weeks to different date types", R"(
 WITH

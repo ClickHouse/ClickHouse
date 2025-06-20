@@ -21,10 +21,10 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toStartOfDay(datetime)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A date or date with time to convert. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)."}
+        {"datetime", "A date or date with time to convert.", {"Date", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
-        "Returns the date with time rounded down to the start of the day. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`Date32`](../data-types/date32.md)/[`DateTime64`](../data-types/datetime64.md).";
+        {"Returns the date with time rounded down to the start of the day.", {"Date", "DateTime", "Date32", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Round down to the start of the day", R"(
 SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))

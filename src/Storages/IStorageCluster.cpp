@@ -117,7 +117,11 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(predicate, context, number_of_replicas);
+    extension = storage->getTaskIteratorExtension(
+        predicate,
+        filter_actions_dag.has_value() ? &filter_actions_dag.value() : query_info.filter_actions_dag.get(),
+        context,
+        number_of_replicas);
 }
 
 /// The code executes on initiator
