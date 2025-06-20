@@ -2084,14 +2084,18 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
     const auto & dictionary_view_lambda
         = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
+    const auto & dictionary_dictionary_lambda
+        = [&next](const SQLDictionary & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool has_table = collectionHas<SQLTable>(dictionary_table_lambda);
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
+    const bool has_dictionary = collectionHas<SQLView>(dictionary_view_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
+    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
     const uint32_t null_src = 2;
-    const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
+    const uint32_t prob_space = dict_table + dict_system_table + dict_view + dict_dict + null_src;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2178,7 +2182,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         v.setName(dsd->mutable_est(), false);
         dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
     }
-    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
+    else if (dict_dict && nopt < (dict_table + dict_system_table + dict_view + dict_dict + 1))
+    {
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(dictionary_dictionary_lambda));
+
+        d.setName(dsd->mutable_est(), false);
+        dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+    }
+    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + dict_dict + null_src + 1))
     {
         cd->mutable_source()->set_null_src(true);
     }

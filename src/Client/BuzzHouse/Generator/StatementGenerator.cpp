@@ -590,6 +590,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 {
     const uint32_t desc_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t desc_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t desc_dict = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t desc_query = 5;
     const uint32_t desc_function = 5;
     const uint32_t desc_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
@@ -609,18 +610,24 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 
         v.setName(dt->mutable_est(), false);
     }
-    else if (desc_query && nopt < (desc_table + desc_view + desc_query + 1))
+    else if (desc_dict && nopt < (desc_table + desc_view + desc_dict + 1))
+    {
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+        d.setName(dt->mutable_est(), false);
+    }
+    else if (desc_query && nopt < (desc_table + desc_view + desc_dict + desc_query + 1))
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
         generateSelect(rg, false, false, (rg.nextLargeNumber() % 5) + 1, std::numeric_limits<uint32_t>::max(), dt->mutable_sel());
         this->levels.clear();
     }
-    else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function + 1))
+    else if (desc_function && nopt < (desc_table + desc_view + desc_dict + desc_query + desc_function + 1))
     {
         generateTableFuncCall(rg, dt->mutable_stf());
         this->levels.clear();
     }
-    else if (desc_system_table && nopt < (desc_table + desc_view + desc_query + desc_function + desc_system_table + 1))
+    else if (desc_system_table && nopt < (desc_table + desc_view + desc_dict + desc_query + desc_function + desc_system_table + 1))
     {
         ExprSchemaTable * est = dt->mutable_est();
 
