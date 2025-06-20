@@ -415,11 +415,13 @@ def test_non_existing_tables(started_cluster):
             f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.qweqwe`"
         )
     except Exception as e:
-        assert "Table does not exist" in str(e)
+        assert "DB::Exception: Table" in str(e)
+        assert "doesn't exist" in str(e)
 
     try:
         node.query(
             f"SHOW CREATE TABLE {CATALOG_NAME}.`qweqwe.qweqwe`"
         )
     except Exception as e:
-        assert "Table does not exist" in str(e)
+        assert "DB::Exception: Table" in str(e)
+        assert "doesn't exist" in str(e)
