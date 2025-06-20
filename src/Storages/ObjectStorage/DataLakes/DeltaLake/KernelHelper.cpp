@@ -188,7 +188,6 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            // todo arthur I suspect this should be getReadingPath instead of getRawPath
             return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getRawPath().path);
         }
         default:
