@@ -17,6 +17,7 @@ struct AIConfiguration
     double temperature = 0.0;
     size_t max_tokens = 1000;
     size_t timeout_seconds = 30;
+    std::string system_prompt; /// Optional custom system prompt
 };
 
 /// Base interface for AI providers that can generate SQL queries from natural language

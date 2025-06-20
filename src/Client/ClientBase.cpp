@@ -2858,21 +2858,8 @@ bool ClientBase::processQueryText(const String & text)
 #if USE_CLIENT_AI
 void ClientBase::initAIProvider()
 {
-    AIConfiguration ai_config;
-            
-    if (getClientConfiguration().has("ai.api_key")) {
-        ai_config.api_key = getClientConfiguration().getString("ai.api_key");
-    }
-
-    if (getClientConfiguration().has("ai.model_provider")) {
-        ai_config.model_provider = getClientConfiguration().getString("ai.model_provider");
-    }
-    
-    if (getClientConfiguration().has("ai.model")) {
-        ai_config.model = getClientConfiguration().getString("ai.model");
-    }
-
     try {
+        AIConfiguration ai_config = AIProviderFactory::loadConfiguration(getClientConfiguration());
         ai_provider = AIProviderFactory::createProvider(ai_config);
     } catch (const std::exception & e) {
         error_stream << "Failed to initialize AI provider: " << e.what() << std::endl;

@@ -24,6 +24,9 @@ OpenAIProvider::OpenAIProvider(const AIConfiguration & config_)
 
     if (config.model.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OpenAI model is required");
+
+    if (config.model_provider.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OpenAI model provider is required");
 }
 
 std::string OpenAIProvider::generateSQL(const std::string & prompt)
@@ -124,6 +127,10 @@ bool OpenAIProvider::isAvailable() const
 
 std::string OpenAIProvider::buildSystemPrompt() const
 {
+    // Use custom system prompt if provided, otherwise use default
+    if (!config.system_prompt.empty())
+        return config.system_prompt;
+    
     return R"(You are a ClickHouse SQL expert. Your task is to convert natural language queries into valid ClickHouse SQL.
 Follow these guidelines:
 1. Generate only executable SQL queries, no explanations or markdown
