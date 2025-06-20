@@ -21,7 +21,7 @@ query="SELECT number as x, throwIf(number > 3) FROM numbers(100) format JSONComp
 
 CH_URL="${CH_URL}?enable_analyzer=0&http_write_exception_in_output_format=1&max_block_size=1&output_format_parallel_formatting=0"
 
-echo "wait_end_of_query=0 -- receive partial result end exception"
+echo "wait_end_of_query=0 -- receive partial result and exception"
 ${CLICKHOUSE_CURL} -qsS "${CH_URL}&wait_end_of_query=0" -d "$query" | sed "s/(version .*)//" | sed 's/DB::Exception://g'
 
 echo "wait_end_of_query=0&http_wait_end_of_query=1 -- do not receive result, only exception. http_wait_end_of_query overrides wait_end_of_query"
