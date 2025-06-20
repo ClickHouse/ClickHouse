@@ -46,6 +46,10 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
+    inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
+    inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
+
     enum class DateTimeInputFormat : uint8_t
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -304,6 +308,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool write_geometadata = true;
     } parquet{};
 
     struct Pretty
@@ -385,7 +390,9 @@ struct FormatSettings
 
     struct
     {
+        std::string format_schema_source = FORMAT_SCHEMA_SOURCE_FILE;
         std::string format_schema;
+        std::string format_schema_message_name;
         std::string format_schema_path;
         bool is_server = false;
         std::string output_format_schema;

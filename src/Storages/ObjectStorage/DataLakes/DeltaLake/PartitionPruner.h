@@ -1,9 +1,11 @@
 #pragma once
 #include "config.h"
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 
 #if USE_DELTA_KERNEL_RS
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/KeyDescription.h>
 
 namespace DB
 {
@@ -24,7 +26,7 @@ public:
         const DB::Names & partition_columns_,
         DB::ContextPtr context);
 
-    bool canBePruned(const DB::ObjectInfoWithPartitionColumns & object_info) const;
+    bool canBePruned(const DB::ObjectInfo & object_info) const;
 
 private:
     std::optional<DB::KeyCondition> key_condition;
