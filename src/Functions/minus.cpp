@@ -54,13 +54,16 @@ Similar to plus, it is possible to subtract an integer from a date or date with 
 Additionally, subtraction between date with time is supported, resulting in the time difference between them.
     )";
     FunctionDocumentation::Syntax syntax = "minus(x, y)";
-    FunctionDocumentation::Argument argument1 = {"x", "Minuend"};
-    FunctionDocumentation::Argument argument2 = {"y", "Subtrahend"};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "x minus y";
-    FunctionDocumentation::Example example1 = {"Subtracting two numbers", "SELECT minus(10,5)", "5"};
-    FunctionDocumentation::Example example2 = {"Subtracting an integer and a date", "SELECT minus(toDate('2025-01-01'),5)", "2024-12-27"};
-    FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "Minuend."},
+        {"y", "Subtrahend."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"x minus y"};
+    FunctionDocumentation::Examples examples = {
+        {"Subtracting two numbers", "SELECT minus(10, 5)", "5"},
+        {"Subtracting an integer and a date", "SELECT minus(toDate('2025-01-01'),5)", "2024-12-27"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
