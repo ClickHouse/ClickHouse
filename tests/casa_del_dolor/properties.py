@@ -32,12 +32,20 @@ def file_size_value(max_val: int):
 
 
 possible_properties = {
+    "aggregate_function_group_array_action_when_limit_is_reached": lambda: random.choice(
+        ["throw", "discard"]
+    ),
+    "aggregate_function_group_array_max_element_size": threshold_generator(
+        0.2, 0.2, 0, 10000
+    ),
     "allow_use_jemalloc_memory": lambda: random.randint(0, 1),
     "async_insert_queue_flush_on_shutdown": lambda: random.randint(0, 1),
     "async_insert_threads": lambda: random.randint(0, multiprocessing.cpu_count()),
     "async_load_databases": lambda: random.randint(0, 1),
     "async_load_system_database": lambda: random.randint(0, 1),
+    "asynchronous_heavy_metrics_update_period_s": threshold_generator(0.2, 0.2, 0, 60),
     "asynchronous_metrics_enable_heavy_metrics": lambda: random.randint(0, 1),
+    "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 0, 30),
     "background_buffer_flush_schedule_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
@@ -49,6 +57,9 @@ possible_properties = {
     ),
     "background_fetches_pool_size": lambda: random.randint(
         1, multiprocessing.cpu_count()
+    ),
+    "background_merges_mutations_concurrency_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 3.0
     ),
     "background_merges_mutations_scheduling_policy": lambda: random.choice(
         ["round_robin", "shortest_task_first"]
@@ -62,12 +73,14 @@ possible_properties = {
         1, multiprocessing.cpu_count()
     ),
     "backup_threads": lambda: random.randint(1, multiprocessing.cpu_count()),
+    "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "cgroup_memory_watcher_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
-    "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 134217728),
+    "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
         ["round_robin", "fair_round_robin"]
     ),
@@ -85,71 +98,135 @@ possible_properties = {
     "disable_insertion_and_mutation": lambda: random.randint(0, 1),
     "disable_internal_dns_cache": lambda: random.randint(0, 1),
     "display_secrets_in_show_and_select": lambda: random.randint(0, 1),
+    "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 1.0
+    ),
+    "enable_azure_sdk_logging": lambda: random.randint(0, 1),
     "format_alter_operations_with_parentheses": lambda: random.randint(0, 1),
     "ignore_empty_sql_security_in_create_view_query": lambda: random.randint(0, 1),
+    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 0, 1000),
     "load_marks_threadpool_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "load_marks_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_active_parts_loading_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_backup_bandwidth_for_server": threshold_generator(0.2, 0.2, 0, 100000),
+    "max_backups_io_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_backups_io_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
     "max_build_vector_similarity_index_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_database_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_database_replicated_create_table_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_dictionary_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_entries_for_hash_table_stats": threshold_generator(0.2, 0.2, 0, 10000),
     "max_fetch_partition_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_io_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_io_thread_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
+    "max_local_read_bandwidth_for_server": threshold_generator(0.2, 0.2, 0, 100000),
+    "max_local_write_bandwidth_for_server": threshold_generator(0.2, 0.2, 0, 100000),
     "max_materialized_views_count_for_table": threshold_generator(0.2, 0.2, 0, 8),
+    "max_merges_bandwidth_for_server": threshold_generator(0.2, 0.2, 0, 100000),
+    "max_mutations_bandwidth_for_server": threshold_generator(0.2, 0.2, 0, 100000),
     "max_open_files": threshold_generator(0.2, 0.2, 0, 100),
     "max_outdated_parts_loading_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_partition_size_to_drop": threshold_generator(0.2, 0.2, 0, 100000),
     "max_parts_cleaning_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
+    ),
+    "max_prefixes_deserialization_thread_pool_free_size": threshold_generator(
+        0.2, 0.2, 0, 1000
     ),
     "max_prefixes_deserialization_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_remote_read_network_bandwidth_for_server": threshold_generator(
+        0.2, 0.2, 0, 1000
+    ),
+    "max_remote_write_network_bandwidth_for_server": threshold_generator(
+        0.2, 0.2, 0, 1000
+    ),
+    "max_replicated_fetches_network_bandwidth_for_server": threshold_generator(
+        0.2, 0.2, 0, 1000
+    ),
+    "max_replicated_sends_network_bandwidth_for_server": threshold_generator(
+        0.2, 0.2, 0, 1000
+    ),
+    "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
+    "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_thread_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_unexpected_parts_loading_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "max_waiting_queries": threshold_generator(0.2, 0.2, 0, 100),
     "memory_worker_correct_memory_tracker": lambda: random.randint(0, 1),
+    "memory_worker_use_cgroup": lambda: random.randint(0, 1),
+    "merges_mutations_memory_usage_soft_limit": threshold_generator(0.2, 0.2, 0, 1000),
     "merges_mutations_memory_usage_to_ram_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
     "mlock_executable": lambda: random.randint(0, 1),
-    "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2097152),
+    "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "page_cache_min_size": threshold_generator(0.2, 0.2, 0, 2097152),
+    "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "parts_killer_pool_size": lambda: random.randint(0, multiprocessing.cpu_count()),
+    "parts_kill_delay_period": threshold_generator(0.2, 0.2, 0, 60),
+    "parts_kill_delay_period_random_add": threshold_generator(0.2, 0.2, 0, 100),
+    "parts_killer_pool_size": lambda: random.randint(
+        0, multiprocessing.cpu_count()
+    ),  # Cloud setting
+    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "prefetch_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "prefixes_deserialization_thread_pool_thread_pool_queue_size": threshold_generator(
+        0.2, 0.2, 0, 1000
+    ),
     "process_query_plan_packet": lambda: random.randint(0, 1),
+    "query_cache": {
+        "max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+        "max_entry_size_in_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 10000),
+    },
+    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": lambda: random.randint(0, 1),
     "restore_threads": lambda: random.randint(1, multiprocessing.cpu_count()),
     "shutdown_wait_backups_and_restores": lambda: random.randint(0, 1),
     "shutdown_wait_unfinished_queries": lambda: random.randint(0, 1),
+    "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "storage_metadata_write_full_object_key": lambda: random.randint(0, 1),
     "storage_shared_set_join_use_inner_uuid": lambda: random.randint(0, 1),
     "tables_loader_background_pool_size": lambda: random.randint(
@@ -158,10 +235,17 @@ possible_properties = {
     "tables_loader_foreground_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
+    "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 0, 300),
+    "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "throw_on_unknown_workload": lambda: random.randint(0, 1),
+    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_minimalistic_part_header_in_zookeeper": lambda: random.randint(0, 1),
     "validate_tcp_client_information": lambda: random.randint(0, 1),
+    "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1000),
+    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": lambda: random.randint(0, 1),
@@ -615,10 +699,12 @@ def modify_server_settings(
         backups_element = ET.SubElement(root, "backups")
         lower_bound, upper_bound = args.number_disks
         number_disks = random.randint(lower_bound, upper_bound)
+        number_policies = 0
 
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
+        created_cache_disks = []
 
         for i in range(0, number_disks):
             possible_types = (
@@ -637,6 +723,8 @@ def modify_server_settings(
                 is_private_binary,
             )
             created_disks_types.append(next_created_disk_pair)
+            if next_created_disk_pair[1] == "cache":
+                created_cache_disks.append(i)
         # Add policies sometimes
         if random.randint(1, 100) <= args.add_policy_settings_prob:
             j = 0
@@ -680,6 +768,25 @@ def modify_server_settings(
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+
+        if (
+            root.find("temporary_data_in_cache") is None
+            and root.find("tmp_policy") is None
+            and root.find("tmp_path") is None
+        ):
+            next_opt = random.randint(1, 100)
+
+            if len(created_cache_disks) > 0 and next_opt <= 40:
+                temporary_cache_xml = ET.SubElement(root, "temporary_data_in_cache")
+                temporary_cache_xml.text = f"disk{random.choice(created_cache_disks)}"
+            elif number_policies > 0 and next_opt <= 70:
+                tmp_policy_xml = ET.SubElement(root, "tmp_policy")
+                tmp_policy_xml.text = (
+                    f"policy{random.choice(range(0, number_policies))}"
+                )
+            else:
+                tmp_path_xml = ET.SubElement(root, "tmp_path")
+                tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
 
     # Add filesystem caches
     if (
