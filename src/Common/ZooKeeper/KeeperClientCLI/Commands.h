@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class KeeperClient;
+class KeeperClientBase;
 
 class IKeeperClientCommand
 {
@@ -14,7 +14,7 @@ public:
 
     virtual bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const = 0;
 
-    virtual void execute(const ASTKeeperQuery * query, KeeperClient * client) const = 0;
+    virtual void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const = 0;
 
     virtual String getHelpMessage() const = 0;
 
@@ -39,7 +39,7 @@ class LSCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} [path] -- Lists the nodes for the given path (default: cwd)"; }
 };
@@ -50,7 +50,7 @@ class CDCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} [path] -- Changes the working path (default `.`)"; }
 };
@@ -61,7 +61,7 @@ class SetCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -75,7 +75,7 @@ class CreateCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> <value> [mode] -- Creates new node with the set value"; }
 };
@@ -86,7 +86,7 @@ class TouchCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists"; }
 };
@@ -97,7 +97,7 @@ class GetCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Returns the node's value"; }
 };
@@ -108,7 +108,7 @@ class ExistsCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Returns `1` if node exists, `0` otherwise"; }
 };
@@ -119,7 +119,7 @@ class GetStatCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} [path] -- Returns the node's stat (default `.`)"; }
 };
@@ -130,7 +130,7 @@ class FindSuperNodes : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -144,7 +144,7 @@ class DeleteStaleBackups : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -158,7 +158,7 @@ class FindBigFamily : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -172,7 +172,7 @@ class RMCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> [version] -- Removes the node only if version matches (default: -1)"; }
 };
@@ -183,7 +183,7 @@ class RMRCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> [limit] -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)"; }
 };
@@ -201,7 +201,7 @@ class ReconfigCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <add|remove|set> \"<arg>\" [version] -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration"; }
 };
@@ -212,7 +212,7 @@ class SyncCommand: public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Synchronizes node between processes and leader"; }
 };
@@ -223,7 +223,7 @@ class HelpCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} -- Prints this message"; }
 };
@@ -234,7 +234,7 @@ class FourLetterWordCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override { return "{} <command> -- Executes four-letter-word command"; }
 };
@@ -245,7 +245,7 @@ class GetDirectChildrenNumberCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -259,7 +259,7 @@ class GetAllChildrenNumberCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -273,7 +273,7 @@ class CPCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -287,7 +287,7 @@ class MVCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
