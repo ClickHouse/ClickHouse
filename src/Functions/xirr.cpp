@@ -845,13 +845,14 @@ Arrays should be sorted by date in ascending order. Dates need to be unique.
            {"date",
             "A sorted array of unique dates corresponding to the cash flows. "
             "[`Array(Date|Date32)`](/sql-reference/data-types/array)."},
-           {"[, guess]", "Optional. Initial guess (constant value) for the XIRR calculation. [`Float32|Float64`](/sql-reference/data-types/float)"},
+           {"[, guess]",
+            "Optional. Initial guess (constant value) for the XIRR calculation. [`Float32|Float64`](/sql-reference/data-types/float)"},
            {"[, daycount]",
             "Optional day count convention (default 'ACT_365F'). Supported values:\n"
             "- 'ACT_365F' - Actual/365 Fixed: Uses actual number of days between dates divided by 365\n"
             "- 'ACT_365_25' - Actual/365.25: Uses actual number of days between dates divided by 365.25"}};
-    FunctionDocumentation::ReturnedValue returned_value
-        = "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::ReturnedValue returned_value{
+        "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/sql-reference/data-types/float)"};
     FunctionDocumentation::Examples examples = {
         {"simple_example",
          R"(
@@ -896,9 +897,9 @@ $$
          "Optional initial guess (constant value) for the internal rate of return (default 0.1). "
          "[`Float32|Float64`](/sql-reference/data-types/float)"},
     };
-    FunctionDocumentation::ReturnedValue returned_value
-        = "Returns the internal rate of return as a Float64 value. Returns NaN if the calculation cannot converge, input array is empty or "
-          "has only one element, all cash flows are zero, or other calculation errors occur. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::ReturnedValue returned_value{
+        "Returns the internal rate of return as a Float64 value. Returns NaN if the calculation cannot converge, input array is empty or "
+        "has only one element, all cash flows are zero, or other calculation errors occur. [`Float64`](/sql-reference/data-types/float)"};
     FunctionDocumentation::Examples examples = {
         {"simple_example", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20])", "0.2809484211599611"},
         {"simple_example_with_guess", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20], 0.1)", "0.2809484211599611"},
@@ -939,8 +940,8 @@ Arrays should be sorted by date in ascending order. Dates need to be unique.
             "Optional day count convention (default 'ACT_365F'). Supported values:\n"
             "- 'ACT_365F' - Actual/365 Fixed: Uses actual number of days between dates divided by 365\n"
             "- 'ACT_365_25' - Actual/365.25: Uses actual number of days between dates divided by 365.25"}};
-    FunctionDocumentation::ReturnedValue returned_value
-        = "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::ReturnedValue returned_value{
+        "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)"};
     FunctionDocumentation::Examples examples = {
         {"simple_example",
          R"(
@@ -991,8 +992,8 @@ $$
             "Excel-compatible). Default: true. "
             "[`Boolean`](/sql-reference/data-types/boolean)"}};
 
-    FunctionDocumentation::ReturnedValue returned_value
-        = "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)";
+    FunctionDocumentation::ReturnedValue returned_value{
+        "Returns the net present value as a Float64 value. [`Float64`](/sql-reference/data-types/float)"};
 
     FunctionDocumentation::Examples examples
         = {{"default_calculation", "SELECT financialNetPresentValue(0.08, [-40000., 5000., 8000., 12000., 30000.])", "3065.2226681795255"},
