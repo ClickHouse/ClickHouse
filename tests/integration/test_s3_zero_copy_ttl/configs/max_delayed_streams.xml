@@ -1,9 +1,0 @@
-<clickhouse>
-    <!-- Profiles of settings. -->
-    <profiles>
-        <!-- Default settings. -->
-        <default>
-            <max_insert_delayed_streams_for_parallel_write>10</max_insert_delayed_streams_for_parallel_write>
-        </default>
-    </profiles>
-</clickhouse>

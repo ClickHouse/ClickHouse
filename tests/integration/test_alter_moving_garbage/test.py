@@ -80,11 +80,11 @@ def create_table(node, table_name, replicated, additional_settings):
 
 
 @pytest.mark.parametrize(
-    "allow_remote_fs_zero_copy_replication,replicated_engine",
-    [(False, False), (False, True), (True, True)],
+    "replicated_engine",
+    [False, True],
 )
 def test_alter_moving(
-    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
+    cluster, replicated_engine
 ):
     """
     Test that we correctly move parts during ALTER TABLE
@@ -99,9 +99,6 @@ def test_alter_moving(
 
     # Different names for logs readability
     table_name = "test_table"
-    if allow_remote_fs_zero_copy_replication:
-        table_name = "test_table_zero_copy"
-        additional_settings["allow_remote_fs_zero_copy_replication"] = 1
     if replicated_engine:
         table_name = table_name + "_replicated"
 
