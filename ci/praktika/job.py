@@ -200,7 +200,9 @@ class Job:
             artifact_keywords = [k.lower() for k in artifact_keywords]
             provides_res = []
             for artifact in res.provides:
-                if not any(keyword in artifact.lower() for keyword in artifact_keywords):
+                if not any(
+                    keyword in artifact.lower() for keyword in artifact_keywords
+                ):
                     provides_res.append(artifact)
             res.provides = provides_res
             return res
