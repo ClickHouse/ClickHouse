@@ -29,7 +29,6 @@ using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSett
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-extern const int UNSUPPORTED_METHOD
 }
 
 
