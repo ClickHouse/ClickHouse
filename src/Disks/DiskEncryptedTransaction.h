@@ -119,12 +119,16 @@ public:
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) override;
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeFile(const std::string & path) override
@@ -253,6 +257,12 @@ public:
 
 
 private:
+    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl(
+        bool autocommit,
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings);
 
     String wrappedPath(const String & path) const
     {
