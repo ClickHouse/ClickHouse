@@ -176,12 +176,26 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * filter,
+    const ContextPtr & local_context,
+    const size_t number_of_replicas) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        configuration,
+        configuration->getQuerySettings(local_context),
+        object_storage,
+        /* distributed_processing */false,
+        local_context,
+        predicate,
+        filter,
+        virtual_columns,
+        nullptr,
+        local_context->getFileProgressCallback(),
+        /*ignore_archive_globs=*/true,
+        /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 
