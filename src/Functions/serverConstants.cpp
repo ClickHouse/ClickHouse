@@ -179,7 +179,7 @@ offset or name to a canonical time zone name.
 timezone()
     )";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the canonical time zone name as a [`String`](/sql-reference/data-types/string).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the canonical time zone name as a", {"String"}};
     FunctionDocumentation::Examples examples = {
         {"Get current session time zone", R"(
 SELECT timezone()
@@ -206,7 +206,7 @@ If the function is executed in the context of a distributed table, then it gener
     )";
     FunctionDocumentation::Syntax syntax = "serverTimeZone()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the server timezone as a [`String`](/sql-reference/data-types/string).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {
         {"Get server time zone", R"(
 SELECT serverTimeZone()

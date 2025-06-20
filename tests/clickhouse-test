@@ -1609,6 +1609,7 @@ class TestCase:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         stderr = kill_output
+        stderr += str(self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8")
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1872,28 +1873,28 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
+        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile("rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir)
 
-        if args.client_log:
-            log_opt = " --client_logs_file=" + args.client_log + " "
-            client_options += log_opt
+        log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
+        client_options += log_opt
 
-            for env_name in [
-                "TSAN_OPTIONS",
-                "ASAN_OPTIONS",
-                "MSAN_OPTIONS",
-                "UBSAN_OPTIONS",
-            ]:
-                current_options = os.environ.get(env_name, None)
-                if current_options is None:
-                    os.environ[env_name] = f"log_path={args.client_log}"
-                elif "log_path=" not in current_options:
-                    os.environ[env_name] += f":log_path={args.client_log}"
+        for env_name in [
+            "TSAN_OPTIONS",
+            "ASAN_OPTIONS",
+            "MSAN_OPTIONS",
+            "UBSAN_OPTIONS",
+        ]:
+            current_options = os.environ.get(env_name, None)
+            if current_options is None:
+                os.environ[env_name] = f"log_path={self.fatal_sanitizer_log.name}"
+            elif "log_path=" not in current_options:
+                os.environ[env_name] += f":log_path={self.fatal_sanitizer_log.name}"
 
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                os.environ["CLICKHOUSE_CLIENT_OPT"]
-                if "CLICKHOUSE_CLIENT_OPT" in os.environ
-                else ""
-            ) + log_opt
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            os.environ["CLICKHOUSE_CLIENT_OPT"]
+            if "CLICKHOUSE_CLIENT_OPT" in os.environ
+            else ""
+        ) + log_opt
 
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
@@ -3459,17 +3460,6 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
-    if args.client_log:
-        for log_file in [args.client_log, *glob.glob(f"{args.client_log}.*")]:
-            if not os.path.exists(log_file):
-                continue
-            with open(log_file, "rb") as stream:
-                content = stream.read().decode()
-                if len(content):
-                    print(f"Has fatal logs from client in '{log_file}':\n")
-                    print(content)
-            os.remove(log_file)
-
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
 
@@ -3889,11 +3879,6 @@ def parse_args():
         help="Replace *Log and Memory engines with MergeTree",
     )
 
-    parser.add_argument(
-        "--client-log",
-        default="./client.fatal.log",
-        help="Path to file for fatal logs from client",
-    )
     parser.add_argument(
         "--capture-client-stacktrace",
         action="store_true",
