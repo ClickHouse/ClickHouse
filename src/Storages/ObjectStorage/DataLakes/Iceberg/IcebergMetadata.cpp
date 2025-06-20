@@ -110,7 +110,13 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
-        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+        auto read_settings = local_context->getReadSettings();
+        /// Do not utilize filesystem cache if more precise cache enabled
+        if (cache_ptr)
+            read_settings.enable_filesystem_cache = false;
+
+        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -704,7 +710,13 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
     auto create_fn = [&]()
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
-        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+        auto read_settings = local_context->getReadSettings();
+        /// Do not utilize filesystem cache if more precise cache enabled
+        if (manifest_cache)
+            read_settings.enable_filesystem_cache = false;
+
+        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         ManifestFileCacheKeys manifest_file_cache_keys;
@@ -826,7 +838,13 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
     auto create_fn = [&]()
     {
         ObjectInfo manifest_object_info(filename);
-        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log);
+
+        auto read_settings = local_context->getReadSettings();
+        /// Do not utilize filesystem cache if more precise cache enabled
+        if (manifest_cache)
+            read_settings.enable_filesystem_cache = false;
+
+        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
         auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
         schema_processor.addIcebergTableSchema(schema_object);
