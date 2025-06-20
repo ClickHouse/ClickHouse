@@ -1202,10 +1202,9 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
             {
                 auto task = callback();
-                if (task)
-                    return getFailoverOptions(task->path, max_addresses);
-                else
+                if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
+                return getFailoverOptions(task->path, max_addresses);
             });
     }
     else if (is_url_with_globs)

@@ -34,19 +34,18 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         path = object->getPath();
     }
 
-    is_empty = false;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
     : path(path_)
 {
-    is_empty = false;
 }
 
 ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 {
-    if (path.empty())
+    if (isEmpty())
         return {};
+
     auto object = std::make_shared<ObjectInfo>(path);
     object->data_lake_metadata = data_lake_metadata;
     return object;
@@ -55,7 +54,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protocol_version) const
 {
     writeVarUInt(protocol_version, out);
-    if (is_empty)
+    if (isEmpty())
     {
         writeStringBinary("", out);
 
