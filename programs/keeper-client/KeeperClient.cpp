@@ -423,7 +423,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
                 port = "9181";
 
             if ((clickhouse_config.configuration->has(prefix + ".secure")
-                || config().getBool("secure")) && !host.starts_with("secure://"))
+                || config().has("secure")) && !host.starts_with("secure://"))
                 host = "secure://" + host;
 
             zk_args.hosts.push_back(host + ":" + port);
