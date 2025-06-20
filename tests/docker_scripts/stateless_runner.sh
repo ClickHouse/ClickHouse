@@ -363,6 +363,7 @@ function run_tests()
         --check-zookeeper-session
         --hung-check
         --capture-client-stacktrace
+        --trace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"
         "${ADDITIONAL_OPTIONS[@]}"
