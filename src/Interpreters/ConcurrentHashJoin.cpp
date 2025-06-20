@@ -307,24 +307,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    ScatteredBlocks dispatched_blocks;
-    if (!hash_joins[0]->data->twoLevelMapIsUsed())
-    {
-        // Use dispatchBlock only when single-level maps are used (as it was before)
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
-    }
-    else
-    {
-        // For two-level maps, create the exact number of slots required
-        dispatched_blocks.reserve(slots);
-        dispatched_blocks.emplace_back(std::move(right_block)); // First slot gets the real block
-        
-        // Fill the remaining slots with empty blocks
-        for (size_t i = 1; i < slots; ++i)
-        {
-            dispatched_blocks.emplace_back(ScatteredBlock());
-        }
-    }
+    // dispatchBlock method will handle both single-level and two-level maps
+    ScatteredBlocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
     
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
@@ -394,23 +378,8 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
         /// materialize once and scatter the block across all slots
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
         
-        if (!hash_joins[0]->data->twoLevelMapIsUsed())
-        {
-            // Use dispatchBlock only when single-level maps are used (as it was before)
-            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
-        }
-        else
-        {
-            // For two-level maps, create the exact number of slots required
-            dispatched_blocks.reserve(slots);
-            dispatched_blocks.emplace_back(std::move(block)); // First slot gets the real block
-            
-            // Fill the remaining slots with empty blocks
-            for (size_t i = 1; i < slots; ++i)
-            {
-                dispatched_blocks.emplace_back(ScatteredBlock());
-            }
-        }
+        // dispatchBlock method will handle both single-level and two-level maps
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
 
     chassert(dispatched_blocks.size() == slots);
@@ -727,23 +696,45 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         return res;
     }
 
-    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
+    // Always use dispatchBlock regardless of map type, but only apply real dispatching for single-level maps
+    if (!hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 
-    /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
-    /// This is not beneficial when the whole set of columns is e.g. a single small column.
-    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
-    const auto & data_types = from_block.getDataTypes();
-    const bool use_zero_copy_approach
-        = std::accumulate(
-              data_types.begin(),
-              data_types.end(),
-              0u,
-              [](size_t sum, const DataTypePtr & type)
-              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
-        > threshold;
+        /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
+        /// This is not beneficial when the whole set of columns is e.g. a single small column.
+        constexpr auto threshold = sizeof(IColumn::Selector::value_type);
+        const auto & data_types = from_block.getDataTypes();
+        const bool use_zero_copy_approach
+            = std::accumulate(
+                  data_types.begin(),
+                  data_types.end(),
+                  0u,
+                  [](size_t sum, const DataTypePtr & type)
+                  { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
+            > threshold;
 
-    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
-                                  : scatterBlocksByCopying(num_shards, selector, from_block);
+        return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
+                                      : scatterBlocksByCopying(num_shards, selector, from_block);
+    }
+    else
+    {
+        // For two-level maps, instead of scattering the blocks based on hash,
+        // we will put all data into the first shard and create empty blocks for others
+        ScatteredBlocks result;
+        result.reserve(num_shards);
+        
+        // First shard gets the real data
+        result.emplace_back(std::move(from_block));
+        
+        // Other shards get empty blocks
+        for (size_t i = 1; i < num_shards; ++i)
+        {
+            result.emplace_back(ScatteredBlock());
+        }
+        
+        return result;
+    }
 }
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
