@@ -33,6 +33,7 @@ common_ft_job_config = Job.Config(
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
+            "./ci/docker/stateless-test",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -40,29 +41,6 @@ common_ft_job_config = Job.Config(
 
 
 class JobConfigs:
-    docker_build_arm = Job.Config(
-        name=JobNames.DOCKER_BUILDS_ARM,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./docker",
-                "./tests/ci/docker_images_check.py",
-            ],
-        ),
-        command="python3 ./tests/ci/docker_images_check.py --suffix aarch64",
-    )
-    docker_build_amd = Job.Config(
-        name=JobNames.DOCKER_BUILDS_AMD,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./docker",
-                "./tests/ci/docker_images_check.py",
-            ],
-        ),
-        command="python3 ./tests/ci/docker_images_check.py --suffix amd64 --multiarch-manifest",
-        requires=[JobNames.DOCKER_BUILDS_ARM],
-    )
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
@@ -495,7 +473,7 @@ class JobConfigs:
                 "./tests/config",
                 "./tests/*.txt",
                 "./tests/docker_scripts/",
-                "./docker",
+                "./ci/docker/stress-test",
             ],
         ),
         allow_merge_on_failure=True,
@@ -533,7 +511,7 @@ class JobConfigs:
                 "./tests/config",
                 "./tests/*.txt",
                 "./tests/docker_scripts/",
-                "./docker",
+                "./ci/docker/stress-test",
             ],
         ),
         allow_merge_on_failure=True,
@@ -560,7 +538,7 @@ class JobConfigs:
                 "./tests/ci/upgrade_check.py",
                 "./tests/ci/stress_check.py",
                 "./tests/docker_scripts/",
-                "./docker",
+                "./ci/docker/stress-test",
             ]
         ),
         allow_merge_on_failure=True,
@@ -594,7 +572,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./docker",
+                "./ci/docker/integration",
             ],
         ),
     ).parametrize(
@@ -616,7 +594,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./docker",
+                "./ci/docker/integration",
             ],
         ),
     ).parametrize(
@@ -651,7 +629,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./docker",
+                "./ci/docker/integration",
             ],
         ),
         allow_merge_on_failure=True,
@@ -676,7 +654,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./docker",
+                "./ci/docker/integration",
             ],
         ),
         requires=["Build (amd_asan)"],
@@ -688,6 +666,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/compatibility_check.py",
+                "./ci/docker/compatibility",
             ],
         ),
     ).parametrize(
@@ -703,7 +682,11 @@ class JobConfigs:
         runs_on=[],  # from parametrize()
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/docker/fuzzer",
+            ],
         ),
         allow_merge_on_failure=True,
     ).parametrize(
@@ -734,7 +717,11 @@ class JobConfigs:
         runs_on=[],  # from parametrize()
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/docker/fuzzer",
+            ],
         ),
         allow_merge_on_failure=True,
     ).parametrize(
@@ -771,6 +758,7 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/docker/performance-comparison",
             ],
         ),
         timeout=2 * 3600,
@@ -799,6 +787,7 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/docker/performance-comparison",
             ],
         ),
         timeout=2 * 3600,
@@ -900,7 +889,7 @@ class JobConfigs:
         runs_on=[],  # from parametrize()
         command="./ci/jobs/sqlancer_job.sh",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/sqlancer_job.sh"],
+            include_paths=["./ci/jobs/sqlancer_job.sh", "./ci/docker/sqlancer-test"],
         ),
         run_in_docker="clickhouse/sqlancer-test",
         timeout=3600,
