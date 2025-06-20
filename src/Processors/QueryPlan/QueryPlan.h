@@ -190,6 +190,7 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
+std::string debugExplainPlan(const QueryPlan & plan);
 std::string debugExplainStep(const IQueryPlanStep & step);
 
 }
