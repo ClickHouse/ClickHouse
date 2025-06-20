@@ -608,7 +608,7 @@ try
 
     if (used_output.exception_is_written)
     {
-        LOG_DEBUG(log, "Exception has already been written to output format by current output formatter, nothing to do");
+        LOG_TRACE(log, "Exception has already been written to output format by current output formatter, nothing to do");
         /// everything has been held by output format write
         return true;
     }
