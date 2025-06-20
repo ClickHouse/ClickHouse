@@ -914,7 +914,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
             if (tuple_type)
             {
-                if (tuple_type->haveExplicitNames())
+                if (tuple_type->hasExplicitNames())
                 {
                     std::unordered_map<String, size_t> orc_field_name_to_index;
                     orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
@@ -1899,7 +1899,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
-                    if (tuple_type_hint->haveExplicitNames())
+                    if (tuple_type_hint->hasExplicitNames())
                     {
                         auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
                         if (pos)
