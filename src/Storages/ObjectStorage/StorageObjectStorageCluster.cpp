@@ -103,7 +103,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
         query_context,
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
-    return configuration->totalRows();
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
@@ -113,7 +113,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
         query_context,
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
-    return configuration->totalBytes();
+    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
@@ -176,17 +176,21 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * filter,
+    const ContextPtr & local_context,
+    const size_t number_of_replicas) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        /* distributed_processing */ false,
+        /* distributed_processing */false,
         local_context,
         predicate,
-        {},
+        filter,
         virtual_columns,
         nullptr,
         local_context->getFileProgressCallback(),
