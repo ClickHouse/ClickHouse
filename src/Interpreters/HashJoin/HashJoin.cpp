@@ -151,6 +151,7 @@ HashJoin::HashJoin(
     , tmp_data(table_join_->getTempDataOnDisk())
     , right_sample_block(right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -882,6 +883,24 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
     size_t rows_left = block.rows();
     size_t rows_added = 0;
+    size_t bytes_added = 0;
+
+    std::cerr << ":::::::::: " << max_joined_block_rows << ' ' << max_joined_block_bytes << std::endl;
+
+    auto enough_data = [&]()
+    {
+        return rows_added > max_joined_block_rows || bytes_added > max_joined_block_bytes;
+    };
+
+    using Inserter = void (IColumn::*)(const IColumn &, size_t, size_t);
+    auto insert = [&](IColumn & src, const IColumn & dst, Inserter inserter, size_t from, size_t to)
+    {
+        size_t bytes_before = max_joined_block_bytes ? src.allocatedBytes() : 0;
+        (src.*inserter)(dst, from, to);
+        size_t bytes_after = max_joined_block_bytes ? src.allocatedBytes() : 0;
+        bytes_added += bytes_after - bytes_before;
+    };
+
     for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
         size_t block_number = 0;
@@ -892,12 +911,12 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             rows_added += rows_right;
 
             for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
-                dst_columns[col_num]->insertManyFrom(*src_left_columns[col_num], left_row, rows_right);
+                insert(*dst_columns[col_num], *src_left_columns[col_num], &IColumn::insertManyFrom, left_row, rows_right);
 
             for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
             {
                 const IColumn & column_right = *block_right.getByPosition(col_num).column;
-                dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
+                insert(*dst_columns[num_existing_columns + col_num], column_right, &IColumn::insertRangeFrom, 0, rows_right);
             }
         };
 
@@ -916,37 +935,36 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
                 process_right_block(block_right.getSourceBlock().decompress());
             }
 
-            if (rows_added > max_joined_block_rows)
-            {
+            if (enough_data())
                 break;
-            }
         }
 
-        if (tmp_stream && rows_added <= max_joined_block_rows)
+        if (tmp_stream && !enough_data())
         {
             if (!reader)
                 reader = tmp_stream->getReadStream();
 
-            while (auto block_right = reader.value()->read())
+            while (reader)
             {
+                auto block_right = reader.value()->read();
+                if (!block_right)
+                {
+                    reader.reset();
+                    break;
+                }
+
                 ++block_number;
                 process_right_block(block_right);
-                if (rows_added > max_joined_block_rows)
+                if (enough_data())
                 {
                     break;
                 }
-            }
-
-            /// It means, that reader->read() returned {}
-            if (rows_added <= max_joined_block_rows)
-            {
-                reader.reset();
             }
         }
 
         start_right_block = 0;
 
-        if (rows_added > max_joined_block_rows)
+        if (enough_data())
         {
             not_processed = std::make_shared<NotProcessedCrossJoin>(
                 NotProcessedCrossJoin{{block.cloneEmpty()}, left_row, block_number + 1, std::move(reader)});
