@@ -122,6 +122,7 @@ char
 cityHash64
 coalesce
 compareSubstrings
+compose
 concat
 concatAssumeInjective
 concatWithSeparator

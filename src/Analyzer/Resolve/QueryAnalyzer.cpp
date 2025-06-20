@@ -152,6 +152,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int INVALID_IDENTIFIER;
+    extern const int BAD_TYPE_OF_FIELD;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -2720,6 +2721,52 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+size_t fetchArgumentsSizeForComposeFunction(FunctionNode const & node)
+{
+    if (node.getArguments().getNodes().size() != 2)
+    {
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function compose has {} arguments, expected 2",
+            node.getArguments().getNodes().size());
+    }
+    const auto& left_node = node.getArguments().getNodes()[0];
+    auto left_node_type = left_node->getNodeType();
+    switch (left_node_type)
+    {
+        case QueryTreeNodeType::LAMBDA:
+        {
+            auto & left_node_lambda = left_node->as<LambdaNode &>();
+            return left_node_lambda.getArguments().getNodes().size();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & left_node_function = left_node->as<FunctionNode &>();
+            if (left_node_function.getFunctionName() != "compose")
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected compose function, got {}",
+                    left_node_function.getFunctionName());
+            }
+            return fetchArgumentsSizeForComposeFunction(left_node_function);
+        }
+        case QueryTreeNodeType::IDENTIFIER:
+        {
+            const auto & left_node_function_name = left_node->as<IdentifierNode &>().getIdentifier().getFullName();
+            auto subfunction = FunctionFactory::instance().get(left_node_function_name, nullptr);
+            if (!subfunction)
+            {
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "No function with name {} was found",
+                    left_node_function_name);
+            }
+            return subfunction->getNumberOfArguments();
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Strange query node type in compose arguments! type name: {}", left_node->getNodeTypeName());
+    }
+}
+
 }
 
 /** Resolve function node in scope.
@@ -2747,10 +2794,15 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
   * they must be resolved.
   * 9. If function is suitable for constant folding, try to perform constant folding for function node.
   */
-ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool resolve_compose_function)
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    if (function_name == "compose" && !resolve_compose_function)
+    {
+        return {PROJECTION_NAME_PLACEHOLDER};
+    }
 
     /// Resolve function parameters
 
@@ -2930,6 +2982,52 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/);
                 node = std::move(constant_if_result_node);
                 return result_projection_names;
+            }
+        }
+    }
+
+    /// Convert identifiers inside compose function into lambda functions
+    if (function_name == "compose")
+    {
+        auto& subnodes = function_node_ptr->getArguments().getNodes();
+        if (subnodes.size() != 2)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function compose has {} arguments, expected 2. In scope {}",
+                subnodes.size(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
+        for (size_t i = 0; i < 2; ++i)
+        {
+            if (auto* identifier_argument = subnodes[i]->as<IdentifierNode>())
+            {
+                const auto & subfunction_name = identifier_argument->getIdentifier().getFullName();
+
+                auto subfunction = FunctionFactory::instance().get(subfunction_name, scope.context);
+                if (!subfunction)
+                {
+                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                        "No function with name {} was found. In scope {}",
+                        subfunction_name,
+                        scope.scope_node->formatASTForErrorMessage());
+                }
+
+                size_t subargument_count = subfunction->getNumberOfArguments();
+                Names subfunction_args;
+                auto subfunction_node = std::make_shared<FunctionNode>(subfunction_name);
+                for (size_t j = 1; j <= subargument_count; ++j)
+                {
+                    const std::string subidentifier_name = "_" + std::to_string(j);
+                    auto subidentifier = Identifier(subidentifier_name);
+                    subfunction_node->getArguments().getNodes().push_back(
+                        std::make_shared<IdentifierNode>(std::move(subidentifier))
+                    );
+
+                    subfunction_args.push_back(subidentifier_name);
+                }
+
+                subnodes[i] = std::make_shared<LambdaNode>(std::move(subfunction_args), subfunction_node);
             }
         }
     }
@@ -3128,6 +3226,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     DataTypes argument_types;
     bool all_arguments_constants = true;
     std::vector<size_t> function_lambda_arguments_indexes;
+    std::vector<size_t> function_compose_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
     size_t function_arguments_size = function_arguments.size();
@@ -3143,6 +3242,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * where function argument types are initialized with empty arrays of lambda arguments size.
           */
         const auto * lambda_node = function_argument->as<const LambdaNode>();
+        const auto * compose_node = function_argument->as<const FunctionNode>();
         if (lambda_node)
         {
             size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
@@ -3152,6 +3252,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else if (is_special_function_in && function_argument_index == 1)
         {
             argument_column.type = std::make_shared<DataTypeSet>();
+        }
+        else if (compose_node && compose_node->getFunctionName() == "compose")
+        {
+            size_t compose_arguments_size = fetchArgumentsSizeForComposeFunction(*compose_node);
+            argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(compose_arguments_size, nullptr), nullptr);
+            function_compose_arguments_indexes.push_back(function_argument_index);
         }
         else
         {
@@ -3467,6 +3573,167 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
 
+    if (function_name == "compose")
+    {
+        if (scope.compose_arguments_stack.empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "No arguments were pushed before resolving compose function. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
+        if (function_arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function compose has {} arguments, expected 2. In scope {}",
+                function_arguments.size(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
+        auto in_types = scope.compose_arguments_stack.back();
+
+        for (size_t compose_function_index = 0; compose_function_index < 2; ++compose_function_index)
+        {
+            auto & argument = function_arguments[compose_function_index];
+            auto compose_argument_type = argument->getNodeType();
+            switch (compose_argument_type)
+            {
+                case QueryTreeNodeType::LAMBDA:
+                {
+                    ProjectionNames lambda_projection_names;
+
+                    auto lambda_to_resolve = argument->clone();
+                    auto & lambda_to_resolve_typed = lambda_to_resolve->as<LambdaNode &>();
+
+                    const auto & lambda_argument_names = lambda_to_resolve_typed.getArgumentNames();
+                    size_t lambda_arguments_size = lambda_to_resolve_typed.getArguments().getNodes().size();
+
+                    const auto & function_data_type_argument_types = in_types;
+                    size_t function_data_type_arguments_size = function_data_type_argument_types.size();
+                    if (function_data_type_arguments_size != lambda_arguments_size)
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                        "Function '{}"
+                                        "' function data type for lambda argument with index {} arguments size mismatch. "
+                                        "Actual {}. Expected {}. In scope {}",
+                                        function_name,
+                                        compose_function_index,
+                                        function_data_type_arguments_size,
+                                        lambda_arguments_size,
+                                        scope.scope_node->formatASTForErrorMessage());
+
+                    QueryTreeNodes lambda_arguments;
+                    lambda_arguments.reserve(lambda_arguments_size);
+
+                    for (size_t i = 0; i < lambda_arguments_size; ++i)
+                    {
+                        const auto & argument_type = function_data_type_argument_types[i];
+                        auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
+                        lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
+                    }
+
+                    IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
+                    lambda_projection_names = resolveLambda(argument, lambda_to_resolve, lambda_arguments, lambda_scope);
+
+                    if (auto * lambda_list_node_result = lambda_to_resolve_typed.getExpression()->as<ListNode>())
+                    {
+                        size_t lambda_list_node_result_nodes_size = lambda_list_node_result->getNodes().size();
+
+                        if (lambda_list_node_result_nodes_size != 1)
+                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                "Lambda as function argument resolved as list node with size {}. Expected 1. In scope {}",
+                                lambda_list_node_result_nodes_size,
+                                lambda_to_resolve->formatASTForErrorMessage());
+
+                        lambda_to_resolve_typed.getExpression() = lambda_list_node_result->getNodes().front();
+                    }
+
+                    if (arguments_projection_names.at(compose_function_index) == PROJECTION_NAME_PLACEHOLDER)
+                    {
+                        size_t lambda_projection_names_size =lambda_projection_names.size();
+                        if (lambda_projection_names_size != 1)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Lambda argument inside function expected to have 1 projection name. Actual {}",
+                                lambda_projection_names_size);
+
+                        WriteBufferFromOwnString lambda_argument_projection_name_buffer;
+                        lambda_argument_projection_name_buffer << "lambda(";
+                        lambda_argument_projection_name_buffer << "tuple(";
+
+                        size_t lambda_argument_names_size = lambda_argument_names.size();
+
+                        for (size_t i = 0; i < lambda_argument_names_size; ++i)
+                        {
+                            const auto & lambda_argument_name = lambda_argument_names[i];
+                            lambda_argument_projection_name_buffer << lambda_argument_name;
+
+                            if (i + 1 != lambda_argument_names_size)
+                                lambda_argument_projection_name_buffer << ", ";
+                        }
+
+                        lambda_argument_projection_name_buffer << "), ";
+                        lambda_argument_projection_name_buffer << lambda_projection_names[0];
+                        lambda_argument_projection_name_buffer << ")";
+
+                        lambda_projection_names.clear();
+
+                        arguments_projection_names[compose_function_index] = lambda_argument_projection_name_buffer.str();
+                    }
+
+                    auto lambda_resolved_type = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve_typed.getExpression()->getResultType());
+                    lambda_to_resolve_typed.resolve(lambda_resolved_type);
+
+                    argument_types[compose_function_index] = lambda_resolved_type;
+                    argument_columns[compose_function_index].type = lambda_resolved_type;
+                    function_arguments[compose_function_index] = std::move(lambda_to_resolve);
+
+                    in_types = {lambda_to_resolve_typed.getExpression()->getResultType()};
+                    break;
+                }
+                case QueryTreeNodeType::FUNCTION:
+                {
+                    auto compose_to_resolve = argument->clone();
+                    auto & compose_to_resolve_typed = compose_to_resolve->as<FunctionNode &>();
+                    if (compose_to_resolve_typed.getFunctionName() != "compose")
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Expected compose function, got {}",
+                            compose_to_resolve_typed.getFunctionName());
+                    }
+
+                    scope.compose_arguments_stack.push_back(in_types);
+                    arguments_projection_names[compose_function_index] = resolveFunction(compose_to_resolve, scope, true)[0];
+                    scope.compose_arguments_stack.pop_back();
+
+                    const auto compose_resolved_type = compose_to_resolve_typed.getResultType();
+                    const auto * compose_resolved_type_ptr = typeid_cast<const DataTypeFunction *>(compose_resolved_type.get());
+                    if (!compose_resolved_type_ptr)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Result type of compose function should be DataTypeFunction, got {}",
+                            compose_resolved_type->getName());
+                    }
+
+                    argument_types[compose_function_index] = compose_resolved_type;
+                    argument_columns[compose_function_index].type = compose_resolved_type;
+                    function_arguments[compose_function_index] = std::move(compose_to_resolve);
+
+                    in_types = {compose_resolved_type_ptr->getReturnType()};
+                    break;
+                }
+                default:
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Strange query node type in compose arguments. Type name: {}",
+                        argument->getNodeTypeName());
+            }
+        }
+
+        result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+    }
+
+
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
       * Then each lambda arguments are initialized with columns, where column source is lambda.
       * This information is important for later steps of query processing.
@@ -3474,7 +3741,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * lambda node x -> x + 1 identifier x is resolved as column where source is lambda node.
       */
     bool has_lambda_arguments = !function_lambda_arguments_indexes.empty();
-    if (has_lambda_arguments)
+    if (has_lambda_arguments && function_name != "compose")
     {
         function->getLambdaArgumentTypes(argument_types);
 
@@ -3577,6 +3844,41 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         /// Recalculate function projection name after lambda resolution
+        result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+    }
+
+    bool has_compose_arguments = !function_compose_arguments_indexes.empty();
+    if (has_compose_arguments && function_name != "compose")
+    {
+        function->getLambdaArgumentTypes(argument_types);
+        for (auto & function_compose_argument_index : function_compose_arguments_indexes)
+        {
+            auto & compose_argument = function_arguments[function_compose_argument_index];
+            if (compose_argument->getNodeType() != QueryTreeNodeType::FUNCTION)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Expected compose function, got {}",
+                    compose_argument->getNodeTypeName()
+                );
+            }
+            auto compose_to_resolve = compose_argument->clone();
+            auto & compose_to_resolve_typed = compose_to_resolve->as<FunctionNode &>();
+
+            const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_compose_argument_index].get());
+            const auto & function_data_type_argument_types = function_data_type->getArgumentTypes();
+
+            scope.compose_arguments_stack.push_back(function_data_type_argument_types);
+            arguments_projection_names[function_compose_argument_index] = resolveFunction(compose_to_resolve, scope, true)[0];
+            scope.compose_arguments_stack.pop_back();
+
+            auto compose_resolved_type = compose_to_resolve_typed.getResultType();
+            argument_types[function_compose_argument_index] = compose_resolved_type;
+            argument_columns[function_compose_argument_index].type = compose_resolved_type;
+            function_arguments[function_compose_argument_index] = std::move(compose_to_resolve);
+        }
+
+        /// Recalculate function projection name after resolution of compose function
         result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
     }
 

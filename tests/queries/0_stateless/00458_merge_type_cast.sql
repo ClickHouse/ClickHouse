@@ -127,9 +127,9 @@ INSERT INTO two_00458 (x, y) VALUES ([4294967290], [4294967290]);
 INSERT INTO one_00458 (x, y) VALUES ([4294967299], [4294967299]);
 INSERT INTO two_00458 (x, y) VALUES ([4294967299], [4294967299]);
 
-SELECT x, y FROM merge_one_two WHERE arrayExists(_ -> _ IN (1), x);
-SELECT x, y FROM merge_one_two WHERE arrayExists(_ -> _ IN (4294967290), x);
-SELECT x, y FROM merge_one_two WHERE arrayExists(_ -> _ IN (4294967299), x);
+SELECT x, y FROM merge_one_two WHERE arrayExists(_t -> _t IN (1), x);
+SELECT x, y FROM merge_one_two WHERE arrayExists(_t -> _t IN (4294967290), x);
+SELECT x, y FROM merge_one_two WHERE arrayExists(_t -> _t IN (4294967299), x);
 
 DROP TABLE IF EXISTS one_00458;
 DROP TABLE IF EXISTS two_00458;
