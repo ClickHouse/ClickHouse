@@ -58,9 +58,9 @@ possible_properties = {
     "background_fetches_pool_size": lambda: random.randint(
         1, multiprocessing.cpu_count()
     ),
-    "background_merges_mutations_concurrency_ratio": threshold_generator(
-        0.2, 0.2, 0.0, 3.0
-    ),
+    #"background_merges_mutations_concurrency_ratio": threshold_generator(
+    #    0.2, 0.2, 0.0, 3.0
+    #),
     "background_merges_mutations_scheduling_policy": lambda: random.choice(
         ["round_robin", "shortest_task_first"]
     ),
@@ -111,7 +111,7 @@ possible_properties = {
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 1, 1000),
     "load_marks_threadpool_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
@@ -173,12 +173,12 @@ possible_properties = {
     "max_replicated_sends_network_bandwidth_for_server": threshold_generator(
         0.2, 0.2, 0, 1000
     ),
-    "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
+    #"max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "max_thread_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_thread_pool_size": threshold_generator(0.2, 0.2, 1, 128),
     "max_unexpected_parts_loading_thread_pool_size": lambda: random.randint(
         0, multiprocessing.cpu_count()
     ),
@@ -779,11 +779,11 @@ def modify_server_settings(
             if len(created_cache_disks) > 0 and next_opt <= 40:
                 temporary_cache_xml = ET.SubElement(root, "temporary_data_in_cache")
                 temporary_cache_xml.text = f"disk{random.choice(created_cache_disks)}"
-            elif number_policies > 0 and next_opt <= 70:
-                tmp_policy_xml = ET.SubElement(root, "tmp_policy")
-                tmp_policy_xml.text = (
-                    f"policy{random.choice(range(0, number_policies))}"
-                )
+            #elif number_policies > 0 and next_opt <= 70: the disks must be local
+            #    tmp_policy_xml = ET.SubElement(root, "tmp_policy")
+            #    tmp_policy_xml.text = (
+            #        f"policy{random.choice(range(0, number_policies))}"
+            #    )
             else:
                 tmp_path_xml = ET.SubElement(root, "tmp_path")
                 tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
