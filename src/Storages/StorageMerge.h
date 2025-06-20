@@ -30,6 +30,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const DBToTableSetMap & source_databases_and_tables_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     StorageMerge(
@@ -39,6 +41,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
@@ -69,6 +73,12 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -122,11 +132,17 @@ private:
 
     DatabaseNameOrRegexp database_name_or_regexp;
 
+    std::optional<QualifiedTableName> table_to_write;
+    bool table_to_write_auto = false;
+
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
+
+    template <typename F>
+    void forEachTableName(F && func) const;
 
     template <typename F>
     static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
@@ -148,6 +164,11 @@ private:
 
     template <typename F>
     std::optional<UInt64> totalRowsOrBytes(F && func) const;
+
+    void setTableToWrite(
+        const std::optional<String> & table_to_write_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_);
 
     friend class ReadFromMerge;
 };
@@ -218,6 +239,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,
         Names & column_names_as_aliases,
+        bool & is_smallest_column_requested,
         Aliases & aliases) const;
 
     /// An object of this helper class is created
@@ -276,6 +298,7 @@ private:
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
         const Names & real_column_names_read_from_the_source_table,
+        bool & is_smallest_column_requested,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;
@@ -297,7 +320,8 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        ChildPlan & child);
+        ChildPlan & child,
+        bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,

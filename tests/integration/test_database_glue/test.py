@@ -13,6 +13,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from helpers.config_cluster import minio_access_key, minio_secret_key
 from pyiceberg.types import (
     DoubleType,
     FloatType,
@@ -53,7 +54,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -79,9 +80,9 @@ def load_catalog_impl(started_cluster):
             "type": "glue",
             "glue.endpoint": BASE_URL_LOCAL_HOST,
             "glue.region": "us-east-1",
-            "s3.endpoint": "http://localhost:9002",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 
@@ -97,7 +98,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse/data",
+        location="s3://warehouse-glue/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -119,7 +120,7 @@ def create_clickhouse_glue_database(
     settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio:9000/warehouse",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -129,26 +130,10 @@ def create_clickhouse_glue_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_glue_catalog=true;
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-
-
-def print_objects():
-    minio_client = Minio(
-        f"minio:9002",
-        access_key="minio",
-        secret_key="minio123",
-        secure=False,
-        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-    )
-
-    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
-    names = [x.object_name for x in objects]
-    names.sort()
-    for name in names:
-        print(f"Found object: {name}")
 
 
 @pytest.fixture(scope="module")
@@ -228,6 +213,7 @@ def test_list_tables(started_cluster):
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
 
 
 def test_select(started_cluster):
@@ -268,6 +254,8 @@ def test_select(started_cluster):
         assert num_rows == int(
             node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
         )
+
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
 
 
 def test_hide_sensitive_info(started_cluster):

@@ -123,7 +123,7 @@ def test_write_failover(
         ) ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY dt
-        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}
+        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1
         """.format(
             min_bytes_for_wide_part
         )

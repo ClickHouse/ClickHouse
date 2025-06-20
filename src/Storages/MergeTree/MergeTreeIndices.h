@@ -98,10 +98,14 @@ struct MergeTreeIndexFormat
 /// A vehicle which transports elements of the SELECT query to the vector similarity index.
 struct VectorSearchParameters
 {
+    /// Elements of the SELECT query
     String column;
     String distance_function;
     size_t limit;
     std::vector<Float64> reference_vector;
+
+    /// Other metadata
+    bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
 };
 
 /// Stores some info about a single block of data.

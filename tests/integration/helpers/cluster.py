@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import logging
@@ -50,13 +51,13 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from helpers.kazoo_client import KazooClientWithImplicitRetries
+from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from helpers import pytest_xdist_logging_to_separate_files
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from . import pytest_xdist_logging_to_separate_files
+from .client import QueryRuntimeException
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
 from .config_cluster import *
@@ -490,7 +491,9 @@ class ClickHouseCluster:
         self.base_cmd += ["--project-name", self.project_name]
 
         self.base_zookeeper_cmd = None
+        self.base_minio_cmd = []
         self.base_mysql57_cmd = []
+        self.base_mysql8_cmd = []
         self.base_kafka_cmd = []
         self.base_kafka_sasl_cmd = []
         self.base_kerberized_kafka_cmd = []
@@ -499,7 +502,11 @@ class ClickHouseCluster:
         self.base_nats_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
+        self.base_postgres_cmd = []
+        self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_azurite_cmd = []
+        self.base_nginx_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_zookeeper = False
@@ -1420,24 +1427,26 @@ class ClickHouseCluster:
         return self.base_minio_cmd
 
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_glue_catalog = True
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
             ]
         )
-        self.base_iceberg_catalog_cmd = self.compose_cmd(
+        self.base_glue_catalog_cmd = self.compose_cmd(
             "--env-file",
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
-        return self.base_iceberg_catalog_cmd
+        return self.base_glue_catalog_cmd
 
 
     def setup_hms_catalog_cmd(
          self, instance, env_variables, docker_compose_yml_dir
      ):
+         self.with_hms_catalog = True
          self.base_cmd.extend(
              [
                  "--file",
@@ -1459,6 +1468,7 @@ class ClickHouseCluster:
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
+        self.with_iceberg_catalog = True
         self.base_cmd.extend(
             [
                 "--file",
@@ -1677,6 +1687,8 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
+        with_dolor=False,
+        storage_opt=None
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1798,6 +1810,8 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
+            with_dolor=with_dolor,
+            storage_opt=storage_opt,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2203,6 +2217,16 @@ class ClickHouseCluster:
                 ],
             )
 
+    def move_file_in_container(self, container_id, old_path, new_path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "mv {} {}".format(old_path, new_path),
+            ],
+        )
+
     def remove_file_from_container(self, container_id, path):
         self.exec_in_container(
             container_id,
@@ -2479,9 +2503,22 @@ class ClickHouseCluster:
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
         )
-        self.wait_rabbitmq_to_start()
+        self.wait_rabbitmq_to_start(timeout)
 
-    def reset_rabbitmq(self, timeout=120):
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
+
+    def reset_rabbitmq(self, timeout=240):
         self.stop_rabbitmq_app()
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
         self.start_rabbitmq_app()
@@ -2589,6 +2626,34 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
+
+
+    def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
+        ip = self.get_instance_ip(host)
+        minio_client = Minio(
+            f"{ip}:{port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                minio_client.list_buckets()
+
+                logging.debug("Connected to Minio.")
+
+                if all(minio_client.bucket_exists(bucket) for bucket in buckets):
+                    return
+
+                time.sleep(1)
+            except Exception as ex:
+                logging.debug("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
@@ -3125,6 +3190,24 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            if self.with_glue_catalog and self.base_glue_catalog_cmd:
+                logging.info("Trying to connect to Minio for glue catalog...")
+                subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-glue'], 'minio', 9000)
+
+            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
+                logging.info("Trying to connect to Minio for hms catalog...")
+                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-hms'], 'minio', 9000)
+
+            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
+                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
+                self.up_called = True
+                self.wait_custom_minio_to_start(['warehouse-rest'], 'minio', 9000)
+
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
                 logging.info(
@@ -3405,16 +3488,30 @@ class ClickHouseCluster:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
 
+    def process_integration_nodes(self, integration : str, nodes : list, action : str):
+        base_cmd = getattr(self, f"base_{integration}_cmd")
+
+        def process_single_node(node):
+            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
+            subprocess_check_call(base_cmd + [action, node])
+            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(nodes)
+        ) as executor:
+            futures = []
+            for n in nodes:
+                futures += [executor.submit(process_single_node, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Killing zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["kill", n])
+        self.process_integration_nodes("zookeeper", zk_nodes, "kill")
 
     def start_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Starting zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
+        self.process_integration_nodes("zookeeper", zk_nodes, "start")
 
     def query_all_nodes(self, sql, *args, **kwargs):
         return {
@@ -3441,6 +3538,7 @@ services:
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
         {mem_limit}
+        {storage_opt}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3537,6 +3635,8 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
+        with_dolor=False,
+        storage_opt=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3550,6 +3650,10 @@ class ClickHouseInstance:
             self.mem_limit = "mem_limit : " + mem_limit
         else:
             self.mem_limit = ""
+        if storage_opt is not None:
+            self.storage_opt = "storage_opt:\n  size: " + storage_opt
+        else:
+            self.storage_opt = ""
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -3664,6 +3768,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4316,6 +4421,9 @@ class ClickHouseInstance:
             self.docker_id, local_path, dest_path
         )
 
+    def move_file_in_container(self, old_path, new_path):
+        return self.cluster.move_file_in_container(self.docker_id, old_path, new_path)
+
     def remove_file_from_container(self, path):
         return self.cluster.remove_file_from_container(self.docker_id, path)
 
@@ -4720,13 +4828,11 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        write_embedded_config("0_common_instance_users.xml", users_d_dir)
-
-        if self.with_installed_binary:
-            # Ignore CPU overload in this case
-            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
+        if not self.with_dolor:
+            write_embedded_config("0_common_instance_users.xml", users_d_dir)
+            if self.with_installed_binary:
+                # Ignore CPU overload in this case
+                write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
@@ -5001,6 +5107,7 @@ class ClickHouseInstance:
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
+                    storage_opt=self.storage_opt,
                 )
             )
 

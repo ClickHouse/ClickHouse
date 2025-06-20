@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -64,7 +66,7 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool /* attach */, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
@@ -95,6 +97,10 @@ RefreshTask::RefreshTask(
         /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
         if (!replica_path_existed)
         {
+            if (!attach && !is_restore_from_backup &&
+                !zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads.");
+
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
@@ -217,6 +223,9 @@ void RefreshTask::drop(ContextPtr context)
         /// If no replicas left, remove the coordination znode.
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/replicas", -1));
+        String paused_path = coordination.path + "/paused";
+        if (zookeeper->exists(paused_path))
+            ops.emplace_back(zkutil::makeRemoveRequest(paused_path, -1));
         ops.emplace_back(zkutil::makeRemoveRequest(coordination.path, -1));
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
@@ -355,7 +364,7 @@ void RefreshTask::wait()
     std::unique_lock lock(mutex);
     refresh_cv.wait(lock, [&] {
         return state != RefreshState::Running && state != RefreshState::Scheduling &&
-            state != RefreshState::RunningOnAnotherReplica && !scheduling.out_of_schedule_refresh_requested;
+            state != RefreshState::RunningOnAnotherReplica && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested);
     });
     throw_if_error();
 
@@ -604,6 +613,8 @@ void RefreshTask::refreshTask()
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// There's at least one legitimate case where this may happen: if the user (DEFINER) was dropped.
         /// But it's unexpected in tests.
+        /// Note that Coordination::Exception is caught separately above, so transient keeper errors
+        /// don't go here and are just retried.
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #else
         if (coordination.coordinated)
@@ -618,27 +629,29 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    ContextMutablePtr refresh_context = view->createRefreshContext(log_comment);
-
-    if (!append)
-    {
-        refresh_context->setParentTable(view_storage_id.uuid);
-        refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
-        if (root_znode_version != -1)
-            refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
-    }
+    ContextMutablePtr refresh_context;
+    ProcessList::EntryPtr process_list_entry;
+    std::optional<StorageID> table_to_drop;
+    auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
     std::shared_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
-    ProcessList::EntryPtr process_list_entry;
 
-    std::optional<StorageID> table_to_drop;
-    auto new_table_id = StorageID::createEmpty();
     try
     {
+        refresh_context = view->createRefreshContext(log_comment);
+
+        if (!append)
+        {
+            refresh_context->setParentTable(view_storage_id.uuid);
+            refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
+            if (root_znode_version != -1)
+                refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
+        }
+
         {
             /// Create a table.
             query_for_logging = "(create target table)";
@@ -712,7 +725,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
-            process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
         }
 
         /// Exchange tables.

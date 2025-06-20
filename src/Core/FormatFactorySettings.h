@@ -173,12 +173,15 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 When reading Parquet files, to use native reader instead of arrow reader.
 )", 0) \
+DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
+  )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -286,7 +289,7 @@ Automatically detect header with names and types in CustomSeparated format
     DECLARE(Bool, input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Parquet
 )", 0) \
-    DECLARE(UInt64, input_format_parquet_max_block_size, DEFAULT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, input_format_parquet_max_block_size, DEFAULT_BLOCK_SIZE, R"(
 Max block size for parquet reader.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_prefer_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
@@ -575,6 +578,9 @@ Write data types in binary format instead of type names in Native output format
     DECLARE(Bool, output_format_native_write_json_as_string, false, R"(
 Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
 )", 0) \
+    DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
+Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
+)", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
 Allows choosing a parser of the text representation of date and time.
@@ -586,6 +592,8 @@ Possible values:
 - `'best_effort'` — Enables extended parsing.
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
 
 - `'basic'` — Use basic parser.
 
@@ -1073,8 +1081,29 @@ Path of the file used to record errors while reading text formats (CSV, TSV).
 Method to write Errors to text output.
 )", 0) \
     \
+    DECLARE(String, format_schema_source, "file", R"(
+Define the source of `format_schema`.
+Possible values:
+- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'string': The `format_schema` is the literal content of the schema.
+- 'query': The `format_schema` is a query to retrieve the schema.
+When `format_schema_source` is set to 'query', the following conditions apply:
+- The query must return exactly one value: a single row with a single string column.
+- The result of the query is treated as the schema content.
+- This result is cached locally in the `format_schemas` directory.
+- You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
+- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
+- Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+)", 0) \
     DECLARE(String, format_schema, "", R"(
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
+)", 0) \
+    DECLARE(String, format_schema_message_name, "", R"(
+Define the name of the required message in the schema defined in `format_schema`.
+To maintain compatibility with the legacy format_schema format (`file_name:message_name`):
+- If `format_schema_message_name` is not specified, the message name is inferred from the `message_name` part of the legacy `format_schema` value.
+- If `format_schema_message_name` is specified while using the legacy format, an error will be raised.
 )", 0) \
     DECLARE(String, format_template_resultset, "", R"(
 Path to file which contains format string for result set (for Template format)
@@ -1316,6 +1345,10 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+)", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 

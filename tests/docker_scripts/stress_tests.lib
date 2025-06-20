@@ -6,9 +6,6 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 
-# shellcheck disable=SC1091
-source /basic_helpers.sh
-
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -30,6 +27,24 @@ function unts()
 function trim_server_logs()
 {
     head -n "$FAILURE_CONTEXT_LINES" "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
+}
+
+function run_with_retry()
+{
+    local retries="$1" && shift
+
+    local retry=0
+    until [ "$retry" -ge "$retries" ]; do
+        if "$@"; then
+            return
+        else
+            retry=$((retry + 1))
+            sleep 5
+        fi
+    done
+
+    echo "Command '$*' failed after $retries retries, exiting" >&2
+    return 1
 }
 
 function install_packages()

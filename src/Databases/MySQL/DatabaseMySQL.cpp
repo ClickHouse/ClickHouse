@@ -88,7 +88,6 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
-    , db_disk(getContext()->getDatabaseDisk())
     , db_uuid(uuid)
 {
     try
@@ -105,7 +104,10 @@ DatabaseMySQL::DatabaseMySQL(
     }
 
     if (persistent)
+    {
+        auto db_disk = getDisk();
         db_disk->createDirectories(metadata_path);
+    }
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
@@ -360,11 +362,12 @@ void DatabaseMySQL::shutdown()
     local_tables_cache.clear();
 }
 
-void DatabaseMySQL::drop(ContextPtr /*context*/)
+void DatabaseMySQL::drop(ContextPtr)
 {
     if (!persistent)
         return;
 
+    auto db_disk = getDisk();
     db_disk->removeRecursive(getMetadataPath());
 }
 
@@ -416,6 +419,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     if (!persistent)
         return;
 
+    auto db_disk = getDisk();
     db_disk->removeFileIfExists(remove_flag);
 }
 
@@ -450,6 +454,7 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
     if (!persistent)
         return;
 
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -471,6 +476,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE is not supported for non-persistent MySQL database");
 
+    auto db_disk = getDisk();
     std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);

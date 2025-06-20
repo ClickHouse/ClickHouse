@@ -59,6 +59,8 @@ public:
     VolumePtr getVolumeByName(const String & volume_name) const;
     /// Checks if storage policy can be replaced by another one.
     virtual void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const = 0;
+    /// If the policy allows table partition operations (move, replace) with the other storage policy.
+    virtual bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const = 0;
     /// Finds a volume index, which contains disk
     virtual std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const = 0;
     size_t getVolumeIndexByDiskName(const String & disk_name) const;
