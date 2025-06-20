@@ -30,7 +30,7 @@ sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_siz
 
 TIMEOUT=5
 
-function select {
+function select_func {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
@@ -38,11 +38,11 @@ function select {
     done
 }
 
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';
@@ -53,11 +53,11 @@ wait
 
 sed -i "s|<max_size>$new_max_size<\/max_size>|<max_size>$prev_max_size<\/max_size>|"  $config_path
 
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
-select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';
