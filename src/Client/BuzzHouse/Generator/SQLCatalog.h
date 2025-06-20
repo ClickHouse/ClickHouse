@@ -116,9 +116,17 @@ public:
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
+    bool isAtomicDatabase() const { return deng == DatabaseEngineValues::DAtomic; }
+
+    bool isMemoryDatabase() const { return deng == DatabaseEngineValues::DMemory; }
+
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
+
+    bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
+
+    bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
 
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
@@ -220,7 +228,7 @@ public:
 
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
-    bool isDeltaLakeEngine() const { return teng == TableEngineValues::DeltaLake; }
+    bool isDeltaLakeS3Engine() const { return teng == TableEngineValues::DeltaLakeS3; }
 
     bool isIcebergS3Engine() const { return teng == TableEngineValues::IcebergS3; }
 
@@ -243,7 +251,7 @@ public:
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergS3Engine()
+            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isDeltaLakeS3Engine() || isIcebergS3Engine()
             || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
             || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
     }

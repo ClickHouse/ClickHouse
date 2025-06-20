@@ -5,7 +5,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
 builds_for_release_branch = [
-    job.unset_provides("unittest")
+    job.unset_provides(["unittest", "lexer"])
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
 ]
