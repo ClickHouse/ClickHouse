@@ -84,6 +84,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            {"format_schema_source", "file", "file", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"},
 
         });
         addSettingsChanges(settings_changes_history, "25.5",
