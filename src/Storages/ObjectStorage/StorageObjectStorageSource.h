@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -72,7 +73,9 @@ public:
         ObjectInfo & object_info,
         const ObjectStoragePtr & object_storage,
         const ContextPtr & context_,
-        const LoggerPtr & log);
+        const LoggerPtr & log,
+        const std::optional<ReadSettings> & read_settings = std::nullopt);
+
 protected:
     const String name;
     ObjectStoragePtr object_storage;

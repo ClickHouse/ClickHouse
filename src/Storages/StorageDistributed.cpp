@@ -1301,7 +1301,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
