@@ -921,7 +921,13 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     std::vector<std::future<ObjectInfoPtr>> objects;
     objects.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
-        objects.push_back(pool_scheduler([this] { return callback()->getObjectInfo(); }, Priority{}));
+        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
+        {
+            auto task = callback();
+            if (!task || task->isEmpty())
+                return nullptr;
+            return task->getObjectInfo();
+        }, Priority{}));
 
     pool.wait();
     buffer.reserve(max_threads_count);

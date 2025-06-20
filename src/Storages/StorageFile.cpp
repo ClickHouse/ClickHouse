@@ -1181,7 +1181,7 @@ String StorageFileSource::FilesIterator::next()
     if (distributed_processing)
     {
         auto task = getContext()->getClusterFunctionReadTaskCallback()();
-        if (!task)
+        if (!task || task->isEmpty())
             return {};
         return task->path;
     }
