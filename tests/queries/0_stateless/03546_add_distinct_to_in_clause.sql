@@ -5,11 +5,13 @@ drop table if exists local_table_2;
 drop table if exists distributed_table_1;
 drop table if exists distributed_table_2;
 
-SET prefer_localhost_replica=1;
+SET prefer_localhost_replica = 1;
 SET allow_experimental_analyzer = 1;
 SET distributed_product_mode = 'allow';
+SET prefer_global_in_and_join = 1;
 SET max_rows_to_read = 1000000000000;
 SET read_overflow_mode = 'break';
+SET max_threads = 1;
 
 create table local_table_1 (id int) engine = MergeTree order by id;
 create table local_table_2 (id int) engine = MergeTree order by id;
@@ -37,7 +39,7 @@ WITH
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1%'
        AND type = 'QueryFinish'
-       AND initial_query_id = query_id
+       AND is_initial_query
      ORDER BY event_time DESC LIMIT 1) AS with_distinct_recv_bytes,
 
     -- Get the value for without_distinct
@@ -46,11 +48,12 @@ WITH
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0%'
        AND type = 'QueryFinish'
-       AND initial_query_id = query_id
+       AND is_initial_query
      ORDER BY event_time DESC LIMIT 1) AS without_distinct_recv_bytes
 
 SELECT
     with_distinct_recv_bytes < without_distinct_recv_bytes AS recv_optimization_effective;
+
 
 drop table if exists local_table_1;
 drop table if exists local_table_2;
