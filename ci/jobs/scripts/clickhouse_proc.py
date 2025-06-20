@@ -667,7 +667,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 """
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        return Shell.check(command, strict=True)
+        return Shell.check(command)
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):
@@ -974,7 +974,9 @@ quit
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
-        command_args_post = "-- --zookeeper.implementation=testkeeper"
+        #
+        # NOTE: we also need to override logger.level, but logger.level will not work
+        command_args_post = "-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog=/dev/null --logger.console=1"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"

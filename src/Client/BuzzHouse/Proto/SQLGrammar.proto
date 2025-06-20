@@ -2832,6 +2832,7 @@ message CreateDatabase {
     optional Cluster cluster = 3;
     required DatabaseEngine dengine = 4;
     optional string comment = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message CreateFunction {
@@ -3871,12 +3872,12 @@ message BackupRestore {
     }
     required BackupOutput out = 5;
     repeated string out_params = 6;
+    optional SettingValues setting_values = 7;
+    optional bool async = 8;
     oneof backup_format_oneof {
-        InFormat informat = 7;
-        OutFormat outformat = 8;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
-    optional SettingValues setting_values = 9;
-    optional bool async = 10;
     /// Need to know backup number
     required uint32 backup_number = 11;
 }
@@ -3935,6 +3936,9 @@ message ExplainOption {
         actions = 15;
         header = 16;
         compact = 17;
+        run_query_tree_passes = 18;
+        query_tree_passes = 19;
+        projections = 20;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
