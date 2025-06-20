@@ -196,7 +196,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned offset.
         }
 
-        if (use_page_cache && settings.page_cache->defaultBlockSize() % min_alignment)
+        if (use_page_cache && settings.page_cache_block_size % min_alignment)
         {
             LOG_TEST(getLogger("createReadBufferFromFileBase"), "Not using userspace page cache because page cache block size is not divisible by direct IO alignment");
             use_page_cache = false;
