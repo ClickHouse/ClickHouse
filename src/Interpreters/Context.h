@@ -239,6 +239,8 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -355,6 +357,8 @@ protected:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+
+    BlockMarshallingCallback block_marshalling_callback;
 
     bool is_under_restore = false;
 
@@ -643,41 +647,43 @@ public:
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
-        DELAY_ACCOUNTING_DISABLED,
         DB_ORDINARY_DEPRECATED,
-        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        LINUX_MAX_PID_TOO_LOW,
-        LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
+        LINUX_MEMORY_OVERCOMMIT_DISABLED,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ACTIVE_PARTS,
+        MAX_ATTACHED_DATABASES,
+        MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
         MAX_ATTACHED_VIEWS,
-        MAX_ATTACHED_DICTIONARIES,
-        MAX_ATTACHED_DATABASES,
-        MAX_ACTIVE_PARTS,
+        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        MAYBE_BROKEN_TABLES,
+        OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
+        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_COVERAGE,
+        SERVER_BUILT_WITH_SANITIZERS,
         SERVER_LOGGING_LEVEL_TEST,
         SERVER_RUN_UNDER_DEBUGGER,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_SANITIZERS,
-        SERVER_BUILT_WITH_COVERAGE,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
         THREAD_FUZZER_IS_ENABLED,
-        MAYBE_BROKEN_TABLES,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
+    void removeAllWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -1501,6 +1507,9 @@ public:
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    BlockMarshallingCallback getBlockMarshallingCallback() const;
+    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
