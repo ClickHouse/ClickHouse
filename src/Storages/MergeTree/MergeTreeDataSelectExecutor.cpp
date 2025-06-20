@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
 }
 
@@ -120,6 +121,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -802,7 +804,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                ranges.ranges = filterMarksUsingIndex(
+                std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition,
                     ranges.data_part,
@@ -1588,7 +1590,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 }
 
 
-MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
@@ -1604,7 +1606,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return ranges;
+        return {ranges, {}};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -1625,7 +1627,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// (the vector index is built on the entire part).
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
     if (index_helper->isVectorSimilarityIndex() && !all_match)
-        return ranges;
+        return {ranges, {}};
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
@@ -1646,6 +1648,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         reader_settings);
 
     MarkRanges res;
+    RangesInDataPartReadHints read_hints;
     size_t ranges_size = ranges.size();
 
     if (bulk_filtering)
@@ -1666,7 +1669,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
-            return res;
+            return {res, {}};
 
         auto it = filtered_granules.begin();
         current_granule_num = 0;
@@ -1721,8 +1724,24 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    auto rows = condition->calculateApproximateNearestNeighbors(granule);
+                    read_hints.ann_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
+                    /// corresponding ranges have to be returned in ascending order
+                    auto rows = read_hints.ann_search_results.value().rows;
+                    std::sort(rows.begin(), rows.end());
+#ifndef NDEBUG
+                    /// Duplicates should in theory not be possible but who knows ...
+                    const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
+                    if (has_duplicates)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
+#endif
+
+                    if (settings[Setting::vector_search_with_rescoring] ||
+                        !(read_hints.ann_search_results.value().distances.has_value()) ||
+                        index_granularity < part->index_granularity->getMarksCountWithoutFinal())
+                    {
+                        read_hints = {};
+                    }
                     for (auto row : rows)
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);
@@ -1767,7 +1786,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         }
     }
 
-    return res;
+    return {res, read_hints};
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(

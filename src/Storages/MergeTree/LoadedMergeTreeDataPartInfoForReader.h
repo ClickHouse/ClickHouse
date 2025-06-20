@@ -63,9 +63,14 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
+    void setReadHints(const RangesInDataPartReadHints & read_hints_) override { read_hints = read_hints_; }
+
+    const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
+
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
+    RangesInDataPartReadHints read_hints;
 };
 
 }
