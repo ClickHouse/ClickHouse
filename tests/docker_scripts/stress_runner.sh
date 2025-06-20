@@ -85,6 +85,15 @@ if [ "$cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
+# Randomize use_real_disk_size in cache
+use_real_disk_size=$((RANDOM % 2))
+
+echo "use_real_disk_size: $use_real_disk_size"
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+| sed "s|<use_real_disk_size>[^<]*</use_real_disk_size>|<use_real_disk_size>$use_real_disk_size</use_real_disk_size>|" \
+> /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 # Disable experimental WINDOW VIEW tests for stress tests, since they may be
 # created with old analyzer and then, after server restart it will refuse to
 # start.
