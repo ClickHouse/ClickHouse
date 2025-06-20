@@ -321,17 +321,18 @@ void HTTPHandler::processQuery(
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
     bool internal_compression = params.getParsedLast<bool>("compress", false);
 
-    /// At least, we should postpone sending of first buffer_size result bytes
-    size_t buffer_size_total = std::max(
-        params.getParsedLast<size_t>("buffer_size", settings[Setting::http_response_buffer_size]),
-        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
-
-    /// If it is specified, the whole result will be buffered.
+    /// If wait_end_of_query is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsedLast<bool>("wait_end_of_query", settings[Setting::http_wait_end_of_query]);
+    auto buffer_size_http = settings[Setting::http_response_buffer_size];
+    /// setting overrides depricated buffer_size parameter
+    if (!params.has("http_response_buffer_size"))
+        buffer_size_http = params.getParsedLast<size_t>("buffer_size", buffer_size_http);
 
-    size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
+    bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
+    /// setting overrides depricated wait_end_of_query parameter
+    if (!params.has("http_wait_end_of_query"))
+        wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
+
 
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
@@ -368,15 +369,15 @@ void HTTPHandler::processQuery(
         used_output.out = used_output.out_compressed_holder;
     }
 
-    if (buffer_size_memory > 0 || buffer_until_eof)
+    if (buffer_size_http > 0 || wait_end_of_query)
     {
         CascadeWriteBuffer::WriteBufferPtrs cascade_buffers;
         CascadeWriteBuffer::WriteBufferConstructors cascade_buffers_lazy;
 
-        if (buffer_size_memory > 0)
-            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+        if (buffer_size_http > 0)
+            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_http));
 
-        if (buffer_until_eof)
+        if (wait_end_of_query)
         {
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
@@ -514,7 +515,7 @@ void HTTPHandler::processQuery(
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
             /// Instead, we create exception_writer function that will write exception in required format
             /// and will use it later in trySendExceptionToClient when all buffers will be prepared.
-            if (buffer_until_eof)
+            if (wait_end_of_query)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
