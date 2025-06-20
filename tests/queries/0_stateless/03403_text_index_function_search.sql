@@ -29,16 +29,19 @@ SELECT id FROM tab WHERE searchAny(1, 'a'); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT id FROM tab WHERE searchAll(1, 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- 2nd arg must be const String
 SELECT id FROM tab WHERE searchAny(message, toFixedString('b', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE searchAny(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM tab WHERE searchAny(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, toFixedString('b', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE searchAll(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM tab WHERE searchAll(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- search functions should be used with the index column
-SELECT id FROM tab WHERE searchAny('a', 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAny(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll('a', 'b'); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE searchAll(col_str, 'b'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE searchAny('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAny(col_str, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAny(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAll('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAll(col_str, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAny(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- search function supports a max of 64 needles
-SELECT id FROM tab WHERE searchAny(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m'); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE searchAny(message, ['a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f g h i j k l m']); -- { serverError BAD_ARGUMENTS }
+SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm']); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
 
@@ -62,24 +65,33 @@ VALUES
     (5, 'abc+ zzz- foo!'),
     (6, 'abc+ zzz- bar?');
 
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abc');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'ab');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'foo');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'bar');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abc foo!');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abc bar?');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'foo bar');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'foo ba');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'fo ba');
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['ab']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['foo']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['bar']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc foo!']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc bar?']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['foo bar']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['foo ba']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['fo ba']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc', 'foo!']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc', 'bar?']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['foo', 'bar']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['foo', 'ba']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['fo', 'ba']);
 
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'ab');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'foo');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'bar');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc foo!');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc bar?');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'foo bar');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc fo');
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['ab']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc foo!']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc bar?']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc fo']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'foo!']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'bar?']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo', 'bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
 
 DROP TABLE tab;
 
@@ -102,19 +114,19 @@ VALUES
 (4, 'defghi'),
 (5, 'efghij');
 
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'efg');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'cdef');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'defg');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'cdef defg');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'efgh cdef defg');
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['efgh']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['efg']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['cdef']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['defg']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['cdef', 'defg']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['efgh', 'cdef', 'defg']);
 
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'efg');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'cdef');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'defg');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'cdef defg');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'efgh cdef defg');
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['efgh']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['efg']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['cdef']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['defg']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['cdef', 'defg']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['efgh', 'cdef', 'defg']);
 
 DROP TABLE tab;
 
@@ -137,19 +149,19 @@ VALUES
 (4, '\\a\n\\bc\\d\n'),
 (5, '\na\n\\bc\\d\\');
 
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'a');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'bc');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'd');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'a bc');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'a d');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'bc d');
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['a']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['bc']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['d']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['a', 'bc']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['a', 'd']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['bc', 'd']);
 
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'a');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'bc');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'd');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'a bc');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'a d');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'bc d');
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['a']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['bc']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['d']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['a', 'bc']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['a', 'd']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['bc', 'd']);
 
 DROP TABLE tab;
 
@@ -171,15 +183,15 @@ VALUES
 (3, 'def efg'),
 (4, 'abcdef');
 
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abc');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'def');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abc def');
-SELECT groupArray(id) FROM tab WHERE searchAny(message, 'abcdef');
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['def']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abc', 'def']);
+SELECT groupArray(id) FROM tab WHERE searchAny(message, ['abcdef']);
 
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'def');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abc def');
-SELECT groupArray(id) FROM tab WHERE searchAll(message, 'abcdef');
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['def']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'def']);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abcdef']);
 
 DROP TABLE tab;
 
@@ -206,7 +218,7 @@ SELECT 'searchAny is used during index analysis';
 SELECT 'Text index should choose none for non-existent term';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Click')
+    SELECT count() FROM tab WHERE searchAny(message, ['Click'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3; -- Skip the primary index parts and granules.
@@ -214,7 +226,7 @@ LIMIT 2, 3; -- Skip the primary index parts and granules.
 SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hallo')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hallo'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -222,7 +234,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hallo Word') -- Word does not exist in terms
+    SELECT count() FROM tab WHERE searchAny(message, ['Hallo Word']) -- Word does not exist in terms
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, ['Hallo', 'Word']) -- Word does not exist in terms
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -230,7 +250,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hello')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello Word'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -238,7 +258,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hello World')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello', 'Word'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -246,7 +266,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hallo World')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hallo', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -254,7 +274,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hello Hallo')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello', 'Hallo'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -262,7 +282,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'ClickHouse')
+    SELECT count() FROM tab WHERE searchAny(message, ['ClickHouse'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -270,7 +290,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose all 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'ClickHouse World')
+    SELECT count() FROM tab WHERE searchAny(message, ['ClickHouse World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose all 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, ['ClickHouse', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -280,7 +308,7 @@ SELECT 'searchAll is used during index analysis';
 SELECT 'Text index should choose none for non-existent term';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Click')
+    SELECT count() FROM tab WHERE searchAll(message, ['Click'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -288,7 +316,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hallo')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hallo'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -296,7 +324,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hello World')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -304,7 +340,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose none if any term does not exists in dictionary';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hallo Word') -- Word does not exist in terms
+    SELECT count() FROM tab WHERE searchAll(message, ['Hallo Word']) -- Word does not exist in terms
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose none if any term does not exists in dictionary';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hallo', 'Word']) -- Word does not exist in terms
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -312,7 +356,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hello')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -320,7 +364,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose none';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hallo World')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hallo World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -328,7 +372,23 @@ LIMIT 2, 3;
 SELECT 'Text index should choose none';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hello Hallo')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hallo', 'World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose none';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello Hallo'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose none';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello', 'Hallo'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -336,7 +396,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'ClickHouse')
+    SELECT count() FROM tab WHERE searchAll(message, ['ClickHouse'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -344,7 +404,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose none';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'ClickHouse World')
+    SELECT count() FROM tab WHERE searchAll(message, ['ClickHouse World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose none';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['ClickHouse', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -378,7 +446,15 @@ FROM numbers(1024);
 SELECT 'Text index should choose 50% of granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hello World')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 50% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -386,7 +462,15 @@ LIMIT 2, 3;
 SELECT 'Text index should choose all granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAny(message, 'Hello ClickHouse')
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello ClickHouse'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose all granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAny(message, ['Hello', 'ClickHouse'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -394,7 +478,7 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 25% of granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hello World')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
@@ -402,7 +486,23 @@ LIMIT 2, 3;
 SELECT 'Text index should choose 25% of granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE searchAll(message, 'Hello ClickHouse')
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello', 'World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 25% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello World'])
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'Text index should choose 25% of granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE searchAll(message, ['Hello', 'World'])
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
