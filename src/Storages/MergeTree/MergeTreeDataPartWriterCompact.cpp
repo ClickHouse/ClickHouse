@@ -200,13 +200,22 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     if (!header)
         header = result_block.cloneEmpty();
 
-    columns_buffer.add(result_block.mutateColumns());
     size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
-    size_t rows_in_buffer = columns_buffer.size();
-
-    if (rows_in_buffer >= current_mark_rows)
+    Block flushed_block;
+    if (columns_buffer.size() == 0 && result_block.rows() >= current_mark_rows)
     {
-        Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+        flushed_block = std::move(result_block);
+    }
+    else
+    {
+        columns_buffer.add(result_block.mutateColumns());
+        size_t rows_in_buffer = columns_buffer.size();
+        if (rows_in_buffer >= current_mark_rows)
+            flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+    }
+
+    if (flushed_block)
+    {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());

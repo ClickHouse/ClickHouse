@@ -27,6 +27,8 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
 
+set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
+
 
 # Gather sources and options.
 set(AWS_SOURCES)
@@ -47,11 +49,6 @@ if (ENABLE_OPENSSL_ENCRYPTION)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DENABLE_OPENSSL_ENCRYPTION")
 endif()
 
-set(USE_S2N ON)
-if (USE_S2N)
-    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DUSE_S2N")
-endif()
-
 
 # Directories.
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
@@ -70,7 +67,6 @@ SET(AWS_EVENT_STREAM_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream")
 SET(AWS_HTTP_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-http")
 SET(AWS_IO_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-io")
 SET(AWS_MQTT_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-mqtt")
-SET(AWS_S2N_TLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-s2n-tls")
 SET(AWS_S3_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-s3")
 SET(AWS_SDKUTILS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-sdkutils")
 
@@ -287,37 +283,8 @@ elseif (OS_DARWIN)
     )
 endif()
 
-set(AWS_IO_TLS_SRC)
-if (USE_S2N)
-    file(GLOB AWS_IO_TLS_SRC
-            "${AWS_IO_DIR}/source/s2n/*.c"
-    )
-endif()
-
-list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC} ${AWS_IO_TLS_SRC})
+list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_IO_DIR}/include/")
-
-
-# aws-s2n-tls
-if (USE_S2N)
-    file(GLOB AWS_S2N_TLS_SRC
-        "${AWS_S2N_TLS_DIR}/crypto/*.c"
-        "${AWS_S2N_TLS_DIR}/error/*.c"
-        "${AWS_S2N_TLS_DIR}/stuffer/*.c"
-        "${AWS_S2N_TLS_DIR}/pq-crypto/*.c"
-        "${AWS_S2N_TLS_DIR}/pq-crypto/kyber_r3/*.c"
-        "${AWS_S2N_TLS_DIR}/tls/*.c"
-        "${AWS_S2N_TLS_DIR}/tls/extensions/*.c"
-        "${AWS_S2N_TLS_DIR}/utils/*.c"
-    )
-
-    list(APPEND AWS_SOURCES ${AWS_S2N_TLS_SRC})
-
-    list(APPEND AWS_PRIVATE_INCLUDES
-        "${AWS_S2N_TLS_DIR}/"
-        "${AWS_S2N_TLS_DIR}/api/"
-    )
-endif()
 
 
 # aws-crt-cpp
@@ -336,11 +303,6 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_CRT_DIR}/include/")
 
 
 # aws-c-mqtt
-file(GLOB AWS_MQTT_SRC
-    "${AWS_MQTT_DIR}/source/*.c"
-)
-
-list(APPEND AWS_SOURCES ${AWS_MQTT_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_MQTT_DIR}/include/")
 
 
@@ -387,6 +349,8 @@ file(GLOB AWS_SDK_GLUE_SRC
 
 list(APPEND AWS_SOURCES ${AWS_SDK_GLUE_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_GLUE_DIR}/include/")
+
+list(APPEND AWS_SOURCES ${AWS_STUBS})
 
 # Add library.
 add_library(_aws ${AWS_SOURCES})

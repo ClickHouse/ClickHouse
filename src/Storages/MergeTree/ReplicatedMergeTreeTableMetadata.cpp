@@ -250,105 +250,113 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const S
     return metadata;
 }
 
-static void throwTableMetadataMismatch(
+static void handleTableMetadataMismatch(
     const std::string & table_name_for_error_message,
     std::string_view differs_in,
     const auto & stored_in_zk,
     const std::string & parsed_from_zk,
-    const auto & local)
+    const auto & local,
+    bool strict_check = true,
+    LoggerPtr logger = nullptr)
 {
-    if (parsed_from_zk.empty())
-    {
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Metadata of table {} in ZooKeeper differs in {}. "
-            "Stored in ZooKeeper: {}, local: {}",
-            table_name_for_error_message, differs_in, stored_in_zk, local);
-    }
+    String metadata_string;
+    if (!parsed_from_zk.empty())
+        metadata_string = fmt::format("Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}", stored_in_zk, parsed_from_zk, local);
     else
-    {
+        metadata_string = fmt::format("Stored in ZooKeeper: {}, local: {}", stored_in_zk, local);
+
+    if (strict_check)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
-            "Metadata of table {} in ZooKeeper differs in {}. "
-            "Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}",
-            table_name_for_error_message, differs_in, stored_in_zk, parsed_from_zk, local);
-    }
+            "Metadata of table {} in ZooKeeper differs in {}. {}",
+            table_name_for_error_message, differs_in, metadata_string);
+
+    if (logger)
+        LOG_WARNING(logger,
+            "Metadata of table {} in ZooKeeper differs in {}. {}",
+            table_name_for_error_message, differs_in, metadata_string);
 };
 
 void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity) const
 {
 
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         if (date_column != from_zk.date_column)
-            throwTableMetadataMismatch(table_name_for_error_message, "date index column", from_zk.date_column, "", date_column);
+            handleTableMetadataMismatch(table_name_for_error_message, "date index column", from_zk.date_column, "", date_column);
     }
     else if (!from_zk.date_column.empty())
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "date index column", from_zk.date_column, "", "custom-partitioned");
+        handleTableMetadataMismatch(table_name_for_error_message, "date index column", from_zk.date_column, "", "custom-partitioned");
     }
 
-    if (index_granularity != from_zk.index_granularity)
-        throwTableMetadataMismatch(table_name_for_error_message, "index granularity", DB::toString(from_zk.index_granularity), "", DB::toString(index_granularity));
+    if (check_index_granularity && index_granularity != from_zk.index_granularity)
+        handleTableMetadataMismatch(table_name_for_error_message, "index granularity", DB::toString(from_zk.index_granularity), "", DB::toString(index_granularity));
 
     if (merging_params_mode != from_zk.merging_params_mode)
-        throwTableMetadataMismatch(table_name_for_error_message, "mode of merge operation", DB::toString(from_zk.merging_params_mode), "", DB::toString(merging_params_mode));
+        handleTableMetadataMismatch(table_name_for_error_message, "mode of merge operation", DB::toString(from_zk.merging_params_mode), "", DB::toString(merging_params_mode));
 
     if (sign_column != from_zk.sign_column)
-        throwTableMetadataMismatch(table_name_for_error_message, "sign column", from_zk.sign_column, "", sign_column);
+        handleTableMetadataMismatch(table_name_for_error_message, "sign column", from_zk.sign_column, "", sign_column);
 
     if (merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS && from_zk.merge_params_version >= REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS)
     {
         if (version_column != from_zk.version_column)
-            throwTableMetadataMismatch(table_name_for_error_message, "version column", from_zk.version_column, "", version_column);
+            handleTableMetadataMismatch(table_name_for_error_message, "version column", from_zk.version_column, "", version_column);
 
         if (is_deleted_column != from_zk.is_deleted_column)
-            throwTableMetadataMismatch(table_name_for_error_message, "is_deleted column", from_zk.is_deleted_column, "", is_deleted_column);
+            handleTableMetadataMismatch(table_name_for_error_message, "is_deleted column", from_zk.is_deleted_column, "", is_deleted_column);
 
         if (columns_to_sum != from_zk.columns_to_sum)
-            throwTableMetadataMismatch(table_name_for_error_message, "sum columns", from_zk.columns_to_sum, "", columns_to_sum);
+            handleTableMetadataMismatch(table_name_for_error_message, "sum columns", from_zk.columns_to_sum, "", columns_to_sum);
 
         if (graphite_params_hash != from_zk.graphite_params_hash)
-            throwTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
+            handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context, true).getOriginalExpressionList());
     if (primary_key != parsed_zk_primary_key)
-        throwTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
+        handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
-        throwTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
+        handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
     String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context, false).expression_list_ast);
     if (partition_key != parsed_zk_partition_key)
-        throwTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
+        handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(
+bool ReplicatedMergeTreeTableMetadata::checkEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity,
+    bool strict_check,
+    LoggerPtr logger) const
 {
-
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context);
+    bool is_equal = true;
+    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
 
     String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context, false).definition_ast);
     if (sampling_expression != parsed_zk_sampling_expression)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "sample expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression);
+        handleTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context, true).definition_ast));
     if (sorting_key != parsed_zk_sorting_key)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key);
+        handleTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key, strict_check, logger);
+        is_equal = false;
     }
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
@@ -357,31 +365,38 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(
         TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table);
+        handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices);
+        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
     if (projections != parsed_zk_projections)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections);
+        handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).toString();
     if (constraints != parsed_zk_constraints)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints);
+        handleTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints, strict_check, logger);
+        is_equal = false;
     }
 
-    if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
+    if (check_index_granularity && from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
     {
-        throwTableMetadataMismatch(table_name_for_error_message, "index granularity bytes", from_zk.index_granularity_bytes, "", index_granularity_bytes);
+        handleTableMetadataMismatch(table_name_for_error_message, "index granularity bytes", from_zk.index_granularity_bytes, "", index_granularity_bytes, strict_check, logger);
+        is_equal = false;
     }
+
+    return is_equal;
 }
 
 ReplicatedMergeTreeTableMetadata::Diff
@@ -389,9 +404,10 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     const ReplicatedMergeTreeTableMetadata & from_zk,
     const ColumnsDescription & columns,
     const std::string & table_name_for_error_message,
-    ContextPtr context) const
+    ContextPtr context,
+    bool check_index_granularity) const
 {
-    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context);
+    checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
 
     Diff diff;
 

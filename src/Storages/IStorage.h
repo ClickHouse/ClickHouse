@@ -101,9 +101,6 @@ public:
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
 
-    /// Returns true if the metadata of a table can be changed normally by other processes
-    virtual bool hasExternalDynamicMetadata() const { return false; }
-
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
@@ -140,7 +137,7 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
-    virtual bool noPushingToViews() const { return false; }
+    virtual bool noPushingToViewsOnInserts() const { return false; }
 
     /// Read query returns streams which automatically distribute data between themselves.
     /// So, it's impossible for one stream run out of data when there is data in other streams.
@@ -188,12 +185,12 @@ public:
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
+    virtual StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
 
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -231,7 +228,7 @@ public:
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
+    virtual void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
@@ -241,6 +238,12 @@ public:
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
+
+    /// Called after all databases and tables on all replicas have been restored from backup.
+    /// If this data does some background work that depends on contents of other tables, this is
+    /// the place to kick off that work (and it should be paused when IStorage is created with
+    /// is_restore_from_backup = true in StorageFactory::Arguments).
+    virtual void finalizeRestoreFromBackup() {}
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }
@@ -487,7 +490,8 @@ public:
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /// Updates metadata that can be changed by other processes
-    virtual void updateExternalDynamicMetadata(ContextPtr);
+    /// Return true if external metadata exists and was updated.
+    virtual bool updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { return false; }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.

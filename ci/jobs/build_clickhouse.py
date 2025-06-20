@@ -124,11 +124,12 @@ def main():
     results = []
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
+        Shell.check(f"mkdir -p {build_dir}")
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
                 command=f"git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs {min([Utils.cpu_count(), 20])}",
+                retries=3,
             )
         )
         res = results[-1].is_ok()
@@ -166,6 +167,8 @@ def main():
             targets = "clickhouse-bundle"
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
+        elif build_type == BuildTypes.AMD_DEBUG:
+            targets = "-k0 all"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
             run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")

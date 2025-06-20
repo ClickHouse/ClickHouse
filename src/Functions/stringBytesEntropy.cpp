@@ -61,10 +61,9 @@ REGISTER_FUNCTION(StringBytesEntropy)
     };
     FunctionDocumentation::ReturnedValue returned_value = "The Shannon entropy of the byte distribution. [Float64](../../sql-reference/data-types/float.md).";
     FunctionDocumentation::Examples examples = {
-        {"Example",
-         "SELECT stringBytesEntropy('Hello, world!');",
-         "3.180832987205441"}
+        {"Example", "SELECT stringBytesEntropy('Hello, world!');", "3.180832987205441"}
     };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
     FunctionDocumentation function_documentation = {
@@ -73,6 +72,7 @@ REGISTER_FUNCTION(StringBytesEntropy)
         .arguments = arguments,
         .returned_value = returned_value,
         .examples = examples,
+        .introduced_in = introduced_in,
         .category = category
     };
 

@@ -18,6 +18,7 @@ namespace DB
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
+    CorrelatedSubtrees correlated_subtrees;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;

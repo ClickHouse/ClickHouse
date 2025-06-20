@@ -1465,7 +1465,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
-            set_key = query_tree->getTreeHash();
+            set_key = query_tree->getTreeHash({.ignore_cte = true});
         }
         else
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);

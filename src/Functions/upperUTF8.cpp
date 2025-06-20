@@ -27,12 +27,11 @@ REGISTER_FUNCTION(UpperUTF8)
     FunctionDocumentation::Syntax syntax = "upperUTF8(input)";
     FunctionDocumentation::Arguments arguments = {{"input", "Input with String type"}};
     FunctionDocumentation::ReturnedValue returned_value = "A String data type value";
-    FunctionDocumentation::Examples examples = {
-        {"first", "SELECT upperUTF8('München') as Upperutf8;", "MÜNCHEN"},
-    };
+    FunctionDocumentation::Examples examples = { {"first", "SELECT upperUTF8('München') as Upperutf8;", "MÜNCHEN"}, };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
 
-    factory.registerFunction<FunctionUpperUTF8>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionUpperUTF8>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

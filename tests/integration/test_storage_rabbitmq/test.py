@@ -36,19 +36,6 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
-instance3 = cluster.add_instance(
-    "instance3",
-    user_configs=["configs/users.xml"],
-    main_configs=[
-        "configs/rabbitmq.xml",
-        "configs/macros.xml",
-        "configs/named_collection.xml",
-        "configs/mergetree.xml",
-    ],
-    with_rabbitmq=True,
-    stay_alive=True,
-)
-
 # Helpers
 
 
@@ -79,10 +66,8 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
     instance.query("CREATE DATABASE test")
-    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
-    instance3.query("DROP DATABASE test SYNC")
     cluster.reset_rabbitmq()
 
 
@@ -2226,7 +2211,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     )
     instance.query("DETACH TABLE test.cs")
 
-    with rabbitmq_cluster.pause_container("rabbitmq1"):
+    with rabbitmq_cluster.pause_rabbitmq():
         instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000
@@ -3695,7 +3680,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     queue_name = result.method.queue
     channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
 
-    instance3.query(
+    instance.query(
         f"""
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3712,7 +3697,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
         DROP TABLE IF EXISTS test.consumer;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.{table_name};
+            SELECT intDiv(key, if(key < 25, 0, 1)) as key, value FROM test.{table_name};
         """
     )
 
@@ -3721,61 +3706,45 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
-    instance3.wait_for_log_line(
-        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    instance.wait_for_log_line(
+        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero"
     )
 
-    try:
-        instance3.replace_in_config(
-            "/etc/clickhouse-server/config.d/mergetree.xml",
-            "parts_to_throw_insert>0",
-            "parts_to_throw_insert>10",
-            # >>>>>>> origin/master
+    count = [0]
+
+    def on_consume(channel, method, properties, body):
+        data = json.loads(body)
+        message = json.dumps({"key": data["key"] + 100, "value": data["value"]}) + "\n"
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+        count[0] += 1
+        if count[0] == num_rows:
+            channel.stop_consuming()
+
+    channel.basic_consume(queue_name, on_consume)
+    channel.start_consuming()
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    count = 0
+    while time.monotonic() < deadline:
+        count = int(instance.query("SELECT count() FROM test.view"))
+        if count == num_rows:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(
+            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count did not match {num_rows}."
         )
-        instance3.restart_clickhouse()
 
-        count = [0]
+    assert count == num_rows
 
-        def on_consume(channel, method, properties, body):
-            channel.basic_publish(exchange=exchange, routing_key="", body=body)
-            count[0] += 1
-            if count[0] == num_rows:
-                channel.stop_consuming()
-
-        channel.basic_consume(queue_name, on_consume)
-        channel.start_consuming()
-
-        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-        count = 0
-        while time.monotonic() < deadline:
-            count = int(instance3.query("SELECT count() FROM test.view"))
-            if count == num_rows:
-                break
-            time.sleep(0.05)
-        else:
-            pytest.fail(
-                f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count did not match {num_rows}."
-            )
-
-        assert count == num_rows
-
-        instance3.query(
-            f"""
-            DROP TABLE test.consumer;
-            DROP TABLE test.view;
-            DROP TABLE test.{table_name};
-        """
-        )
-        connection.close()
-    finally:
-        # Restore the original configuration so that other tests (this one included if executed
-        # again) behave as expected by the initial configuration
-        instance3.replace_in_config(
-            "/etc/clickhouse-server/config.d/mergetree.xml",
-            "parts_to_throw_insert>10",
-            "parts_to_throw_insert>0",
-        )
-        instance3.restart_clickhouse()
+    instance.query(
+        f"""
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.{table_name};
+    """
+    )
+    connection.close()
 
 
 def view_test(expected_num_messages, *_):

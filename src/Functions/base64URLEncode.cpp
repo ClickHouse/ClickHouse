@@ -5,6 +5,16 @@
 
 namespace DB
 {
+namespace
+{
+struct NameBase64Encode
+{
+static constexpr auto name = "base64URLEncode";
+};
+
+using Base64EncodeImpl = BaseXXEncode<Base64EncodeTraits<Base64Variant::URL>, NameBase64Encode>;
+using FunctionBase64Encode = FunctionBaseXXConversion<Base64EncodeImpl>;
+}
 
 REGISTER_FUNCTION(Base64URLEncode)
 {
@@ -13,9 +23,10 @@ REGISTER_FUNCTION(Base64URLEncode)
     FunctionDocumentation::Arguments arguments = {{"url", "String column or constant."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the encoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64URLEncode('https://clickhouse.com')", "aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionBase64Encode>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 }
 
 }

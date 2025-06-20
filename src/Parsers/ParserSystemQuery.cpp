@@ -296,6 +296,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
+                if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
+                    res->if_exists = true;
+
                 if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))
@@ -441,7 +444,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -577,7 +582,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
                     res->schema_cache_format = toStringView(Keyword::PROTOBUF);
-
+                else if (ParserKeyword{Keyword::FILES}.ignore(pos, expected))
+                    res->schema_cache_format = toStringView(Keyword::FILES);
                 else
                     return false;
             }

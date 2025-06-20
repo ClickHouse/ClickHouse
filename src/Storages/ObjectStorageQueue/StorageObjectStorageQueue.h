@@ -8,7 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
 #include <base/defines.h>
 

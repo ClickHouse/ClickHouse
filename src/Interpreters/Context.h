@@ -141,6 +141,7 @@ struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
+class AzureSettingsByEndpoint;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -239,6 +240,8 @@ using ReadTaskCallback = std::function<String()>;
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -254,6 +257,12 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class SessionTracker;
 
 struct ServerSettings;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -350,6 +359,8 @@ protected:
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
+    BlockMarshallingCallback block_marshalling_callback;
+
     bool is_under_restore = false;
 
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
@@ -429,6 +440,8 @@ public:
             functions = rhs.functions;
             storages = rhs.storages;
             table_functions = rhs.table_functions;
+            executable_user_defined_functions = rhs.executable_user_defined_functions;
+            sql_user_defined_functions = rhs.sql_user_defined_functions;
         }
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
@@ -442,6 +455,8 @@ public:
         std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> executable_user_defined_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> sql_user_defined_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
@@ -535,6 +550,15 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+    mutable std::mutex sample_block_cache_mutex;
+
+    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
+    mutable StorageMetadataCache storage_metadata_cache;
+    mutable std::mutex storage_metadata_cache_mutex;
+
+    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
+    mutable StorageSnapshotCache storage_snapshot_cache;
+    mutable std::mutex storage_snapshot_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -624,40 +648,43 @@ public:
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
-        DELAY_ACCOUNTING_DISABLED,
         DB_ORDINARY_DEPRECATED,
-        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        LINUX_MAX_PID_TOO_LOW,
-        LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
+        LINUX_MEMORY_OVERCOMMIT_DISABLED,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ACTIVE_PARTS,
+        MAX_ATTACHED_DATABASES,
+        MAX_ATTACHED_DICTIONARIES,
         MAX_ATTACHED_TABLES,
         MAX_ATTACHED_VIEWS,
-        MAX_ATTACHED_DICTIONARIES,
-        MAX_ATTACHED_DATABASES,
-        MAX_ACTIVE_PARTS,
+        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        MAYBE_BROKEN_TABLES,
+        OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
+        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_COVERAGE,
+        SERVER_BUILT_WITH_SANITIZERS,
         SERVER_LOGGING_LEVEL_TEST,
         SERVER_RUN_UNDER_DEBUGGER,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_SANITIZERS,
-        SERVER_BUILT_WITH_COVERAGE,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
         SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
+        THREAD_FUZZER_IS_ENABLED,
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
+    void removeAllWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -844,6 +871,10 @@ public:
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
+        const StorageID & table_id,
+        const Names & column_names);
+
+    void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
@@ -871,7 +902,9 @@ public:
         Format,
         Function,
         Storage,
-        TableFunction
+        TableFunction,
+        ExecutableUserDefinedFunction,
+        SQLUserDefinedFunction
     };
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
@@ -1035,6 +1068,10 @@ public:
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
+
+    double getMinOSCPUWaitTimeRatioToDropConnection() const;
+    double getMaxOSCPUWaitTimeRatioToDropConnection() const;
+    void setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection);
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1320,6 +1357,7 @@ public:
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const AzureSettingsByEndpoint & getStorageAzureSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -1403,7 +1441,9 @@ public:
     String getGoogleProtosPath() const;
     void setGoogleProtosPath(const String & path);
 
-    SampleBlockCache & getSampleBlockCache() const;
+    std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
+    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
+    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1469,6 +1509,9 @@ public:
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    BlockMarshallingCallback getBlockMarshallingCallback() const;
+    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
