@@ -1114,7 +1114,7 @@ void KeeperStorage<Container>::UncommittedState::forEachAuthInSession(int64_t se
 
             if (std::ranges::find_if(processed_auths, [&](const auto * processed_auth) { return *processed_auth == *auth_ptr; })
                 != processed_auths.end())
-                return;
+                continue;
 
             processed_auths.push_back(auth_ptr);
             if (!auth_ptr->scheme.empty())
