@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,7 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 RETRIES=5
 
-# do not trust CLICKHOUSE_URL var because it contains randomization settings
 CH_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/"
 
 query="SELECT 'OK'"
