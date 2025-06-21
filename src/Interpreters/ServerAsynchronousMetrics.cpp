@@ -71,9 +71,6 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
-    /// sanity check
-    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
 }
 
 ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
