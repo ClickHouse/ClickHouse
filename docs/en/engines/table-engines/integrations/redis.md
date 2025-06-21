@@ -6,7 +6,11 @@ slug: /engines/table-engines/integrations/redis
 title: 'Redis'
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # Redis
+
+<CloudNotSupportedBadge/>
 
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 

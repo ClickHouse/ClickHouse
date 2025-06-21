@@ -637,7 +637,6 @@ void registerOutputFormatAvro(FormatFactory & factory)
     });
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");
-    factory.setContentType("Avro", "application/octet-stream");
 }
 
 }

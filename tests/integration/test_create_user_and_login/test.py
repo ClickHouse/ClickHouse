@@ -84,7 +84,7 @@ EOF""",
 
         expected_errors = [
             "no user with such name",
-            "not found in `user directories`",
+            "not found in user directories",
             "User has been dropped",
         ]
         while True:
