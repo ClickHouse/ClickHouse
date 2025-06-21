@@ -3,10 +3,7 @@ from praktika import Workflow
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
-from ci.workflows.pull_request import (
-    REGULAR_BUILD_NAMES,
-    REQUIRED_STATELESS_TESTS_JOB_NAMES,
-)
+from ci.workflows.pull_request import REGULAR_BUILD_NAMES
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -26,15 +23,11 @@ workflow = Workflow.Config(
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
-        *JobConfigs.functional_tests_jobs_required,
-        *JobConfigs.functional_tests_jobs_non_required,
+        *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_tests_jobs_azure_master_only,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_coverage
-        ],
+        *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_master_jobs,
         *JobConfigs.ast_fuzzer_jobs,

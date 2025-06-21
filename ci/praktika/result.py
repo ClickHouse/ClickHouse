@@ -529,12 +529,12 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
-    def complete_job(self, with_job_summary_in_info=True):
+    def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         self.dump()
         print(self.to_stdout_formatted())
-        if not self.is_ok():
+        if not self.is_ok() and not force_ok_exit:
             sys.exit(1)
         else:
             sys.exit(0)
