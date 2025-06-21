@@ -7,14 +7,12 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -23,20 +21,13 @@
 #endif
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MarkCache.h>
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int INVALID_SETTING_VALUE;
-}
 
 namespace
 {
