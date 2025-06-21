@@ -158,6 +158,7 @@ protected:
 
 #if USE_CLIENT_AI
     void initAIProvider();
+    void setupAISchemaProvider();
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -246,6 +247,10 @@ private:
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
+    
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns empty string on exception
+    std::string executeQueryForSingleString(const std::string & query);
 
 protected:
 

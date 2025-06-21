@@ -57,25 +57,45 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
             if (message.name.has_value())
                 message_obj->set("name", message.name.value());
             
-            /// Add function_call if present
-            if (message.function_call.has_value())
+            /// Add tool_call_id for tool response messages
+            if (message.tool_call_id.has_value())
+                message_obj->set("tool_call_id", message.tool_call_id.value());
+            
+            /// Add tool_calls if present
+            if (!message.tool_calls.empty())
             {
-                Poco::JSON::Object::Ptr function_call_obj = new Poco::JSON::Object;
-                function_call_obj->set("name", message.function_call->name);
-                function_call_obj->set("arguments", message.function_call->arguments);
-                message_obj->set("function_call", function_call_obj);
+                Poco::JSON::Array::Ptr tool_calls_array = new Poco::JSON::Array;
+                for (const auto & tc : message.tool_calls)
+                {
+                    Poco::JSON::Object::Ptr tc_obj = new Poco::JSON::Object;
+                    tc_obj->set("id", tc.id);
+                    tc_obj->set("type", tc.type);
+                    
+                    Poco::JSON::Object::Ptr func_obj = new Poco::JSON::Object;
+                    func_obj->set("name", tc.function.name);
+                    func_obj->set("arguments", tc.function.arguments);
+                    tc_obj->set("function", func_obj);
+                    
+                    tool_calls_array->add(tc_obj);
+                }
+                message_obj->set("tool_calls", tool_calls_array);
             }
             
             messages_array->add(message_obj);
         }
         json_request->set("messages", messages_array);
         
-        /// Add functions array if present
-        if (request.functions.has_value())
+        /// Add tools array if present
+        std::cerr << "AI: Checking tools - has_value: " << request.tools.has_value() << std::endl;
+        if (request.tools.has_value())
         {
-            Poco::JSON::Array::Ptr functions_array = new Poco::JSON::Array;
-            for (const auto & func : request.functions.value())
+            std::cerr << "AI: Adding " << request.tools.value().size() << " tools to request" << std::endl;
+            Poco::JSON::Array::Ptr tools_array = new Poco::JSON::Array;
+            for (const auto & func : request.tools.value())
             {
+                Poco::JSON::Object::Ptr tool_obj = new Poco::JSON::Object;
+                tool_obj->set("type", "function");
+                
                 Poco::JSON::Object::Ptr func_obj = new Poco::JSON::Object;
                 func_obj->set("name", func.name);
                 func_obj->set("description", func.description);
@@ -109,27 +129,31 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
                 for (const auto & req : func.parameters.required)
                     required_array->add(req);
                 params_obj->set("required", required_array);
+                params_obj->set("additionalProperties", false);
                 
                 func_obj->set("parameters", params_obj);
-                functions_array->add(func_obj);
+                func_obj->set("strict", true);
+                
+                tool_obj->set("function", func_obj);
+                tools_array->add(tool_obj);
             }
-            json_request->set("functions", functions_array);
+            json_request->set("tools", tools_array);
         }
         
-        /// Add function_call control if present
-        if (request.function_call.has_value())
+        /// Add tool_choice control if present
+        if (request.tool_choice.has_value())
         {
-            const std::string & fc = request.function_call.value();
-            if (fc == "auto" || fc == "none")
+            const std::string & tc = request.tool_choice.value();
+            if (tc == "auto" || tc == "none" || tc == "required")
             {
-                json_request->set("function_call", fc);
+                json_request->set("tool_choice", tc);
             }
             else
             {
                 /// Parse as JSON object for specific function name
                 Poco::JSON::Parser parser;
-                Poco::Dynamic::Var var = parser.parse(fc);
-                json_request->set("function_call", var);
+                Poco::Dynamic::Var var = parser.parse(tc);
+                json_request->set("tool_choice", var);
             }
         }
         
@@ -144,6 +168,9 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
         std::ostringstream json_stream;
         Poco::JSON::Stringifier::stringify(json_request, json_stream);
         std::string request_body = json_stream.str();
+        
+        /// Debug: Print request
+        std::cerr << "AI: OpenAI request: " << request_body << std::endl;
         
         /// Set up HTTP connection
         ConnectionTimeouts timeouts;
@@ -182,6 +209,9 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
         std::string response_body;
         std::getline(istr, response_body, '\0');
         
+        /// Debug: Print response
+        std::cerr << "AI: OpenAI response: " << response_body << std::endl;
+        
         /// Parse JSON response
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(response_body);
@@ -203,18 +233,27 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
             const Poco::JSON::Object::Ptr message = choice->getObject("message");
             c.message.role = message->getValue<std::string>("role");
             
-            /// Content might be null when there's a function call
+            /// Content might be null when there's a tool call
             if (message->has("content") && !message->isNull("content"))
                 c.message.content = message->getValue<std::string>("content");
             
-            /// Check for function_call in the message
-            if (message->has("function_call"))
+            /// Check for tool_calls in the message
+            if (message->has("tool_calls") && !message->isNull("tool_calls"))
             {
-                const Poco::JSON::Object::Ptr function_call = message->getObject("function_call");
-                ChatCompletionResponse::Choice::Message::FunctionCall fc;
-                fc.name = function_call->getValue<std::string>("name");
-                fc.arguments = function_call->getValue<std::string>("arguments");
-                c.message.function_call = fc;
+                const Poco::JSON::Array::Ptr tool_calls_array = message->getArray("tool_calls");
+                for (size_t j = 0; j < tool_calls_array->size(); ++j)
+                {
+                    const Poco::JSON::Object::Ptr tool_call_obj = tool_calls_array->getObject(j);
+                    ChatCompletionResponse::Choice::Message::ToolCall tc;
+                    tc.id = tool_call_obj->getValue<std::string>("id");
+                    tc.type = tool_call_obj->getValue<std::string>("type");
+                    
+                    const Poco::JSON::Object::Ptr function_obj = tool_call_obj->getObject("function");
+                    tc.function.name = function_obj->getValue<std::string>("name");
+                    tc.function.arguments = function_obj->getValue<std::string>("arguments");
+                    
+                    c.message.tool_calls.push_back(tc);
+                }
             }
             
             c.finish_reason = choice->getValue<std::string>("finish_reason");

@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ISchemaProviderFunctions;
+
 /// Configuration for AI providers
 struct AIConfiguration
 {
@@ -35,6 +37,9 @@ public:
 
     /// Check if the provider is properly configured and available
     virtual bool isAvailable() const = 0;
+    
+    /// Set schema provider for function calling
+    virtual void setSchemaProvider(std::shared_ptr<ISchemaProviderFunctions> provider) = 0;
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;

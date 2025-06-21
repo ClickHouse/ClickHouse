@@ -42,18 +42,24 @@ public:
             std::string role;
             std::string content;
             std::optional<std::string> name; /// For function messages
-            struct FunctionCall
+            std::optional<std::string> tool_call_id; /// For tool response messages
+            struct ToolCall
             {
-                std::string name;
-                std::string arguments; /// JSON string
+                std::string id;
+                std::string type; /// Should be "function"
+                struct Function
+                {
+                    std::string name;
+                    std::string arguments; /// JSON string
+                } function;
             };
-            std::optional<FunctionCall> function_call; /// For assistant messages with function calls
+            std::vector<ToolCall> tool_calls;
         };
         std::vector<Message> messages;
         std::optional<Float32> temperature;
         std::optional<UInt32> max_tokens;
-        std::optional<std::vector<FunctionDefinition>> functions;
-        std::optional<std::string> function_call; /// "auto", "none", or {"name": "function_name"}
+        std::optional<std::vector<FunctionDefinition>> tools;
+        std::optional<std::string> tool_choice; /// "auto", "none", "required", or specific function
     };
 
     struct ChatCompletionResponse
@@ -69,12 +75,17 @@ public:
             {
                 std::string role;
                 std::string content;
-                struct FunctionCall
+                struct ToolCall
                 {
-                    std::string name;
-                    std::string arguments; /// JSON string
+                    std::string id;
+                    std::string type; /// Should be "function"
+                    struct Function
+                    {
+                        std::string name;
+                        std::string arguments; /// JSON string
+                    } function;
                 };
-                std::optional<FunctionCall> function_call;
+                std::vector<ToolCall> tool_calls;
             } message;
             std::string finish_reason;
         };

@@ -36,6 +36,7 @@ OpenAIProvider::OpenAIProvider(const AIConfiguration & config_)
 std::string OpenAIProvider::generateSQL(const std::string & prompt)
 {
     /// Use function calling if schema provider is available
+    std::cerr << "AI: generateSQL called, schema_provider is " << (schema_provider ? "set" : "null") << std::endl;
     if (schema_provider)
         return generateSQLWithFunctions(prompt);
     
@@ -97,17 +98,26 @@ std::string OpenAIProvider::buildSystemPrompt() const
         return config.system_prompt;
     
     return R"(You are a ClickHouse SQL expert. Your task is to convert natural language queries into valid ClickHouse SQL.
-Follow these guidelines:
-1. Generate only executable SQL queries, no explanations or markdown
-2. Use ClickHouse-specific syntax and functions when appropriate
-3. Be precise and efficient in your queries
-4. If the request is ambiguous, make reasonable assumptions
-5. Always return a single SQL query that can be executed directly
 
-Context:
-- You're helping a user query their ClickHouse database
-- Assume common table and column names unless specified
-- Use proper ClickHouse data types and functions)";
+You have access to functions that help you explore the database schema:
+- list_databases(): Lists all available databases
+- list_tables_in_database(database): Lists all tables in a specific database  
+- get_schema_for_table(database, table): Gets the CREATE TABLE statement for a specific table
+
+Your workflow should be:
+1. Use list_databases() to see available databases
+2. Use list_tables_in_database(database) to find relevant tables
+3. Use get_schema_for_table(database, table) to understand the table structure
+4. Based on the discovered schema, generate the appropriate SQL query
+
+IMPORTANT: 
+- Always explore the schema first before writing SQL
+- The functions return actual results that you should use to inform your query
+- After gathering enough schema information, generate the final SQL query
+- Return only executable SQL queries, no explanations or markdown
+- Pay attention to the actual column names and types discovered in the schema
+
+Remember: You are in an interactive session. Each function call returns real data about the database that you should use to construct accurate queries.)";
 }
 
 std::string OpenAIProvider::buildCompletePrompt(const std::string & user_prompt) const
@@ -123,14 +133,19 @@ std::string OpenAIProvider::generateSQLWithFunctions(const std::string & prompt)
         Conversation conversation;
         
         /// Set system prompt
-        conversation.setSystemData(buildSystemPrompt());
+        std::string system_prompt = buildSystemPrompt();
+        std::cerr << "AI: System prompt: " << system_prompt << std::endl;
+        conversation.setSystemData(system_prompt);
         
         /// Add user prompt
-        conversation.addUserData(buildCompletePrompt(prompt));
+        std::string user_prompt = buildCompletePrompt(prompt);
+        std::cerr << "AI: User prompt: " << user_prompt << std::endl;
+        conversation.addUserData(user_prompt);
         
-        /// Set up function definitions
-        conversation.setFunctions(createSchemaFunctions());
-        conversation.setFunctionCallMode("auto");
+        /// Set up function definitions (we'll use the same format for tools)
+        auto functions = createSchemaFunctions();
+        std::cerr << "AI: Created " << functions.size() << " functions" << std::endl;
+        conversation.setFunctions(functions);
         
         /// Maximum iterations to prevent infinite loops
         const size_t max_iterations = 10;
@@ -144,14 +159,31 @@ std::string OpenAIProvider::generateSQLWithFunctions(const std::string & prompt)
             request.temperature = config.temperature;
             request.max_tokens = config.max_tokens;
             request.messages = conversation.getMessages();
-            request.functions = conversation.getFunctions();
-            request.function_call = conversation.getFunctionCallMode();
+            /// Use new tools API
+            if (conversation.hasFunctions())
+            {
+                const auto & funcs = conversation.getFunctions();
+                request.tools = std::vector<OpenAIClient::FunctionDefinition>(funcs.begin(), funcs.end());
+                
+                /// After several iterations, discourage more tool use
+                if (i >= max_iterations - 2)
+                {
+                    request.tool_choice = "none";  // Force the model to respond without tools
+                }
+                else
+                {
+                    request.tool_choice = "auto";
+                }
+            }
+            
+            std::cerr << "AI: conversation.hasFunctions(): " << conversation.hasFunctions() << ", functions.size(): " << conversation.getFunctions().size() << std::endl;
+            std::cerr << "AI: Request has " << (request.tools.has_value() ? std::to_string(request.tools.value().size()) : "no") << " tools" << std::endl;
             
             /// Send request
             auto response = client.createChatCompletion(request);
             
             /// Process response
-            if (!processOpenAIResponse(conversation, response))
+            if (!processOpenAIResponse(conversation, response, i, max_iterations))
             {
                 /// We got the final SQL response
                 final_sql = conversation.getLastResponse();
@@ -278,23 +310,60 @@ std::string OpenAIProvider::cleanSQL(const std::string & sql)
 }
 
 bool OpenAIProvider::processOpenAIResponse(openai::Conversation & conversation, 
-                                           const openai::OpenAIClient::ChatCompletionResponse & response)
+                                           const openai::OpenAIClient::ChatCompletionResponse & response,
+                                           size_t iteration, size_t max_iterations)
 {
     if (!response.choices.empty())
     {
         /// Update conversation with response
         conversation.update(response);
         
-        /// Check if we got a function call
+        /// Check if we got function calls
         if (conversation.lastResponseIsFunctionCall())
         {
-            /// Execute the function call
-            std::string function_name = conversation.getLastFunctionCallName();
-            std::string arguments = conversation.getLastFunctionCallArguments();
-            std::string result = executeFunctionCall(function_name, arguments);
+            /// Get all tool calls from the last message
+            const auto & last_msg = conversation.getMessages().back();
             
-            /// Add function result to conversation
-            conversation.addFunctionData(function_name, result);
+            /// Process each tool call
+            for (const auto & tool_call : last_msg.tool_calls)
+            {
+                /// Execute the function call
+                std::string function_name = tool_call.function.name;
+                std::string arguments = tool_call.function.arguments;
+                std::string tool_call_id = tool_call.id;
+                
+                std::cerr << "AI: Executing tool_call " << tool_call_id << ": " << function_name << std::endl;
+                
+                std::string result = executeFunctionCall(function_name, arguments);
+                
+                /// Debug: Log function result
+                std::cerr << "AI: Function " << function_name << " returned: " << result << std::endl;
+                
+                /// Add function result to conversation with the specific tool_call_id
+                conversation.addToolData(tool_call_id, result);
+            }
+            
+            /// If we're getting close to max iterations, guide the model to generate SQL
+            if (iteration >= max_iterations - 3 && iteration < max_iterations - 1)
+            {
+                /// Count how many schema-related calls we've made
+                size_t schema_calls = 0;
+                const auto & messages = conversation.getMessages();
+                for (const auto & msg : messages)
+                {
+                    if (msg.role == "assistant" && !msg.tool_calls.empty())
+                        schema_calls++;
+                }
+                
+                /// If we've made enough schema discovery calls, nudge towards SQL generation
+                if (schema_calls >= 3)
+                {
+                    std::string context_msg = "You have gathered information about the database schema. "
+                                             "Based on what you've discovered, please generate the SQL query now.";
+                    conversation.addUserData(context_msg);
+                }
+            }
+            
             return true; /// Continue conversation
         }
         
@@ -309,17 +378,20 @@ std::string OpenAIProvider::executeSchemaFunction(const std::string & function_n
 {
     if (!schema_provider)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema provider not set");
+
+    /// Debug: Log function execution
+    std::cerr << "AI: Executing function: " << function_name << " with args: ";
+    args->stringify(std::cerr);
+    std::cerr << std::endl;
     
     if (function_name == "list_databases")
     {
         auto databases = schema_provider->listDatabases();
         std::ostringstream oss;
-        oss << "Available databases: ";
-        for (size_t i = 0; i < databases.size(); ++i)
+        oss << "Found " << databases.size() << " databases:\n";
+        for (const auto & db : databases)
         {
-            if (i > 0)
-                oss << ", ";
-            oss << databases[i];
+            oss << "- " << db << "\n";
         }
         return oss.str();
     }
@@ -328,12 +400,14 @@ std::string OpenAIProvider::executeSchemaFunction(const std::string & function_n
         std::string database = args->getValue<std::string>("database");
         auto tables = schema_provider->listTablesInDatabase(database);
         std::ostringstream oss;
-        oss << "Tables in database '" << database << "': ";
-        for (size_t i = 0; i < tables.size(); ++i)
+        oss << "Found " << tables.size() << " tables in database '" << database << "':\n";
+        for (const auto & table : tables)
         {
-            if (i > 0)
-                oss << ", ";
-            oss << tables[i];
+            oss << "- " << table << "\n";
+        }
+        if (tables.empty())
+        {
+            oss << "(No tables found in this database)\n";
         }
         return oss.str();
     }
@@ -342,6 +416,13 @@ std::string OpenAIProvider::executeSchemaFunction(const std::string & function_n
         std::string database = args->getValue<std::string>("database");
         std::string table = args->getValue<std::string>("table");
         std::string schema = schema_provider->getSchemaForTable(database, table);
+        
+        if (schema.empty())
+        {
+            return "Error: Could not retrieve schema for " + database + "." + table + 
+                   ". The table might not exist or you might not have permissions to view it.";
+        }
+        
         return "Schema for " + database + "." + table + ":\n" + schema;
     }
     else

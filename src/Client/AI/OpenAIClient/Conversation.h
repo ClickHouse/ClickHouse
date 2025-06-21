@@ -39,10 +39,10 @@ public:
     
     /// Assistant message management
     bool addAssistantData(std::string_view data) noexcept(false);
-    bool addAssistantData(std::string_view data, const OpenAIClient::ChatCompletionRequest::Message::FunctionCall & function_call) noexcept(false);
     
     /// Function message management
     bool addFunctionData(std::string_view name, std::string_view content) noexcept(false);
+    bool addToolData(std::string_view tool_call_id, std::string_view content) noexcept(false);
     
     /// Response handling
     std::string getLastResponse() const noexcept;
@@ -52,6 +52,7 @@ public:
     bool lastResponseIsFunctionCall() const noexcept;
     std::string getLastFunctionCallName() const noexcept(false);
     std::string getLastFunctionCallArguments() const noexcept(false);
+    std::string getLastToolCallId() const noexcept(false);
     
     /// Update conversation with response
     bool update(const OpenAIClient::ChatCompletionResponse & response) noexcept(false);
@@ -62,9 +63,6 @@ public:
     bool hasFunctions() const noexcept { return !functions.empty(); }
     const std::vector<OpenAIClient::FunctionDefinition> & getFunctions() const noexcept { return functions; }
     
-    /// Function call control
-    void setFunctionCallMode(const std::string & mode) noexcept(false) { function_call_mode = mode; }
-    const std::optional<std::string> & getFunctionCallMode() const noexcept { return function_call_mode; }
     
     /// Export/Import
     std::string exportToJSON() const noexcept(false);
@@ -85,7 +83,6 @@ public:
 private:
     std::vector<OpenAIClient::ChatCompletionRequest::Message> messages;
     std::vector<OpenAIClient::FunctionDefinition> functions;
-    std::optional<std::string> function_call_mode; /// "auto", "none", or specific function name
     
     /// Helper to check if last message is of specific role
     bool isLastMessageRole(const std::string & role) const noexcept;

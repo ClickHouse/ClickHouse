@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Client/AI/AIProviderFactory.h>
 #include <Client/AI/IAIProvider.h>
+#include <Client/AI/SchemaProviderFunctionsImpl.h>
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
@@ -2865,6 +2866,103 @@ void ClientBase::initAIProvider()
         error_stream << "Failed to initialize AI provider: " << e.what() << std::endl;
     }
 }
+
+void ClientBase::setupAISchemaProvider()
+
+{
+    std::cerr << "AI: setupAISchemaProvider called, ai_provider is " << (ai_provider ? "set" : "null") 
+              << ", connection is " << (connection ? "set" : "null") << std::endl;
+    if (!ai_provider || !connection)
+        return;
+        
+    try
+    {
+        /// Create a query executor that uses the common utility method
+        auto query_executor = [this](const std::string & query) -> std::string
+        {
+            return executeQueryForSingleString(query);
+        };
+        
+        /// Create and set the schema provider
+        auto schema_provider = std::make_shared<SchemaProviderFunctionsImpl>(query_executor);
+        ai_provider->setSchemaProvider(schema_provider);
+    }
+    catch (...)
+    {
+        /// Ignore errors in schema provider setup
+    }
+}
+
+std::string ClientBase::executeQueryForSingleString(const std::string & query)
+{
+    if (!connection)
+        return "";
+        
+    try
+    {
+        std::string result;
+        
+        /// Send the query
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            {},  /// query_parameters
+            "",  /// query_id
+            QueryProcessingStage::Complete,
+            nullptr,  /// settings
+            nullptr,  /// client_info
+            false,    /// with_pending_data
+            {},       /// external_roles
+            {}        /// external_data
+        );
+        
+        /// Receive and process results
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block && packet.block.rows() > 0)
+                    {
+                        /// Convert block to string representation
+                        /// For schema queries, we expect single column results
+                        const auto & column = packet.block.getByPosition(0).column;
+                        for (size_t i = 0; i < column->size(); ++i)
+                        {
+                            if (!result.empty())
+                                result += "\n";
+                            result += column->getDataAt(i).toString();
+                        }
+                    }
+                    break;
+                    
+                case Protocol::Server::EndOfStream:
+                    return result;
+                    
+                case Protocol::Server::Exception:
+                    /// Return empty string on exception
+                    return "";
+                    
+                case Protocol::Server::Progress:
+                case Protocol::Server::ProfileInfo:
+                case Protocol::Server::Log:
+                case Protocol::Server::ProfileEvents:
+                case Protocol::Server::TimezoneUpdate:
+                    /// Ignore these packet types
+                    break;
+                    
+                default:
+                    /// Ignore unknown packet types
+                    break;
+            }
+        }
+    }
+    catch (...)
+    {
+        return "";
+    }
+}
 #endif
 
 
@@ -3235,6 +3333,7 @@ void ClientBase::runInteractive()
 
 #if USE_CLIENT_AI
     initAIProvider();
+    setupAISchemaProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3485,6 +3584,7 @@ void ClientBase::runNonInteractive()
 
 #if USE_CLIENT_AI
     initAIProvider();
+    setupAISchemaProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

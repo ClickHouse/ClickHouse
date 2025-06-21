@@ -103,21 +103,25 @@ bool Conversation::addAssistantData(std::string_view data) noexcept(false)
     return true;
 }
 
-bool Conversation::addAssistantData(std::string_view data, const OpenAIClient::ChatCompletionRequest::Message::FunctionCall & function_call) noexcept(false)
+
+bool Conversation::addFunctionData(std::string_view /*name*/, std::string_view content) noexcept(false)
 {
-    OpenAIClient::ChatCompletionRequest::Message msg;
-    msg.role = "assistant";
-    msg.content = std::string(data);
-    msg.function_call = function_call;
-    messages.push_back(std::move(msg));
-    return true;
+    /// Always use new tool format
+    std::string tool_id = getLastToolCallId();
+    if (!tool_id.empty())
+    {
+        return addToolData(tool_id, content);
+    }
+    
+    /// If no tool call ID, something is wrong
+    throw std::runtime_error("Cannot add function data without a tool call ID");
 }
 
-bool Conversation::addFunctionData(std::string_view name, std::string_view content) noexcept(false)
+bool Conversation::addToolData(std::string_view tool_call_id, std::string_view content) noexcept(false)
 {
     OpenAIClient::ChatCompletionRequest::Message msg;
-    msg.role = "function";
-    msg.name = std::string(name);
+    msg.role = "tool";
+    msg.tool_call_id = std::string(tool_call_id);
     msg.content = std::string(content);
     messages.push_back(std::move(msg));
     return true;
@@ -143,21 +147,28 @@ bool Conversation::popLastResponse() noexcept(false)
 bool Conversation::lastResponseIsFunctionCall() const noexcept
 {
     if (!messages.empty() && messages.back().role == "assistant")
-        return messages.back().function_call.has_value();
+        return !messages.back().tool_calls.empty();
     return false;
 }
 
 std::string Conversation::getLastFunctionCallName() const noexcept(false)
 {
-    if (lastResponseIsFunctionCall())
-        return messages.back().function_call->name;
+    if (lastResponseIsFunctionCall() && !messages.back().tool_calls.empty())
+        return messages.back().tool_calls[0].function.name;
     return {};
 }
 
 std::string Conversation::getLastFunctionCallArguments() const noexcept(false)
 {
-    if (lastResponseIsFunctionCall())
-        return messages.back().function_call->arguments;
+    if (lastResponseIsFunctionCall() && !messages.back().tool_calls.empty())
+        return messages.back().tool_calls[0].function.arguments;
+    return {};
+}
+
+std::string Conversation::getLastToolCallId() const noexcept(false)
+{
+    if (lastResponseIsFunctionCall() && !messages.back().tool_calls.empty())
+        return messages.back().tool_calls[0].id;
     return {};
 }
 
@@ -172,12 +183,18 @@ bool Conversation::update(const OpenAIClient::ChatCompletionResponse & response)
         new_msg.role = msg.role;
         new_msg.content = msg.content;
         
-        if (msg.function_call.has_value())
+        /// Handle tool_calls from response
+        if (!msg.tool_calls.empty())
         {
-            OpenAIClient::ChatCompletionRequest::Message::FunctionCall fc;
-            fc.name = msg.function_call->name;
-            fc.arguments = msg.function_call->arguments;
-            new_msg.function_call = fc;
+            for (const auto & tc : msg.tool_calls)
+            {
+                OpenAIClient::ChatCompletionRequest::Message::ToolCall new_tc;
+                new_tc.id = tc.id;
+                new_tc.type = tc.type;
+                new_tc.function.name = tc.function.name;
+                new_tc.function.arguments = tc.function.arguments;
+                new_msg.tool_calls.push_back(new_tc);
+            }
         }
         
         messages.push_back(std::move(new_msg));
@@ -212,13 +229,27 @@ std::string Conversation::exportToJSON() const noexcept(false)
         if (msg.name.has_value())
             msg_obj->set("name", msg.name.value());
         
-        if (msg.function_call.has_value())
+        if (!msg.tool_calls.empty())
         {
-            Poco::JSON::Object::Ptr fc_obj = new Poco::JSON::Object;
-            fc_obj->set("name", msg.function_call->name);
-            fc_obj->set("arguments", msg.function_call->arguments);
-            msg_obj->set("function_call", fc_obj);
+            Poco::JSON::Array::Ptr tool_calls_array = new Poco::JSON::Array;
+            for (const auto & tc : msg.tool_calls)
+            {
+                Poco::JSON::Object::Ptr tc_obj = new Poco::JSON::Object;
+                tc_obj->set("id", tc.id);
+                tc_obj->set("type", tc.type);
+                
+                Poco::JSON::Object::Ptr func_obj = new Poco::JSON::Object;
+                func_obj->set("name", tc.function.name);
+                func_obj->set("arguments", tc.function.arguments);
+                tc_obj->set("function", func_obj);
+                
+                tool_calls_array->add(tc_obj);
+            }
+            msg_obj->set("tool_calls", tool_calls_array);
         }
+        
+        if (msg.tool_call_id.has_value())
+            msg_obj->set("tool_call_id", msg.tool_call_id.value());
         
         messages_array->add(msg_obj);
     }
@@ -267,9 +298,6 @@ std::string Conversation::exportToJSON() const noexcept(false)
         root->set("functions", functions_array);
     }
     
-    /// Export function call mode if set
-    if (function_call_mode.has_value())
-        root->set("function_call_mode", function_call_mode.value());
     
     std::ostringstream oss;
     Poco::JSON::Stringifier::stringify(root, oss);
@@ -300,14 +328,26 @@ bool Conversation::importFromJSON(const std::string & json) noexcept(false)
                 if (msg_obj->has("name"))
                     msg.name = msg_obj->getValue<std::string>("name");
                 
-                if (msg_obj->has("function_call"))
+                if (msg_obj->has("tool_calls"))
                 {
-                    const Poco::JSON::Object::Ptr fc_obj = msg_obj->getObject("function_call");
-                    OpenAIClient::ChatCompletionRequest::Message::FunctionCall fc;
-                    fc.name = fc_obj->getValue<std::string>("name");
-                    fc.arguments = fc_obj->getValue<std::string>("arguments");
-                    msg.function_call = fc;
+                    const Poco::JSON::Array::Ptr tool_calls_array = msg_obj->getArray("tool_calls");
+                    for (size_t j = 0; j < tool_calls_array->size(); ++j)
+                    {
+                        const Poco::JSON::Object::Ptr tc_obj = tool_calls_array->getObject(j);
+                        OpenAIClient::ChatCompletionRequest::Message::ToolCall tc;
+                        tc.id = tc_obj->getValue<std::string>("id");
+                        tc.type = tc_obj->getValue<std::string>("type");
+                        
+                        const Poco::JSON::Object::Ptr func_obj = tc_obj->getObject("function");
+                        tc.function.name = func_obj->getValue<std::string>("name");
+                        tc.function.arguments = func_obj->getValue<std::string>("arguments");
+                        
+                        msg.tool_calls.push_back(tc);
+                    }
                 }
+                
+                if (msg_obj->has("tool_call_id"))
+                    msg.tool_call_id = msg_obj->getValue<std::string>("tool_call_id");
                 
                 messages.push_back(std::move(msg));
             }
@@ -358,9 +398,6 @@ bool Conversation::importFromJSON(const std::string & json) noexcept(false)
             }
         }
         
-        /// Import function call mode if present
-        if (root->has("function_call_mode"))
-            function_call_mode = root->getValue<std::string>("function_call_mode");
         
         return true;
     }
@@ -374,7 +411,6 @@ void Conversation::clear() noexcept
 {
     messages.clear();
     functions.clear();
-    function_call_mode.reset();
 }
 
 bool Conversation::isLastMessageRole(const std::string & role) const noexcept

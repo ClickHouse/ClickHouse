@@ -23,7 +23,7 @@ public:
     bool isAvailable() const override;
     
     /// Set schema provider for function calling
-    void setSchemaProvider(std::shared_ptr<ISchemaProviderFunctions> provider)
+    void setSchemaProvider(std::shared_ptr<ISchemaProviderFunctions> provider) override
     {
         schema_provider = provider;
     }
@@ -52,7 +52,8 @@ private:
     
     /// Process a single OpenAI response and update conversation
     bool processOpenAIResponse(openai::Conversation & conversation, 
-                               const openai::OpenAIClient::ChatCompletionResponse & response);
+                               const openai::OpenAIClient::ChatCompletionResponse & response,
+                               size_t iteration, size_t max_iterations);
     
     /// Execute schema-related function calls
     std::string executeSchemaFunction(const std::string & function_name, 
