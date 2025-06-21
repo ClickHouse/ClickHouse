@@ -13,8 +13,8 @@ The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a r
 Currently, only PostgreSQL versions 12 and up are supported.
 :::
 
-:::note Replicating or migrating Postgres data with with PeerDB
-> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
 
 ## Creating a Table {#creating-a-table}
