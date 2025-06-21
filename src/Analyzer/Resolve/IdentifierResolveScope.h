@@ -180,6 +180,7 @@ struct IdentifierResolveScope
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
+    bool allow_resolve_from_using = true;
 
     /// JOINs count
     size_t joins_count = 0;

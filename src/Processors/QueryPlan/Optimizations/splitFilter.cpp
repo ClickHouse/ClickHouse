@@ -3,41 +3,37 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes);
-
 size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (!join_step || node->children.size() != 2)
+    if (!join_step || node->children.size() != 2 || typeid_cast<JoinStepLogicalLookup *>(node->children.back()->step.get()))
         return 0;
 
     size_t num_new_nodes = 0;
-
-    String filter_coumn_name;
-
-    if (auto fitler_dag = join_step->getFilterActions(JoinTableSide::Left, filter_coumn_name))
+    for (auto [idx, side]: {std::make_pair(0, JoinTableSide::Left), std::make_pair(1, JoinTableSide::Right)})
     {
-        auto * new_node = makeExpressionNodeOnTopOf(node->children.at(0), std::move(*fitler_dag), filter_coumn_name, nodes);
-        node->children.at(0) = new_node;
-        new_node->step->setStepDescription("Join filter");
-        num_new_nodes++;
-    }
+        auto & child_node = *node->children.at(idx);
+        const auto & header = child_node.step->getOutputHeader();
+        auto fitler_dag = join_step->getFilterActions(side, header);
+        if (!fitler_dag)
+            continue;
+        const auto & filter_column_name = fitler_dag->dag.getOutputs()[fitler_dag->filter_pos]->result_name;
+        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(fitler_dag->dag), filter_column_name, fitler_dag->remove_filter);
+        step->setStepDescription("Join filter");
 
-    if (auto fitler_dag = join_step->getFilterActions(JoinTableSide::Right, filter_coumn_name))
-    {
-        auto * new_node = makeExpressionNodeOnTopOf(node->children.at(1), std::move(*fitler_dag), filter_coumn_name, nodes);
-        node->children.at(1) = new_node;
-        new_node->step->setStepDescription("Join filter");
+        auto * new_node = &nodes.emplace_back(std::move(child_node));
+        child_node = QueryPlan::Node{std::move(step), {new_node}};
         num_new_nodes++;
     }
     return num_new_nodes;
 }
 
-/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
+/// Split FilterStep into chain `FilterStep -> ExpressionStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (size_t join_split = trySplitJoin(node, nodes))

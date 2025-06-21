@@ -38,6 +38,7 @@ public:
 
     static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
         const QueryTreeNodePtr & resolved_identifier,
+        DataTypePtr result_type,
         const JoinKind & join_kind,
         std::optional<JoinTableSide> resolved_side,
         IdentifierResolveScope & scope);
