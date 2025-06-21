@@ -42,6 +42,7 @@ public:
 
     const Symbol * findSymbol(const void * offset) const;
     const Object * findObject(const void * address) const;
+    const Object * thisObject() const;
 
     const std::vector<Symbol> & symbols() const { return data.symbols; }
     const std::vector<Object> & objects() const { return data.objects; }

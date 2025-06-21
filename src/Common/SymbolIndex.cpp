@@ -513,6 +513,11 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
     return find(address, data.objects);
 }
 
+const SymbolIndex::Object * SymbolIndex::thisObject() const
+{
+    return findObject(reinterpret_cast<const void *>(+[]{}));
+}
+
 String SymbolIndex::getBuildIDHex() const
 {
     String build_id_hex;
