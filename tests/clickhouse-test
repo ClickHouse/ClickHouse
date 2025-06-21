@@ -44,6 +44,7 @@ from ast import literal_eval as make_tuple
 from contextlib import redirect_stdout, contextmanager
 from datetime import datetime, timedelta
 from errno import ESRCH
+from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -416,6 +417,10 @@ class TestException(Exception):
     pass
 
 
+class ConfigException(Exception):
+    pass
+
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
@@ -601,7 +606,12 @@ def cleanup_child_processes(pid):
     proc_list = pgrep.decode("utf-8").strip().split("\n")
     processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
-        child_pgid = os.getpgid(child)
+        try:
+            child_pgid = os.getpgid(child)
+        except ProcessLookupError as e:
+            print(e, f"No such process: {child}")
+            continue
+
         if child_pgid != pgid:
             kill_process_group(child_pgid)
 
@@ -910,7 +920,9 @@ class FailureReason(enum.Enum):
 
     # SKIPPED reasons
     NOT_SUPPORTED = "not supported"
-    NOT_SUPPORTED_IN_CLOUD = "not supported in cloud environment"
+    NOT_SUPPORTED_IN_CLOUD = "not supported in cloud"
+    NOT_SUPPORTED_IN_CLOUD_PREFILTER = "not supported in cloud. prefilter"
+    NOT_SUPPORTED_IN_CLOUD_POSTFILTER = "not supported in cloud. postfilter"
     NOT_SUPPORTED_IN_PRIVATE = "not supported in private build"
     DISABLED = "disabled"
     SKIP = "skip"
@@ -929,7 +941,11 @@ class FailureReason(enum.Enum):
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     NO_ASYNC_INSERT = "test is not supported with async inserts enabled"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
+    REQUIRE_REPLICATED_TO_SHARED_MERGE_TREE_REPLACEMENT = "Test with shared_merge_tree in name require option --replace-replicated-with-shared for clickhouse-test"
+    SHARED_CATALOG = "no-shared-catalog"
+    SHARED_CATALOG_ONLY = "shared-catalog"
     DISTRIBUTED_CACHE = "distributed-cache"
+    NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
 
@@ -1211,6 +1227,10 @@ def is_old_analyzer_used():
     )
 
 
+def replace_in_file_re(filename, what, with_what):
+    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
 class TestResult:
     def __init__(
         self,
@@ -1263,8 +1283,7 @@ class TestCase:
                 return reference_file
         return None
 
-    @staticmethod
-    def configure_testcase_args(args, case_file, suite_tmp_dir):
+    def configure_testcase_args(self, args, case_file, suite_tmp_dir):
         testcase_args = copy.deepcopy(args)
 
         testcase_args.testcase_start_time = datetime.now()
@@ -1383,7 +1402,8 @@ class TestCase:
                 if max_value and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
-    def __init__(self, suite, case: str, args, is_concurrent: bool):
+    def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
+        self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
@@ -1587,6 +1607,7 @@ class TestCase:
         return None
 
     def process_result_impl(self, proc, total_time: float) -> TestResult:
+        args = self.args
         kill_output = ""
         if proc:
             if proc.returncode is None:
@@ -1931,7 +1952,9 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else "",
+            "secure": (
+                "--secure" if args.secure and "--secure" not in client_options else ""
+            ),
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -1942,13 +1965,7 @@ class TestCase:
         if args.trace:
             tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
-        if self.ext == ".sql" and args.cloud:
-            # Get at least some logs, because we don't have access to system.text_log and pods...
-            pattern = (
-                "{client} --send_logs_level={logs_level} {secure} --multiquery {options}"
-                " --send_logs_level=trace < {test} > {stdout}  2>> /test_output/some_logs_from_server.log"
-            )
-        elif self.ext == ".sql" and not args.cloud:
+        if self.ext == ".sql":
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
@@ -2030,13 +2047,16 @@ class TestCase:
 
         return proc, total_time
 
-    def run(self, args, suite, client_options, server_logs_level):
+    def run(self, args, suite, client_options):
         start_time = datetime.now()
 
         try:
+            description = ""
             skip_reason = self.should_skip_test(suite)
             if skip_reason is not None:
-                return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0.0, "")
+                return TestResult(
+                    self.name, TestStatus.SKIPPED, skip_reason, 0.0, description
+                )
 
             if args.testname:
                 try:
@@ -2061,7 +2081,7 @@ class TestCase:
                 self.reference_file and not is_valid_utf_8(self.reference_file)
             ):
                 proc, total_time = self.run_single_test(
-                    server_logs_level, client_options
+                    args.server_logs_level, client_options
                 )
 
                 result = self.process_result_impl(proc, total_time)
@@ -2107,7 +2127,7 @@ class TestCase:
                     (
                         proc,
                         total_time,
-                    ) = self.run_single_test(server_logs_level, client_options)
+                    ) = self.run_single_test(args.server_logs_level, client_options)
 
                     result = self.process_result_impl(proc, total_time)
 
@@ -2186,7 +2206,7 @@ class TestCase:
         if need_cleanup and args.no_drop_if_fail:
             need_cleanup = passed
 
-        if not need_cleanup:
+        if not need_cleanup or args.no_drop:
             return
 
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
@@ -2373,6 +2393,11 @@ class TestSuite:
             parsed_tags = parse_tags_from_line(tag_line, comment_sign)
             if need_query_params:
                 parsed_tags.add("need-query-parameters")
+            if filepath.endswith(".expect"):
+                parsed_tags.add("test-type-expect")
+            if ".cloud." in filepath:
+                parsed_tags.add("cloud")
+
             random_settings_limits = parse_random_settings_limits_from_line(
                 random_settings_limits_line, comment_sign
             )
@@ -2685,9 +2710,7 @@ def run_tests_array(
                 signal.alarm(int(args.timeout * 1.1))
                 test_result = None
                 try:
-                    test_result = test_case.run(
-                        args, test_suite, client_options, server_logs_level
-                    )
+                    test_result = test_case.run(args, test_suite, client_options)
                     test_result = test_case.process_result(test_result, MESSAGES)
                 except TimeoutError:
                     break
@@ -2760,9 +2783,6 @@ def run_tests_array(
         )
 
     sys.stdout.flush()
-
-
-server_logs_level = "warning"
 
 
 def check_server_started(args):
@@ -2914,6 +2934,10 @@ def check_table_column(args, database, table, column):
         )
         > 0
     )
+
+
+def get_hostname(args):
+    return clickhouse_execute(args, "SELECT hostname()").decode("utf-8")
 
 
 def suite_key_func(item: str) -> Union[float, Tuple[int, str]]:
@@ -3320,7 +3344,7 @@ def main(args):
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
-    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
+    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", args.server_logs_level)
 
     # This code is bad as the time is not monotonic
     args.stop_time = None
@@ -3623,6 +3647,12 @@ def parse_args():
         help="Do not drop database for test if test has failed",
     )
     parser.add_argument(
+        "--no-drop",
+        action="store_true",
+        help="Do not drop database",
+    )
+
+    parser.add_argument(
         "--hide-db-name",
         action="store_true",
         help='Replace random database name with "default" in stderr',
@@ -3653,7 +3683,7 @@ def parse_args():
     parser.add_argument(
         "-U",
         "--unified",
-        default=3,
+        default=10,
         type=int,
         help="output NUM lines of unified context",
     )
@@ -3900,6 +3930,24 @@ def parse_args():
     parser.add_argument(
         "--trace", action="store_true", help="Capture various tracing info"
     )
+    parser.add_argument(
+        "--server-logs-level",
+        # warning by default, error in cloud
+        default="error" if parser.parse_known_args()[0].cloud else "warning",
+        choices=[
+            "none",
+            "fatal",
+            "critical",
+            "error",
+            "warning",
+            "notice",
+            "info",
+            "debug",
+            "trace",
+            "test",
+        ],
+        help="Changes the CH setting 'send_logs_level'",
+    )
 
     return parser.parse_args()
 
@@ -3965,6 +4013,9 @@ if __name__ == "__main__":
 
     if not os.path.isdir(args.queries):
         args.queries = "/usr/share/clickhouse-test/queries"
+
+    if not os.path.isdir(args.queries):
+        args.queries = "/repo/tests/queries"
 
     if not os.path.isdir(args.queries):
         print(
