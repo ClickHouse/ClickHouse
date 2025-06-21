@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -12,6 +13,7 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    using OnCompleteModifyCallback = std::function<void(replxx::Replxx &)>;
 
     struct Options
     {
@@ -30,6 +32,8 @@ public:
         int in_fd = STDIN_FILENO;
         int out_fd = STDOUT_FILENO;
         int err_fd = STDERR_FILENO;
+
+        OnCompleteModifyCallback on_complete_modify_callback;
     };
 
     explicit ReplxxLineReader(Options && options);
@@ -58,6 +62,8 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    OnCompleteModifyCallback on_complete_modify_callback;
 };
 
 }
