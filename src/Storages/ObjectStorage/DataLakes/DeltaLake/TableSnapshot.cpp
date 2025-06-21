@@ -103,7 +103,13 @@ public:
     {
         if (filter_dag_)
         {
-            pruner.emplace(*filter_dag_, table_schema_, partition_columns_, DB::Context::getGlobalContextInstance());
+            pruner.emplace(
+                *filter_dag_,
+                table_schema_,
+                partition_columns_,
+                physical_names_map_,
+                DB::Context::getGlobalContextInstance());
+
             LOG_TEST(log, "Using filter expression");
         }
         else
@@ -113,24 +119,11 @@ public:
 
         if (!physical_names_map_.empty())
         {
-            auto get_physical_name = [&](const std::string & name)
-            {
-                auto it = physical_names_map_.find(name);
-                if (it == physical_names_map_.end())
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find column {} in physical names map (size: {})",
-                        name, physical_names_map_.size());
-                }
-                return it->second;
-            };
-
             for (auto & [name, value] : expression_schema)
-                name = get_physical_name(name);
+                name = getPhysicalName(name, physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = get_physical_name(name);
+                name = getPhysicalName(name, physical_names_map_);
         }
     }
 
