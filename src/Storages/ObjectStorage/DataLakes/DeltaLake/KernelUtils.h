@@ -3,6 +3,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Core/Types.h>
+#include <Core/Names.h>
 #include <Common/Exception.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -54,6 +55,8 @@ namespace KernelUtils
             "Invalid error ExternResult tag found!");
     }
 };
+
+std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
 
 }
 

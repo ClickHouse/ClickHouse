@@ -824,8 +824,11 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_partition_columns(started_cluster, use_delta_kernel):
+@pytest.mark.parametrize(
+    "use_delta_kernel, cluster",
+    [("1", False), ("1", True), ("0", False)],
+)
+def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -897,7 +900,10 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    if cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
 
     result = instance.query(f"describe table {table_function}").strip()
     assert (
@@ -1387,7 +1393,8 @@ def test_session_token(started_cluster):
     )
 
 
-def test_partition_columns_2(started_cluster):
+@pytest.mark.parametrize("cluster", [False, True])
+def test_partition_columns_2(started_cluster, cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_partition_columns_2")
 
@@ -1422,13 +1429,22 @@ def test_partition_columns_2(started_cluster):
         path, table, storage_options=storage_options, partition_by=["c", "d"]
     )
 
-    delta_function = f"""
-deltaLake(
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-    SETTINGS allow_experimental_delta_kernel_rs=0)
-    """
+    if cluster:
+        delta_function = f"""
+    deltaLakeCluster(
+             cluster,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+    else:
+        delta_function = f"""
+    deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
+        """
 
     num_files = int(
         node.query(
@@ -1484,6 +1500,11 @@ deltaLake(
         ).strip()
     )
 
+    ac = node.query(
+        f"explain actions=1 SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
+        settings={"allow_experimental_delta_kernel_rs": 1},
+    ).strip()
+    print("KSSENII ACTIONS: ", ac)
     assert (
         "1"
         in node.query(
