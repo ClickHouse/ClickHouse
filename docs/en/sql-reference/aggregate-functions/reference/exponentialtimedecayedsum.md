@@ -1,12 +1,10 @@
 ---
-description: 'Returns the sum of exponentially smoothed moving average values of a
-  time series at the index `t` in time.'
+slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
 sidebar_position: 136
-slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
-title: 'exponentialTimeDecayedSum'
+title: exponentialTimeDecayedSum
 ---
 
-## exponentialTimeDecayedSum {#exponentialtimedecayedsum}
+## exponentialTimeDecayedSum
 
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
 
@@ -23,7 +21,7 @@ exponentialTimeDecayedSum(x)(v, t)
 
 **Parameters**
 
-- `x` — Time difference required for a value's weight to decay to 1/e. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned values**
 

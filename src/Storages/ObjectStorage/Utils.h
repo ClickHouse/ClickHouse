@@ -22,8 +22,4 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context);
 
-void validateSupportedColumns(
-    ColumnsDescription & columns,
-    const StorageObjectStorage::Configuration & configuration);
-
 }

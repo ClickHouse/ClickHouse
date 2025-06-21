@@ -5,7 +5,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -13,6 +12,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -24,23 +24,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
 
-#include <algorithm>
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool async_socket_for_remote;
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
-}
 
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
@@ -71,7 +59,7 @@ public:
         ClusterPtr cluster_,
         LoggerPtr log_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -93,7 +81,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
+    void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,23 +93,15 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
-
-    createExtension(predicate, max_replicas_to_use);
+    createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(
-        predicate,
-        filter_actions_dag.has_value() ? &filter_actions_dag.value() : query_info.filter_actions_dag.get(),
-        context,
-        number_of_replicas);
+    extension = storage->getTaskIteratorExtension(predicate, context);
 }
 
 /// The code executes on initiator
@@ -145,7 +125,7 @@ void IStorageCluster::read(
     Block sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
     }
@@ -187,6 +167,8 @@ void IStorageCluster::read(
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    createExtension(nullptr);
+
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -194,58 +176,34 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     auto new_context = updateSettings(context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
-    size_t replica_index = 0;
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (current_settings[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
-
-    createExtension(nullptr, max_replicas_to_use);
-
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        if (pipes.size() >= max_replicas_to_use)
-            break;
+        auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
+        {
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                std::vector<IConnectionPool::Entry>{try_result},
+                queryToString(query_to_send),
+                getOutputStream().header,
+                new_context,
+                /*throttler=*/nullptr,
+                scalars,
+                Tables(),
+                processed_stage,
+                extension);
 
-        /// We're taking all replicas as shards,
-        /// so each shard will have only one address to connect to.
-        auto try_results = shard_info.pool->getMany(
-            timeouts,
-            current_settings,
-            PoolMode::GET_ONE,
-            {},
-            /*skip_unavailable_endpoints=*/true);
-
-        if (try_results.empty())
-            continue;
-
-        IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
-
-        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_results.front()},
-            query_to_send->formatWithSecretsOneLine(),
-            getOutputHeader(),
-            new_context,
-            /*throttler=*/nullptr,
-            scalars,
-            Tables(),
-            processed_stage,
-            nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
-
-        remote_query_executor->setLogger(log);
-            Pipe pipe{std::make_shared<RemoteSource>(
+            remote_query_executor->setLogger(log);
+            pipes.emplace_back(std::make_shared<RemoteSource>(
                 remote_query_executor,
                 add_agg_info,
-                current_settings[Setting::async_socket_for_remote],
-                current_settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-            pipes.emplace_back(std::move(pipe));
+                current_settings.async_socket_for_remote,
+                current_settings.async_query_sending_for_remote));
+        }
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
+        pipe = Pipe(std::make_shared<NullSource>(getOutputStream().header));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -267,10 +225,10 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
 
 ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
-    Settings new_settings{settings};
+    Settings new_settings = settings;
 
     /// Cluster table functions should always skip unavailable shards.
-    new_settings[Setting::skip_unavailable_shards] = true;
+    new_settings.skip_unavailable_shards = true;
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

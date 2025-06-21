@@ -23,19 +23,12 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds max_execution_time;
-
-    /// Cloud only
-    extern const SettingsBool cloud_mode;
-}
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
@@ -187,8 +180,7 @@ std::string ExecutablePoolDictionarySource::toString() const
 
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -196,11 +188,8 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (global_context->getSettingsRef()[Setting::cloud_mode])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable pool` is disabled");
-
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable_pool` does not support attribute expressions");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
@@ -216,7 +205,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 
         size_t max_command_execution_time = config.getUInt64(settings_config_prefix + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(context->getSettingsRef()[Setting::max_execution_time].totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(context->getSettingsRef().max_execution_time.totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
 
@@ -245,7 +234,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,

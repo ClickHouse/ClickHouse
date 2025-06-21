@@ -1,8 +1,6 @@
-import logging
-import time
-
 import pytest
-
+import time
+import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -84,7 +82,7 @@ EOF""",
 
         expected_errors = [
             "no user with such name",
-            "not found in `user directories`",
+            "not found in user directories",
             "User has been dropped",
         ]
         while True:

@@ -2,23 +2,14 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/Exception.h>
+#include <Common/re2.h>
+#include <Core/Settings.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
-#include <azure/storage/blobs/blob_responses.hpp>
-#include <azure/storage/blobs/rest_client.hpp>
-#include <azure/core/credentials/credentials.hpp>
-
-#endif
-
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/re2.h>
-#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <filesystem>
-#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
@@ -28,40 +19,16 @@ namespace ProfileEvents
     extern const Event DiskAzureCreateContainer;
 }
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 azure_max_single_part_upload_size;
-    extern const SettingsUInt64 azure_max_single_read_retries;
-    extern const SettingsUInt64 azure_list_object_keys_size;
-    extern const SettingsUInt64 azure_min_upload_part_size;
-    extern const SettingsUInt64 azure_max_upload_part_size;
-    extern const SettingsUInt64 azure_max_single_part_copy_size;
-    extern const SettingsUInt64 azure_max_blocks_in_multipart_upload;
-    extern const SettingsUInt64 azure_max_unexpected_write_error_retries;
-    extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
-    extern const SettingsUInt64 azure_strict_upload_part_size;
-    extern const SettingsUInt64 azure_upload_part_size_multiply_factor;
-    extern const SettingsUInt64 azure_upload_part_size_multiply_parts_count_threshold;
-    extern const SettingsUInt64 azure_sdk_max_retries;
-    extern const SettingsUInt64 azure_sdk_retry_initial_backoff_ms;
-    extern const SettingsUInt64 azure_sdk_retry_max_backoff_ms;
-    extern const SettingsBool azure_check_objects_after_upload;
-}
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace AzureBlobStorage
 {
-
-#if USE_AZURE_BLOB_STORAGE
 
 static void validateStorageAccountUrl(const String & storage_account_url)
 {
@@ -94,50 +61,6 @@ static bool isConnectionString(const std::string & candidate)
     return !candidate.starts_with("http");
 }
 
-ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
-    : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
-{
-}
-
-BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
-{
-    return client.GetBlobClient(blob_prefix / blob_name);
-}
-
-BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_name) const
-{
-    return client.GetBlockBlobClient(blob_prefix / blob_name);
-}
-
-BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
-{
-    return client.GetProperties();
-}
-
-ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
-{
-    auto new_options = options;
-    new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
-
-    auto response = client.ListBlobs(new_options);
-    String blob_prefix_str = blob_prefix / "";
-
-    for (auto & blob : response.Blobs)
-    {
-        if (!blob.Name.starts_with(blob_prefix_str))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix_str, blob.Name);
-
-        blob.Name = blob.Name.substr(blob_prefix_str.size());
-    }
-
-    return response;
-}
-
-bool ContainerClientWrapper::IsClientForDisk() const
-{
-    return client.GetClickhouseOptions().IsClientForDisk;
-}
-
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
@@ -156,30 +79,18 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
         if constexpr (std::is_same_v<T, ConnectionString>)
             return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
         else
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+            return std::make_unique<ServiceClient>(endpoint.getEndpointWithoutContainer(), auth, client_options);
     }, auth_method);
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
-    {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
-
     return std::visit([this]<typename T>(const T & auth)
     {
         if constexpr (std::is_same_v<T, ConnectionString>)
-        {
-            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
+            return std::make_unique<ContainerClient>(ContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options));
         else
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
+            return std::make_unique<ContainerClient>(endpoint.getEndpoint(), auth, client_options);
     }, auth_method);
 }
 
@@ -259,12 +170,6 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
         }
-
-        if (config.has(config_prefix + ".endpoint_subpath"))
-        {
-            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
-        }
     }
     else if (config.has(config_prefix + ".connection_string"))
     {
@@ -320,7 +225,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 static bool containerExists(const ContainerClient & client)
 {
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client.IsClientForDisk())
+    if (client.GetClickhouseOptions().IsClientForDisk)
         ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
 
     try
@@ -338,9 +243,6 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
-    if (!params.endpoint.sas_auth.empty())
-        return params.createForContainer();
-
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
     {
         return params.createForContainer();
@@ -361,8 +263,7 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
         if (params.client_options.ClickhouseOptions.IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
 
-        auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
-        return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
+        return std::make_unique<ContainerClient>(service_client->CreateBlobContainer(params.endpoint.container_name).Value);
     }
     catch (const Azure::Storage::StorageException & e)
     {
@@ -412,77 +313,63 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
     return client_options;
 }
 
-#endif
-
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
 
-    settings->max_single_part_upload_size = query_settings[Setting::azure_max_single_part_upload_size];
-    settings->max_single_read_retries = query_settings[Setting::azure_max_single_read_retries];
-    settings->max_single_download_retries = query_settings[Setting::azure_max_single_read_retries];
-    settings->list_object_keys_size = query_settings[Setting::azure_list_object_keys_size];
-    settings->min_upload_part_size = query_settings[Setting::azure_min_upload_part_size];
-    settings->max_upload_part_size = query_settings[Setting::azure_max_upload_part_size];
-    settings->max_single_part_copy_size = query_settings[Setting::azure_max_single_part_copy_size];
-    settings->max_blocks_in_multipart_upload = query_settings[Setting::azure_max_blocks_in_multipart_upload];
-    settings->max_unexpected_write_error_retries = query_settings[Setting::azure_max_unexpected_write_error_retries];
-    settings->max_inflight_parts_for_one_file = query_settings[Setting::azure_max_inflight_parts_for_one_file];
-    settings->strict_upload_part_size = query_settings[Setting::azure_strict_upload_part_size];
-    settings->upload_part_size_multiply_factor = query_settings[Setting::azure_upload_part_size_multiply_factor];
-    settings->upload_part_size_multiply_parts_count_threshold = query_settings[Setting::azure_upload_part_size_multiply_parts_count_threshold];
-    settings->sdk_max_retries = query_settings[Setting::azure_sdk_max_retries];
-    settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
-    settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
-    settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
+    settings->max_single_part_upload_size = query_settings.azure_max_single_part_upload_size;
+    settings->max_single_read_retries = query_settings.azure_max_single_read_retries;
+    settings->max_single_download_retries = query_settings.azure_max_single_read_retries;
+    settings->list_object_keys_size = query_settings.azure_list_object_keys_size;
+    settings->min_upload_part_size = query_settings.azure_min_upload_part_size;
+    settings->max_upload_part_size = query_settings.azure_max_upload_part_size;
+    settings->max_single_part_copy_size = query_settings.azure_max_single_part_copy_size;
+    settings->max_blocks_in_multipart_upload = query_settings.azure_max_blocks_in_multipart_upload;
+    settings->max_unexpected_write_error_retries = query_settings.azure_max_unexpected_write_error_retries;
+    settings->max_inflight_parts_for_one_file = query_settings.azure_max_inflight_parts_for_one_file;
+    settings->strict_upload_part_size = query_settings.azure_strict_upload_part_size;
+    settings->upload_part_size_multiply_factor = query_settings.azure_upload_part_size_multiply_factor;
+    settings->upload_part_size_multiply_parts_count_threshold = query_settings.azure_upload_part_size_multiply_parts_count_threshold;
+    settings->sdk_max_retries = query_settings.azure_sdk_max_retries;
+    settings->sdk_retry_initial_backoff_ms = query_settings.azure_sdk_retry_initial_backoff_ms;
+    settings->sdk_retry_max_backoff_ms = query_settings.azure_sdk_retry_max_backoff_ms;
 
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy)
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy)
 {
-    auto settings = getRequestSettings(context->getSettingsRef());
-
-    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
-    if (endpoint_settings)
-        settings->use_native_copy = endpoint_settings->use_native_copy;
-
-    if (!use_native_copy)
-        settings->use_native_copy = false;
-
+    auto settings = getRequestSettings(query_settings);
+    settings->use_native_copy = use_native_copy;
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref)
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     auto settings = std::make_unique<RequestSettings>();
+    const auto & settings_ref = context->getSettingsRef();
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
-    settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
-    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);
-    settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref[Setting::azure_max_single_read_retries]);
-    settings->max_single_download_retries = config.getUInt64(config_prefix + ".max_single_download_retries", settings_ref[Setting::azure_max_single_read_retries]);
-    settings->list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", settings_ref[Setting::azure_list_object_keys_size]);
-    settings->min_upload_part_size = config.getUInt64(config_prefix + ".min_upload_part_size", settings_ref[Setting::azure_min_upload_part_size]);
-    settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", settings_ref[Setting::azure_max_upload_part_size]);
-    settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", settings_ref[Setting::azure_max_single_part_copy_size]);
-    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", settings_ref[Setting::azure_max_blocks_in_multipart_upload]);
-    settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", settings_ref[Setting::azure_max_unexpected_write_error_retries]);
-    settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", settings_ref[Setting::azure_max_inflight_parts_for_one_file]);
-    settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", settings_ref[Setting::azure_strict_upload_part_size]);
-    settings->upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".upload_part_size_multiply_factor", settings_ref[Setting::azure_upload_part_size_multiply_factor]);
-    settings->upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".upload_part_size_multiply_parts_count_threshold", settings_ref[Setting::azure_upload_part_size_multiply_parts_count_threshold]);
+    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref.azure_max_single_part_upload_size);
+    settings->max_single_read_retries = config.getUInt64(config_prefix + ".max_single_read_retries", settings_ref.azure_max_single_read_retries);
+    settings->max_single_download_retries = config.getUInt64(config_prefix + ".max_single_download_retries", settings_ref.azure_max_single_read_retries);
+    settings->list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", settings_ref.azure_list_object_keys_size);
+    settings->min_upload_part_size = config.getUInt64(config_prefix + ".min_upload_part_size", settings_ref.azure_min_upload_part_size);
+    settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", settings_ref.azure_max_upload_part_size);
+    settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", settings_ref.azure_max_single_part_copy_size);
+    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", settings_ref.azure_max_blocks_in_multipart_upload);
+    settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", settings_ref.azure_max_unexpected_write_error_retries);
+    settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", settings_ref.azure_max_inflight_parts_for_one_file);
+    settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", settings_ref.azure_strict_upload_part_size);
+    settings->upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".upload_part_size_multiply_factor", settings_ref.azure_upload_part_size_multiply_factor);
+    settings->upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".upload_part_size_multiply_parts_count_threshold", settings_ref.azure_upload_part_size_multiply_parts_count_threshold);
 
-    settings->sdk_max_retries = config.getUInt64(config_prefix + ".max_tries", settings_ref[Setting::azure_sdk_max_retries]);
-    settings->sdk_retry_initial_backoff_ms = config.getUInt64(config_prefix + ".retry_initial_backoff_ms", settings_ref[Setting::azure_sdk_retry_initial_backoff_ms]);
-    settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
+    settings->sdk_max_retries = config.getUInt64(config_prefix + ".max_tries", settings_ref.azure_sdk_max_retries);
+    settings->sdk_retry_initial_backoff_ms = config.getUInt64(config_prefix + ".retry_initial_backoff_ms", settings_ref.azure_sdk_retry_initial_backoff_ms);
+    settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref.azure_sdk_retry_max_backoff_ms);
 
-    settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
-
-
-#if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
         using CurlOptions = Azure::Core::Http::CurlTransportOptions;
@@ -495,76 +382,12 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
-#endif
 
     return settings;
 }
 
 }
 
-
-void AzureSettingsByEndpoint::loadFromConfig(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const DB::Settings & settings)
-{
-    std::lock_guard lock(mutex);
-    azure_settings.clear();
-    if (!config.has(config_prefix))
-        return;
-
-
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_prefix, config_keys);
-
-    for (const String & key : config_keys)
-    {
-        const auto key_path = config_prefix + "." + key;
-        String endpoint_path = key_path + ".connection_string";
-
-        if (!config.has(endpoint_path))
-        {
-            endpoint_path = key_path + ".storage_account_url";
-
-            if (!config.has(endpoint_path))
-            {
-                endpoint_path = key_path + ".endpoint";
-
-                if (!config.has(endpoint_path))
-                {
-                    /// Error, shouldn't hit this todo:: throw error
-                    continue;
-                }
-            }
-        }
-
-        auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
-
-        azure_settings.emplace(
-                config.getString(endpoint_path),
-                std::move(*request_settings));
-
-    }
 }
 
-std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSettings(
-    const String & endpoint) const
-{
-    std::lock_guard lock(mutex);
-    auto next_prefix_setting = azure_settings.upper_bound(endpoint);
-
-    /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
-    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != azure_settings.begin();)
-    {
-        std::advance(possible_prefix_setting, -1);
-        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
-        if (endpoint.starts_with(endpoint_prefix))
-            return possible_prefix_setting->second;
-    }
-
-    return {};
-}
-
-}
-
-
+#endif

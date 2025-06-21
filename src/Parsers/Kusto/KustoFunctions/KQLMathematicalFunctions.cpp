@@ -1,6 +1,6 @@
 #include "KQLMathematicalFunctions.h"
 
-#include <fmt/format.h>
+#include <format>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ bool IsNan::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto argument = getArgument(function_name, pos);
-    out = fmt::format("if(toTypeName({0}) = 'Float64', isNaN({0}), throwIf(true, 'Expected argument of data type real'))", argument);
+    out = std::format("if(toTypeName({0}) = 'Float64', isNaN({0}), throwIf(true, 'Expected argument of data type real'))", argument);
 
     return true;
 }

@@ -1,33 +1,24 @@
 #include "getStructureOfRemoteTable.h"
-
-#include <Columns/ColumnBLOB.h>
-#include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTFunction.h>
+#include <Columns/ColumnString.h>
+#include <Storages/IStorage.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Storages/IStorage.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <Common/NetException.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
+#include <Common/NetException.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-}
 
 namespace ErrorCodes
 {
@@ -53,7 +44,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
             return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
-        auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
+        auto table_func_name = queryToString(table_func_ptr);
         query = "DESC TABLE " + table_func_name;
     }
     else
@@ -75,8 +66,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     /// since this is a service query and should not lead to query failure.
     {
         Settings new_settings = new_context->getSettingsCopy();
-        new_settings[Setting::max_result_rows] = 0;
-        new_settings[Setting::max_result_bytes] = 0;
+        new_settings.max_result_rows = 0;
+        new_settings.max_result_bytes = 0;
         new_context->setSettings(new_settings);
     }
 
@@ -101,8 +92,6 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     while (Block current = executor.readBlock())
     {
-        current = convertBLOBColumns(current);
-
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
         ColumnPtr default_kind = current.getByName("default_type").column;
@@ -113,19 +102,19 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             ColumnDescription column;
 
-            column.name = (*name)[i].safeGet<String>();
+            column.name = (*name)[i].safeGet<const String &>();
 
-            String data_type_name = (*type)[i].safeGet<String>();
+            String data_type_name = (*type)[i].safeGet<const String &>();
             column.type = data_type_factory.get(data_type_name);
 
-            String kind_name = (*default_kind)[i].safeGet<String>();
+            String kind_name = (*default_kind)[i].safeGet<const String &>();
             if (!kind_name.empty())
             {
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
-                String expr_str = (*default_expr)[i].safeGet<String>();
+                String expr_str = (*default_expr)[i].safeGet<const String &>();
                 column.default_desc.expression = parseQuery(
                     expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression",
-                    0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    0, settings.max_parser_depth, settings.max_parser_backtracks);
             }
 
             res.add(column);
@@ -205,22 +194,21 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
         RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
         while (auto block = executor.readBlock())
         {
-            block = convertBLOBColumns(block);
-
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
 
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = name_col[i].safeGet<String>();
-                auto type_name = type_col[i].safeGet<String>();
+                auto name = name_col[i].safeGet<const String &>();
+                auto type_name = type_col[i].safeGet<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
                 if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())

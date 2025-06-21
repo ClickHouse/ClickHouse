@@ -19,16 +19,13 @@ ORDER BY a SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
-    enable_block_offset_column = 0;
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_ind_merge_2 SELECT number, number, rand(), rand(), rand(), rand() FROM numbers(1000);
 INSERT INTO t_ind_merge_2 SELECT number, number, rand(), rand(), rand(), rand() FROM numbers(1000);
 
 OPTIMIZE TABLE t_ind_merge_2 FINAL;
-SYSTEM FLUSH LOGS text_log;
-SET max_rows_to_read = 0; -- system.text_log can be really big
+SYSTEM FLUSH LOGS;
 
 --- merged: a, c, d; gathered: b, e, f
 WITH

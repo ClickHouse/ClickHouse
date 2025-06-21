@@ -1,6 +1,0 @@
-x
-y
-x	y
-SELECT s1 FROM t_lightweight_mut_5 ORDER BY id;	4
-SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;	4
-SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;	6

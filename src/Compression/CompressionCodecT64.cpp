@@ -1,6 +1,5 @@
 #include <cstring>
 
-#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -93,8 +92,6 @@ enum class MagicNumber : uint8_t
     Decimal64   = 20,
     IPv4        = 21,
     Date32      = 22,
-    Time        = 23,
-    Time64      = 24,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -114,8 +111,6 @@ MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
         case TypeIndex::Int64:      return MagicNumber::Int64;
         case TypeIndex::Date:       return MagicNumber::Date;
         case TypeIndex::Date32:     return MagicNumber::Date32;
-        case TypeIndex::Time:       return MagicNumber::Time;
-        case TypeIndex::Time64:     return MagicNumber::Time64;
         case TypeIndex::DateTime:   return MagicNumber::DateTime;
         case TypeIndex::DateTime64: return MagicNumber::DateTime64;
         case TypeIndex::Enum8:      return MagicNumber::Enum8;
@@ -147,8 +142,6 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
-        case MagicNumber::Time:         return TypeIndex::Time;
-        case MagicNumber::Time64:       return TypeIndex::Time64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
         case MagicNumber::Enum16:       return TypeIndex::Enum16;
         case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
@@ -174,13 +167,11 @@ TypeIndex baseType(TypeIndex type_idx)
         case TypeIndex::Int16:
             return TypeIndex::Int16;
         case TypeIndex::Int32:
-        case TypeIndex::Time:
         case TypeIndex::Decimal32:
         case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
-        case TypeIndex::Time64:
         case TypeIndex::DateTime64:
             return TypeIndex::Int64;
         case TypeIndex::UInt8:
@@ -222,8 +213,6 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::IPv4:
-        case TypeIndex::Time:
-        case TypeIndex::Time64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
         case TypeIndex::Decimal32:
@@ -462,9 +451,11 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        else
+            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    else
+        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -504,8 +495,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
 
-    T min;
-    T max;
+    T min, max;
     findMinMax<T>(src, bytes_size, min, max);
     MinMaxType min64 = min; // NOLINT
     MinMaxType max64 = max; // NOLINT
