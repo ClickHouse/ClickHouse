@@ -1151,7 +1151,7 @@ try
 
     size_t update_period_seconds = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
     size_t heavy_metrics_update_period_seconds = server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s];
-    if (update_period_seconds == 0 || (heavy_metrics_update_period_seconds == 0))
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
     {
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Settings asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
     }
