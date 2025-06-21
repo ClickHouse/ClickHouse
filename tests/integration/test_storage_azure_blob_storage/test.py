@@ -1667,7 +1667,8 @@ def test_hive_partitioning_with_all_parameters(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
-    pattern = r"DB::Exception: Cannot use hive partitioning for file"
+
+    pattern = r"DB::Exception: A hive partitioned file can't contain only partition columns"
 
     with pytest.raises(Exception, match=pattern):
         azure_query(node, query, settings={"use_hive_partitioning": 1})
