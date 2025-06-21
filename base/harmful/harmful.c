@@ -104,7 +104,7 @@ TRAP(jrand48)
 TRAP(l64a)
 TRAP(lcong48)
 TRAP(lgammafNx)
-// TRAP(localeconv) // Disabled for liboai compatibility - nlohmann JSON uses this for number formatting
+TRAP(localeconv)
 TRAP(localtime)
 TRAP(login)
 TRAP(login_tty)

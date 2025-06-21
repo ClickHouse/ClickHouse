@@ -199,7 +199,6 @@ if (ENABLE_BUZZHOUSE)
 endif()
 if (ENABLE_CLIENT_AI)
     set(USE_CLIENT_AI 1)
-    # set(USE_LIBOAI 1) # Removed - using custom OpenAIClient implementation
 endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
