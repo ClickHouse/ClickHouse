@@ -23,7 +23,7 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    set (DEFAULT_LIBS "${CMAKE_SOURCE_DIR}/contrib/sysroot/linux-x86_64/lib/libllvmlibc.a ${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
 else ()
     set (DEFAULT_LIBS "${CMAKE_SOURCE_DIR}/contrib/sysroot/linux-x86_64/lib/libllvmlibc.a ${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
 endif ()
