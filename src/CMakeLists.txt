@@ -185,6 +185,7 @@ endif()
 
 if (ENABLE_CLIENT_AI)
     add_headers_and_sources(dbms Client/AI)
+    add_headers_and_sources(dbms Client/AI/OpenAIClient)
 endif()
 
 if (OS_LINUX)

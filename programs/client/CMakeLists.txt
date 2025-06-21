@@ -21,9 +21,7 @@ if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
 endif()
 
-if (TARGET ch_contrib::liboai)
-    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::liboai)
-endif()
+# liboai dependency removed - using custom OpenAIClient implementation
 
 # Always use internal readpassphrase
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
