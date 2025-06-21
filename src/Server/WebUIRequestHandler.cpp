@@ -84,8 +84,6 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
     }
-
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 }
