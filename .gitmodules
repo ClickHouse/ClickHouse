@@ -372,6 +372,3 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
-[submodule "contrib/liboai"]
-	path = contrib/liboai
-	url = https://github.com/D7EAD/liboai.git

@@ -492,6 +492,10 @@ void Client::connect()
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
+#if USE_CLIENT_AI
+            setupAISchemaProvider();
+#endif
+
             break;
         }
         catch (Exception & e)
