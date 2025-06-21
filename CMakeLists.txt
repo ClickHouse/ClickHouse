@@ -91,6 +91,7 @@ list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
+option (ENABLE_CLIENT_AI "Enable client AI" ON)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)

@@ -24,6 +24,10 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#if USE_CLIENT_AI
+#include <Client/AI/IAIProvider.h>
+#endif
+
 namespace po = boost::program_options;
 
 
@@ -152,6 +156,11 @@ protected:
     void clearTerminal();
     void showClientVersion();
 
+#if USE_CLIENT_AI
+    void initAIProvider();
+    void setupAISchemaProvider();
+#endif
+
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
 
@@ -238,6 +247,10 @@ private:
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
+    
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns empty string on exception
+    std::string executeQueryForSingleString(const std::string & query);
 
 protected:
 
@@ -417,8 +430,16 @@ protected:
 
     /// Options for BuzzHouse
     String buzz_house_options_path;
+    
+    /// Text to prepopulate in the next query prompt
+    String next_query_to_prepopulate;
     bool buzz_house = false;
     int error_code = 0;
+
+#if USE_CLIENT_AI
+    /// Cached AI provider for SQL generation
+    AIProviderPtr ai_provider;
+#endif
 
     struct
     {

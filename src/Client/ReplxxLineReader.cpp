@@ -589,4 +589,13 @@ void ReplxxLineReader::disableBracketedPaste()
     rx.disable_bracketed_paste();
 }
 
+void ReplxxLineReader::setInitialText(const String & text)
+{
+    // Preload the buffer with the initial text
+    if (!text.empty())
+    {
+        rx.set_preload_buffer(text);
+    }
+}
+
 }
