@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import contextlib
 import os
 from multiprocessing.dummy import Pool
 
@@ -7,6 +7,7 @@ import pytest
 
 import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import KeeperClient
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -67,15 +68,15 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_fake_zk(nodename, timeout=30.0):
-    return ku.get_fake_zk(cluster, nodename, timeout=timeout)
+def get_zk_client(nodename, timeout=30.0):
+    return KeeperClient.from_cluster(cluster, nodename, connection_timeout=timeout, secure=True)
 
 
 def run_test():
     node_zks = []
     try:
         for node in nodes:
-            node_zks.append(get_fake_zk(node.name))
+            node_zks.append(get_zk_client(node.name))
 
         node_zks[0].create("/test_node", b"somedata1")
         node_zks[1].sync("/test_node")
@@ -84,14 +85,11 @@ def run_test():
         for node_zk in node_zks:
             assert node_zk.exists("/test_node") is not None
     finally:
-        try:
+        with contextlib.suppress(Exception):
             for zk_conn in node_zks:
                 if zk_conn is None:
                     continue
                 zk_conn.stop()
-                zk_conn.close()
-        except:
-            pass
 
 
 def setupSsl(node, filename, password):
