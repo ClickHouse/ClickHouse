@@ -162,6 +162,11 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
 }
 
+void IColumn::updateAt(const IColumn &, size_t, size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
+}
+
 #if USE_EMBEDDED_COMPILER
 llvm::Value * IColumn::compileComparator(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
@@ -623,6 +628,121 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
         for (auto & sz : sizes)
             sz += element_size;
     }
+}
+
+template <bool one_source>
+static UInt64 getColumnIndex(const IColumn::Patch & patch, size_t i)
+{
+    if constexpr (one_source)
+    {
+        return 0;
+    }
+    else
+    {
+        chassert(patch.src_col_indices);
+        return (*patch.src_col_indices)[i];
+    }
+}
+
+template <bool one_source, typename Derived>
+static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
+{
+    size_t num_patched_rows = patch.dst_row_indices.size();
+    if (num_patched_rows == 0)
+        return dst.getPtr();
+
+    auto res = dst.cloneEmpty();
+    auto & res_typed = assert_cast<Derived &>(*res);
+    res_typed.reserve(dst.size());
+
+    size_t current_row = 0;
+    for (size_t i = 0; i < num_patched_rows; ++i)
+    {
+        UInt64 dst_row = patch.dst_row_indices[i];
+        UInt64 src_col = getColumnIndex<one_source>(patch, i);
+        UInt64 src_row = patch.src_row_indices[i];
+        UInt64 src_version = patch.sources[src_col].versions[src_row];
+
+        if (src_version > patch.dst_versions[dst_row])
+        {
+            patch.dst_versions[dst_row] = src_version;
+
+            res_typed.insertRangeFrom(dst, current_row, dst_row - current_row);
+            res_typed.insertFrom(patch.sources[src_col].column, src_row);
+
+            current_row = dst_row + 1;
+        }
+    }
+
+    res_typed.insertRangeFrom(dst, current_row, dst.size() - current_row);
+    return res;
+}
+
+template <bool one_source, typename Derived>
+static void updateInplaceFrom(Derived & dst, const IColumn::Patch & patch)
+{
+    size_t num_patched_rows = patch.dst_row_indices.size();
+
+    for (size_t i = 0; i < num_patched_rows; ++i)
+    {
+        UInt64 dst_row = patch.dst_row_indices[i];
+        UInt64 src_col = getColumnIndex<one_source>(patch, i);
+        UInt64 src_row = patch.src_row_indices[i];
+        UInt64 src_version = patch.sources[src_col].versions[src_row];
+
+        if (src_version > patch.dst_versions[dst_row])
+        {
+            patch.dst_versions[dst_row] = src_version;
+            dst.updateAt(patch.sources[src_col].column, dst_row, src_row);
+        }
+    }
+}
+
+template <typename Derived>
+static void assertPatch(const Derived & dst, const IColumn::Patch & patch)
+{
+    if (patch.sources.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch has no sources");
+
+    if (patch.dst_row_indices.size() != patch.src_row_indices.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Size of destination indices ({}) doesn't match the size of source indices ({})",
+            patch.dst_row_indices.size(), patch.src_row_indices.size());
+
+    if (patch.dst_versions.size() != dst.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Size of destination versions ({}) doesn't match the size of destination column ({})",
+            patch.dst_versions.size(), dst.size());
+
+    if (patch.sources.size() != 1 && !patch.src_col_indices)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Have {} sources for patch, but column indices are not provided",
+            patch.sources.size());
+}
+
+template <typename Derived, typename Parent>
+ColumnPtr IColumnHelper<Derived, Parent>::updateFrom(const IColumn::Patch & patch) const
+{
+    const auto & dst = static_cast<const Derived &>(*this);
+    assertPatch(dst, patch);
+
+    if (patch.sources.size() == 1)
+        return updateFrom<true>(dst, patch);
+
+    return updateFrom<false>(dst, patch);
+}
+
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & patch)
+{
+    auto & dst = static_cast<Derived &>(*this);
+    assertPatch(dst, patch);
+
+    if (patch.sources.size() == 1)
+        updateInplaceFrom<true>(dst, patch);
+    else
+        updateInplaceFrom<false>(dst, patch);
 }
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;

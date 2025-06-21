@@ -61,9 +61,11 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (query_settings[Setting::aggregate_functions_null_for_empty])
         return false;
 
+    auto mutations_snapshot = reading->getMutationsSnapshot();
+
     /// Don't use projections if have mutations to apply
     /// because we need to apply them on original data.
-    if (query_settings[Setting::apply_mutations_on_fly] && reading->getMutationsSnapshot()->hasDataMutations())
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return false;
 
     return true;

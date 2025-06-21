@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -97,7 +98,6 @@ public:
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
-
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
@@ -131,7 +131,7 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
 
@@ -237,6 +237,7 @@ public:
     std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
+
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
@@ -449,6 +450,9 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
+    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
+    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
 
@@ -660,6 +664,9 @@ protected:
 
     void removeIfNeeded();
 
+    /// Set of source parts for patch parts. Empty for regular parts.
+    SourcePartsSetForPatch source_parts_set;
+
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
@@ -706,7 +713,6 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
@@ -744,6 +750,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
+    void loadSourcePartsSet();
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;

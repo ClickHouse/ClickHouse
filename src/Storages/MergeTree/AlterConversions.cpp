@@ -9,10 +9,15 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <ranges>
 
 namespace ProfileEvents
 {
+    extern const Event ReadTasksWithAppliedPatches;
+    extern const Event PatchesAppliedInAllReadTasks;
+    extern const Event PatchesMergeAppliedInAllReadTasks;
+    extern const Event PatchesJoinAppliedInAllReadTasks;
     extern const Event ReadTasksWithAppliedMutationsOnFly;
     extern const Event MutationsAppliedOnFlyInAllReadTasks;
 }
@@ -51,6 +56,7 @@ static MutationCommand createCommandWithUpdatedColumns(
         res.partition = command.partition->clone();
 
     res.column_to_update_expression = std::move(available_columns);
+    res.mutation_version = command.mutation_version;
 
     auto & alter_ast = assert_cast<ASTAlterCommand &>(*res.ast);
     auto new_assignments = std::make_shared<ASTExpressionList>();
@@ -103,10 +109,14 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 
 AlterConversions::AlterConversions(
     const MutationCommands & mutation_commands_,
+    const PatchPartsForReader & patch_parts_,
     const ContextPtr & context)
 {
     for (const auto & command : mutation_commands_)
         addMutationCommand(command, context);
+
+    for (const auto & patch : patch_parts_)
+        addPatchPart(patch);
 
     /// Do not throw if there are no mutations or patches.
     if (number_of_alter_mutations > 1)
@@ -114,7 +124,16 @@ AlterConversions::AlterConversions(
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Applying mutations on-fly is not supported with more than one ALTER MODIFY");
+
+        if (!patch_parts.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Applying patch parts is not supported with more than one on-fly ALTER MODIFY");
     }
+}
+
+bool AlterConversions::hasLightweightDelete() const
+{
+    return all_updated_columns.contains(RowExistsColumn::name);
 }
 
 bool AlterConversions::isSupportedDataMutation(MutationCommand::Type type)
@@ -129,7 +148,7 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
-    return type == MutationCommand::Type::RENAME_COLUMN;
+    return type == MutationCommand::RENAME_COLUMN;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
@@ -143,7 +162,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     else if (command.type == READ_COLUMN)
     {
         ++number_of_alter_mutations;
-        position_of_alter_conversion = mutation_commands.size();
+        version_of_alter_mutation = command.mutation_version;
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
@@ -162,6 +181,31 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
         mutation_commands.push_back(command);
     }
+}
+
+void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
+{
+    for (const auto & column : patch_part.part->getColumns())
+    {
+        if (isPatchPartSystemColumn(column.name))
+            continue;
+
+        String updated_column_name = column.name;
+        const auto & patch_conversions = patch_part.part->getAlterConversions();
+
+        if (patch_conversions && patch_conversions->columnHasNewName(updated_column_name))
+            updated_column_name = patch_conversions->getColumnNewName(column.name);
+
+        all_updated_columns.insert(updated_column_name);
+        columns_updated_in_patches.insert(updated_column_name);
+    }
+
+    /// For patches before ALTER MODIFY we should not apply conversions
+    /// because correctness of ALTER MODIFY may depend on the data in patch part (the result of UPDATE).
+    if (version_of_alter_mutation && !patchHasHigherDataVersion(*patch_part.part, *version_of_alter_mutation))
+        patch_part.perform_alter_conversions = false;
+
+    patch_parts.push_back(std::move(patch_part));
 }
 
 bool AlterConversions::columnHasNewName(const std::string & old_name) const
@@ -217,13 +261,11 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     auto settings = ExpressionActionsSettings(context);
 
     PrewhereExprSteps steps;
-    for (size_t i = 0; i < actions_chain.size(); ++i)
+    for (auto & actions : actions_chain)
     {
-        auto & actions = actions_chain[i];
-
         /// For mutations before ALTER MODIFY we should not apply conversions
         /// because correctness of ALTER MODIFY may depend on the result of mutation.
-        bool perform_alter_conversions = !position_of_alter_conversion || i >= *position_of_alter_conversion;
+        bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;
         bool is_filter = !actions.filter_column_name.empty();
 
         PrewhereExprStep step
@@ -234,12 +276,68 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .remove_filter_column = false,
             .need_filter = is_filter,
             .perform_alter_conversions = perform_alter_conversions,
+            .mutation_version = actions.mutation_version,
         };
 
         steps.push_back(std::make_shared<PrewhereExprStep>(std::move(step)));
     }
 
     return steps;
+}
+
+PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const
+{
+    PatchPartsForReader patches_to_read;
+
+    size_t num_join = 0;
+    size_t num_merge = 0;
+
+    for (const auto & patch : patch_parts)
+    {
+        bool has_column_in_patch;
+        const auto & patch_conversions = patch.part->getAlterConversions();
+
+        /// If patch has lightweight delete we have to always apply it.
+        if (apply_deleted_mask && patch.part->hasLightweightDelete())
+        {
+            has_column_in_patch = true;
+        }
+        else
+        {
+            has_column_in_patch = std::ranges::any_of(read_columns, [&](const auto & column)
+            {
+                if (isPatchPartSystemColumn(column.name))
+                    return false;
+
+                auto name_in_storage = column.getNameInStorage();
+
+                if (patch_conversions && patch_conversions->isColumnRenamed(name_in_storage))
+                    name_in_storage = patch_conversions->getColumnOldName(name_in_storage);
+
+                return patch.part->getColumnsDescription().hasPhysical(name_in_storage);
+            });
+        }
+
+        if (has_column_in_patch)
+        {
+            if (patch.mode == PatchMode::Join)
+                ++num_join;
+            else
+                ++num_merge;
+
+            patches_to_read.push_back(patch);
+        }
+    }
+
+    if (!patches_to_read.empty())
+    {
+        ProfileEvents::increment(ProfileEvents::ReadTasksWithAppliedPatches);
+        ProfileEvents::increment(ProfileEvents::PatchesAppliedInAllReadTasks, patches_to_read.size());
+        ProfileEvents::increment(ProfileEvents::PatchesJoinAppliedInAllReadTasks, num_join);
+        ProfileEvents::increment(ProfileEvents::PatchesMergeAppliedInAllReadTasks, num_merge);
+    }
+
+    return patches_to_read;
 }
 
 std::vector<MutationActions> AlterConversions::getMutationActions(
