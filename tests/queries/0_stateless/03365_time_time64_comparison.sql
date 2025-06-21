@@ -1,3 +1,5 @@
+SET use_legacy_to_time = 0;
+
 -- TIME AND TIME
 -- Both positive
 SELECT toTime(12) > toTime(13);
