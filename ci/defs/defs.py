@@ -342,7 +342,7 @@ class ArtifactNames:
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
     CH_COV_BIN = "CH_COV_BIN"
-    CH_ARM_BIN = "CH_ARM_BIN"
+    CH_ARM_BINARY = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
@@ -362,7 +362,7 @@ class ArtifactNames:
     LEXER_AMD_UBSAN = "LEXER_AMD_UBSAN"
     LEXER_AMD_BINARY = "LEXER_AMD_BINARY"
     LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
-    LEXER_ARM_BIN = "LEXER_ARM_BIN"
+    LEXER_ARM_BINARY = "LEXER_ARM_BIN"
     LEXER_COV_BIN = "LEXER_COV_BIN"
 
     FAST_TEST = "FAST_TEST"
@@ -420,7 +420,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_COV_BIN,
-            ArtifactNames.CH_ARM_BIN,
+            ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
             ArtifactNames.CH_ARM_DARWIN_BIN,
@@ -447,7 +447,7 @@ class ArtifactConfigs:
             ArtifactNames.LEXER_AMD_UBSAN,
             ArtifactNames.LEXER_AMD_BINARY,
             ArtifactNames.LEXER_ARM_ASAN,
-            ArtifactNames.LEXER_ARM_BIN,
+            ArtifactNames.LEXER_ARM_BINARY,
             ArtifactNames.LEXER_COV_BIN,
         ]
     )
