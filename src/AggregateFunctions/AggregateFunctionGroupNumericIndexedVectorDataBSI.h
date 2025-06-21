@@ -620,10 +620,15 @@ public:
         }
     }
 
+    /// Convert Float64 to UInt64. If it is negative, convert to Int64 first and then to UInt64 for correct bit representation.
     static inline UInt64 float64ToUInt64(Float64 d)
     {
         if (d >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
             return std::numeric_limits<UInt64>::max();
+        if (d <= static_cast<Float64>(std::numeric_limits<Int64>::lowest()))
+            return std::numeric_limits<UInt64>::lowest();
+        if (d >= 0)
+            return static_cast<UInt64>(d);
         return static_cast<UInt64>(static_cast<Int64>(d));
     }
 

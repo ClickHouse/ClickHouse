@@ -90,6 +90,9 @@ static struct InitFiu
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
 
 
 namespace FailPoints
