@@ -41,9 +41,6 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
-    std::string getRootPrefix() const override { return object_namespace; }
-
-    /// Object keys are unique within the object namespace (container + prefix).
     std::string getCommonKeyPrefix() const override { return ""; }
 
     std::string getDescription() const override { return description; }
@@ -105,8 +102,6 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-
-    bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
 

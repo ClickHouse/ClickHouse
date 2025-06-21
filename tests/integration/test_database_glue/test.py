@@ -7,7 +7,6 @@ from datetime import datetime
 import pyarrow as pa
 import pytest
 import urllib3
-from datetime import datetime, timedelta
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -15,15 +14,13 @@ from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from helpers.config_cluster import minio_access_key, minio_secret_key
-import decimal
 from pyiceberg.types import (
     DoubleType,
+    FloatType,
     NestedField,
     StringType,
     StructType,
     TimestampType,
-    MapType,
-    DecimalType,
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
@@ -34,11 +31,6 @@ CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
 BASE_URL_LOCAL_HOST = "http://localhost:3000"
-
-def generate_decimal(precision=9, scale=2):
-    max_value = 10**(precision - scale) - 1
-    value = random.uniform(0, max_value)
-    return round(decimal.Decimal(value), scale)
 
 DEFAULT_SCHEMA = Schema(
     NestedField(
@@ -60,21 +52,9 @@ DEFAULT_SCHEMA = Schema(
         ),
         required=False,
     ),
-    NestedField(
-        field_id=6,
-        name="map_string_decimal",
-        field_type=MapType(
-            key_type=StringType(),
-            value_type=DecimalType(9, 2),
-            key_id=7,
-            value_id=8,
-            value_required=False,
-        ),
-        required=False,
-    ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -124,59 +104,15 @@ def create_table(
     )
 
 
+def generate_record():
+    return {
+        "datetime": datetime.now(),
+        "symbol": str("kek"),
+        "bid": round(random.uniform(100, 200), 2),
+        "ask": round(random.uniform(200, 300), 2),
+        "details": {"created_by": "Alice Smith"},
+    }
 
-def generate_arrow_data(num_rows=5):
-    datetimes = []
-    symbols = []
-    bids = []
-    asks = []
-    details_created_by = []
-    map_keys = []
-    map_values = []
-
-    offsets = [0]
-
-    for _ in range(num_rows):
-        datetimes.append(datetime.utcnow() - timedelta(minutes=random.randint(0, 60)))
-        symbols.append(random.choice(["AAPL", "GOOG", "MSFT"]))
-        bids.append(random.uniform(100, 150))
-        asks.append(random.uniform(150, 200))
-        details_created_by.append(random.choice(["alice", "bob", "carol"]))
-
-        # map<string, decimal(9,2)>
-        keys = []
-        values = []
-        for i in range(random.randint(1, 3)):
-            keys.append(f"key{i}")
-            values.append(generate_decimal())
-        map_keys.extend(keys)
-        map_values.extend(values)
-        offsets.append(offsets[-1] + len(keys))
-
-    # Struct for 'details'
-    struct_array = pa.StructArray.from_arrays(
-        [pa.array(details_created_by, type=pa.string())],
-        names=["created_by"]
-    )
-
-    # Map array
-    map_array = pa.MapArray.from_arrays(
-        offsets=pa.array(offsets, type=pa.int32()),
-        keys=pa.array(map_keys, type=pa.string()),
-        items=pa.array(map_values, type=pa.decimal128(9, 2))
-    )
-
-    # Final table
-    table = pa.table({
-        "datetime": pa.array(datetimes, type=pa.timestamp("us")),
-        "symbol": pa.array(symbols, type=pa.string()),
-        "bid": pa.array(bids, type=pa.float64()),
-        "ask": pa.array(asks, type=pa.float64()),
-        "details": struct_array,
-        "map_string_decimal": map_array,
-    })
-
-    return table
 
 def create_clickhouse_glue_database(
     started_cluster, node, name, additional_settings={}
@@ -198,6 +134,22 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
+
+
+def print_objects():
+    minio_client = Minio(
+        f"minio:9002",
+        access_key="minio",
+        secret_key="minio123",
+        secure=False,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+    )
+
+    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
+    names = [x.object_name for x in objects]
+    names.sort()
+    for name in names:
+        print(f"Found object: {name}")
 
 
 @pytest.fixture(scope="module")
@@ -304,7 +256,8 @@ def test_select(started_cluster):
         table = create_table(catalog, namespace, table_name)
 
         num_rows = 10
-        df = generate_arrow_data(num_rows)
+        data = [generate_record() for _ in range(num_rows)]
+        df = pa.Table.from_pylist(data)
         table.append(df)
 
         create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)

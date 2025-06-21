@@ -31,7 +31,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
-#include <Common/formatReadable.h>
 #include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -51,11 +50,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsBool s3_disable_checksum;
-}
 
 namespace ErrorCodes
 {
@@ -397,23 +391,6 @@ struct BackupsWorker::BackupStarter
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
-
-        // If user has customized backup bandwidth with S3 checksum enabled,
-        // warn for the effective bandwidth mismatch with user's setup
-        if (!query_context->getSettingsRef()[Setting::s3_disable_checksum]
-            && backup_info.backup_engine_name == "S3"
-            && query_context->getBackupsThrottler())
-        {
-            UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
-            // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
-            // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
-            LOG_WARNING(
-                log,
-                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
-                "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
-                "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
-                formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
-        }
 
         backups_worker.addInfo(backup_id,
             backup_name_for_logging,

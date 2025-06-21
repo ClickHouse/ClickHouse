@@ -5,7 +5,6 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Core/NamesAndTypes.h>
-#include <delta_kernel_ffi.hpp>
 
 namespace ffi
 {
@@ -23,7 +22,7 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(f
 
 /// Get read schema.
 /// Represents read schema based on data files.
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan);
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state);
 
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,

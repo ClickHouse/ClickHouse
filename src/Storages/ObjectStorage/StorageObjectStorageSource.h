@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -14,8 +13,6 @@ namespace DB
 {
 
 class SchemaCache;
-
-using ReadTaskCallback = std::function<String()>;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
@@ -57,7 +54,7 @@ public:
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
-        const ActionsDAG * filter_actions_dag,
+        const std::optional<ActionsDAG> & filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
@@ -73,9 +70,7 @@ public:
         ObjectInfo & object_info,
         const ObjectStoragePtr & object_storage,
         const ContextPtr & context_,
-        const LoggerPtr & log,
-        const std::optional<ReadSettings> & read_settings = std::nullopt);
-
+        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
@@ -222,8 +217,8 @@ class StorageObjectStorageSource::KeysIterator : public IObjectIterator
 {
 public:
     KeysIterator(
-        const Strings & keys_,
         ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
@@ -238,6 +233,7 @@ public:
 
 private:
     const ObjectStoragePtr object_storage;
+    const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;

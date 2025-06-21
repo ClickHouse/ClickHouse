@@ -54,46 +54,28 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) GRANULARITY 1
+    INDEX inv_idx(str) TYPE gin(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key
 ```
 
-where `tokenizer` specifies the tokenizer:
+where `N` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
-- `ngram` set the tokenizer to "tokens('ngram')". i.e. split strings to equal size terms.
-- `split` set the tokenizer to "tokens('split')", i.e. split strings along the separators.
-- `no_op` set the tokenizer to "tokens('no_op')", i.e. every value itself is a term.
+- `gin(0)` (or shorter: `gin()`) set the tokenizer to "tokens", i.e. split strings along spaces,
+- `gin(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
 
-The ngram size can be specified via the `ngram_size` parameter. This is an optional parameter. The following variants exist:
+The maximum rows per postings list can be specified as the second parameter. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
 
-- `ngram_size = N`: with `N` between 2 and 8 sets the tokenizer to "tokens('ngram', N)".
-- If not specified: Use a default ngram size which is 3.
-
-The separators can be specified via the `separators` parameter. This is an optional parameter and only relevant when tokenizer is set to `split`. The following variants exist:
-
-- `separators = []`: A list of strings, e.g. `separators = [', ', '; ', '\n', '\\']`.
-- If not specified: Use a default separator which is a space (`[' ']`).
-
-:::note
-In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
-To do so, pass the separators in order of descending length.
-For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
-:::
-
-The maximum rows per postings list can be specified via an optional `max_rows_per_postings_list`. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
-
-- `max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
-- `max_rows_per_postings_list = M`: with `M` should be at least 8192.
-- If not specified: Use a default maximum rows which is 64K.
+- `gin(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
+- `gin(ngrams, 0)`: No limitation of maximum rows per postings list
+- `gin(ngrams)`: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, full-text indexes can be dropped or added to a column after table creation:
 
 ```sql
 ALTER TABLE tab DROP INDEX inv_idx;
-ALTER TABLE tab ADD INDEX inv_idx(s) TYPE text(tokenizer = 'default');
+ALTER TABLE tab ADD INDEX inv_idx(s) TYPE gin(2);
 ```
 
 To use the index, no special functions or syntax are required. Typical string search predicates automatically leverage the index. As
@@ -191,7 +173,7 @@ We will use `ALTER TABLE` and add an full-text index on the lowercase of the `co
 
 ```sql
 ALTER TABLE hackernews
-     ADD INDEX comment_lowercase(lower(comment)) TYPE text;
+     ADD INDEX comment_lowercase(lower(comment)) TYPE gin;
 
 ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
 ```

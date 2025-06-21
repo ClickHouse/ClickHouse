@@ -27,7 +27,6 @@ public:
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
-    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
@@ -71,11 +70,7 @@ private:
 
     void validateSettings();
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
-
-    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(
-        DatabaseDataLakeStorageType type,
-        DataLakeStorageSettingsPtr storage_settings) const;
-
+    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseDataLakeStorageType type) const;
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes

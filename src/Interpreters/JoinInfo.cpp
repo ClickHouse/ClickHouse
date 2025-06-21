@@ -1,7 +1,6 @@
 #include <Interpreters/JoinInfo.h>
 
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
