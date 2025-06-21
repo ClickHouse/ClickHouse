@@ -10,28 +10,28 @@ title: 'format'
 
 Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
 
-## Syntax {#syntax}
+**Syntax**
 
 ```sql
 format(format_name, [structure], data)
 ```
 
-## Arguments {#arguments}
+**Parameters**
 
 - `format_name` — The [format](/sql-reference/formats) of the data.
 - `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
 - `data` — String literal or constant expression that returns a string containing data in specified format
 
-## Returned value {#returned_value}
+**Returned value**
 
 A table with data parsed from `data` argument according to specified format and specified or extracted structure.
 
-## Examples {#examples}
+**Examples**
 
 Without `structure` argument:
 
 **Query:**
-```sql
+``` sql
 SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
@@ -95,6 +95,6 @@ $$)
 └───────┴─────┘
 ```
 
-## Related {#related}
+**See Also**
 
 - [Formats](../../interfaces/formats.md)

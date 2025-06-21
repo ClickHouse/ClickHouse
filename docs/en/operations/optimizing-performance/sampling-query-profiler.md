@@ -17,12 +17,12 @@ Query profiler is automatically enabled in ClickHouse Cloud and you can run a sa
 :::note If you are running the following query in ClickHouse Cloud, make sure to change `FROM system.trace_log` to `FROM clusterAllReplicas(default, system.trace_log)` to select from all nodes of the cluster
 :::
 
-```sql
+``` sql
 SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
 FROM system.trace_log
-WHERE query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c' AND trace_type = 'CPU' AND event_date = today()
+WHERE (query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c') AND (event_date = today())
 GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
@@ -43,7 +43,7 @@ The default sampling frequency is one sample per second and both CPU and real ti
 
 To analyze the `trace_log` system table:
 
-- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install/install.mdx).
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
 - Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 
@@ -68,7 +68,7 @@ In this example we:
 
 <!-- -->
 
-```sql
+``` sql
 SELECT
     count(),
     arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym

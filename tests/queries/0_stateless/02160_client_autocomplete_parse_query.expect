@@ -11,9 +11,7 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 log_user 0
-# FIXME: workaround to obtain the stacktrace of the client in case of timeout
-# (clickhouse-test wrapper does this on timeout)
-set timeout 3600
+set timeout 60
 set uuid ""
 match_max 100000
 expect_after {
@@ -23,7 +21,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file --highlight=0"
 expect ":) "
 
 # Make a query

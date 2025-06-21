@@ -1,7 +1,9 @@
 #pragma once
 
 #include <mutex>
+#include <Client/ConnectionPool.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Cluster.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -15,8 +17,6 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-class ISyncGuard;
-using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 class StorageDistributed;
 class ActionBlocker;
@@ -25,9 +25,6 @@ class SettingsChanges;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-
-class ConnectionPoolWithFailover;
-using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
 class ISource;
 
