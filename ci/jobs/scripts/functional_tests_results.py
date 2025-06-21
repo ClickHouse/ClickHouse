@@ -109,7 +109,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] == "FAIL"
+                    and test_results[-1][1] in ("FAIL", "SKIPPED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
