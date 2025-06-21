@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 template <typename Type>
@@ -325,5 +326,11 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
+
+IMPLEMENT_SETTING_ENUM(
+    SQLInterceptMode,
+    ErrorCodes::QUERY_IS_PROHIBITED,
+    {{"log", SQLInterceptMode::LOG},
+     {"throw", SQLInterceptMode::THROW}})
 
 }
