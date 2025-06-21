@@ -146,14 +146,23 @@ bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
         /// Check if it is in the same segment by searching for segment_id
         const GinSegmentedPostingsListContainer & container = term_postings.second;
         if (auto container_it = container.find(segment_id); container_it != container.cend())
-            postings_bitset |= *container_it->second;
+        {
+            const GinIndexPostingsList & segment_posting_bitset = *container_it->second;
+            const auto minimum_in_list = segment_posting_bitset.minimum();
+            const auto maximum_in_list = segment_posting_bitset.maximum();
+
+            /// Check if the postings list has always match flag
+            if (segment_posting_bitset.cardinality() == 1 && minimum_in_list == UINT32_MAX)
+                return true;
+
+            if (minimum_in_list <= range_end && range_start <= maximum_in_list)
+                postings_bitset |= segment_posting_bitset;
+        }
     }
 
     GinIndexPostingsList range_bitset;
     range_bitset.addRange(range_start, range_end + 1);
-    range_bitset &= postings_bitset;
-
-    return !range_bitset.isEmpty();
+    return range_bitset.intersect(postings_bitset);
 }
 
 
