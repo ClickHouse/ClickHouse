@@ -287,7 +287,9 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = "{0}.{2}{1}".format(*os.path.splitext(file_name), os.getpid())
+        self.temp_file_path = "{0}.{2}{1}".format(
+            *os.path.splitext(file_name), os.getpid()
+        )
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
@@ -1203,7 +1205,10 @@ def replace_in_file(filename, what, with_what):
 
 @cache
 def is_old_analyzer_used():
-    return clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip() == b"false"
+    return (
+        clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
+        == b"false"
+    )
 
 
 class TestResult:
@@ -1555,11 +1560,7 @@ class TestCase:
             and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.OBJECT_STORAGE
-        if (
-            tags
-            and ("no-coverage" in tags)
-            and (args.collect_per_test_coverage)
-        ):
+        if tags and ("no-coverage" in tags) and (args.collect_per_test_coverage):
             return FailureReason.COVERAGE
 
         if "no-batch" in tags and (
@@ -1609,7 +1610,9 @@ class TestCase:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         stderr = kill_output
-        stderr += str(self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8")
+        stderr += str(
+            self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8"
+        )
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1691,7 +1694,10 @@ class TestCase:
 
         # "X-ClickHouse-Exception-Code" included in "Access-Control-Expose-Headers"
         # "Exception" may be included into i.e. metric name
-        if re.search(r'(^|\W)(Net|Errno|)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
+        if (
+            re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
+            and "X-ClickHouse-Exception-Code" not in stdout
+        ):
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
@@ -1873,7 +1879,9 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
-        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile("rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir)
+        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
+            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir
+        )
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
         client_options += log_opt
@@ -2063,6 +2071,7 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
+
                 @contextmanager
                 def switch_to_smt():
                     with (
@@ -2423,9 +2432,7 @@ class TestSuite:
         all_tests = list(self.get_selected_tests(filter_func))
 
         all_tags_and_random_settings_limits = (
-            self.read_test_tags_and_random_settings_limits(
-                self.suite_path, all_tests
-            )
+            self.read_test_tags_and_random_settings_limits(self.suite_path, all_tests)
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
         self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
@@ -2447,9 +2454,15 @@ class TestSuite:
 
     def apply_test_runs(self, all_tests):
         test_runs = self.args.test_runs
-        long_test_runs = max(int(self.args.test_runs * self.args.long_test_runs_ratio), 1)
+        long_test_runs = max(
+            int(self.args.test_runs * self.args.long_test_runs_ratio), 1
+        )
 
-        all_tests = map(lambda test: [test] * (long_test_runs if self.is_long_test(test) else test_runs), all_tests)
+        all_tests = map(
+            lambda test: [test]
+            * (long_test_runs if self.is_long_test(test) else test_runs),
+            all_tests,
+        )
         all_tests = [item for sublist in all_tests for item in sublist]
         return all_tests
 
@@ -3884,7 +3897,9 @@ def parse_args():
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
-    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
+    parser.add_argument(
+        "--trace", action="store_true", help="Capture various tracing info"
+    )
 
     return parser.parse_args()
 
