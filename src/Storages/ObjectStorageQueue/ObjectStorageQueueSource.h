@@ -26,6 +26,8 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
+    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
@@ -115,6 +117,8 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        bool is_path_with_hive_partitioning = false;
+
         /// Only for processing without buckets.
         std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
 
@@ -177,8 +181,14 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
+        HiveLastProcessedFileInfoMap & file_map,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
+
+    static void prepareHiveProcessedRequests(
+        Coordination::Requests & requests,
+        const HiveLastProcessedFileInfoMap & file_map);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});

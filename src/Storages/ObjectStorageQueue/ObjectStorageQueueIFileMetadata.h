@@ -49,6 +49,23 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
+    struct HiveLastProcessedFileInfo
+    {
+        bool exists;
+        std::string file_path;
+    };
+
+    using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
+
+    struct LastProcessedFileInfo
+    {
+        std::string file_path;
+        size_t index;
+    };
+
+    using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
+    using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
+
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
         const std::string & processing_node_path_,
@@ -81,12 +98,16 @@ public:
     void resetProcessing();
 
     /// Prepare keeper requests, required to set file as Processed.
-    void prepareProcessedRequests(Coordination::Requests & requests);
+    void prepareProcessedRequests(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr);
     /// Prepare keeper requests, required to set file as Failed.
     void prepareFailedRequests(
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
+
+    /// Prepare keeper requests to save hive last processed files
+    virtual void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & /* file_map */) {}
 
     struct SetProcessingResponseIndexes
     {
@@ -105,14 +126,6 @@ public:
     /// Do some work after prepared requests to set file as Processing succeeded.
     void finalizeProcessing(int processing_id_version_);
 
-    /// Set a starting point for processing.
-    /// Done on table creation, when we want to tell the table
-    /// that processing must be started from certain point,
-    /// instead of from scratch.
-    virtual void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) = 0;
-
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
@@ -128,7 +141,8 @@ public:
 
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes) = 0;
 
     virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
     {

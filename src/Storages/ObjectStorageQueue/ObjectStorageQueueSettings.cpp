@@ -44,6 +44,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(Bool, use_hive_partitioning, true, "Path can contains hive partitioning.", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
