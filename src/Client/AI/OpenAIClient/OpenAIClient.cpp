@@ -85,11 +85,8 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
         }
         json_request->set("messages", messages_array);
         
-        /// Add tools array if present
-        std::cerr << "AI: Checking tools - has_value: " << request.tools.has_value() << std::endl;
         if (request.tools.has_value())
         {
-            std::cerr << "AI: Adding " << request.tools.value().size() << " tools to request" << std::endl;
             Poco::JSON::Array::Ptr tools_array = new Poco::JSON::Array;
             for (const auto & func : request.tools.value())
             {
@@ -169,9 +166,6 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
         Poco::JSON::Stringifier::stringify(json_request, json_stream);
         std::string request_body = json_stream.str();
         
-        /// Debug: Print request
-        std::cerr << "AI: OpenAI request: " << request_body << std::endl;
-        
         /// Set up HTTP connection
         ConnectionTimeouts timeouts;
         timeouts.connection_timeout = Poco::Timespan(30, 0);
@@ -208,9 +202,6 @@ OpenAIClient::ChatCompletionResponse OpenAIClient::createChatCompletion(const Ch
         /// Read response body
         std::string response_body;
         std::getline(istr, response_body, '\0');
-        
-        /// Debug: Print response
-        std::cerr << "AI: OpenAI response: " << response_body << std::endl;
         
         /// Parse JSON response
         Poco::JSON::Parser parser;

@@ -1,6 +1,7 @@
 #include <Client/AI/OpenAIProvider.h>
 #include <Client/AI/OpenAIClient/OpenAIClient.h>
 #include <Client/AI/OpenAIClient/Conversation.h>
+#include <Client/AI/AIToolExecutionDisplay.h>
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
 #include <Poco/JSON/Parser.h>
@@ -36,7 +37,6 @@ OpenAIProvider::OpenAIProvider(const AIConfiguration & config_)
 std::string OpenAIProvider::generateSQL(const std::string & prompt)
 {
     /// Use function calling if schema provider is available
-    std::cerr << "AI: generateSQL called, schema_provider is " << (schema_provider ? "set" : "null") << std::endl;
     if (schema_provider)
         return generateSQLWithFunctions(prompt);
     
@@ -112,6 +112,7 @@ Your workflow should be:
 
 IMPORTANT: 
 - Always explore the schema first before writing SQL
+- You can ignore information_schema and system databases typically unless user asks for them.
 - The functions return actual results that you should use to inform your query
 - After gathering enough schema information, generate the final SQL query
 - Return only executable SQL queries, no explanations or markdown
@@ -131,20 +132,21 @@ std::string OpenAIProvider::generateSQLWithFunctions(const std::string & prompt)
     {
         OpenAIClient client(config.api_key);
         Conversation conversation;
+        AIToolExecutionDisplay display(true);
+        
+        display.showProgress("Starting AI SQL generation with schema discovery...");
+        display.showSeparator();
         
         /// Set system prompt
         std::string system_prompt = buildSystemPrompt();
-        std::cerr << "AI: System prompt: " << system_prompt << std::endl;
         conversation.setSystemData(system_prompt);
         
         /// Add user prompt
         std::string user_prompt = buildCompletePrompt(prompt);
-        std::cerr << "AI: User prompt: " << user_prompt << std::endl;
         conversation.addUserData(user_prompt);
         
         /// Set up function definitions (we'll use the same format for tools)
         auto functions = createSchemaFunctions();
-        std::cerr << "AI: Created " << functions.size() << " functions" << std::endl;
         conversation.setFunctions(functions);
         
         /// Maximum iterations to prevent infinite loops
@@ -176,8 +178,8 @@ std::string OpenAIProvider::generateSQLWithFunctions(const std::string & prompt)
                 }
             }
             
-            std::cerr << "AI: conversation.hasFunctions(): " << conversation.hasFunctions() << ", functions.size(): " << conversation.getFunctions().size() << std::endl;
-            std::cerr << "AI: Request has " << (request.tools.has_value() ? std::to_string(request.tools.value().size()) : "no") << " tools" << std::endl;
+            /// Show thinking indicator before sending request
+            display.showThinking();
             
             /// Send request
             auto response = client.createChatCompletion(request);
@@ -193,6 +195,9 @@ std::string OpenAIProvider::generateSQLWithFunctions(const std::string & prompt)
         
         if (final_sql.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to generate SQL after {} iterations", max_iterations);
+        
+        display.showSeparator();
+        display.showProgress("✨ SQL query generated successfully!");
         
         return cleanSQL(final_sql);
     }
@@ -325,6 +330,8 @@ bool OpenAIProvider::processOpenAIResponse(openai::Conversation & conversation,
             const auto & last_msg = conversation.getMessages().back();
             
             /// Process each tool call
+            AIToolExecutionDisplay display(true); // Enable colors
+            
             for (const auto & tool_call : last_msg.tool_calls)
             {
                 /// Execute the function call
@@ -332,12 +339,11 @@ bool OpenAIProvider::processOpenAIResponse(openai::Conversation & conversation,
                 std::string arguments = tool_call.function.arguments;
                 std::string tool_call_id = tool_call.id;
                 
-                std::cerr << "AI: Executing tool_call " << tool_call_id << ": " << function_name << std::endl;
+                display.showToolCall(tool_call_id, function_name, arguments);
                 
                 std::string result = executeFunctionCall(function_name, arguments);
                 
-                /// Debug: Log function result
-                std::cerr << "AI: Function " << function_name << " returned: " << result << std::endl;
+                display.showToolResult(function_name, result, true);
                 
                 /// Add function result to conversation with the specific tool_call_id
                 conversation.addToolData(tool_call_id, result);
@@ -379,11 +385,6 @@ std::string OpenAIProvider::executeSchemaFunction(const std::string & function_n
     if (!schema_provider)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema provider not set");
 
-    /// Debug: Log function execution
-    std::cerr << "AI: Executing function: " << function_name << " with args: ";
-    args->stringify(std::cerr);
-    std::cerr << std::endl;
-    
     if (function_name == "list_databases")
     {
         auto databases = schema_provider->listDatabases();

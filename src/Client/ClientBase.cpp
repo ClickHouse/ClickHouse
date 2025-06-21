@@ -2870,8 +2870,6 @@ void ClientBase::initAIProvider()
 void ClientBase::setupAISchemaProvider()
 
 {
-    std::cerr << "AI: setupAISchemaProvider called, ai_provider is " << (ai_provider ? "set" : "null") 
-              << ", connection is " << (connection ? "set" : "null") << std::endl;
     if (!ai_provider || !connection)
         return;
         
