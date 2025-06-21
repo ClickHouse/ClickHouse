@@ -112,6 +112,8 @@ public:
     /// by aggregate function and all combinators before -State combinator.
     virtual void destroyUpToState(AggregateDataPtr __restrict place) const noexcept
     {
+        if (!place)
+            return;
         destroy(place);
     }
 
@@ -406,7 +408,8 @@ class IAggregateFunctionHelper : public IAggregateFunction
 private:
     static void addFree(const IAggregateFunction * that, AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena)
     {
-        static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
+        if (place)
+            static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
 
 public:
@@ -421,6 +424,8 @@ public:
         size_t length,
         Arena * arena) const override
     {
+        if (!place)
+            return;
         for (size_t i = 0; i < length; ++i)
             static_cast<const Derived *>(this)->add(place, columns, 0, arena);
     }
@@ -466,6 +471,8 @@ public:
         std::optional<size_t> version,
         Arena * arena) const override
     {
+        if (!place)
+            return;
         for (size_t i = 0; i < limit; ++i)
         {
             if (buf.eof())
@@ -501,8 +508,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()])
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -548,6 +556,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
+        if (!place)
+            return;
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -571,6 +581,8 @@ public:
         const IColumn ** columns,
         Arena * arena) const override
     {
+        if (!place)
+            return;
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
         const auto & offsets = column_sparse.getOffsetsData();
@@ -594,6 +606,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
+        if (!place)
+            return;
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -684,6 +698,8 @@ public:
         {
             for (; batch_index < row_end; ++batch_index)
             {
+                if (!places[batch_index])
+                    continue;
                 static_cast<const Derived *>(this)->insertResultInto(places[batch_index] + place_offset, to, arena);
                 /// For State AggregateFunction ownership of aggregate place is passed to result column after insert,
                 /// so we need to destroy all states up to state of -State combinator.
@@ -693,7 +709,10 @@ public:
         catch (...)
         {
             for (size_t destroy_index = batch_index; destroy_index < row_end; ++destroy_index)
-                static_cast<const Derived *>(this)->destroy(places[destroy_index] + place_offset);
+            {
+                if (places[batch_index])
+                    static_cast<const Derived *>(this)->destroy(places[destroy_index] + place_offset);
+            }
 
             throw;
         }
@@ -707,7 +726,8 @@ public:
     {
         for (size_t i = row_begin; i < row_end; ++i)
         {
-            static_cast<const Derived *>(this)->destroy(places[i] + place_offset);
+            if (places[i])
+                static_cast<const Derived *>(this)->destroy(places[i] + place_offset);
         }
     }
 };
@@ -741,11 +761,15 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
+        if (!place)
+            return;
         new (place) Data;
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
+        if (!place)
+            return;
         data(place).~Data();
     }
 
