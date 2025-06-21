@@ -35,7 +35,7 @@ DataTypePtr FunctionSearchImpl<SearchTraits>::getReturnTypeImpl(const ColumnsWit
 {
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
@@ -169,8 +169,24 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
-    const auto & col_needles_tokens = col_needles->getDataAt(0);
-    std::vector<String> needles = DefaultTokenExtractor().getTokens(col_needles_tokens.data, col_needles_tokens.size);
+    std::vector<String> needles;
+    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+    {
+        for (const auto & needle_field : col_needles_const->getValue<Array>())
+        {
+            const auto & needle = needle_field.safeGet<String>();
+            const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
+            for (const auto & token : tokens)
+                needles.emplace_back(token);
+        }
+    }
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Needles argument of function '{}' should be Array(String), got: {}",
+            name,
+            col_needles->getFamilyName());
+
     if (needles.size() > supported_number_of_needles)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 

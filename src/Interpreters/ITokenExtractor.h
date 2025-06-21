@@ -117,13 +117,9 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
-
-        size_t cur = 0;
-        size_t token_start = 0;
-        size_t token_len = 0;
-
-        while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
-            gin_filter.addTerm(data + token_start, token_len);
+        const auto& tokens = getTokens(data, length);
+        for (const auto& token : tokens)
+            gin_filter.addTerm(token.data(), token.size());
     }
 
     void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
