@@ -80,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"distributed_cache_credentials_refresh_period_seconds", 5, 5, "New private setting"},
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
             {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
