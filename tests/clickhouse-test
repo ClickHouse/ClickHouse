@@ -1873,7 +1873,9 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
-        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile("rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir)
+        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
+            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir
+        )
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
         client_options += log_opt
