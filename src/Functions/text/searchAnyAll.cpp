@@ -170,25 +170,9 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
     std::vector<String> needles;
+    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
     {
-        const Array & needles_array = [&col_needles]
-        {
-            if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
-                return col_needles_const->getValue<Array>();
-            else if (const ColumnArray * col_needles_non_const = checkAndGetColumn<ColumnArray>(col_needles.get()))
-            {
-                Field needles_field;
-                col_needles_non_const->get(0, needles_field);
-                return needles_field.safeGet<Array>();
-            }
-            else
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Needles argument of function '{}' should be Array(String), got: {}",
-                    name,
-                    col_needles->getFamilyName());
-        }();
-        for (const auto & needle_field : needles_array)
+        for (const auto & needle_field : col_needles_const->getValue<Array>())
         {
             const auto & needle = needle_field.safeGet<String>();
             const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
@@ -196,6 +180,13 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
                 needles.emplace_back(token);
         }
     }
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Needles argument of function '{}' should be Array(String), got: {}",
+            name,
+            col_needles->getFamilyName());
+
     if (needles.size() > supported_number_of_needles)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 
