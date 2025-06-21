@@ -301,19 +301,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     auto add_step = [&](const PrewhereExprStep & step)
     {
-        Names step_column_names;
-
-        /// Virtual columns that are filled by RangeReader
-        /// must be read in the first step before any filtering.
-        if (columns_from_previous_steps.empty())
-        {
-            for (const auto & required_column : required_columns)
-            {
-                if (MergeTreeRangeReader::virtuals_to_fill.contains(required_column))
-                    step_column_names.push_back(required_column);
-            }
-        }
-
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
         /// exclude them from the list of columns to read. This filtering must be done before injecting required
@@ -328,6 +315,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         else if (!step.filter_column_name.empty())
             required_source_columns = Names{step.filter_column_name};
 
+        Names step_column_names;
         for (const auto & name : required_source_columns)
         {
             if (!columns_from_previous_steps.contains(name))

@@ -968,6 +968,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_part_index` — Sequential index of the part in the query result.
 - `_part_starting_offset` — Cumulative starting row of the part in the query result.
 - `_part_offset` — Number of row in the part.
+- `_part_granule_offset` — Number of granule in the part.
 - `_partition_id` — Name of a partition.
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 - `_part_data_version` — Data version of part (either min block number or mutation version).
