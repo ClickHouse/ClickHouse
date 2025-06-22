@@ -288,13 +288,6 @@ def main():
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            time.sleep(7)
-            Shell.check("ps -ef | grep minio", verbose=True)
-            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
-            # res = res and Shell.check(
-            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
-            #     verbose=True,
-            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
