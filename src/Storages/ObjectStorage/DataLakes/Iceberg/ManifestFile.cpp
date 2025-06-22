@@ -270,7 +270,11 @@ ManifestFileContent::ManifestFileContent(
 
         for (const auto & [column_id, bounds] : value_for_bounds)
         {
-            DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
+            auto name_and_type = schema_processor.tryGetFieldCharacteristics(schema_id, column_id);
+
+            /// Some value bounds are from nested columns from Iceberg fields with complex types. We should skip them.
+            if (!name_and_type.has_value())
+                continue;
 
             String left_str;
             String right_str;
@@ -278,8 +282,8 @@ ManifestFileContent::ManifestFileContent(
             if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
                 continue;
 
-            auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
-            auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+            auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type->type, true);
+            auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type->type, false);
             if (!left || !right)
                 continue;
 
