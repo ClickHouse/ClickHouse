@@ -508,7 +508,19 @@ void TCPHandler::runImpl()
 
             chassert(query_state.has_value());
 
-            checkConnectionLimits();
+            if (connectionLimitReached())
+            {
+                try
+                {
+                    sendException({ErrorCodes::TCP_CONNECTION_LIMIT_EXCEEDED, "Connection limit reached"}, false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to send connection limit exception");
+                }
+
+                return;
+            }
 
             /// Set up tracing context for this query on current thread
             thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
@@ -2689,7 +2701,7 @@ void TCPHandler::run()
     }
 }
 
-void TCPHandler::checkConnectionLimits()
+bool TCPHandler::connectionLimitReached()
 {
     ++query_count;
 
@@ -2702,18 +2714,25 @@ void TCPHandler::checkConnectionLimits()
     bool max_queries_exceeded = max_queries > 0 && query_count > max_queries;
     bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > max_seconds;
 
-    if (max_queries_exceeded || max_seconds_exceeded)
+    bool limit_reached = max_queries_exceeded || max_seconds_exceeded;
+
+    if (limit_reached)
     {
-        LOG_INFO(log, "Closing connection due to limits: queries={}, seconds={}", query_count, elapsed_seconds);
+        std::string limit_info;
 
-        std::string reason;
         if (max_queries_exceeded)
-            reason = fmt::format("query limit of {}", max_queries);
+            limit_info += fmt::format("queries={}/{}", query_count, max_queries);
         if (max_seconds_exceeded)
-            reason += (reason.empty() ? "" : " and ") + fmt::format("time limit of {} seconds", max_seconds);
+        {
+            if (!limit_info.empty())
+                limit_info += ", ";
+            limit_info += fmt::format("elapsed={:.1f}/{} seconds", elapsed_seconds, max_seconds);
+        }
 
-        throw Exception(ErrorCodes::TCP_CONNECTION_LIMIT_EXCEEDED, "Connection closed: exceeded {}", reason);
+        LOG_INFO(log, "Closing connection due to limits: {}", limit_info);
     }
+
+    return limit_reached;
 }
 
 

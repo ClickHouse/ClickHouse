@@ -25,6 +25,7 @@ def execute_queries_persistent_connection(queries):
 
     query_string = "\n".join(queries) + "\n"
     stdout, stderr = proc.communicate(query_string, timeout=15)
+
     return stdout, stderr
 
 def test_query_count_limit(started_cluster):
@@ -34,11 +35,10 @@ def test_query_count_limit(started_cluster):
     assert '1' in stdout and '2' in stdout and '3' in stdout
     assert '4' not in stdout
     assert 'TCP_CONNECTION_LIMIT_EXCEEDED' in stderr
-    assert 'exceeded query limit of 3' in stderr
 
 def test_time_limit(started_cluster):
     queries = ["SELECT sleep(3);", "SELECT 1;"]
     stdout, stderr = execute_queries_persistent_connection(queries)
 
+    assert '1' not in stdout
     assert 'TCP_CONNECTION_LIMIT_EXCEEDED' in stderr
-    assert 'time limit of 2 seconds' in stderr

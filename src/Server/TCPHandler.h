@@ -333,7 +333,7 @@ private:
     void updateProgress(QueryState & state, const Progress & value);
     void logQueryDuration(QueryState & state);
 
-    void checkConnectionLimits();
+    bool connectionLimitReached();
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
