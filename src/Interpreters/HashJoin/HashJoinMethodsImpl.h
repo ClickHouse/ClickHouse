@@ -98,7 +98,6 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join,
         std::move(join_on_keys),
         join.table_join->getMixedJoinExpression(),
-        join.additional_filter_required_lhs_names,
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
         is_join_get);
@@ -599,7 +598,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
         auto req_cols_it = required_cols.begin();
         for (size_t pos = 0; pos < required_cols.size(); ++pos, ++req_cols_it)
         {
-            if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == *rhs_pos_it)
+            if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == rhs_pos_it->first)
             {
 
                 const auto req_col = *req_cols_it;
@@ -608,10 +607,11 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 auto col = req_col.type->createColumn();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto & src_col = (*selected_row->columns)[pos];
+                    const auto & src_col = (*selected_row->columns)[rhs_pos_it->second];
                     col->insertFrom(*src_col, selected_row->row_num);
                 }
                 required_columns[pos].column = std::move(col);
+                ++rhs_pos_it;
             }
             else
             {
@@ -620,9 +620,10 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 if (!src_col)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "required columns: [{}], but not found any in left table. left table: {}",
+                        "required columns: [{}], but not found any in left table. left table: {}, required column: {}",
                         required_cols.toString(),
-                        added_columns.left_block.dumpNames());
+                        added_columns.left_block.dumpNames(),
+                        col_name);
 
                 auto new_col = src_col->column->cloneEmpty();
                 size_t prev_left_offset = 0;

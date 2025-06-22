@@ -79,11 +79,6 @@ Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sampl
     return filtered_block;
 }
 
-// ScatteredBlock filterColumnsPresentInSampleBlock(const ScatteredBlock & block, const Block & sample_block)
-// {
-//     return ScatteredBlock{filterColumnsPresentInSampleBlock(block.getSourceBlock(), sample_block)};
-// }
-
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names &)
 {
     std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
@@ -253,12 +248,14 @@ HashJoin::HashJoin(
     if (table_join->getMixedJoinExpression())
     {
         const auto & required_cols = table_join->getMixedJoinExpression()->getRequiredColumnsWithTypes();
+        size_t pos = 0;
         for (const auto & input : required_cols)
         {
             if (data->sample_block.has(input.name))
-                additional_filter_required_rhs_pos.push_back(data->sample_block.getPositionByName(input.name));
-            else
-                additional_filter_required_lhs_names.push_back(input.name);
+                additional_filter_required_rhs_pos.emplace_back(
+                    pos,
+                    data->sample_block.getPositionByName(input.name));
+            ++pos;
         }
     }
 }

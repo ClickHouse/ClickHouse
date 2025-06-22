@@ -503,8 +503,7 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    Strings additional_filter_required_lhs_names;
-    std::vector<size_t> additional_filter_required_rhs_pos;
+    std::vector<std::pair<size_t, size_t>> additional_filter_required_rhs_pos;
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
