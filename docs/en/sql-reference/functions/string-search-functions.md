@@ -757,6 +757,10 @@ Result:
 
 ## searchAny {#searchany}
 
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
+
 Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
 **Syntax**
@@ -811,6 +815,10 @@ Result:
 ```
 
 ## searchAll {#searchall}
+
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
 
 Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
