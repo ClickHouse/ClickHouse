@@ -1246,6 +1246,24 @@ def is_old_analyzer_used(args):
     )
 
 
+def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
+    def preexec_fn():
+        CGROUP_ROOT = "/sys/fs/cgroup/memory"
+        cgroup_path = os.path.join(CGROUP_ROOT, cgroup_name)
+
+        try:
+            os.makedirs(cgroup_path, exist_ok=True)
+            with open(os.path.join(cgroup_path, "memory.limit_in_bytes"), "w") as f:
+                f.write(str(memory_limit_bytes))
+            with open(os.path.join(cgroup_path, "tasks"), "w") as f:
+                f.write(str(os.getpid()))
+        except Exception as e:
+            print(f"Failed to configure cgroup {cgroup_name}: {e}", file=sys.stderr)
+            # Exit child safely without running exec
+            os._exit(1)
+    return preexec_fn
+
+
 class TestResult:
     def __init__(
         self,
@@ -2001,8 +2019,13 @@ class TestCase:
                 retry_error_codes=True,
             )
 
+        preexec_fn = None
+        if args.memory_limit > 0:
+            cgroup_name = f"clickhouse-test-{os.getpid()}"
+            preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, args.memory_limit)
+
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, env=tests_env, start_new_session=True)
+        proc = Popen(command, shell=True, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
 
         try:
             proc.wait(args.timeout)
@@ -3613,6 +3636,12 @@ def parse_args():
     )
     parser.add_argument(
         "-o", "--output", help="Output xUnit compliant test report directory"
+    )
+    parser.add_argument(
+        "--memory-limit",
+        type=int,
+        default=0,
+        help="Memory limit for each test (in bytes)",
     )
     parser.add_argument(
         "-t",
