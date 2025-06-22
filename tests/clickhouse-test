@@ -34,7 +34,6 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from functools import cache
 import urllib.parse
 
 # for crc32
@@ -1219,16 +1218,32 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
-@cache
-def is_old_analyzer_used():
+def replace_in_file_re(filename, what, with_what):
+    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+# unlike functools.cache() ignore args
+# (since args can be non-hashable)
+def cache_ignore_args(func):
+    cached_result = None
+    has_result = False
+
+    def wrapper(*args, **kwargs):
+        nonlocal cached_result, has_result
+        if not has_result:
+            cached_result = func(*args, **kwargs)
+            has_result = True
+        return cached_result
+
+    return wrapper
+
+
+@cache_ignore_args
+def is_old_analyzer_used(args):
     return (
         clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
         == b"false"
     )
-
-
-def replace_in_file_re(filename, what, with_what):
-    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
 class TestResult:
@@ -1267,14 +1282,14 @@ class TestCase:
         return description
 
     @staticmethod
-    def get_reference_file(suite_dir, name):
+    def get_reference_file(args, suite_dir, name):
         """
         Returns reference file name for specified test
         """
         name = removesuffix(name, ".gen")
 
         file_extentions = [".reference", ".gen.reference"]
-        if is_old_analyzer_used():
+        if is_old_analyzer_used(args):
             file_extentions = [".oldanalyzer.reference", *file_extentions]
 
         for ext in file_extentions:
@@ -1420,7 +1435,7 @@ class TestCase:
         (self.name, self.ext) = os.path.splitext(case)
 
         file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
-        self.reference_file = self.get_reference_file(suite.suite_path, self.name)
+        self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
         )
