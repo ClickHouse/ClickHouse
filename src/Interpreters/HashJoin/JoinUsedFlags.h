@@ -48,9 +48,9 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(flags[block_ptr].size() <= block_ptr->rows());
+            assert(flags[columns].size() <= columns->at(0)->rows());
             need_flags = true;
-            flags[columns] = std::vector<std::atomic_bool>((*columns).at(0)->size());
+            flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
         }
     }
 

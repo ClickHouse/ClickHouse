@@ -211,11 +211,11 @@ public:
 
 private:
 
-    void checkBlock(const Block & block)
+    void checkColumns(const Columns & to_check)
     {
         for (size_t j = 0; j < right_indexes.size(); ++j)
         {
-            const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
+            const auto * column_from_block = to_check.at(right_indexes[j]).get();
             const auto * dest_column = columns[j].get();
             if (auto * nullable_col = nullable_column_ptrs[j])
             {

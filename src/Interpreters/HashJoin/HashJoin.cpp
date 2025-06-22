@@ -428,27 +428,28 @@ size_t HashJoin::getTotalRowCount() const
 void HashJoin::doDebugAsserts() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    size_t debug_blocks_allocated_size = 0;
-    for (const auto & block : data->blocks)
-        debug_blocks_allocated_size += block.allocatedBytes();
+    size_t debug_allocated_size = 0;
+    for (const auto & columns : data->columns)
+        for (const auto & column : columns)
+            debug_allocated_size += column->allocatedBytes();
 
-    if (data->blocks_allocated_size != debug_blocks_allocated_size)
+    if (data->allocated_size != debug_allocated_size)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "data->blocks_allocated_size != debug_blocks_allocated_size ({} != {})",
-            data->blocks_allocated_size,
-            debug_blocks_allocated_size);
+            "data->allocated_size != debug_allocated_size ({} != {})",
+            data->allocated_size,
+            debug_allocated_size);
 
-    size_t debug_blocks_nullmaps_allocated_size = 0;
+    size_t debug_nullmaps_allocated_size = 0;
     for (const auto & nullmap : data->blocks_nullmaps)
-        debug_blocks_nullmaps_allocated_size += nullmap.allocatedBytes();
+        debug_nullmaps_allocated_size += nullmap.allocatedBytes();
 
-    if (data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size)
+    if (data->nullmaps_allocated_size != debug_nullmaps_allocated_size)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size ({} != {})",
-            data->blocks_nullmaps_allocated_size,
-            debug_blocks_nullmaps_allocated_size);
+            "data->nullmaps_allocated_size != debug_nullmaps_allocated_size ({} != {})",
+            data->nullmaps_allocated_size,
+            debug_nullmaps_allocated_size);
 #endif
 }
 

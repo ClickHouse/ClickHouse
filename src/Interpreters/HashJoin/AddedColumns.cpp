@@ -149,7 +149,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         applyLazyDefaults();
 
 #ifndef NDEBUG
-    checkBlock(*row_ref->block);
+    checkColumns(*row_ref->columns);
 #endif
     if (is_join_get)
     {
@@ -185,7 +185,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
-    checkBlock(*row_ref->block);
+    checkColumns(*row_ref->columns);
 #endif
     if (has_columns_to_add)
     {
@@ -197,7 +197,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
 {
 #ifndef NDEBUG
-    checkBlock(*row_ref_list->block);
+    checkColumns(*row_ref->columns);
 #endif
     if (has_columns_to_add)
     {
