@@ -1507,8 +1507,9 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     ScatteredColumnsList right_columns = std::move(data->columns);
     if (!restructure)
     {
+        auto sample_block = std::move(data->sample_block);
         data.reset();
-        return extract_source_blocks(std::move(right_columns), data->sample_block);
+        return extract_source_blocks(std::move(right_columns), sample_block);
     }
 
     data->maps.clear();
