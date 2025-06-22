@@ -7,6 +7,32 @@
 #include <functional>
 
 
+enum class SectionHeaderType : uint32_t
+{
+    SYMTAB = 2,
+    STRTAB = 3,
+    NOTE = 7,
+};
+
+enum class ProgramHeaderType : uint32_t
+{
+    NOTE = 4,
+    DYNAMIC = 2,
+};
+
+enum class NameHeaderType : uint64_t
+{
+    GNU_BUILD_ID = 3,
+};
+
+enum class DynamicTableTag : int64_t
+{
+    Null = 0,
+    STRTAB = 5,
+    SYMTAB = 6,
+    GNU_HASH = 0x6ffffef5,
+};
+
 struct ElfHeader
 {
     uint8_t ident[16];
@@ -28,7 +54,7 @@ struct ElfHeader
 struct ElfSectionHeader
 {
     uint32_t name;
-    uint32_t type;
+    SectionHeaderType type;
     uint64_t flags;
     uint64_t addr;
     uint64_t offset;
@@ -41,7 +67,7 @@ struct ElfSectionHeader
 
 struct ElfProgramHeader
 {
-    uint32_t type;
+    ProgramHeaderType type;
     uint32_t flags;
     uint64_t offset;
     uint64_t vaddr;
@@ -65,32 +91,18 @@ struct ElfNameHeader
 {
     uint64_t namesz;
     uint64_t descsz;
-    uint64_t type;
+    NameHeaderType type;
 };
 
 struct ElfDyn
 {
-    int64_t tag;
+    DynamicTableTag tag;
     union
     {
         uint64_t val;
         uint64_t ptr;
     };
 };
-
-#define SHT_SYMTAB 2
-#define SHT_STRTAB 3
-#define SHT_NOTE 7
-
-#define PT_NOTE 4
-#define PT_DYNAMIC 2
-
-#define NT_GNU_BUILD_ID 3
-
-#define DT_NULL 0
-#define DT_STRTAB 5
-#define DT_SYMTAB 6
-#define DT_GNU_HASH 0x6ffffef5
 
 
 namespace DB

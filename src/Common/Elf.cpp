@@ -54,7 +54,7 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
     /// The string table with section names.
     auto section_names_strtab = findSection([&](const Section & section, size_t idx)
     {
-        return section.header.type == SHT_STRTAB && header->shstrndx == idx;
+        return section.header.type == SectionHeaderType::STRTAB && header->shstrndx == idx;
     });
 
     if (!section_names_strtab)
@@ -132,7 +132,7 @@ String Elf::getBuildID() const
     /// Section headers are the first choice for a debuginfo file
     if (String build_id; iterateSections([&build_id](const Section & section, size_t)
     {
-        if (section.header.type == SHT_NOTE)
+        if (section.header.type == SectionHeaderType::NOTE)
         {
             build_id = Elf::getBuildID(section.begin(), section.size());
             if (!build_id.empty())
@@ -151,7 +151,7 @@ String Elf::getBuildID() const
     {
         const ElfProgramHeader & phdr = program_headers[idx];
 
-        if (phdr.type == PT_NOTE)
+        if (phdr.type == ProgramHeaderType::NOTE)
             return getBuildID(mapped + phdr.offset, phdr.filesz);
     }
 
@@ -167,7 +167,7 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
         ElfNameHeader nhdr = unalignedLoad<ElfNameHeader>(nhdr_pos);
 
         nhdr_pos += sizeof(ElfNameHeader) + nhdr.namesz;
-        if (nhdr.type == NT_GNU_BUILD_ID)
+        if (nhdr.type == NameHeaderType::GNU_BUILD_ID)
         {
             const char * build_id = nhdr_pos;
             return {build_id, nhdr.descsz};

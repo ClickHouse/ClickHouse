@@ -105,7 +105,7 @@ void collectSymbolsFromProgramHeaders(
         /* Further processing is only needed if the dynamic section is reached
          */
         __msan_unpoison(&info->phdr[header_index], sizeof(info->phdr[header_index]));
-        if (info->phdr[header_index].type != PT_DYNAMIC)
+        if (info->phdr[header_index].type != ProgramHeaderType::DYNAMIC)
             continue;
 
         /* Get a pointer to the first entry of the dynamic section.
@@ -122,7 +122,7 @@ void collectSymbolsFromProgramHeaders(
 
         /* Iterate over all entries of the dynamic section until the
          * end of the symbol table is reached. This is indicated by
-         * an entry with d_tag == DT_NULL.
+         * an entry with d_tag == ProgramHeaderType::Null.
          */
 
         size_t sym_cnt = 0;
@@ -131,12 +131,12 @@ void collectSymbolsFromProgramHeaders(
             while (true)
             {
                 __msan_unpoison(it, sizeof(*it));
-                if (it->tag != DT_NULL)
+                if (it->tag != DynamicTableTag::Null)
                     break;
 
                 uint64_t base_address = correct_address(info->addr, it->ptr);
 
-                if (it->tag == DT_GNU_HASH)
+                if (it->tag == DynamicTableTag::GNU_HASH)
                 {
                     /// This code based on Musl-libc.
 
@@ -179,11 +179,11 @@ void collectSymbolsFromProgramHeaders(
             continue;
 
         const char * strtab = nullptr;
-        for (const auto * it = dyn_begin; it->tag != DT_NULL; ++it)
+        for (const auto * it = dyn_begin; it->tag != DynamicTableTag::Null; ++it)
         {
             uint64_t base_address = correct_address(info->addr, it->ptr);
 
-            if (it->tag == DT_STRTAB)
+            if (it->tag == DynamicTableTag::STRTAB)
             {
                 strtab = reinterpret_cast<const char *>(base_address);
                 break;
@@ -193,11 +193,11 @@ void collectSymbolsFromProgramHeaders(
         if (!strtab)
             continue;
 
-        for (const auto * it = dyn_begin; it->tag != DT_NULL; ++it)
+        for (const auto * it = dyn_begin; it->tag != DynamicTableTag::Null; ++it)
         {
             uint64_t base_address = correct_address(info->addr, it->ptr);
 
-            if (it->tag == DT_SYMTAB)
+            if (it->tag == DynamicTableTag::SYMTAB)
             {
                 /* Get the pointer to the first entry of the symbol table */
                 const ElfSymbol * elf_sym = reinterpret_cast<const ElfSymbol *>(base_address);
@@ -244,7 +244,7 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
     {
         const ElfProgramHeader & phdr = info->phdr[header_index];
         __msan_unpoison(&phdr, sizeof(phdr));
-        if (phdr.type != PT_NOTE)
+        if (phdr.type != ProgramHeaderType::NOTE)
             continue;
 
         std::string_view view(reinterpret_cast<const char *>(info->addr + phdr.vaddr), phdr.memsz);
@@ -300,7 +300,7 @@ void collectSymbolsFromELFSymbolTable(
 bool searchAndCollectSymbolsFromELFSymbolTable(
     DynamicLinkingProgramHeaderInfo * info,
     const Elf & elf,
-    unsigned section_header_type,
+    SectionHeaderType section_header_type,
     const char * string_table_name,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
@@ -311,7 +311,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         {
             if (section.header.type == section_header_type)
                 symbol_table.emplace(section);
-            else if (section.header.type == SHT_STRTAB && 0 == strcmp(section.name(), string_table_name))
+            else if (section.header.type == SectionHeaderType::STRTAB && 0 == strcmp(section.name(), string_table_name))
                 string_table.emplace(section);
 
             return (symbol_table && string_table);
@@ -442,7 +442,7 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
