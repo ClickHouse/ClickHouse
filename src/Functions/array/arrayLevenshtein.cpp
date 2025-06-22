@@ -555,10 +555,10 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const Column
     res_values.resize(distance->size());
     if (!(
         similarity<UInt8>(columns, distance, res_values) || similarity<UInt16>(columns, distance, res_values)
-        || similarity<UInt16>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
+        || similarity<UInt32>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
         || similarity<UInt128>(columns, distance, res_values) || similarity<UInt256>(columns, distance, res_values)
         || similarity<Int8>(columns, distance, res_values) || similarity<Int16>(columns, distance, res_values)
-        || similarity<Int16>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
+        || similarity<Int32>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
         || similarity<Int128>(columns, distance, res_values) || similarity<Int256>(columns, distance, res_values)
         || similarity<Float32>(columns, distance, res_values) || similarity<Float64>(columns, distance, res_values)))
         throw Exception(
