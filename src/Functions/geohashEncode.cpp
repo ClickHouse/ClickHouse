@@ -112,7 +112,42 @@ private:
 
 REGISTER_FUNCTION(GeohashEncode)
 {
-    factory.registerFunction<FunctionGeohashEncode>();
+    FunctionDocumentation::Description description = R"(
+Encodes latitude and longitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
+
+:::
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+
+For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashEncode(longitude, latitude, [precision])";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude", "Longitude part of the coordinate to encode. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude", "Latitude part of the coordinate to encode. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Optional. Length of the resulting encoded string. Default: 12. Range: `[1, 12]`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used)",
+        {"String"}
+    };
+    
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage with default precision",
+            "SELECT geohashEncode(-5.60302734375, 42.593994140625) AS res",
+            R"(
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 
 }
