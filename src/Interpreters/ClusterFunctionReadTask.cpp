@@ -67,7 +67,6 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
-        LOG_TEST(getLogger("ClusterFunctionReadTaskResponse"), "Writing delta lake metadata");
         SerializedSetsRegistry registry;
         if (data_lake_metadata.transform)
             data_lake_metadata.transform->serialize(out, registry);
@@ -93,8 +92,12 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         DeserializedSetsRegistry registry;
-        data_lake_metadata.transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance()));
-        LOG_TEST(getLogger("ClusterFunctionReadTaskResponse"), "Parsed delta lake metadata");
+        auto transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance()));
+
+        if (!path.empty() && !transform->getInputs().empty())
+        {
+            data_lake_metadata.transform = std::move(transform);
+        }
     }
 }
 

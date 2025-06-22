@@ -501,7 +501,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
-        else
+        if (!transformer)
             transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
 
         if (transformer)
