@@ -411,7 +411,8 @@ def main():
                 command=collect_logs,
             )
         )
-        results[-1].results = CH.extra_tests_results
+        if test_result and CH.extra_tests_results:
+            test_result.extend_sub_results(CH.extra_tests_results)
 
     Result.create_from(
         results=results,

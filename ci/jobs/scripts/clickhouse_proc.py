@@ -718,12 +718,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 ):
                     print("Failed to stop ClickHouse process gracefully")
 
-        # Do not terminate minio for log collection with clickhouse-local
-        # if self.minio_proc:
-        #     Utils.terminate_process_group(self.minio_proc.pid)
-        # if self.azurite_proc:
-        #     Utils.terminate_process_group(self.azurite_proc.pid)
-
         return self
 
     def prepare_logs(self, all=False):
@@ -959,7 +953,8 @@ quit
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
         # NOTE: we also need to override logger.level, but logger.level will not work
-        command_args_post = f"-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog={self.CH_LOCAL_ERR_LOG} --logger.console=1"
+        # FIXME: --logger.*s do not override config.xml settings
+        command_args_post = f"-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.logerror={self.CH_LOCAL_ERR_LOG} --logger.console=0"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
@@ -978,6 +973,9 @@ quit
                     Result(name=f"Scraping {table}", status="FAIL")
                 )
                 res = False
+            if "minio" in table:
+                # minio tables are not replicated
+                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res = Shell.check(
