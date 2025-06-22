@@ -718,11 +718,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 ):
                     print("Failed to stop ClickHouse process gracefully")
 
-        if self.minio_proc:
-            Utils.terminate_process_group(self.minio_proc.pid)
-
-        if self.azurite_proc:
-            Utils.terminate_process_group(self.azurite_proc.pid)
+        # Do not terminate minio for log collection with clickhouse-local
+        # if self.minio_proc:
+        #     Utils.terminate_process_group(self.minio_proc.pid)
+        # if self.azurite_proc:
+        #     Utils.terminate_process_group(self.azurite_proc.pid)
 
         return self
 
