@@ -73,9 +73,9 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(it->name);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->address_begin));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->address_end));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_end));
 
             ++rows_count;
             ++it;
