@@ -197,7 +197,7 @@ template <>
 void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
 {
 #ifndef NDEBUG
-    checkColumns(*row_ref->columns);
+    checkColumns(*row_ref_list->columns);
 #endif
     if (has_columns_to_add)
     {
