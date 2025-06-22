@@ -22,24 +22,30 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 {
     String result;
     bool is_first = true;
-    for (const auto & type : types)
+    for (const auto & unmodified_type : types)
     {
         if (is_first)
             is_first = false;
         else
             result += " or ";
 
-        result += "[`" + type;
+        String type = unmodified_type;
+        bool is_const = type.starts_with("const ");
+        
+        if (is_const) {
+            type = type.substr(6); // Remove "const " prefix
+            result += "const [`";
+        } else {
+            result += "[`" + type;
+        }
 
-        if (type == "String")
+        if (type == "String" || type == "String literal")
             result += "`](/sql-reference/data-types/string)";
         else if (type.starts_with("FixedString"))
             result += "`](/sql-reference/data-types/fixedstring)";
-        else if (type == "String literal")
-            result += "`](/sql-reference/syntax#string)";
         else if (type.starts_with("Int") || type.starts_with("UInt") || type.starts_with("(U)Int")) /// "Int8", "Int16", ... || "UInt8", "UInt16", ... || "(U)Int*", "(U)Int8", "(U)Int16", ...
             result += "`](/sql-reference/data-types/int-uint)";
-        else if (type.starts_with("Float") || type.starts_with("BFloat16")) /// "Float32", "Float64", "BFloat16"
+        else if (type.starts_with("Float") || type == "BFloat16") /// "Float32", "Float64", "BFloat16"
             result += "`](/sql-reference/data-types/float)";
         else if (type.starts_with("Decimal")) /// "Decimal(P, S)", "Decimal32", "Decimal64", ...
             result += "`](/sql-reference/data-types/decimal)";
@@ -105,7 +111,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
             result += "`](/sql-reference/data-types/dynamic)";
         else if (type == "JSON")
             result += "`](/sql-reference/data-types/newjson)";
-        else if (type == "Lambda")
+        else if (type == "Lambda function")
             result += "`](/sql-reference/functions/overview#arrow-operator-and-lambda)";
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
