@@ -84,6 +84,17 @@ VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
 
 
+def detect_cgroup_version():
+    if os.path.exists("/sys/fs/cgroup/cgroup.controllers"):
+        return 2
+    elif os.path.exists("/sys/fs/cgroup/memory"):
+        return 1
+    return None
+
+
+CGROUP_VERSION = detect_cgroup_version()
+
+
 class SharedEngineReplacer:
     SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating"
     ENGINES_NON_REPLICATED_REGEXP = (
@@ -1369,6 +1380,68 @@ def is_old_analyzer_used(args):
     )
 
 
+def setup_cgroup_with_memory_limit_cb(cgroup_name: str, memory_limit_bytes: int):
+    def preexec_fn():
+        if CGROUP_VERSION is None:
+            print(f"Cgroups are not available, memory limit will not be applied", file=sys.stderr)
+            return
+
+        try:
+            # NOTE: will not work locally, since I did not find a way to propagate cgroup.subtree_control into the user unit
+            if CGROUP_VERSION == 2:
+                CGROUP_ROOT = "/sys/fs/cgroup"
+                cgroup_path = os.path.join(CGROUP_ROOT, cgroup_name)
+                os.makedirs(cgroup_path, exist_ok=True)
+
+                with open(os.path.join(cgroup_path, "memory.max"), "w") as f:
+                    f.write(str(memory_limit_bytes))
+                with open(os.path.join(cgroup_path, "cgroup.procs"), "w") as f:
+                    f.write(str(os.getpid()))
+            else:  # v1
+                CGROUP_ROOT = "/sys/fs/cgroup/memory"
+                cgroup_path = os.path.join(CGROUP_ROOT, cgroup_name)
+                os.makedirs(cgroup_path, exist_ok=True)
+
+                with open(os.path.join(cgroup_path, "memory.limit_in_bytes"), "w") as f:
+                    f.write(str(memory_limit_bytes))
+                with open(os.path.join(cgroup_path, "tasks"), "w") as f:
+                    f.write(str(os.getpid()))
+        except Exception as e:
+            print(f"Failed to configure cgroup {cgroup_name}: {e}", file=sys.stderr)
+            # Exit child safely without running exec
+            os._exit(1)
+    return preexec_fn
+
+
+def cleanup_cgroup(cgroup_name: str):
+    if CGROUP_VERSION is None:
+        return
+
+    try:
+        if CGROUP_VERSION == 2:
+            # Read current process cgroup to find user slice
+            with open("/proc/self/cgroup", "r") as f:
+                cgroup_line = f.read().strip()
+            current_cgroup = cgroup_line.split("::")[1] if "::" in cgroup_line else ""
+
+            if not current_cgroup:
+                return
+
+            CGROUP_ROOT = "/sys/fs/cgroup"
+            cgroup_path = os.path.join(CGROUP_ROOT, current_cgroup.lstrip("/"), cgroup_name)
+
+            if os.path.exists(cgroup_path):
+                os.rmdir(cgroup_path)
+        else:  # v1
+            CGROUP_ROOT = "/sys/fs/cgroup/memory"
+            cgroup_path = os.path.join(CGROUP_ROOT, cgroup_name)
+
+            if os.path.exists(cgroup_path):
+                os.rmdir(cgroup_path)
+    except Exception as e:
+        print(f"Failed to cleanup cgroup {cgroup_name}: {e}", file=sys.stderr)
+
+
 class TestResult:
     def __init__(
         self,
@@ -2212,14 +2285,23 @@ class TestCase:
                 retry_error_codes=True,
             )
 
+        preexec_fn = None
+        cgroup_name = None
+        if args.memory_limit > 0:
+            cgroup_name = f"clickhouse-test-{os.getpid()}"
+            preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, args.memory_limit)
+
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, env=tests_env, start_new_session=True)
+        proc = Popen(command, shell=True, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
 
         try:
             proc.wait(args.timeout)
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
+        finally:
+            if cgroup_name:
+                cleanup_cgroup(cgroup_name)
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -3904,6 +3986,12 @@ def parse_args():
     )
     parser.add_argument(
         "-o", "--output", help="Output xUnit compliant test report directory"
+    )
+    parser.add_argument(
+        "--memory-limit",
+        type=int,
+        default=0,
+        help="Memory limit for each test (in bytes)",
     )
     parser.add_argument(
         "-t",
