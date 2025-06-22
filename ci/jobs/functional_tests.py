@@ -123,6 +123,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
+    "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
 }
 
 
@@ -230,6 +231,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
+            f"chmod +x {ch_path}/lexer_test || true",
             f"chmod +x {ch_path}/clickhouse",
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
             # google *.proto files
