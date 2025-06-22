@@ -1818,6 +1818,7 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
+        os.remove(self.fatal_sanitizer_log.name)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
 
@@ -1901,7 +1902,7 @@ class TestCase:
         start_time = args.testcase_start_time
         database = args.testcase_database
         self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
-            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir
+            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir, delete=False
         )
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
