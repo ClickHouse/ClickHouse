@@ -162,9 +162,6 @@ REGISTER_FUNCTION(PolygonsIntersects)
         )"}},
         .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Geo});
-
-    factory.registerFunction<FunctionPolygonsIntersects<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>();
 }
 
 }
