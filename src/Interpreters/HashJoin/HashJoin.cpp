@@ -430,7 +430,7 @@ void HashJoin::doDebugAsserts() const
 #ifdef DEBUG_OR_SANITIZER_BUILD
     size_t debug_allocated_size = 0;
     for (const auto & columns : data->columns)
-        for (const auto & column : columns->columns)
+        for (const auto & column : columns.columns)
             debug_allocated_size += column->allocatedBytes();
 
     if (data->allocated_size != debug_allocated_size)
