@@ -127,6 +127,9 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
+    // Returns a string with a high level codec description.
+    virtual std::string getDescription() const = 0;
+
 protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
