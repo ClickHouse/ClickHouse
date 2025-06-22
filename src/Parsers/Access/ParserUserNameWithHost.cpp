@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 bool parseUserNameWithHost(
-    IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast_, bool allow_query_parameter)
+    IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast, bool allow_query_parameter)
 {
     return IParserBase::wrapParseImpl(
         pos,
@@ -67,7 +67,11 @@ bool parseUserNameWithHost(
 
             boost::algorithm::trim(host_pattern);
 
-            ast_ = std::make_shared<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
+            if (host_pattern.empty() || host_pattern == "%")
+                ast = std::make_shared<ASTUserNameWithHost>(std::move(name_ast));
+            else
+                ast = std::make_shared<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
+
             return true;
         });
 }

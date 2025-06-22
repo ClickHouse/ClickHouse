@@ -19,8 +19,8 @@ namespace ErrorCodes
 void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
     ostr << backQuoteIfNeed(getBaseName());
-    if (auto host_pattern = getHostPattern(); !host_pattern.empty())
-        ostr << "@" << backQuoteIfNeed(host_pattern);
+    if (auto pattern = getHostPattern(); !pattern.empty())
+        ostr << "@" << backQuoteIfNeed(pattern);
 }
 
 String ASTUserNameWithHost::toString() const
@@ -28,29 +28,39 @@ String ASTUserNameWithHost::toString() const
     WriteBufferFromOwnString ostr;
 
     ostr << getBaseName();
-    if (auto host_pattern = getHostPattern(); !host_pattern.empty())
-        ostr << "@" << host_pattern;
+    if (auto pattern = getHostPattern(); !pattern.empty())
+        ostr << "@" << pattern;
 
     return ostr.str();
 }
 
-void ASTUserNameWithHost::replace(const String name_)
+void ASTUserNameWithHost::replace(const String name)
 {
     children.clear();
-    children.emplace_back(std::make_shared<ASTIdentifier>(name_));
+
+    username.reset();
+    host_pattern.reset();
+
+    username = std::make_shared<ASTIdentifier>(name);
+    children.emplace_back(username);
 }
 
-
-ASTUserNameWithHost::ASTUserNameWithHost(const String & name_)
+ASTUserNameWithHost::ASTUserNameWithHost(const String & name)
 {
-    children.emplace_back(std::make_shared<ASTIdentifier>(name_));
+    username = std::make_shared<ASTIdentifier>(name);
+    children.emplace_back(username);
 }
 
-ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_ast_, String host_pattern_)
+ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_, String host_pattern_)
 {
-    children.emplace_back(std::move(name_ast_));
+    username = name_;
+    children.emplace_back(username);
+
     if (!host_pattern_.empty() && host_pattern_ != "%")
-        children.emplace_back(std::make_shared<ASTLiteral>(host_pattern_));
+    {
+        host_pattern = std::make_shared<ASTLiteral>(host_pattern_);
+        children.emplace_back(host_pattern);
+    }
 }
 
 String ASTUserNameWithHost::getBaseName() const
@@ -58,15 +68,20 @@ String ASTUserNameWithHost::getBaseName() const
     if (children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTUserNameWithHost is empty");
 
-    return getStringFromAST(children[0]);
+    chassert(username);
+
+    return getStringFromAST(username);
 }
 
 String ASTUserNameWithHost::getHostPattern() const
 {
     if (children.size() < 2)
         return "";
+
     chassert(children.size() == 2);
-    return getStringFromAST(children[1]);
+    chassert(host_pattern);
+
+    return getStringFromAST(host_pattern);
 }
 
 
@@ -136,4 +151,22 @@ String ASTUserNameWithHost::getStringFromAST(const ASTPtr & ast) const
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unsupported type '{}' in ASTUserNameWithHost for formatting to String", ast ? ast->getID() : "NULL");
 }
+
+ASTPtr ASTUserNameWithHost::clone() const
+{
+    auto clone = std::make_shared<ASTUserNameWithHost>(*this);
+    clone->children.clear();
+
+    clone->username = username->clone();
+    clone->children.emplace_back(clone->username);
+
+    if (host_pattern)
+    {
+        clone->host_pattern = host_pattern->clone();
+        clone->children.emplace_back(clone->host_pattern);
+    }
+
+    return clone;
+}
+
 }
