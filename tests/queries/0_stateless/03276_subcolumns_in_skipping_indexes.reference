@@ -233,6 +233,7 @@ Name: idx1
 Description: minmax GRANULARITY 1
 Parts: 1/1
 Granules: 2/8
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 1	((1,'str_1',[0]))	Hello, World!
 ReadFromMergeTree (default.test)
