@@ -1,22 +1,96 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-
 #include <IO/MMapReadBufferFromFile.h>
 
 #include <string>
 #include <optional>
 #include <functional>
 
-#include <elf.h>
 
+struct ElfHeader
+{
+    uint8_t	ident[16];
+    uint16_t type;
+    uint16_t machine;
+    uint32_t version;
+    uint64_t entry;
+    uint64_t phoff;
+    uint64_t shoff;
+    uint32_t flags;
+    uint16_t ehsize;
+    uint16_t phentsize;
+    uint16_t phnum;
+    uint16_t shentsize;
+    uint16_t shnum;
+    uint16_t shstrndx;
+};
 
-using ElfEhdr = Elf64_Ehdr;
-using ElfOff = Elf64_Off;
-using ElfPhdr = Elf64_Phdr;
-using ElfShdr = Elf64_Shdr;
-using ElfNhdr = Elf64_Nhdr;
-using ElfSym = Elf64_Sym;
+struct ElfSectionHeader
+{
+    uint32_t name;
+    uint32_t type;
+    uint64_t flags;
+    uint64_t addr;
+    uint64_t offset;
+    uint64_t size;
+    uint32_t link;
+    uint32_t info;
+    uint64_t addralign;
+    uint64_t entsize;
+};
+
+struct ElfProgramHeader
+{
+    uint32_t type;
+    uint32_t flags;
+    uint64_t offset;
+    uint64_t vaddr;
+    uint64_t paddr;
+    uint64_t filesz;
+    uint64_t memsz;
+    uint64_t align;
+};
+
+struct ElfSymbol
+{
+    uint32_t name;
+    uint8_t	info;
+    uint8_t other;
+    uint16_t shndx;
+    uint64_t value;
+    uint64_t size;
+};
+
+struct ElfNameHeader
+{
+    uint64_t namesz;
+    uint64_t descsz;
+    uint64_t type;
+};
+
+struct ElfDyn
+{
+    int64_t tag;
+    union
+    {
+        uint64_t val;
+        uint64_t ptr;
+    };
+};
+
+#define SHT_SYMTAB 2
+#define SHT_STRTAB 3
+#define SHT_NOTE 7
+
+#define PT_NOTE 4
+#define PT_DYNAMIC 2
+
+#define NT_GNU_BUILD_ID 3
+
+#define DT_NULL	0
+#define DT_STRTAB 5
+#define DT_SYMTAB 6
+#define DT_GNU_HASH	0x6ffffef5
 
 
 namespace DB
@@ -29,14 +103,14 @@ class Elf final
 public:
     struct Section
     {
-        const ElfShdr & header;
+        const ElfSectionHeader & header;
         const char * name() const;
 
         const char * begin() const;
         const char * end() const;
         size_t size() const;
 
-        Section(const ElfShdr & header_, const Elf & elf_);
+        Section(const ElfSectionHeader & header_, const Elf & elf_);
 
     private:
         const Elf & elf;
@@ -67,14 +141,12 @@ private:
     std::optional<MMapReadBufferFromFile> in;
     size_t elf_size;
     const char * mapped;
-    const ElfEhdr * header;
-    const ElfShdr * section_headers;
-    const ElfPhdr * program_headers;
+    const ElfHeader * header;
+    const ElfSectionHeader * section_headers;
+    const ElfProgramHeader * program_headers;
     const char * section_names = nullptr;
 
     void init(const char * data, size_t size, const std::string & path_);
 };
 
 }
-
-#endif
