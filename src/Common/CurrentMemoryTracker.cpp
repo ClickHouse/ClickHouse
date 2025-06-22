@@ -3,6 +3,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/ThreadStatus.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -75,6 +76,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             current_thread->untracked_memory = 0;
             return res;
         }
+
+// #ifdef MEMORY_TRACKER_DEBUG_CHECKS
+        if (current_thread->untracked_memory + size != will_be)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Ignored nested allocation (will_be={}, untracked_memory={}, size={})", will_be, current_thread->untracked_memory, size);
+// #endif
 
         /// Update after successful allocations,
         /// since failed allocations should not be take into account.
