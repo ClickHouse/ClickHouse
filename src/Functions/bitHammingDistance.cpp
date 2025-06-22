@@ -62,10 +62,10 @@ The smaller the distance, the more similar the strings are.
 )";
     FunctionDocumentation::Syntax syntax = "bitHammingDistance(x, y)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "First number for Hamming distance calculation. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
-        {"y", "Second number for Hamming distance calculation. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
+        {"x", "First number for Hamming distance calculation.", {"(U)Int*", "Float*"}},
+        {"y", "Second number for Hamming distance calculation.", {"(U)Int*", "Float*"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the hamming distance between `x` and `y`. [`UInt8`](../data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hamming distance between `x` and `y`", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT bitHammingDistance(111, 121);",
         R"(
 ┌─bitHammingDistance(111, 121)─┐
