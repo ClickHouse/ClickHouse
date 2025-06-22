@@ -9,7 +9,7 @@
 
 struct ElfHeader
 {
-    uint8_t	ident[16];
+    uint8_t ident[16];
     uint16_t type;
     uint16_t machine;
     uint32_t version;
@@ -54,7 +54,7 @@ struct ElfProgramHeader
 struct ElfSymbol
 {
     uint32_t name;
-    uint8_t	info;
+    uint8_t info;
     uint8_t other;
     uint16_t shndx;
     uint64_t value;
@@ -87,10 +87,10 @@ struct ElfDyn
 
 #define NT_GNU_BUILD_ID 3
 
-#define DT_NULL	0
+#define DT_NULL 0
 #define DT_STRTAB 5
 #define DT_SYMTAB 6
-#define DT_GNU_HASH	0x6ffffef5
+#define DT_GNU_HASH 0x6ffffef5
 
 
 namespace DB

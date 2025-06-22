@@ -57,14 +57,14 @@ Otherwise you will get only exported symbols from program headers.
 
 struct DynamicLinkingProgramHeaderInfo
 {
-	uint64_t addr;
-	const char * name;
-	const ElfProgramHeader * phdr;
-	uint16_t phnum;
+    uint64_t addr;
+    const char * name;
+    const ElfProgramHeader * phdr;
+    uint16_t phnum;
     uint64_t adds;
     uint64_t subs;
-	size_t tls_modid;
-	void * tls_data;
+    size_t tls_modid;
+    void * tls_data;
 };
 
 extern "C" int dl_iterate_phdr(int (*)(struct DynamicLinkingProgramHeaderInfo *, size_t, void *), void *);

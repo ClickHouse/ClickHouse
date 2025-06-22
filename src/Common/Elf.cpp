@@ -158,12 +158,6 @@ String Elf::getBuildID() const
     return {};
 }
 
-#if defined(OS_SUNOS)
-String Elf::getBuildID(const char * nhdr_pos, size_t size)
-{
-    return {};
-}
-#else
 String Elf::getBuildID(const char * nhdr_pos, size_t size)
 {
     const char * nhdr_end = nhdr_pos + size;
@@ -183,7 +177,6 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 
     return {};
 }
-#endif // OS_SUNOS
 
 
 String Elf::getStoredBinaryHash() const
