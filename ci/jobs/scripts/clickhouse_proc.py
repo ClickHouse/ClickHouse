@@ -347,7 +347,17 @@ class ClickHouseProc:
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
-        return True
+
+        for _ in range(20):
+            res = Shell.check(
+                "/mc ls clickminio/test | head -n5",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start minio")
+        return False
 
     def start_azurite(self):
         command = (
