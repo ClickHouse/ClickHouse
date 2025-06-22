@@ -502,7 +502,7 @@ namespace
             if (isTuple(type))
             {
                 const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
-                if (tuple_type->haveExplicitNames())
+                if (tuple_type->hasExplicitNames())
                     return;
 
                 if (checkIfTypesAreEqual(tuple_type->getElements()))
@@ -537,7 +537,7 @@ namespace
             if (isTuple(type))
             {
                 const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-                if (tuple_type.haveExplicitNames())
+                if (tuple_type.hasExplicitNames())
                     return;
 
                 const auto & current_tuple_size = tuple_type.getElements().size();
@@ -650,7 +650,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
             {
                 const auto & elements = tuple_type->getElements();
                 const auto & names = tuple_type->getElementNames();
@@ -681,7 +681,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
+            if (tuple_type && tuple_type->hasExplicitNames())
                 type = result_tuple;
         }
     }
@@ -1495,7 +1495,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
     {
         auto nested_types = tuple_type->getElements();
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
         {
             for (auto & nested_type : nested_types)
                 transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
@@ -1672,7 +1672,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
             nested_types.push_back(nested_type);
         }
 
-        if (tuple_type->haveExplicitNames())
+        if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));

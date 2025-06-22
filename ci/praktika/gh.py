@@ -112,7 +112,7 @@ class GH:
         TAG_COMMENT_END = "<!-- CI automatic comment end :{TAG}: -->"
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
-            --jq \'[.[] | {{id: .id, body: .body}}]\''
+            --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
         output = Shell.get_output(cmd_check_created, verbose=True)
 
         comments = json.loads(output)
