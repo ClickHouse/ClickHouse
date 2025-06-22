@@ -350,7 +350,7 @@ class ClickHouseProc:
 
         for _ in range(20):
             res = Shell.check(
-                "/mc ls clickminio/test | head -n5",
+                "/mc ls clickminio/test | grep -q .",
                 verbose=True,
             )
             if res:
