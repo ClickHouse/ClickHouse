@@ -6868,7 +6868,7 @@ The number of columns that will be advised for the index.
 Find the best primary key for the table for saved workload.
 )", EXPERIMENTAL) \
     DECLARE(Bool, index_advisor_find_best_index, false, R"(
-Find the best columns for the minmax index for the table for saved workload.
+Find the best columns for the index for the table for saved workload.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

@@ -68,9 +68,9 @@ BlockIO InterpreterFinishCollectingWorkload::execute()
     }
 
     Block block;
-    block.insert(ColumnWithTypeAndName{std::move(columns[0]), std::make_shared<DataTypeString>(), "table_name"});
-    block.insert(ColumnWithTypeAndName{std::move(columns[1]), std::make_shared<DataTypeString>(), "index_type"});
-    block.insert(ColumnWithTypeAndName{std::move(columns[2]), std::make_shared<DataTypeString>(), "columns for index"});
+    block.insert(ColumnWithTypeAndName{std::move(columns[0]), std::make_shared<DataTypeString>(), "Table name"});
+    block.insert(ColumnWithTypeAndName{std::move(columns[1]), std::make_shared<DataTypeString>(), "Index type"});
+    block.insert(ColumnWithTypeAndName{std::move(columns[2]), std::make_shared<DataTypeString>(), "Columns for index"});
 
     BlockIO block_io;
     block_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));

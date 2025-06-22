@@ -48,10 +48,10 @@ UInt64 getReadMarks(const String & query, ContextMutablePtr context)
     UInt64 sum_read = 0;
     while (exec.pull(block))
     {
+        // Get sum of read marks from column 4, which is the "read_marks" column in the EXPLAIN ESTIMATE output.
         const auto & col = block.getByPosition(4);
         for (size_t j = 0; j < col.column->size(); ++j)
         {
-            // LOG_INFO(getLogger("TableManager"), "Read marks: {} {}", block.getByPosition(1).column->getDataAt(j).toString(), block.getByPosition(4).column->getUInt(j));
             sum_read += col.column->getUInt(j);
         }
     }
@@ -77,10 +77,10 @@ void dropViews(ContextMutablePtr context, const Strings & views)
 
 bool IndexManager::addIndex(const String & index_name, const String & index_columns, const String & index_type)
 {
+    // Make sure the index will be updated synchronously
     auto prev_mutation_setting = context->getSettingsRef()[Setting::mutations_sync].value;
     context->setSetting("mutations_sync", 2);
 
-    // TODO: add granularity?
     try
     {
         String add_index_query
@@ -112,6 +112,7 @@ bool IndexManager::addIndex(const String & index_name, const String & index_colu
 
 void IndexManager::dropIndex(const String & index_name)
 {
+    // Make sure the index will be dropped synchronously
     auto prev_mutation_setting = context->getSettingsRef()[Setting::mutations_sync].value;
     context->setSetting("mutations_sync", 2);
 

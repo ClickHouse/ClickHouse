@@ -7,17 +7,22 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
+#include <Databases/DDLRenamingVisitor.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -47,24 +52,21 @@ String replaceTableNames(const String & input, const String & table, const Strin
     return result;
 }
 
-
-std::vector<String> extractColumnsFromCreateDDL(const String & ddl_sql, ASTPtr & out_ast)
+ASTPtr replacePK(const String & ddl_sql, const String & pk_columns)
 {
     ParserCreateQuery parser;
-    out_ast
-        = parseQuery(parser, ddl_sql, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr out_ast = parseQuery(parser, ddl_sql, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     auto * create_ast = out_ast->as<ASTCreateQuery>();
-    if (!create_ast || !create_ast->columns_list || !create_ast->columns_list->columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse CREATE TABLE or missing columns");
+    if (!create_ast || !create_ast->storage)
+        return nullptr;
 
-    std::vector<String> cols;
-    for (const auto & col_ptr : create_ast->columns_list->columns->children)
-    {
-        const auto * col_decl = col_ptr->as<ASTColumnDeclaration>();
-        if (col_decl)
-            cols.push_back(col_decl->name);
-    }
-    return cols;
+    ParserExpression parser_expr;
+    ASTPtr expr_ast = parseQuery(parser_expr, pk_columns, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    create_ast->storage->set(create_ast->storage->primary_key, expr_ast);
+    create_ast->storage->set(create_ast->storage->order_by, expr_ast);
+
+    return out_ast;
 }
 
 String getTableDDL(const String & table, ContextMutablePtr context)
@@ -88,28 +90,24 @@ String getTableDDL(const String & table, ContextMutablePtr context)
     return ddl;
 }
 
-void createTableQuery(ContextMutablePtr context, const String & table, const String & pk_columns, ASTPtr & create_ast)
+void createTable(ContextMutablePtr context, ASTPtr & create_ast)
 {
-    String columns_def;
-    const auto * create_ast_ptr = create_ast->as<ASTCreateQuery>();
-    if (!create_ast_ptr || !create_ast_ptr->columns_list || !create_ast_ptr->columns_list->columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse columns from CREATE TABLE AST");
-
-    for (size_t i = 0; i < create_ast_ptr->columns_list->columns->children.size(); ++i)
+    InterpreterCreateQuery interpreter_create(create_ast, context);
+    interpreter_create.setInternal(true);
+    auto io = interpreter_create.execute();
+    if (io.pipeline.initialized())
     {
-        if (i > 0)
-            columns_def += ", ";
-        columns_def += create_ast_ptr->columns_list->columns->children[i]->formatForErrorMessage();
+        CompletedPipelineExecutor executor(io.pipeline);
+        executor.execute();
     }
-    String query_for_create_target_table = "CREATE TABLE " + table + " (" + columns_def + ") ENGINE = MergeTree() ORDER BY " + pk_columns;
-    LOG_INFO(getLogger("TableManager"), "Create table query: {}", query_for_create_target_table);
-
-    executeQuery(query_for_create_target_table, context, QueryFlags{.internal = true});
+    else
+    {
+        LOG_INFO(getLogger("TableManager"), "Failed to create table, pipeline not initialized");
+    }
 }
 
 void insertSample(const String & table, const String & estimation_table, ContextMutablePtr context)
 {
-    LOG_INFO(getLogger("TableManager"), "Inserting sample for table {}", table);
     UInt64 sample_size = static_cast<UInt64>(context->getSettingsRef()[Setting::index_advisor_sampling_proportion] * 1000);
     String hash_expr = "rand() % 1000 < " + std::to_string(sample_size);
 
@@ -124,15 +122,10 @@ void insertSample(const String & table, const String & estimation_table, Context
         CompletedPipelineExecutor executor(io.pipeline);
         executor.execute();
     }
-    else
-    {
-        LOG_INFO(getLogger("TableManager"), "Pipeline not initialized, insert may be asynchronous");
-    }
 }
 
 void insertWithLimit(const String & table, const String & estimation_table, ContextMutablePtr context)
 {
-    LOG_INFO(getLogger("TableManager"), "Inserting with limit for table {}", table);
     String query = "INSERT INTO " + estimation_table + " SELECT * FROM " + table + " LIMIT 10000";
     auto io = executeQuery(query, context, QueryFlags{.internal = true}).second;
     io.pipeline.setNumThreads(1);
@@ -143,7 +136,7 @@ void insertWithLimit(const String & table, const String & estimation_table, Cont
     }
     else
     {
-        LOG_INFO(getLogger("TableManager"), "Pipeline not initialized, insert may be asynchronous");
+        LOG_INFO(getLogger("TableManager"), "Failed to insert with limit, pipeline not initialized");
     }
 }
 
@@ -197,7 +190,7 @@ void dropViews(ContextMutablePtr context, const Strings & views)
     }
 }
 
-}
+} // namespace
 
 UInt64 TableManager::estimate(const String & pk_columns)
 {
@@ -223,31 +216,24 @@ void TableManager::buildTable(const String & pk_columns)
     String ddl = getTableDDL(table, context);
     if (ddl.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get DDL for table {}", table);
-    LOG_INFO(getLogger("TableManager"), "DDL: {}", ddl);
 
-    ASTPtr create_ast;
-    std::vector<String> all_cols = extractColumnsFromCreateDDL(ddl, create_ast);
-    if (all_cols.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns found in CREATE TABLE AST");
+    ASTPtr create_ast = replacePK(ddl, pk_columns);
+    if (!create_ast)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to replace PK in DDL for table {}", table);
     
-    String all_cols_str;
-    for (const auto & col : all_cols)
-    {
-        all_cols_str += col + ", ";
-    }
-    LOG_INFO(getLogger("TableManager"), "All columns: {}", all_cols_str);
+    DDLRenamingMap renaming_map;
+    QualifiedTableName old_table_name = {context->getCurrentDatabase(), table};
+    QualifiedTableName new_table_name = {context->getCurrentDatabase(), estimation_table};
+    renaming_map.setNewTableName(old_table_name, new_table_name);
+    renameDatabaseAndTableNameInCreateQuery(create_ast, renaming_map, context);
 
     dropTable(estimation_table);
-    createTableQuery(context, estimation_table, pk_columns, create_ast);
+    createTable(context, create_ast);
     insertSample(table, estimation_table, context);
     if (isTableEmpty(estimation_table, context))
-    {
         insertWithLimit(table, estimation_table, context);
-    }
     if (isTableEmpty(estimation_table, context))
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is still empty after inserting with limit", estimation_table);
-    }
 }
 
 UInt64 TableManager::estimateQueries()
@@ -258,19 +244,16 @@ UInt64 TableManager::estimateQueries()
         ParserQuery parser(query.c_str() + query.size());
         auto query_ast = parseQuery(
             parser, query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        // LOG_DEBUG(getLogger("TableManager"), "Query ast type: {}", (query_ast->as<ASTSetQuery>() ? "ASTSetQuery" : (query_ast->as<ASTCreateQuery>() ? "ASTCreateQuery" : (query_ast->as<ASTDropQuery>() ? "ASTDropQuery" : "Unknown"))));
         if (query_ast->as<ASTCreateQuery>() || query_ast->as<ASTSetQuery>() || query_ast->as<ASTDropQuery>())
         {
             if (query_ast->as<ASTSetQuery>()) {
                 executeQuery(query, context, QueryFlags{.internal = true});
             }
-            // LOG_DEBUG(getLogger("TableManager"), "No need to estimate query: {}", query);
             continue;
         }
         String new_query = replaceTableNames(query, table, estimation_table);
-        // LOG_DEBUG(getLogger("TableManager"), "New query: {}", new_query);
-        sum_read += getReadMarks(new_query, context);
-        // LOG_DEBUG(getLogger("TableManager"), "Estimated query: {} with read marks: {}", query, sum_read);
+        auto read_marks = getReadMarks(new_query, context);
+        sum_read += read_marks;
     }
     return sum_read;
 }
