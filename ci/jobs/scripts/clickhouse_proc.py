@@ -264,6 +264,7 @@ class ClickHouseProc:
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
     WD2 = f"{temp_dir}/ft_wd2"
+    CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
@@ -737,6 +738,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.DMESG_LOG)
             if Path(self.CH_LOCAL_ERR_LOG).exists():
                 res.append(self.CH_LOCAL_ERR_LOG)
+            if Path(self.CH_LOCAL_LOG).exists():
+                res.append(self.CH_LOCAL_LOG)
         self.logs = res
         return res
 
@@ -945,16 +948,24 @@ quit
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
+
         command_args += " --config-file=/etc/clickhouse-server/config.xml"
+        # Change log files for local in config.xml as command args do not override
+        Shell.check(
+            f"sed -i 's|<log>.*</log>|<log>{self.CH_LOCAL_LOG}</log>|' /etc/clickhouse-server/config.xml"
+        )
+        Shell.check(
+            f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
+        )
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        # NOTE: we also need to override logger.level, but logger.level will not work
-        # FIXME: --logger.*s do not override config.xml settings
-        command_args_post = f"-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.logerror={self.CH_LOCAL_ERR_LOG} --logger.console=0"
+        #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
