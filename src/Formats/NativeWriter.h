@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <base/types.h>
 #include <DataTypes/IDataType.h>
+#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -31,8 +32,6 @@ public:
     /// Returns the number of bytes written.
     size_t write(const Block & block);
     void flush();
-
-    static SerializationPtr getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column);
 
     static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 

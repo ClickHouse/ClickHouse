@@ -15,19 +15,19 @@ using namespace DB;
 using namespace std::literals::string_literals;
 }
 
-struct DefaultTokenExtractorTestCase
+struct SplitTokenExtractorTestCase
 {
     const std::string_view description;
     const std::string source;
     const std::vector<std::string> tokens;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const DefaultTokenExtractorTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const SplitTokenExtractorTestCase & test_case)
 {
     return ostr << test_case.description;
 }
 
-class DefaultTokenExtractorTest : public ::testing::TestWithParam<DefaultTokenExtractorTestCase>
+class SplitTokenExtractorTest : public ::testing::TestWithParam<SplitTokenExtractorTestCase>
 {
 public:
     void SetUp() override
@@ -46,11 +46,11 @@ public:
     std::unique_ptr<PaddedPODArray<char>> data;
 };
 
-TEST_P(DefaultTokenExtractorTest, next)
+TEST_P(SplitTokenExtractorTest, next)
 {
     const auto & param = GetParam();
 
-    DefaultTokenExtractor token_extractor;
+    SplitTokenExtractor token_extractor;
 
     size_t i = 0;
 
@@ -72,8 +72,8 @@ TEST_P(DefaultTokenExtractorTest, next)
 }
 
 INSTANTIATE_TEST_SUITE_P(NoTokens,
-    DefaultTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<DefaultTokenExtractorTestCase>{
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
         {
             "Empty input sequence produces no tokens.",
             "",
@@ -93,8 +93,8 @@ INSTANTIATE_TEST_SUITE_P(NoTokens,
 );
 
 INSTANTIATE_TEST_SUITE_P(ShortSingleToken,
-    DefaultTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<DefaultTokenExtractorTestCase>{
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
         {
             "Short single token",
             "foo",
@@ -109,8 +109,8 @@ INSTANTIATE_TEST_SUITE_P(ShortSingleToken,
 );
 
 INSTANTIATE_TEST_SUITE_P(UTF8,
-    DefaultTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<DefaultTokenExtractorTestCase>{
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
         {
             "Single token with mixed ASCII and UTF-8 chars",
             "abc\u0442" "123\u0447XYZ\u043A",
@@ -125,8 +125,8 @@ INSTANTIATE_TEST_SUITE_P(UTF8,
 );
 
 INSTANTIATE_TEST_SUITE_P(MultipleTokens,
-    DefaultTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<DefaultTokenExtractorTestCase>{
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
         {
             "Multiple tokens separated by whitespace",
             "\nabc 123\tXYZ\r",
@@ -169,8 +169,8 @@ INSTANTIATE_TEST_SUITE_P(MultipleTokens,
 
 
 INSTANTIATE_TEST_SUITE_P(SIMD_Cases,
-    DefaultTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<DefaultTokenExtractorTestCase>{
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
         {
             "First 16 bytes are empty, then a shor token",
             "                abcdef",

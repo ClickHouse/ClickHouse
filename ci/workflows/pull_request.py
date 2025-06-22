@@ -80,7 +80,6 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_merge_ready_status=True,
-    enable_gh_summary_comment=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[
         can_be_trusted,

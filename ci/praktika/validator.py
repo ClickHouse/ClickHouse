@@ -214,13 +214,6 @@ class Validator:
                     workflow,
                 )
 
-            if workflow.enable_gh_summary_comment:
-                cls.evaluate_check(
-                    workflow.event == Workflow.Event.PULL_REQUEST,
-                    ".enable_gh_summary_comment=True applicable for pull_request workflow only",
-                    workflow,
-                )
-
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:

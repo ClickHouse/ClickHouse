@@ -483,22 +483,9 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
-        workflow_result = Result.from_fs(workflow.name)
-        if workflow.enable_gh_summary_comment:
-            try:
-                summary_body = GH.ResultSummaryForGH.from_result(
-                    workflow_result
-                ).to_markdown()
-                if not GH.post_updateable_comment(
-                    comment_tags_and_bodies={"summary": summary_body},
-                ):
-                    print(f"ERROR: failed to post CI summary")
-            except Exception as e:
-                print(f"ERROR: failed to post CI summary, ex: {e}")
-                traceback.print_exc()
-
         if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
             # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
             workflow_storage_usage = StorageUsage.from_dict(
                 workflow_result.ext.get("storage_usage", {})
             )

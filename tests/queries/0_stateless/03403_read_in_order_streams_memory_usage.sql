@@ -1,5 +1,3 @@
-SET enable_parallel_blocks_marshalling = 0;
-
 DROP TABLE IF EXISTS 03403_data;
 CREATE TABLE 03403_data(id UInt32, val String) ENGINE = MergeTree ORDER BY id AS SELECT 1, 'test';
 
