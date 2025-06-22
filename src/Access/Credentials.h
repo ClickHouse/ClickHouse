@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/SSHWrapper.h>
 
 #if USE_SSL
@@ -7,8 +9,6 @@
 #endif
 
 #include <base/types.h>
-
-#include "config.h"
 
 namespace Poco::Net
 {

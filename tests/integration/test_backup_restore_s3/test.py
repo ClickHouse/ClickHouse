@@ -770,13 +770,12 @@ def test_user_specific_auth(start_cluster):
 
 @pytest.mark.parametrize(
     "allow_s3_native_copy,use_multipart_copy",
-    [(True, True), (True, False), (False, True), (False, False), ("auto", False)],
+    [(True, True), (True, False), (False, True), (False, False)],
     ids=[
         "native_multipart",
         "native_single",
         "non_native_multipart",
         "non_native_single",
-        "auto_single",
     ],
 )
 def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_copy):

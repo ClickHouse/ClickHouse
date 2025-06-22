@@ -97,27 +97,27 @@ Returns the current value of a custom setting.
         .arguments = {
             {"custom_setting", "The setting name. Type: String."}
         },
-        .returned_value = "The setting's current value.",
+        .returned_value = {"The setting's current value."},
         .examples = {
             {"getSetting", "SET custom_a = 123; SELECT getSetting('custom_a');", "123"},
         },
-        .category{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(FunctionDocumentation{
         .description = R"(
 Returns the current value of a custom setting or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 )",
         .syntax = "getSettingOrDefault('custom_setting', default_value)",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."},
+            {"custom_setting", "The setting name.", {"String"}},
             {"default_value", "Value to return if custom_setting is not set. Value may be of any data type or Null."},
         },
-        .returned_value = "The setting's current value or the default_value if setting is not set.",
+        .returned_value = {"The setting's current value or the default_value if setting is not set."},
         .examples = {
             {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', 'my_value');", "my_value"},
             {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', 100);", "100"},
             {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', NULL);", "NULL"},
         },
-        .category{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
 }
 
 }

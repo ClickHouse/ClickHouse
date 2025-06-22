@@ -299,7 +299,7 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+const ColumnWithTypeAndName * Block::findByName(std::string_view name, bool case_insensitive) const
 {
     if (case_insensitive)
     {
@@ -317,6 +317,11 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
         return nullptr;
     }
     return &data[it->second];
+}
+
+const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool case_insensitive) const
+{
+    return findByName(std::string_view{name}, case_insensitive);
 }
 
 std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
@@ -937,6 +942,9 @@ Block concatenateBlocks(const std::vector<Block> & blocks)
 {
     if (blocks.empty())
         return {};
+
+    if (blocks.size() == 1)
+        return blocks[0];
 
     size_t num_rows = 0;
     for (const auto & block : blocks)

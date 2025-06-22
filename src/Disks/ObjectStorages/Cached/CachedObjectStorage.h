@@ -124,6 +124,11 @@ public:
     {
         return object_storage->getAzureBlobStorageClient();
     }
+
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
+    {
+        return object_storage->getAzureBlobStorageAuthMethod();
+    }
 #endif
 
 #if USE_AWS_S3

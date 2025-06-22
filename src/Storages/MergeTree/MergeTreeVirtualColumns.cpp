@@ -55,6 +55,9 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
     if (column_name == "_partition_value")
         return Tuple(part.partition.value.begin(), part.partition.value.end());
 
+    if (column_name == "_disk_name")
+        return part.getDataPartStorage().getDiskName();
+
     throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Unexpected const virtual column: {}", column_name);
 }
 

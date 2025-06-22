@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <base/range.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>

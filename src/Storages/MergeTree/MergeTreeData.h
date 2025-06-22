@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -262,7 +263,6 @@ public:
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
@@ -338,6 +338,8 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
+        void rollBackAll();
+
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -368,6 +370,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            Coalescing          = 8,
         };
 
         Mode mode;
@@ -431,7 +434,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
-        const DataPartsVector & parts,
+        const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
@@ -523,7 +526,7 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        DataPartsVector parts;
+        RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
 
@@ -813,7 +816,7 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -974,6 +977,8 @@ public:
         return storage_settings.get();
     }
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
@@ -1110,7 +1115,7 @@ public:
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     Block getBlockWithVirtualsForFilter(
-        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
+        const StorageMetadataPtr & metadata, const RangesInDataParts & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1160,7 +1165,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/freezed part
+    /// Check shared data usage on other replicas for detached/frozen part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1242,6 +1247,8 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();
@@ -1356,7 +1363,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1758,6 +1765,9 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    StorageSnapshotPtr
+    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

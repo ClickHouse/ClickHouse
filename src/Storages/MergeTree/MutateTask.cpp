@@ -44,6 +44,7 @@ namespace ProfileEvents
 {
     extern const Event MutationTotalParts;
     extern const Event MutationUntouchedParts;
+    extern const Event MutationCreatedEmptyParts;
     extern const Event MutationTotalMilliseconds;
     extern const Event MutationExecuteMilliseconds;
     extern const Event MutationAllPartColumns;
@@ -2240,7 +2241,9 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
 
-    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    auto is_storage_touched = isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading);
+
+    if (!is_storage_touched.any_rows_affected)
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2284,6 +2287,31 @@ bool MutateTask::prepare()
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));
         return false;
+    }
+
+    if (is_storage_touched.all_rows_affected)
+    {
+        bool has_only_delete_commands = std::ranges::all_of(ctx->commands_for_part, [](const auto & command)
+        {
+            return command.type == MutationCommand::DELETE;
+        });
+
+        if (has_only_delete_commands)
+        {
+            LOG_TRACE(ctx->log,
+                "Part {} is fully deleted, creating empty part with mutation version {}",
+                ctx->source_part->name, ctx->future_part->part_info.mutation);
+
+            auto [empty_part, _] = ctx->data->createEmptyPart(
+                ctx->future_part->part_info,
+                ctx->source_part->partition,
+                ctx->future_part->name,
+                ctx->txn);
+
+            ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
+            promise.set_value(std::move(empty_part));
+            return false;
+        }
     }
 
     LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);

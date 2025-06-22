@@ -92,7 +92,7 @@ class Job:
                 == len(timeout)
                 == len(provides)
                 == len(requires)
-            ), f"Parametrization lists must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
+            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
 
             res = []
             for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
@@ -188,16 +188,21 @@ class Job:
                     )
             return res
 
-        def unset_provides(self, artifact_keyword):
+        def unset_provides(self, artifact_keywords):
             """
-            removes artifact matching artifact_keyword
-            :param artifact_keyword:
+            removes artifacts matching any of the artifact_keywords.
+            :param artifact_keywords: str or list of keywords to filter out from provides
             :return: copied and modified Job.Config instance
             """
             res = copy.deepcopy(self)
+            if isinstance(artifact_keywords, str):
+                artifact_keywords = [artifact_keywords]
+            artifact_keywords = [k.lower() for k in artifact_keywords]
             provides_res = []
             for artifact in res.provides:
-                if artifact_keyword.lower() not in artifact.lower():
+                if not any(
+                    keyword in artifact.lower() for keyword in artifact_keywords
+                ):
                     provides_res.append(artifact)
             res.provides = provides_res
             return res

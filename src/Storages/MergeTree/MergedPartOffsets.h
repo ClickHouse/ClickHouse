@@ -182,25 +182,23 @@ public:
 class MergedPartOffsets
 {
 public:
-    MergedPartOffsets() = default;
-
-    explicit MergedPartOffsets(size_t num_parts_)
-        : num_parts(num_parts_)
-        , offset_maps(num_parts)
+    enum class MappingMode
     {
-    }
+        Enabled, /// Full offset mapping is required
+        Disabled /// No mapping needed (e.g., no sorting key)
+    };
 
-    MergedPartOffsets(MergedPartOffsets && other) noexcept { std::swap(*this, other); }
-
-    MergedPartOffsets & operator=(MergedPartOffsets && other) noexcept
+    explicit MergedPartOffsets(size_t num_parts, MappingMode mode_ = MappingMode::Enabled)
+        : mode(mode_)
+        , offset_maps(mode == MappingMode::Enabled ? num_parts : 0)
+        , finalized(mode == MappingMode::Disabled)
     {
-        std::swap(*this, other);
-        return *this;
     }
 
     /// Records _part_offset mappings for a batch of _part_index values.
     void insert(const UInt64 * begin_part_index, const UInt64 * end_part_index)
     {
+        chassert(mode == MappingMode::Enabled);
         for (const UInt64 * it = begin_part_index; it != end_part_index; ++it)
         {
             offset_maps[*it].insert(num_rows);
@@ -211,6 +209,7 @@ public:
     /// Looks up the new _part_offset in the merged data.
     UInt64 operator[](UInt64 part_index, UInt64 part_offset) const
     {
+        chassert(mode == MappingMode::Enabled);
         chassert(part_index < offset_maps.size());
         return offset_maps[part_index][part_offset];
     }
@@ -219,6 +218,9 @@ public:
     /// Must be called after all offsets have been inserted.
     void flush()
     {
+        if (mode == MappingMode::Disabled)
+            return;
+
         chassert(!finalized);
         finalized = true;
 
@@ -241,14 +243,23 @@ public:
     }
 
     bool isFinalized() const { return finalized; }
+    bool isMappingEnabled() const { return mode == MappingMode::Enabled; }
+
     bool empty() const { return num_rows == 0; }
     size_t size() const { return num_rows; }
 
+    void clear()
+    {
+        offset_maps.clear();
+        num_rows = 0;
+    }
+
 private:
-    size_t num_parts = 0;
+    MappingMode mode;
     std::vector<PackedPartOffsets> offset_maps;
+    bool finalized;
+
     size_t num_rows = 0;
-    bool finalized = false;
     LoggerPtr logger = getLogger("MergedPartOffsets");
 };
 

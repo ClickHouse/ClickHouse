@@ -12,6 +12,7 @@
 #include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <ranges>
 #include <set>
 
 
@@ -392,6 +393,22 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     }
 }
 
+bool StoragePolicy::isCompatibleForPartitionOps(const StoragePolicyPtr & other) const
+{
+    if (getName() == other->getName())
+        return true;
+
+    constexpr auto is_compatible = [](const auto & disk) -> bool
+    {
+        if (disk->isPlain())
+            return true;
+        if (auto delegate = disk->getDelegateDiskIfExists())
+            return delegate->isPlain();
+        return false;
+    };
+
+    return std::ranges::all_of(getDisks(), is_compatible) && std::ranges::all_of(other->getDisks(), is_compatible);
+}
 
 std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
