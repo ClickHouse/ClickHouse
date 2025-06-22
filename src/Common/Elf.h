@@ -20,7 +20,7 @@ enum class ProgramHeaderType : uint32_t
     DYNAMIC = 2,
 };
 
-enum class NameHeaderType : uint64_t
+enum class NameHeaderType : uint32_t
 {
     GNU_BUILD_ID = 3,
 };
@@ -89,8 +89,8 @@ struct ElfSymbol
 
 struct ElfNameHeader
 {
-    uint64_t namesz;
-    uint64_t descsz;
+    uint32_t namesz;
+    uint32_t descsz;
     NameHeaderType type;
 };
 

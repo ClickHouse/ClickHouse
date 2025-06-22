@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <cassert>
 
 #include <filesystem>
 
