@@ -728,6 +728,7 @@ Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
 Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
 Expression
