@@ -357,17 +357,28 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    using RawBlockPtr = const ScatteredBlock *;
+    struct ScatteredColumns
+    {
+        Columns columns;
+        ScatteredBlock::Selector selector;
+    };
+
+    using RawScatteredColumnsPtr = const ScatteredColumns *;
     struct NullMapHolder
     {
-        size_t allocatedBytes() const { return !column->empty() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
+        size_t allocatedBytes() const
+        {
+            if (column->empty())
+                return 0;
+            return column->allocatedBytes() * columns->selector.size() / column->size();
+        }
 
-        RawBlockPtr block;
+        RawScatteredColumnsPtr columns;
         ColumnPtr column;
     };
-    using BlockNullmapList = std::deque<NullMapHolder>;
+    using NullmapList = std::deque<NullMapHolder>;
 
-    using ScatteredBlocksList = std::list<ScatteredBlock>;
+    using ScatteredColumnsList = std::list<ScatteredColumns>;
 
     struct RightTableData
     {
@@ -380,14 +391,14 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredBlocksList blocks; /// Blocks of "right" table.
-        BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        ScatteredColumnsList columns; /// Columns of "right" table.
+        NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
-        size_t blocks_allocated_size = 0;
-        size_t blocks_nullmaps_allocated_size = 0;
+        size_t allocated_size = 0;
+        size_t nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
         size_t rows_to_join = 0;
         /// Number of keys of right table to join
@@ -424,7 +435,7 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(const Block * block_ptr, size_t row_idx) const;
+    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -491,6 +502,9 @@ private:
     Block required_right_keys;
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
+
+    Strings additional_filter_required_lhs_names;
+    std::vector<size_t> additional_filter_required_rhs_pos;
 
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;

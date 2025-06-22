@@ -94,12 +94,16 @@ public:
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
+        const Strings & additional_filter_required_lhs_names_,
+        const std::vector<size_t> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_)
         : src_block(left_block_)
         , left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
+        , additional_filter_required_lhs_names(additional_filter_required_lhs_names_)
+        , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
         , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
@@ -179,6 +183,8 @@ public:
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
+    const Strings & additional_filter_required_lhs_names;
+    const std::vector<size_t> & additional_filter_required_rhs_pos;
 
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
