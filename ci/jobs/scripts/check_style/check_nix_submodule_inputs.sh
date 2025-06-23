@@ -21,7 +21,7 @@ NEW_HASH=$(git hash-object "$FLAKE_FILE")
 if [[ "$ORIG_HASH" != "$NEW_HASH" ]]; then
   echo "contrib inputs in $FLAKE_FILE are outdated, please run ./utils/nix/update_submodule_inputs.sh"
   echo ""
-  git --no-pager --no-color diff "$FLAKE_FILE"
+  git --no-pager --color=never diff "$FLAKE_FILE"
   exit 1
 else
   exit 0
