@@ -31,6 +31,15 @@ namespace CurrentMetrics
     extern const Metric RefreshingViews;
 }
 
+namespace ProfileEvents
+{
+    extern const Event RefreshableViewRefreshSuccess;
+    extern const Event RefreshableViewRefreshFailed;
+    extern const Event RefreshableViewSyncReplicaSuccess;
+    extern const Event RefreshableViewSyncReplicaRetry;
+    extern const Event RefreshableViewLockTableRetry;
+}
+
 namespace DB
 {
 namespace Setting
@@ -738,6 +747,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshFailed);
+
         bool cancelled = execution.interrupt_execution.load();
 
         if (table_to_drop.has_value())
@@ -764,6 +775,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         return std::nullopt;
     }
+
+    ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshSuccess);
 
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
@@ -1018,18 +1031,23 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
     ///     If this fails, retry until we see a different table by the same name.
 
     StoragePtr prev_storage;
-    /// (Without maybe_unused, clang-tidy-19 seems to produce incorrect error
-    ///  "Value stored to 'prev_table_dropped_locally' is never read" about the assignment
-    ///  prev_table_dropped_locally = false further down.)
-    [[maybe_unused]] bool prev_table_dropped_locally = false;
+    bool prev_table_dropped_locally = false;
     std::exception_ptr exception;
 
     for (int attempt = 0; attempt < 10; ++attempt)
     {
-        if (attempt > 0 && !prev_table_dropped_locally)
+        if (attempt > 0)
         {
-            /// We're waiting for DatabaseReplicated to catch up and see the new table.
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (prev_table_dropped_locally)
+            {
+                ProfileEvents::increment(ProfileEvents::RefreshableViewLockTableRetry);
+            }
+            else
+            {
+                /// We're waiting for DatabaseReplicated to catch up and see the new table.
+                ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaRetry);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
         }
 
         StoragePtr storage = DatabaseCatalog::instance().getTable(storage_id, context);
@@ -1050,7 +1068,6 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             prev_table_dropped_locally = true;
             continue;
         }
-        prev_table_dropped_locally = false;
 
         if (coordination.coordinated)
         {
@@ -1061,6 +1078,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
                 try
                 {
                     InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
+                    ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
                 }
                 catch (Exception & e)
                 {
@@ -1079,6 +1097,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
                     /// In this case we retry table lookup in hopes of seeing the new table Y.
                     LOG_DEBUG(log, "Retrying after exception when syncing replica: {}", e.message());
                     exception = std::current_exception();
+                    prev_table_dropped_locally = false;
                     continue;
                 }
 
