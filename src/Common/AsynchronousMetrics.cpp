@@ -763,19 +763,21 @@ void readPressureFile(
         readStringUntilWhitespace(stall_type, in);
 
         String skip;
-        // skip avg10
-        readStringUntilWhitespace(skip, in);
-        // skip avg60
-        readStringUntilWhitespace(skip, in);
-        // skip avg300
-        readStringUntilWhitespace(skip, in);
+        // skip avg10=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg60=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg300=
+        readStringUntilEquals(skip, in);
+        ++in.position();
         // skip total=
-        readStringUntilEquals(skip,in);
+        readStringUntilEquals(skip, in);
+        ++in.position();
 
-        String total;
-        readStringUntilNewlineInto(total, in);
-
-        uint64_t counter = std::stoull(total);
+        uint64_t counter;
+        readText(counter, in);
         new_values[fmt::format("PSI_{}_{}", type, stall_type)] = AsynchronousMetricValue(counter,
             "Total microseconds of stall time."
             "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
