@@ -170,6 +170,10 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
+if (ENABLE_LEXER_TEST)
+    list(APPEND CLICKHOUSE_BUNDLE lexer_test)
+endif ()
+
 if (ENABLE_CHDIG)
     message(STATUS "Adding chdig to clickhouse-bundle")
     list(APPEND CLICKHOUSE_BUNDLE chdig)

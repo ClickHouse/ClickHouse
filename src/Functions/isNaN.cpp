@@ -25,9 +25,11 @@ REGISTER_FUNCTION(IsNaN)
 {
     FunctionDocumentation::Description description = "Returns `1` if the Float32 and Float64 argument is `NaN`, otherwise returns `0`.";
     FunctionDocumentation::Syntax syntax = "isNaN(x)";
-    FunctionDocumentation::Argument argument1 = {"x", "Argument to evaluate for if it is `NaN`"};
-    FunctionDocumentation::Arguments arguments = {argument1};
-    FunctionDocumentation::ReturnedValue returned_value = "`1` if `NaN`, otherwise `0`";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "Argument to evaluate for if it is `NaN`.", {"Float32", "Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"`1` if `NaN`, otherwise `0`"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT isNaN(NaN)", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;

@@ -2,9 +2,11 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
@@ -13,10 +15,28 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_full_text_index;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+template <class SearchTraits>
+FunctionPtr FunctionSearchImpl<SearchTraits>::create(ContextPtr context)
+{
+    return std::make_shared<FunctionSearchImpl>(context);
+}
+
+template <class SearchTraits>
+FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
+    : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+{
 }
 
 template <class SearchTraits>
@@ -33,9 +53,14 @@ void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterPar
 template <class SearchTraits>
 DataTypePtr FunctionSearchImpl<SearchTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
+    if (!allow_experimental_full_text_index)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Enable the setting 'allow_experimental_full_text_index' to use function {}", getName());
+
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"}};
 
     validateFunctionArguments(*this, arguments, mandatory_args);
 
@@ -169,8 +194,24 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
 
-    const auto & col_needles_tokens = col_needles->getDataAt(0);
-    std::vector<String> needles = DefaultTokenExtractor().getTokens(col_needles_tokens.data, col_needles_tokens.size);
+    std::vector<String> needles;
+    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
+    {
+        for (const auto & needle_field : col_needles_const->getValue<Array>())
+        {
+            const auto & needle = needle_field.safeGet<String>();
+            const auto & tokens = token_extractor->getTokens(needle.data(), needle.size());
+            for (const auto & token : tokens)
+                needles.emplace_back(token);
+        }
+    }
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Needles argument of function '{}' should be Array(String), got: {}",
+            name,
+            col_needles->getFamilyName());
+
     if (needles.size() > supported_number_of_needles)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 
