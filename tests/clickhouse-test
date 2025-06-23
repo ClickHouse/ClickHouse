@@ -40,9 +40,10 @@ import urllib.parse
 import zlib
 from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, contextmanager
 from datetime import datetime, timedelta
 from errno import ESRCH
+from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -286,7 +287,6 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = get_temp_file_path()
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
@@ -297,12 +297,14 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
-        shutil.copyfile(self.file_name, self.temp_file_path)
-        shutil.copymode(self.file_name, self.temp_file_path)
+        self.temp_file_path = "{0}.{2}{1}".format(
+            *os.path.splitext(file_name), os.getpid()
+        )
+        shutil.copy2(self.file_name, self.temp_file_path)
 
         with (
-            open(self.file_name, "w", newline="", encoding="utf-8") as modified,
-            open(self.temp_file_path, "r", newline="", encoding="utf-8") as source,
+            open(self.file_name, "r", newline="", encoding="utf-8") as source,
+            open(self.temp_file_path, "w", newline="", encoding="utf-8") as modified,
         ):
             for line in source:
                 # Replace table engines if echo enabled to match changed reference
@@ -369,13 +371,12 @@ class SharedEngineReplacer:
     def __exit__(self, exc_type, exc_value, exc_tb):
         if not self._need_to_replace_something():
             return
-        shutil.move(self.temp_file_path, self.file_name)
+        os.unlink(self.temp_file_path)
 
-
-def get_temp_file_path():
-    return os.path.join(
-        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
-    )
+    def get_path(self):
+        if not self._need_to_replace_something():
+            return self.file_name
+        return self.temp_file_path
 
 
 def stringhash(s: str) -> int:
@@ -412,6 +413,10 @@ def is_valid_utf_8(fname):
 
 
 class TestException(Exception):
+    pass
+
+
+class ConfigException(Exception):
     pass
 
 
@@ -600,7 +605,12 @@ def cleanup_child_processes(pid):
     proc_list = pgrep.decode("utf-8").strip().split("\n")
     processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
-        child_pgid = os.getpgid(child)
+        try:
+            child_pgid = os.getpgid(child)
+        except ProcessLookupError as e:
+            print(e, f"No such process: {child}")
+            continue
+
         if child_pgid != pgid:
             kill_process_group(child_pgid)
 
@@ -909,7 +919,9 @@ class FailureReason(enum.Enum):
 
     # SKIPPED reasons
     NOT_SUPPORTED = "not supported"
-    NOT_SUPPORTED_IN_CLOUD = "not supported in cloud environment"
+    NOT_SUPPORTED_IN_CLOUD = "not supported in cloud"
+    NOT_SUPPORTED_IN_CLOUD_PREFILTER = "not supported in cloud. prefilter"
+    NOT_SUPPORTED_IN_CLOUD_POSTFILTER = "not supported in cloud. postfilter"
     NOT_SUPPORTED_IN_PRIVATE = "not supported in private build"
     DISABLED = "disabled"
     SKIP = "skip"
@@ -928,7 +940,11 @@ class FailureReason(enum.Enum):
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     NO_ASYNC_INSERT = "test is not supported with async inserts enabled"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
+    REQUIRE_REPLICATED_TO_SHARED_MERGE_TREE_REPLACEMENT = "Test with shared_merge_tree in name require option --replace-replicated-with-shared for clickhouse-test"
+    SHARED_CATALOG = "no-shared-catalog"
+    SHARED_CATALOG_ONLY = "shared-catalog"
     DISTRIBUTED_CACHE = "distributed-cache"
+    NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
 
@@ -1202,6 +1218,34 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
+def replace_in_file_re(filename, what, with_what):
+    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+# unlike functools.cache() ignore args
+# (since args can be non-hashable)
+def cache_ignore_args(func):
+    cached_result = None
+    has_result = False
+
+    def wrapper(*args, **kwargs):
+        nonlocal cached_result, has_result
+        if not has_result:
+            cached_result = func(*args, **kwargs)
+            has_result = True
+        return cached_result
+
+    return wrapper
+
+
+@cache_ignore_args
+def is_old_analyzer_used(args):
+    return (
+        clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
+        == b"false"
+    )
+
+
 class TestResult:
     def __init__(
         self,
@@ -1238,20 +1282,23 @@ class TestCase:
         return description
 
     @staticmethod
-    def get_reference_file(suite_dir, name):
+    def get_reference_file(args, suite_dir, name):
         """
         Returns reference file name for specified test
         """
-
         name = removesuffix(name, ".gen")
-        for ext in [".reference", ".gen.reference"]:
+
+        file_extentions = [".reference", ".gen.reference"]
+        if is_old_analyzer_used(args):
+            file_extentions = [".oldanalyzer.reference", *file_extentions]
+
+        for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
             if os.path.isfile(reference_file):
                 return reference_file
         return None
 
-    @staticmethod
-    def configure_testcase_args(args, case_file, suite_tmp_dir):
+    def configure_testcase_args(self, args, case_file, suite_tmp_dir):
         testcase_args = copy.deepcopy(args)
 
         testcase_args.testcase_start_time = datetime.now()
@@ -1370,7 +1417,8 @@ class TestCase:
                 if max_value and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
-    def __init__(self, suite, case: str, args, is_concurrent: bool):
+    def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
+        self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
@@ -1387,7 +1435,7 @@ class TestCase:
         (self.name, self.ext) = os.path.splitext(case)
 
         file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
-        self.reference_file = self.get_reference_file(suite.suite_path, self.name)
+        self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
         )
@@ -1547,11 +1595,7 @@ class TestCase:
             and BuildFlags.RELEASE not in args.build_flags
         ):
             return FailureReason.OBJECT_STORAGE
-        if (
-            tags
-            and ("no-coverage" in tags)
-            and (args.collect_per_test_coverage)
-        ):
+        if tags and ("no-coverage" in tags) and (args.collect_per_test_coverage):
             return FailureReason.COVERAGE
 
         if "no-batch" in tags and (
@@ -1578,6 +1622,7 @@ class TestCase:
         return None
 
     def process_result_impl(self, proc, total_time: float) -> TestResult:
+        args = self.args
         kill_output = ""
         if proc:
             if proc.returncode is None:
@@ -1601,6 +1646,9 @@ class TestCase:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         stderr = kill_output
+        stderr += str(
+            self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8"
+        )
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1682,7 +1730,10 @@ class TestCase:
 
         # "X-ClickHouse-Exception-Code" included in "Access-Control-Expose-Headers"
         # "Exception" may be included into i.e. metric name
-        if re.search(r'(^|\W)(Net|Errno|)Exception(\W|$)', stdout) and "X-ClickHouse-Exception-Code" not in stdout:
+        if (
+            re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
+            and "X-ClickHouse-Exception-Code" not in stdout
+        ):
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
@@ -1782,6 +1833,7 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
+        os.remove(self.fatal_sanitizer_log.name)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
 
@@ -1864,28 +1916,30 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
+        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
+            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir, delete=False
+        )
 
-        if args.client_log:
-            log_opt = " --client_logs_file=" + args.client_log + " "
-            client_options += log_opt
+        log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
+        client_options += log_opt
 
-            for env_name in [
-                "TSAN_OPTIONS",
-                "ASAN_OPTIONS",
-                "MSAN_OPTIONS",
-                "UBSAN_OPTIONS",
-            ]:
-                current_options = os.environ.get(env_name, None)
-                if current_options is None:
-                    os.environ[env_name] = f"log_path={args.client_log}"
-                elif "log_path=" not in current_options:
-                    os.environ[env_name] += f":log_path={args.client_log}"
+        for env_name in [
+            "TSAN_OPTIONS",
+            "ASAN_OPTIONS",
+            "MSAN_OPTIONS",
+            "UBSAN_OPTIONS",
+        ]:
+            current_options = os.environ.get(env_name, None)
+            if current_options is None:
+                os.environ[env_name] = f"log_path={self.fatal_sanitizer_log.name}"
+            elif "log_path=" not in current_options:
+                os.environ[env_name] += f":log_path={self.fatal_sanitizer_log.name}"
 
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                os.environ["CLICKHOUSE_CLIENT_OPT"]
-                if "CLICKHOUSE_CLIENT_OPT" in os.environ
-                else ""
-            ) + log_opt
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            os.environ["CLICKHOUSE_CLIENT_OPT"]
+            if "CLICKHOUSE_CLIENT_OPT" in os.environ
+            else ""
+        ) + log_opt
 
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
@@ -1914,7 +1968,9 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else "",
+            "secure": (
+                "--secure" if args.secure and "--secure" not in client_options else ""
+            ),
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -1925,13 +1981,7 @@ class TestCase:
         if args.trace:
             tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
 
-        if self.ext == ".sql" and args.cloud:
-            # Get at least some logs, because we don't have access to system.text_log and pods...
-            pattern = (
-                "{client} --send_logs_level={logs_level} {secure} --multiquery {options}"
-                " --send_logs_level=trace < {test} > {stdout}  2>> /test_output/some_logs_from_server.log"
-            )
-        elif self.ext == ".sql" and not args.cloud:
+        if self.ext == ".sql":
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
@@ -2013,13 +2063,16 @@ class TestCase:
 
         return proc, total_time
 
-    def run(self, args, suite, client_options, server_logs_level):
+    def run(self, args, suite, client_options):
         start_time = datetime.now()
 
         try:
+            description = ""
             skip_reason = self.should_skip_test(suite)
             if skip_reason is not None:
-                return TestResult(self.name, TestStatus.SKIPPED, skip_reason, 0.0, "")
+                return TestResult(
+                    self.name, TestStatus.SKIPPED, skip_reason, 0.0, description
+                )
 
             if args.testname:
                 try:
@@ -2044,7 +2097,7 @@ class TestCase:
                 self.reference_file and not is_valid_utf_8(self.reference_file)
             ):
                 proc, total_time = self.run_single_test(
-                    server_logs_level, client_options
+                    args.server_logs_level, client_options
                 )
 
                 result = self.process_result_impl(proc, total_time)
@@ -2054,37 +2107,54 @@ class TestCase:
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
-                with SharedEngineReplacer(
-                    args,
-                    self.case_file,
-                    args.replace_replicated_with_shared,
-                    args.replace_non_replicated_with_shared,
-                    False,
-                    args.cloud,
-                ):
-                    with SharedEngineReplacer(
-                        args,
-                        self.reference_file,
-                        args.replace_replicated_with_shared,
-                        args.replace_non_replicated_with_shared,
-                        True,
-                        args.cloud,
-                    ):
-                        (
-                            proc,
-                            total_time,
-                        ) = self.run_single_test(server_logs_level, client_options)
 
-                        result = self.process_result_impl(proc, total_time)
-
-                        result.check_if_need_retry(
+                @contextmanager
+                def switch_to_smt():
+                    with (
+                        SharedEngineReplacer(
                             args,
-                            result.description,
-                            result.description,
-                            self.runs_count,
-                        )
-                        # to avoid breaking CSV parser
-                        result.description = result.description.replace("\0", "")
+                            self.case_file,
+                            args.replace_replicated_with_shared,
+                            args.replace_non_replicated_with_shared,
+                            False,
+                            args.cloud,
+                        ) as test_replacer,
+                        SharedEngineReplacer(
+                            args,
+                            self.reference_file,
+                            # cloud_mode_engine=2 in cloud, expect all engines to be Shared*
+                            args.replace_replicated_with_shared or args.cloud,
+                            args.replace_non_replicated_with_shared or args.cloud,
+                            True,
+                            args.cloud,
+                        ) as reference_replacer,
+                    ):
+                        old_case_file = self.case_file
+                        old_reference_file = self.reference_file
+                        self.case_file = test_replacer.get_path()
+                        self.reference_file = reference_replacer.get_path()
+                        try:
+                            yield
+                        finally:
+                            self.case_file = old_case_file
+                            self.reference_file = old_reference_file
+
+                with switch_to_smt():
+                    (
+                        proc,
+                        total_time,
+                    ) = self.run_single_test(args.server_logs_level, client_options)
+
+                    result = self.process_result_impl(proc, total_time)
+
+                    result.check_if_need_retry(
+                        args,
+                        result.description,
+                        result.description,
+                        self.runs_count,
+                    )
+                    # to avoid breaking CSV parser
+                    result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
@@ -2152,7 +2222,7 @@ class TestCase:
         if need_cleanup and args.no_drop_if_fail:
             need_cleanup = passed
 
-        if not need_cleanup:
+        if not need_cleanup or args.no_drop:
             return
 
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
@@ -2339,6 +2409,11 @@ class TestSuite:
             parsed_tags = parse_tags_from_line(tag_line, comment_sign)
             if need_query_params:
                 parsed_tags.add("need-query-parameters")
+            if filepath.endswith(".expect"):
+                parsed_tags.add("test-type-expect")
+            if ".cloud." in filepath:
+                parsed_tags.add("cloud")
+
             random_settings_limits = parse_random_settings_limits_from_line(
                 random_settings_limits_line, comment_sign
             )
@@ -2398,9 +2473,7 @@ class TestSuite:
         all_tests = list(self.get_selected_tests(filter_func))
 
         all_tags_and_random_settings_limits = (
-            self.read_test_tags_and_random_settings_limits(
-                self.suite_path, all_tests
-            )
+            self.read_test_tags_and_random_settings_limits(self.suite_path, all_tests)
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
         self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
@@ -2422,9 +2495,15 @@ class TestSuite:
 
     def apply_test_runs(self, all_tests):
         test_runs = self.args.test_runs
-        long_test_runs = max(int(self.args.test_runs * self.args.long_test_runs_ratio), 1)
+        long_test_runs = max(
+            int(self.args.test_runs * self.args.long_test_runs_ratio), 1
+        )
 
-        all_tests = map(lambda test: [test] * (long_test_runs if self.is_long_test(test) else test_runs), all_tests)
+        all_tests = map(
+            lambda test: [test]
+            * (long_test_runs if self.is_long_test(test) else test_runs),
+            all_tests,
+        )
         all_tests = [item for sublist in all_tests for item in sublist]
         return all_tests
 
@@ -2647,9 +2726,7 @@ def run_tests_array(
                 signal.alarm(int(args.timeout * 1.1))
                 test_result = None
                 try:
-                    test_result = test_case.run(
-                        args, test_suite, client_options, server_logs_level
-                    )
+                    test_result = test_case.run(args, test_suite, client_options)
                     test_result = test_case.process_result(test_result, MESSAGES)
                 except TimeoutError:
                     break
@@ -2722,9 +2799,6 @@ def run_tests_array(
         )
 
     sys.stdout.flush()
-
-
-server_logs_level = "warning"
 
 
 def check_server_started(args):
@@ -2876,6 +2950,10 @@ def check_table_column(args, database, table, column):
         )
         > 0
     )
+
+
+def get_hostname(args):
+    return clickhouse_execute(args, "SELECT hostname()").decode("utf-8")
 
 
 def suite_key_func(item: str) -> Union[float, Tuple[int, str]]:
@@ -3282,7 +3360,7 @@ def main(args):
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
-    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
+    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", args.server_logs_level)
 
     # This code is bad as the time is not monotonic
     args.stop_time = None
@@ -3435,17 +3513,6 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
-    if args.client_log:
-        for log_file in [args.client_log, *glob.glob(f"{args.client_log}.*")]:
-            if not os.path.exists(log_file):
-                continue
-            with open(log_file, "rb") as stream:
-                content = stream.read().decode()
-                if len(content):
-                    print(f"Has fatal logs from client in '{log_file}':\n")
-                    print(content)
-            os.remove(log_file)
-
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
 
@@ -3596,6 +3663,12 @@ def parse_args():
         help="Do not drop database for test if test has failed",
     )
     parser.add_argument(
+        "--no-drop",
+        action="store_true",
+        help="Do not drop database",
+    )
+
+    parser.add_argument(
         "--hide-db-name",
         action="store_true",
         help='Replace random database name with "default" in stderr',
@@ -3626,7 +3699,7 @@ def parse_args():
     parser.add_argument(
         "-U",
         "--unified",
-        default=3,
+        default=10,
         type=int,
         help="output NUM lines of unified context",
     )
@@ -3866,16 +3939,32 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--client-log",
-        default="./client.fatal.log",
-        help="Path to file for fatal logs from client",
-    )
-    parser.add_argument(
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
     )
-    parser.add_argument("--trace", action="store_true", help="Capture various tracing info")
+    parser.add_argument(
+        "--trace", action="store_true", help="Capture various tracing info"
+    )
+
+    parser.add_argument(
+        "--server-logs-level",
+        # warning by default, error in cloud
+        default="error" if parser.parse_known_args()[0].cloud else "warning",
+        choices=[
+            "none",
+            "fatal",
+            "critical",
+            "error",
+            "warning",
+            "notice",
+            "info",
+            "debug",
+            "trace",
+            "test",
+        ],
+        help="Changes the CH setting 'send_logs_level'",
+    )
 
     return parser.parse_args()
 
@@ -3941,6 +4030,9 @@ if __name__ == "__main__":
 
     if not os.path.isdir(args.queries):
         args.queries = "/usr/share/clickhouse-test/queries"
+
+    if not os.path.isdir(args.queries):
+        args.queries = "/repo/tests/queries"
 
     if not os.path.isdir(args.queries):
         print(
