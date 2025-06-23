@@ -1319,6 +1319,69 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     return new DateTimeType(use64, precision, timezone);
 }
 
+SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint32_t allowed_types, BottomTypeName * tp) const
+{
+    Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
+    std::optional<DecimalN_DecimalPrecision> short_notation;
+    std::optional<uint32_t> precision;
+    std::optional<uint32_t> scale;
+
+    if (rg.nextBool())
+    {
+        std::uniform_int_distribution<uint32_t> dec_range(
+            1,
+            static_cast<uint32_t>(
+                (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                       : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
+        short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
+        switch (short_notation.value())
+        {
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                precision = std::optional<uint32_t>(9);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                precision = std::optional<uint32_t>(18);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                precision = std::optional<uint32_t>(38);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                precision = std::optional<uint32_t>(76);
+                break;
+        }
+        scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+        if (dec)
+        {
+            DecimalN * dn = dec->mutable_decimaln();
+
+            dn->set_precision(short_notation.value());
+            dn->set_scale(scale.value());
+        }
+    }
+    else
+    {
+        DecimalSimple * ds = dec ? dec->mutable_decimal_simple() : nullptr;
+
+        if (rg.nextBool())
+        {
+            precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
+            if (dec)
+            {
+                ds->set_precision(precision.value());
+            }
+            if (rg.nextBool())
+            {
+                scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+                if (dec)
+                {
+                    ds->set_scale(scale.value());
+                }
+            }
+        }
+    }
+    return new DecimalType(short_notation, precision, scale);
+}
+
 SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     SQLType * res = nullptr;
@@ -1402,65 +1465,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
-        Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-        std::optional<DecimalN_DecimalPrecision> short_notation;
-        std::optional<uint32_t> precision;
-        std::optional<uint32_t> scale;
-
-        if (rg.nextBool())
-        {
-            std::uniform_int_distribution<uint32_t> dec_range(
-                1,
-                static_cast<uint32_t>(
-                    (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
-                                                           : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
-            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
-            switch (short_notation.value())
-            {
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                    precision = std::optional<uint32_t>(9);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                    precision = std::optional<uint32_t>(18);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                    precision = std::optional<uint32_t>(38);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                    precision = std::optional<uint32_t>(76);
-                    break;
-            }
-            scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
-            if (dec)
-            {
-                DecimalN * dn = dec->mutable_decimaln();
-
-                dn->set_precision(short_notation.value());
-                dn->set_scale(scale.value());
-            }
-        }
-        else
-        {
-            DecimalSimple * ds = dec ? dec->mutable_decimal_simple() : nullptr;
-
-            if (rg.nextBool())
-            {
-                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
-                if (dec)
-                {
-                    ds->set_precision(precision.value());
-                }
-                if (rg.nextBool())
-                {
-                    scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
-                    if (dec)
-                    {
-                        ds->set_scale(scale.value());
-                    }
-                }
-            }
-        }
-        res = new DecimalType(short_notation, precision, scale);
+        res = randomDecimalType(rg, allowed_types, tp);
     }
     else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + 1))
     {
