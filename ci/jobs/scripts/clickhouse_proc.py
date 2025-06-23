@@ -264,6 +264,7 @@ class ClickHouseProc:
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
     WD2 = f"{temp_dir}/ft_wd2"
+    CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
@@ -347,7 +348,17 @@ class ClickHouseProc:
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
-        return True
+
+        for _ in range(20):
+            res = Shell.check(
+                "/mc ls clickminio/test | grep -q .",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start minio")
+        return False
 
     def start_azurite(self):
         command = (
@@ -718,12 +729,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 ):
                     print("Failed to stop ClickHouse process gracefully")
 
-        if self.minio_proc:
-            Utils.terminate_process_group(self.minio_proc.pid)
-
-        if self.azurite_proc:
-            Utils.terminate_process_group(self.azurite_proc.pid)
-
         return self
 
     def prepare_logs(self, all=False):
@@ -743,6 +748,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.DMESG_LOG)
             if Path(self.CH_LOCAL_ERR_LOG).exists():
                 res.append(self.CH_LOCAL_ERR_LOG)
+            if Path(self.CH_LOCAL_LOG).exists():
+                res.append(self.CH_LOCAL_LOG)
         self.logs = res
         return res
 
@@ -951,15 +958,24 @@ quit
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
+
         command_args += " --config-file=/etc/clickhouse-server/config.xml"
+        # Change log files for local in config.xml as command args do not override
+        Shell.check(
+            f"sed -i 's|<log>.*</log>|<log>{self.CH_LOCAL_LOG}</log>|' /etc/clickhouse-server/config.xml"
+        )
+        Shell.check(
+            f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
+        )
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        # NOTE: we also need to override logger.level, but logger.level will not work
-        command_args_post = f"-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog={self.CH_LOCAL_ERR_LOG} --logger.console=1"
+        #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
@@ -978,6 +994,9 @@ quit
                     Result(name=f"Scraping {table}", status="FAIL")
                 )
                 res = False
+            if "minio" in table:
+                # minio tables are not replicated
+                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res = Shell.check(

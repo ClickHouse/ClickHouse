@@ -108,7 +108,10 @@ ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Pa
 echo "Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything"
 ${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet, 'uint64_logical String') where uint64_logical in ('5') order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false, input_format_parquet_enable_row_group_prefetch=false;" | jq 'del(.meta,.statistics.elapsed)'
 
-echo "Transformations on key column shall not be allowed. Should read everything"
+echo "Transformations on key column shall not be allowed (=). Should read everything"
 ${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) where negate(uint64_logical) = -7711695863945021976 order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false, input_format_parquet_enable_row_group_prefetch=false;" | jq 'del(.meta,.statistics.elapsed)'
+
+echo "Transformations on key column shall not be allowed (IN). Should read everything"
+${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) where negate(uint64_logical) in (-7711695863945021976) order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false, input_format_parquet_enable_row_group_prefetch=false;" | jq 'del(.meta,.statistics.elapsed)'
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
