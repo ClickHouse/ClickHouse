@@ -767,10 +767,10 @@ void readPressureFile(
         readStringUntilWhitespace(skip, in);
         // skip avg60
         readStringUntilWhitespace(skip, in);
-        //skip avg300
+        // skip avg300
         readStringUntilWhitespace(skip, in);
         // skip total=
-        readStringUntilEquals(skip,in)
+        readStringUntilEquals(skip,in);
 
         String total;
         readStringUntilNewlineInto(total, in);
