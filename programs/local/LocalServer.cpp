@@ -635,7 +635,7 @@ try
     /// Must be called after we stopped initializing the global context and changing its settings.
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
-    createClientContext();
+    initClientContext();
 
     if (is_interactive)
     {
@@ -894,7 +894,7 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
-    adjustSettings();
+    adjustSettings(global_context);
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -1069,16 +1069,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
-}
-
-
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
 }
 
 
