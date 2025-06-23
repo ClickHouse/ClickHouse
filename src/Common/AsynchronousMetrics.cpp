@@ -761,20 +761,24 @@ void readPressureFile(
     {
         String stall_type;
         readStringUntilWhitespace(stall_type, in);
+        
+        String skip;
+        // skip avg10
+        readStringUntilWhitespace(skip, in);
+        // skip avg60
+        readStringUntilWhitespace(skip, in);
+        //skip avg300
+        readStringUntilWhitespace(skip, in);
+        // skip total=
+        readStringUntilEquals(skip,in)
 
-        String rest;
-        readStringUntilNewlineInto(rest, in);
+        String total;
+        readStringUntilNewlineInto(total, in);
 
-        auto pos = rest.find("total=");
-        if (pos != String::npos)
-        {
-            // total= is 6 chars, skip forward that much.
-            auto total = rest.substr(pos + 6);
-            uint64_t counter = std::stoull(total);
-            new_values[fmt::format("PSI_{}_{}", type, stall_type)] = AsynchronousMetricValue(counter,
-                "Total microseconds of stall time."
-                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
-        }
+        uint64_t counter = std::stoull(total);
+        new_values[fmt::format("PSI_{}_{}", type, stall_type)] = AsynchronousMetricValue(counter,
+            "Total microseconds of stall time."
+            "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         skipToNextLineOrEOF(in);
     }
 }
