@@ -1,45 +1,40 @@
 Expression ((Project names + Projection))
-  MergingAggregated (merge)
+  Aggregating
     GatherExchange
-      Aggregating (partial)
-        Expression (Before GROUP BY)
-          JoinLogical
-            Expression
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.big)
-            BroadcastExchange
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.small)
+      Expression (Before GROUP BY)
+        JoinLogical
+          Expression
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.big)
+          BroadcastExchange
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.small)
 20000
 ------------
 Expression ((Project names + Projection))
-  MergingAggregated (merge)
-    GatherExchange
-      Aggregating (partial)
-        ScatterExchange (any)
-          Expression (Before GROUP BY)
-            GatherExchange
-              JoinLogical
-                ScatterExchange (any scatter)
-                  Expression
-                    Expression (Change column names to column identifiers)
-                      GatherExchange
-                        ReadFromMergeTree (default.big)
-                BroadcastExchange
-                  Expression (Change column names to column identifiers)
-                    ReadFromMergeTree (default.small)
+  Aggregating
+    Expression (Before GROUP BY)
+      GatherExchange
+        JoinLogical
+          ScatterExchange (any scatter)
+            Expression
+              Expression (Change column names to column identifiers)
+                GatherExchange
+                  ReadFromMergeTree (default.big)
+          BroadcastExchange
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.small)
 ------------
 Expression ((Project names + Projection))
-  MergingAggregated (merge)
+  Aggregating
     GatherExchange
-      Aggregating (partial)
-        Expression (Before GROUP BY)
-          JoinLogical
-            ScatterExchange (by hash([__table1.sid]))
+      Expression (Before GROUP BY)
+        JoinLogical
+          ScatterExchange (by hash([__table1.sid]))
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.small)
+          ShuffleExchange (by hash([_CAST(modulo(plus(__table2.bid, 1_UInt8), 5000_UInt16), \'UInt64\'_String)]))
+            Expression
               Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.small)
-            ShuffleExchange (by hash([_CAST(modulo(plus(__table2.bid, 1_UInt8), 5000_UInt16), \'UInt64\'_String)]))
-              Expression
-                Expression (Change column names to column identifiers)
-                  ReadFromMergeTree (default.big)
+                ReadFromMergeTree (default.big)
 20000

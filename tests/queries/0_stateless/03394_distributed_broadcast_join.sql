@@ -23,6 +23,13 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 SELECT '------------';
 
 EXPLAIN SELECT count()
+FROM big, small
+WHERE (small.sid = (big.bid + 1) % 5000)
+SETTINGS distributed_plan_optimize_exchanges=0;
+
+SELECT '------------';
+
+EXPLAIN SELECT count()
 FROM small, big
 WHERE (small.sid = (big.bid + 1) % 5000);
 
