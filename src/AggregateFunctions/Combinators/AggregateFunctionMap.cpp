@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Core/CompareHelper.h>
 #include "AggregateFunctionCombinatorFactory.h"
 
 
@@ -30,11 +31,17 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T>
+struct CompareHelperEqual
+{
+    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::equals(a, b, 1); }
+};
+
 template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    absl::flat_hash_map<KeyType, AggregateDataPtr> merged_maps;
+    absl::flat_hash_map<KeyType, AggregateDataPtr, std::hash<KeyType>, CompareHelperEqual<KeyType>> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
