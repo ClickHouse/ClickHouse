@@ -56,10 +56,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere, const RangesInDataPartReadHints & read_hints = {})
+    auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
         auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
-        part_info->setReadHints(read_hints);
 
         return createMergeTreeReader(
             part_info,
@@ -75,12 +74,16 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    new_readers.main = create_reader(read_info->task_columns.columns, false, read_info->read_hints);
-
-    /// new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints);
+    new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+
+    /// the read hints go into the first prewhere or to the main reader if no prewhere.
+    if (!new_readers.prewhere.empty())
+        new_readers.prewhere[0]->data_part_info_for_read->setReadHints(read_info->read_hints);
+    else
+        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints);
 
     return new_readers;
 }

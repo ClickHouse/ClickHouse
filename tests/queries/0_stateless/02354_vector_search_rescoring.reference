@@ -13,3 +13,14 @@ Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]
 7	[0,2.2]
+0
+1
+2
+4	50
+5	50
+6	50
+0	50
+1	50
+2	50
+3	50
+4	50

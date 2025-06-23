@@ -348,8 +348,8 @@ private:
 
     void updatePerformanceCounters(size_t num_rows_read);
 
-    /// actions before prewhere - like row positioning, filling calculated virtual columns etc, used by vector index
-    void executeActionsForVectorSearchReadHints(ReadResult & result, const Block & previous_header) const;
+    /// Vector search optimization - fill a virtual column "_distance" and fill a filter on part offsets returned by vector index
+    void fillDistanceColumnAndFilter(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -360,7 +360,7 @@ private:
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
-    ColumnPtr part_offsets_auto_column; /// Used for exact row filtering in vector similarity search
+    FilterWithCachedCount part_offsets_filter; /// Vector search optimization
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps

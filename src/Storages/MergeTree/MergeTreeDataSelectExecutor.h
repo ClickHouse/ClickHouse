@@ -96,6 +96,7 @@ private:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        const bool is_pk_range_pruning_revert,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
