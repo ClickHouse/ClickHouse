@@ -79,11 +79,6 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
-
-    std::string_view getTableEngine() { return {}; }
-
-    template <typename... OtherArgs>
-    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -672,19 +667,6 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                 difference.getElements().toStringWithoutOptions(),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
-
-        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
-        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
-        if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
-        {
-            AccessFlags new_flags = AccessType::READ | AccessType::WRITE;
-            String table_engine_name{getTableEngine(args...)};
-            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
-            if (new_flags.isEmpty())
-                return access_denied_no_grant(flags, args...);
-
-            return access_denied_no_grant(new_flags, table_engine_name);
-        }
 
         return access_denied_no_grant(flags, args...);
     }

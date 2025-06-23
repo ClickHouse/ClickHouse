@@ -356,7 +356,7 @@ void AccessRightsElement::makeBackwardCompatible()
         {"RABBITMQ", AccessType::RABBITMQ},
     };
 
-    auto is_enabled_read_write_grants = true;
+    auto is_enabled_read_write_grants = false;
     if (const auto context = Context::getGlobalContextInstance())
     {
         const auto & access_control = context->getAccessControl();
@@ -365,7 +365,7 @@ void AccessRightsElement::makeBackwardCompatible()
 
     if (!is_enabled_read_write_grants)
     {
-        if ((access_flags & AccessType::READ) || (access_flags & AccessType::WRITE))
+        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
         {
             if (anyParameter())
             {
