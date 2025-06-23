@@ -243,15 +243,6 @@ bool GlueCatalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    getTableMetadata(database_name, table_name, result);
-    return true;
-}
-
-void GlueCatalog::getTableMetadata(
-    const std::string & database_name,
-    const std::string & table_name,
-    TableMetadata & result) const
-{
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
@@ -288,6 +279,13 @@ void GlueCatalog::getTableMetadata(
             {
                 const auto column_params = column.GetParameters();
                 bool can_be_nullable = column_params.contains("iceberg.field.optional") && column_params.at("iceberg.field.optional") == "true";
+
+                /// Skip field if it's not "current" (for example Renamed). No idea how someone can utilize "non current fields" but for some reason
+                /// they are returned by Glue API. So if you do "RENAME COLUMN a to new_a" glue will return two fields: a and new_a.
+                /// And a will be marked as "non current" field.
+                if (column_params.contains("iceberg.field.current") && column_params.at("iceberg.field.current") == "false")
+                    continue;
+
                 schema.push_back({column.GetName(), getType(column.GetType(), can_be_nullable)});
             }
             result.setSchema(schema);
@@ -313,10 +311,29 @@ void GlueCatalog::getTableMetadata(
     }
     else
     {
+        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+            return false; // Table does not exist
+
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Exception calling GetTable for table {}: {}",
             database_name + "." + table_name, outcome.GetError().GetMessage());
+    }
+
+    return true;
+}
+
+void GlueCatalog::getTableMetadata(
+    const std::string & database_name,
+    const std::string & table_name,
+    TableMetadata & result) const
+{
+    if (!tryGetTableMetadata(database_name, table_name, result))
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Table {} does not exist in Glue catalog",
+            database_name + "." + table_name);
     }
 }
 
