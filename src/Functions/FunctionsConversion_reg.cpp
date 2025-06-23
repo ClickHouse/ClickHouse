@@ -44,8 +44,6 @@ Example:
     factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<detail::FunctionToDate32>();
-    factory.registerFunction<detail::FunctionToTime>();
-    factory.registerFunction<detail::FunctionToTime64>();
     factory.registerFunction<detail::FunctionToDateTime>();
     factory.registerFunction<detail::FunctionToDateTime32>();
     factory.registerFunction<detail::FunctionToDateTime64>();
@@ -97,8 +95,6 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToFloat64OrZero>();
     factory.registerFunction<detail::FunctionToDateOrZero>();
     factory.registerFunction<detail::FunctionToDate32OrZero>();
-    factory.registerFunction<detail::FunctionToTimeOrZero>();
-    factory.registerFunction<detail::FunctionToTime64OrZero>();
     factory.registerFunction<detail::FunctionToDateTimeOrZero>();
     factory.registerFunction<detail::FunctionToDateTime64OrZero>();
 
@@ -152,8 +148,6 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToFloat64OrNull>();
     factory.registerFunction<detail::FunctionToDateOrNull>();
     factory.registerFunction<detail::FunctionToDate32OrNull>();
-    factory.registerFunction<detail::FunctionToTimeOrNull>();
-    factory.registerFunction<detail::FunctionToTime64OrNull>();
     factory.registerFunction<detail::FunctionToDateTimeOrNull>();
     factory.registerFunction<detail::FunctionToDateTime64OrNull>();
 

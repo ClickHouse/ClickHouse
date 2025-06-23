@@ -86,6 +86,7 @@ public:
         std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
+        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
     };
 
     using IndexStats = std::vector<IndexStat>;

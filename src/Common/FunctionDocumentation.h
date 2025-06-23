@@ -130,6 +130,7 @@ struct FunctionDocumentation
     Category category;                            /// E.g. Category::DatesAndTimes
 
     std::string argumentsAsString() const;
+    std::string returnedValueAsString() const;
     std::string examplesAsString() const;
     std::string introducedInAsString() const;
     std::string categoryAsString() const;

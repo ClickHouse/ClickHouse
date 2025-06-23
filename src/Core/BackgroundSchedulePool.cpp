@@ -1,4 +1,9 @@
-#include "BackgroundSchedulePool.h"
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
+
+#include <IO/WriteHelpers.h>
+
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -6,6 +11,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+
 #include <chrono>
 
 
@@ -58,6 +64,9 @@ void BackgroundSchedulePoolTaskInfo::deactivate()
     deactivated = true;
     scheduled = false;
 
+    /// Since TaskInfo holds a direct reference to its pool (not a pointer),
+    /// and the pool guarantees it will deactivate all tasks before destruction completes,
+    /// it is safe to assume `pool` is always valid (non-dangling) in this method.
     if (delayed)
         pool.cancelDelayedTask(*this, lock_schedule);
 }
@@ -102,9 +111,17 @@ void BackgroundSchedulePoolTaskInfo::execute()
         executing = true;
     }
 
+    /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
+    std::string task_query_id = fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4());
+
     try
     {
+        chassert(current_thread); /// Thread from global thread pool
+        current_thread->setQueryId(std::move(task_query_id));
+
         function();
+
+        current_thread->clearQueryId();
     }
     catch (...)
     {
@@ -215,6 +232,20 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
 
             shutdown = true;
+
+            // Deactivate all tasks in immediate queue
+            for (auto & task_ptr : tasks)
+            {
+                if (task_ptr)
+                    task_ptr->deactivate();
+            }
+
+            // Deactivate all delayed tasks
+            for (auto & delayed : delayed_tasks)
+            {
+                if (delayed.second)
+                    delayed.second->deactivate();
+            }
         }
 
         tasks_cond_var.notify_all();

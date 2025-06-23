@@ -60,7 +60,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsString cache_policy;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -127,18 +127,21 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                settings[FileCacheSetting::background_download_threads],
                write_cache_per_user_directory)
 {
-    if (settings[FileCacheSetting::cache_policy].value == "LRU")
+    switch (settings[FileCacheSetting::cache_policy].value)
     {
-        main_priority = std::make_unique<LRUFileCachePriority>(
-            settings[FileCacheSetting::max_size], settings[FileCacheSetting::max_elements], nullptr, cache_name);
+        case FileCachePolicy::LRU:
+        {
+            main_priority = std::make_unique<LRUFileCachePriority>(
+                settings[FileCacheSetting::max_size], settings[FileCacheSetting::max_elements], nullptr, cache_name);
+            break;
+        }
+        case FileCachePolicy::SLRU:
+        {
+            main_priority = std::make_unique<SLRUFileCachePriority>(
+                settings[FileCacheSetting::max_size], settings[FileCacheSetting::max_elements], settings[FileCacheSetting::slru_size_ratio], nullptr, nullptr, cache_name);
+            break;
+        }
     }
-    else if (settings[FileCacheSetting::cache_policy].value == "SLRU")
-    {
-        main_priority = std::make_unique<SLRUFileCachePriority>(
-            settings[FileCacheSetting::max_size], settings[FileCacheSetting::max_elements], settings[FileCacheSetting::slru_size_ratio], nullptr, nullptr, cache_name);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings[FileCacheSetting::cache_policy].value);
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
@@ -1007,12 +1010,6 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
-        return false;
-    }
-
     if (eviction_candidates.size() > 0)
     {
         cache_lock.unlock();
@@ -1088,6 +1085,13 @@ bool FileCache::tryReserve(
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+
+    cache_lock.unlock();
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    {
+        failure_reason = "not enough space on device";
+        return false;
+    }
 
     return true;
 }

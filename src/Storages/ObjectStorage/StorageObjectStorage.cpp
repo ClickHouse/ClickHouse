@@ -151,19 +151,25 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (do_lazy_init)
             do_init();
-        try
+        if (!configuration->isDataLakeConfiguration())
         {
-            sample_path = getPathSample(context);
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                log, "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}", getCurrentExceptionMessage(true));
+            try
+            {
+                sample_path = getPathSample(context);
+            }
+            catch (...)
+            {
+                LOG_WARNING(
+                    log,
+                    "Failed to list object storage, cannot use hive partitioning. "
+                    "Error: {}",
+                    getCurrentExceptionMessage(true));
+            }
         }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
     setInMemoryMetadata(metadata);
 }
 
@@ -198,9 +204,9 @@ bool StorageObjectStorage::hasExternalDynamicMetadata() const
     return configuration->hasExternalDynamicMetadata();
 }
 
-IDataLakeMetadata * StorageObjectStorage::getExternalMetadata() const
+IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    return configuration->getExternalMetadata();
+    return configuration->getExternalMetadata(object_storage, query_context);
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
@@ -456,8 +462,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     configuration->setPaths(paths);
 
     return std::make_shared<StorageObjectStorageSink>(
+        paths.back(),
         object_storage,
-        configuration->clone(),
+        configuration,
         format_settings,
         sample_block,
         local_context);
@@ -611,8 +618,7 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings)
+    bool with_table_structure)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
@@ -636,25 +642,12 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
-    configuration_to_initialize.storage_settings = settings;
     configuration_to_initialize.initialized = true;
-}
-
-const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
-{
-    return *storage_settings;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
-}
-
-StorageObjectStorage::Configuration::Configuration(const Configuration & other)
-{
-    format = other.format;
-    compression_method = other.compression_method;
-    structure = other.structure;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

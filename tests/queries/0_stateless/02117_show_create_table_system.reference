@@ -185,6 +185,7 @@ CREATE TABLE system.dictionaries
     `lifetime_max` UInt64,
     `loading_start_time` DateTime,
     `last_successful_update_time` DateTime,
+    `error_count` UInt64,
     `loading_duration` Float32,
     `last_exception` String,
     `comment` String

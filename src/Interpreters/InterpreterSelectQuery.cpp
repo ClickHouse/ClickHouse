@@ -1,3 +1,4 @@
+#include <ranges>
 #include <Access/AccessControl.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -95,7 +96,6 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/map.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -2397,8 +2397,8 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 
-            required_columns_after_prewhere_set
-                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+            required_columns_after_prewhere_set = NameSet{
+                std::from_range_t{}, required_columns_after_prewhere | std::views::transform([](const auto & it) { return it.name; })};
         }
 
         auto syntax_result

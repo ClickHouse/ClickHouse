@@ -52,7 +52,7 @@ exception with the modulo function.
     FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b, or `0` when the divisor is `0`.";
-    FunctionDocumentation::Examples examples = {{"", "SELECT moduloOrZero(5, 0)", "0"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT moduloOrZero(5, 0)", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};

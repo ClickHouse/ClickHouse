@@ -1229,7 +1229,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasGinIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == TEXT_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasLegacyGinIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {

@@ -52,6 +52,8 @@ do
          ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT") ||
+        (${GREP_CMD} -q -i -F 'MIT License' "$LIB_LICENSE" &&
+         echo "MIT") ||
         (${GREP_CMD} -q -F 'PostgreSQL' "$LIB_LICENSE" &&
          echo "PostgreSQL") ||
         (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software for any purpose' "$LIB_LICENSE" &&

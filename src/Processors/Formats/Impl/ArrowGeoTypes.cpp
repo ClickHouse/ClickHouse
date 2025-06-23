@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -333,10 +334,7 @@ ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
     ColumnPtr result_y = point_column_y->getPtr();
     auto column = ColumnTuple::create(Columns{result_x, result_y});
 
-    DataTypePtr type_x = std::make_shared<DataTypeFloat64>();
-    DataTypePtr type_y = std::make_shared<DataTypeFloat64>();
-
-    auto tuple_type = std::make_shared<DataTypeTuple>(std::vector{type_x, type_y});
+    auto tuple_type = DataTypeFactory::instance().get("Point");
     return {std::move(column), tuple_type, name};
 }
 
@@ -372,7 +370,7 @@ ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
     auto all_points_column = point_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("LineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -406,7 +404,7 @@ ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("Polygon");
     return {std::move(array_column), array_type, name};
 }
 
@@ -441,7 +439,7 @@ ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
     auto all_points_column = line_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiLineString");
     return {std::move(array_column), array_type, name};
 }
 
@@ -476,7 +474,7 @@ ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
     auto all_points_column = polygon_column_builder.getResultColumn();
     auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
 
-    auto array_type = std::make_shared<DataTypeArray>(all_points_column.type);
+    auto array_type = DataTypeFactory::instance().get("MultiPolygon");
     return {std::move(array_column), array_type, name};
 }
 
