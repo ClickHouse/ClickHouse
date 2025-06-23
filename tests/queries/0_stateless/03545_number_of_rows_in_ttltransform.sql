@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE TABLE t
 (
     `timestamp` DateTime,
