@@ -49,7 +49,6 @@ add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
 add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
-add_dependencies (_llvm libllvmlibc)
 enable_dummy_launchers_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
