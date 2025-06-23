@@ -22,24 +22,17 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 {
     String result;
     bool is_first = true;
-    for (const auto & unmodified_type : types)
+    for (auto type : types)
     {
         if (is_first)
             is_first = false;
         else
             result += " or ";
 
-        String type = unmodified_type;
-        bool is_const = type.starts_with("const ");
+        result += "[`" + type;
 
-        if (is_const)
-        {
+        if (type.starts_with("const "))
             type = type.substr(6); // Remove "const " prefix
-            result += "const [`";
-        } else
-        {
-            result += "[`" + type;
-        }
 
         if (type == "String" || type == "String literal")
             result += "`](/sql-reference/data-types/string)";
@@ -130,7 +123,7 @@ String FunctionDocumentation::argumentsAsString() const
     String result;
     for (const auto & [name, description_, types] : arguments)
     {
-        result += "- `" + name + "` — " + description_;
+        result += "- `" + name + "` — " + description_ + " ";
 
         /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
         /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
@@ -155,7 +148,7 @@ String FunctionDocumentation::syntaxAsString() const
 
 String FunctionDocumentation::returnedValueAsString() const
 {
-    String result = returned_value.description;
+    String result = returned_value.description + " ";
 
     /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
     /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
