@@ -8,7 +8,7 @@ import subprocess
 import time
 from os import path as p
 from collections.abc import Generator
-from typing import List, Optional, Sequence, Union, Self
+from typing import List, Optional, Sequence, Union
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
@@ -257,7 +257,7 @@ class KeeperClient(object):
     @contextlib.contextmanager
     def from_cluster(
         cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, **kwargs,
-    ) -> Generator[Self]:
+    ) -> Generator["KeeperClient"]:
         client = cls(
             cluster.server_bin_path,
             cluster.get_instance_ip(keeper_node),
