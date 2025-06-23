@@ -31,7 +31,6 @@ private:
         ReadResult & result,
         Columns & read_columns,
         MergeTreeRangeReader & range_reader,
-        Block & versions_block,
         const Block & previous_header,
         size_t num_read_rows) const;
 
@@ -47,7 +46,7 @@ private:
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
 
-    void applyPatchesAfterReader(ReadResult & result, Block & versions_block, size_t reader_index);
+    void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
 
     void applyPatches(
         const Block & result_header,

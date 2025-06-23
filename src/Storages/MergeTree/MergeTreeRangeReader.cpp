@@ -492,6 +492,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     filterColumns(columns, filter);
     filterBlock(additional_columns, filter);
     filterBlock(columns_for_patches, filter);
+    filterBlock(patch_versions_block, filter);
 
     num_rows = filter.countBytesInFilter();
 

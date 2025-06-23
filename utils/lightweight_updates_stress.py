@@ -63,8 +63,8 @@ if cloud_mode:
     text_log_name = "clusterAllReplicas(default, system.text_log)"
     chosen_engine = engines["MergeTree"]
 else:
-    query_log_name="system.query_log"
-    text_log_name="system.text_log"
+    query_log_name = "system.query_log"
+    text_log_name = "system.text_log"
     chosen_engine = engines[args.engine]
 
 insert_num = 0

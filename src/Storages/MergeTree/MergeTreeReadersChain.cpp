@@ -77,12 +77,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
-    Block versions_block;
-
     if (read_result.num_rows != 0)
     {
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, versions_block, {}, read_result.num_rows);
+        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
@@ -99,7 +97,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
             continue;
 
         const auto & previous_header = range_readers[i - 1].getSampleBlock();
-        applyPatchesAfterReader(read_result, versions_block, i - 1);
+        applyPatchesAfterReader(read_result, i - 1);
 
         if (!columns.empty())
         {
@@ -108,14 +106,14 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
 
-            executeActionsBeforePrewhere(read_result, columns, range_readers[i], versions_block, previous_header, num_read_rows);
+            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
     }
 
-    applyPatchesAfterReader(read_result, versions_block, range_readers.size() - 1);
+    applyPatchesAfterReader(read_result, range_readers.size() - 1);
     return read_result;
 }
 
@@ -123,7 +121,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     ReadResult & result,
     Columns & read_columns,
     MergeTreeRangeReader & range_reader,
-    Block & versions_block,
     const Block & previous_header,
     size_t num_read_rows) const
 {
@@ -146,7 +143,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
 
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
-        // MergeTreeRangeReader::filterBlock(versions_block, result.final_filter);
     }
 
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
@@ -156,7 +152,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     applyPatches(
         range_reader.getReadSampleBlock(),
         read_columns,
-        versions_block,
+        result.patch_versions_block,
         /*min_version=*/ {},
         patch_max_version,
         /*after_conversions=*/ false,
@@ -171,7 +167,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     applyPatches(
         range_reader.getReadSampleBlock(),
         read_columns,
-        versions_block,
+        result.patch_versions_block,
         /*min_version=*/ {},
         patch_max_version,
         /*after_conversions=*/ true,
@@ -270,7 +266,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
     }
 }
 
-void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, Block & versions_block, size_t reader_index)
+void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t reader_index)
 {
     auto & current_reader = range_readers.at(reader_index);
 
@@ -285,14 +281,14 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, Block &
 
     if (min_version.has_value())
     {
-        for (auto & column : versions_block)
-            column.column = ColumnUInt64::create(versions_block.rows(), *min_version);
+        for (auto & column : result.patch_versions_block)
+            column.column = ColumnUInt64::create(result.patch_versions_block.rows(), *min_version);
     }
 
     applyPatches(
         current_reader.getSampleBlock(),
         result.columns,
-        versions_block,
+        result.patch_versions_block,
         min_version,
         max_version,
         /*after_conversions=*/ true,

@@ -302,6 +302,9 @@ public:
         /// Contains virtual columns from original block required for applying patch parts.
         Block columns_for_patches;
 
+        /// Contains columns with data versions for each column updated by patch parts.
+        Block patch_versions_block;
+
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks
