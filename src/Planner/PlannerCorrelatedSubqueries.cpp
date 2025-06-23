@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include "Processors/QueryPlan/LimitStep.h"
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -343,6 +344,12 @@ bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
                 /// Subquery will always produce at least one row
                 return true;
             }
+            node = node->children[0];
+            continue;
+        }
+        if (typeid_cast<LimitStep *>(node->step.get()))
+        {
+            /// TODO: Support LimitStep in decorrelation process.
             node = node->children[0];
             continue;
         }

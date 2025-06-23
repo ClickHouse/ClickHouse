@@ -2934,6 +2934,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    if (is_special_function_exists)
+    {
+        /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
+        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+
+        new_exists_subquery->setIsSubquery(true);
+        new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        new_exists_subquery->getJoinTree() = exists_subquery_argument;
+        new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+        exists_subquery_argument = std::move(new_exists_subquery);
+    }
+
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
     auto arguments_projection_names = resolveExpressionNodeList(
@@ -2954,16 +2970,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
             auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
-            auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-            in_subquery->setIsSubquery(true);
-            in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-            in_subquery->getJoinTree() = exists_subquery_argument;
-            in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
             function_node_ptr = std::make_shared<FunctionNode>("in");
             function_node_ptr->getArguments().getNodes() = {
                 std::make_shared<ConstantNode>(1UL, constant_data_type),
-                std::move(in_subquery)
+                std::move(exists_subquery_argument)
             };
 
             /// Resolve modified arguments
