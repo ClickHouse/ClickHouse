@@ -761,7 +761,7 @@ void readPressureFile(
     {
         String stall_type;
         readStringUntilWhitespace(stall_type, in);
-        
+
         String skip;
         // skip avg10
         readStringUntilWhitespace(skip, in);
