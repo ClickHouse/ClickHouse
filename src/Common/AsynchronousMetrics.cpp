@@ -750,7 +750,7 @@ void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & fileType, ReadBufferFromFilePRead & fileHandle)
 {
     fileHandle.rewind();
-    // The shape of this file is: 
+    // The shape of this file is:
     // some avg10=0.00 avg60=0.00 avg300=0.00 total=0
     // full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 
