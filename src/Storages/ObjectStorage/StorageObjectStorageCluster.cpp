@@ -208,7 +208,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 
 }
