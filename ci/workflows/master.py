@@ -47,6 +47,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.lexer_test,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
@@ -55,7 +56,8 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,
-    set_latest_in_dockers_build=True,
+    enable_dockers_manifest_merge=True,
+    set_latest_for_docker_merged_manifest=True,
     secrets=SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,

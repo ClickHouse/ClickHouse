@@ -39,6 +39,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
         },
         /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
+        /* 12*/ {"session_timeout_ms", std::make_shared<DataTypeUInt64>(), "Session timeout (in milliseconds)"},
     };
 }
 
@@ -91,6 +92,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);
             columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
+            columns[12]->insert(zookeeper->getSessionTimeoutMS());
         }
     };
 

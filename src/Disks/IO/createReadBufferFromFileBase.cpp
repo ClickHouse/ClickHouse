@@ -9,6 +9,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
 #include "config.h"
 
 namespace ProfileEvents

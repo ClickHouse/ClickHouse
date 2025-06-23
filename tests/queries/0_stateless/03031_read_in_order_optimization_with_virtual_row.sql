@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- ^ because we are using query_log
 
 SET read_in_order_use_virtual_row = 1;
 SET use_query_condition_cache = 0;
@@ -51,7 +53,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
 AND log_comment = 'preliminary merge, no filter'
 AND type = 'QueryFinish'
-ORDER BY query_start_time DESC 
+ORDER BY query_start_time DESC
 limit 1;
 
 SELECT '========';

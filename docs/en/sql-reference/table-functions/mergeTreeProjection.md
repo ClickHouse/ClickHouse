@@ -11,17 +11,21 @@ title: 'mergeTreeProjection'
 
 Represents the contents of some projection in MergeTree tables. It can be used for introspection.
 
+## Syntax {#syntax}
+
 ```sql
 mergeTreeProjection(database, table, projection)
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `database`- The database name to read projection from.
-- `table`- The table name to read projection from.
-- `projection` - The projection to read from.
+| Argument     | Description                                |
+|--------------|--------------------------------------------|
+| `database`   | The database name to read projection from. |
+| `table`      | The table name to read projection from.    |
+| `projection` | The projection to read from.               |
 
-**Returned Value**
+## Returned value {#returned_value}
 
 A table object with columns provided by given projection.
 

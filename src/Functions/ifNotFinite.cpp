@@ -72,14 +72,15 @@ Checks whether a floating point value is finite.
 You can get a similar result by using the [ternary operator](/sql-reference/functions/conditional-functions#if): `isFinite(x) ? x : y`.
     )";
     FunctionDocumentation::Syntax syntax = "ifNotFinite(x,y)";
-    FunctionDocumentation::Argument argument1 = {"x", "Value to check if infinite. Float32/Float64"};
-    FunctionDocumentation::Argument argument2 = {"y", "Fallback value. Float32/Float64"};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Value to check if infinite.", {"Float*"}},
+        {"y", "Fallback value.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 - `x` if `x` is finite.
 - `y` if `x` is not finite.
-    )";
-    FunctionDocumentation::Examples examples = {{"","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf  42"}};
+    )"};
+    FunctionDocumentation::Examples examples = {{"Usage example","SELECT 1/0 AS infimum, ifNotFinite(infimum,42)","inf  42"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};

@@ -304,4 +304,17 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
     factory.registerDataType("AggregateFunction", create);
 }
 
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 }

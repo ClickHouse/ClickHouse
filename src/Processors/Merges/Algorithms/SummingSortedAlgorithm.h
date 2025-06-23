@@ -23,7 +23,8 @@ public:
         /// List of partition key columns. They have to be excluded.
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes);
+        size_t max_block_size_bytes,
+        const String & sum_function_name);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
