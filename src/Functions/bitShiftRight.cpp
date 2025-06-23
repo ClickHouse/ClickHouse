@@ -162,10 +162,10 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 )";
     FunctionDocumentation::Syntax syntax = "bitShiftRight(a, N)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "A value to shift. [`(U)Int*`](../data-types/int-uint.md)/[`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."},
-        {"N", "The number of positions to shift. [`UInt8/16/32/64`](../data-types/int-uint.md)."}
+        {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
+        {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the shifted value with type equal to that of `a`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`.", {"(U)Int*", "String", "FixedString"}};
     FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
         R"(
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
