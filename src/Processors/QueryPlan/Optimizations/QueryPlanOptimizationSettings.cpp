@@ -9,7 +9,6 @@ namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -17,20 +16,16 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool query_plan_aggregation_in_order;
-    extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
+    extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
-    extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
     extern const SettingsBool query_plan_merge_expressions;
-    extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
-    extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_read_in_order;
@@ -39,7 +34,12 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
+    extern const SettingsBool collect_hash_table_stats_during_joins;
+    extern const SettingsBool query_plan_join_shard_by_pk_ranges;
+    extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsMaxThreads max_threads;
@@ -108,9 +108,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
-    max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
+    max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

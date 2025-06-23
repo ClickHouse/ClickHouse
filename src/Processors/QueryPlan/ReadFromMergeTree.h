@@ -231,10 +231,9 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
-    /// Special stuff for vector search ----
+    /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
     void replaceVectorColumnWithDistanceColumn(const String & vector_column);
     bool isVectorColumnReplaced() const;
-    /// ----
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
