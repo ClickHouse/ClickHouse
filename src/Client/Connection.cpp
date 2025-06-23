@@ -325,7 +325,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::Net::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -335,7 +335,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
@@ -352,7 +352,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (...)
     {
-        cancel();
+        disconnect();
         throw;
     }
 }
@@ -1352,13 +1352,14 @@ Packet Connection::receivePacket()
 
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
-                disconnect();
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
                     toString(res.type), getDescription());
         }
     }
     catch (Exception & e)
     {
+        disconnect();
+
         /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
         e.setRemoteException();
 
@@ -1366,6 +1367,11 @@ Packet Connection::receivePacket()
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
 
+        throw;
+    }
+    catch (...)
+    {
+        disconnect();
         throw;
     }
 }
