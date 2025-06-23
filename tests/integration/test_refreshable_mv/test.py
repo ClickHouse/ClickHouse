@@ -225,9 +225,6 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         assert node.query("show tables from re") == ""
 
 def test_refreshable_mv_in_system_db(started_cluster, cleanup):
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
-
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
         "system refresh view system.a;"
