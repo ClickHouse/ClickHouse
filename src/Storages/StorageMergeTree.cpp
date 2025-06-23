@@ -870,13 +870,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : *entry.commands)
         {
-            bool is_done = parts_to_do_names.empty();
+            const bool is_done = parts_to_do_names.empty();
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
                 command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
-                is_done ? entry.latest_succesful_mutation_time : 0,
+                /* finish_time = */is_done ? entry.latest_succesful_mutation_time : 0,
                 block_numbers_map,
                 parts_to_do_names,
                 /* is_done = */is_done,

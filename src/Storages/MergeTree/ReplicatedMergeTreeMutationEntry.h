@@ -30,7 +30,6 @@ struct ReplicatedMergeTreeMutationEntry
 
     /// Create time of znode
     time_t create_time = 0;
-    time_t finish_time = 0;
 
     /// Replica which initiated mutation
     String source_replica;
