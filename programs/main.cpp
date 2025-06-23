@@ -66,6 +66,14 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
 int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 #endif
 
+#if USE_CHDIG
+extern "C" int chdig_main(int argc, char ** argv);
+int mainEntryClickHouseChdig(int argc, char ** argv)
+{
+    return chdig_main(argc, argv);
+}
+#endif
+
 // install
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -86,6 +94,9 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
+#if USE_CHDIG
+    {"chdig", mainEntryClickHouseChdig},
+#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
@@ -140,6 +151,9 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
+#if USE_CHDIG
+    {"chdig", "chdig"},
+#endif
 };
 
 }
