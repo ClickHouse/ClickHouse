@@ -712,7 +712,7 @@ void IcebergMetadata::initializeSchemasFromManifestFile(ManifestFilePtr manifest
 {
     for (const auto & manifest_file_entry : manifest_file_ptr->getFiles(FileContentType::DATA))
     {
-        schema_id_by_data_file.emplace(manifest_file_entry.file_name, manifest_file_ptr->getSchemaId());
+        schema_id_by_data_file.emplace(manifest_file_entry.file_path, manifest_file_ptr->getSchemaId());
     }
 }
 
@@ -1022,7 +1022,7 @@ ObjectIterator IcebergMetadata::iterate(
     return std::make_shared<IcebergKeysIterator>(*this, getDataFiles(filter_dag, local_context), getPositionalDeleteFiles(filter_dag, local_context), object_storage, callback);
 }
 
-bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) const
+bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
@@ -1031,7 +1031,7 @@ bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) cons
     return !iceberg_object_info->position_deletes_objects.empty();
 }
 
-std::shared_ptr<ISimpleTransform> IcebergMetadata::getDataTransformer(
+std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
     const ObjectInfoPtr & object_info,
     const Block & header,
     const std::optional<FormatSettings> & format_settings,
@@ -1060,15 +1060,15 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ManifestFileEntry data_object_,
     std::optional<ObjectMetadata> metadata_,
     const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
-    : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
+    : RelativePathWithMetadata(data_object_.file_path, std::move(metadata_))
     , data_object(data_object_)
 {
-    //Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
-    // It is done to have an invariant that position deletes objects which corresponds
-    // to the data object form a subsegment in a position_deletes_objects_ vector.
-    // We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
-    // greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
-    // ManifestFileEntry has comparator by default which helps to do that.
+    ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// It is done to have an invariant that position deletes objects which corresponds
+    /// to the data object form a subsegment in a position_deletes_objects_ vector.
+    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
+    /// ManifestFileEntry has comparator by default which helps to do that.
     auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
     auto end_it = std::upper_bound(
         position_deletes_objects_.begin(),
@@ -1122,7 +1122,7 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
         if (current_index >= data_files.size())
             return nullptr;
 
-        auto key = data_files[current_index].file_name;
+        auto key = data_files[current_index].file_path;
         auto object_metadata = object_storage->getObjectMetadata(key);
 
         if (callback)

@@ -42,12 +42,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
-        Iceberg::PositionalDeleteFileSpecificInfo specific_info
-            = std::get<Iceberg::PositionalDeleteFileSpecificInfo>(position_deletes_object.specific_info);
-        if (specific_info.reference_file_path.has_value() && specific_info.reference_file_path != iceberg_data_path)
-            continue; // Skip position deletes that do not match the data file path.
+        /// Skip position deletes that do not match the data file path.
+        if (position_deletes_object.reference_data_file_path.has_value()
+            && position_deletes_object.reference_data_file_path != iceberg_data_path)
+            continue;
 
-        auto object_path = position_deletes_object.file_name;
+        auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path);
         auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 

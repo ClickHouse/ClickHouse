@@ -336,7 +336,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    DataFileSpecificInfo{});
+                    /*reference_data_file = */ std::nullopt);
                 break;
             case FileContentType::POSITIONAL_DELETE: {
                 std::optional<String> reference_file_path = std::nullopt;
@@ -359,7 +359,7 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    PositionalDeleteFileSpecificInfo{.reference_file_path = reference_file_path});
+                    reference_file_path);
                 break;
             }
             default:

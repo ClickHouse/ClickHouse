@@ -498,6 +498,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
+        if (configuration->hasPositionDeleteTransformer(object_info))
+        {
+            builder.addSimpleTransform(
+                [&](const Block & header)
+                { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
+        }
+
+
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
@@ -531,14 +539,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
     });
-
-    if (configuration->hasDataTransformer(object_info))
-    {
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return configuration->getDataTransformer(object_info, header, format_settings, context_);
-        });
-    }
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);

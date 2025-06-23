@@ -275,16 +275,18 @@ public:
         bool if_not_updated_before,
         bool check_consistent_with_previous_metadata);
 
-    virtual bool hasDataTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
 
-    virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /*object_info*/,
         const Block & /*header*/,
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context_*/) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method getDataTransformer() is not implemented for configuration type {}", getTypeName());
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getPositionDeleteTransformer() is not implemented for configuration type {}",
+            getTypeName());
     }
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const

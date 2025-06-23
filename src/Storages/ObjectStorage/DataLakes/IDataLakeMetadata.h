@@ -44,8 +44,8 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
 
-    virtual bool hasDataTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
-    virtual std::shared_ptr<ISimpleTransform> getDataTransformer(
+    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /* object_info */,
         const Block & /* header */,
         const std::optional<FormatSettings> & /* format_settings */,

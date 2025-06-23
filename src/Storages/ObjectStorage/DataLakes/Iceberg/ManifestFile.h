@@ -40,17 +40,6 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
-struct DataFileSpecificInfo
-{
-};
-
-struct PositionalDeleteFileSpecificInfo
-{
-    std::optional<String> reference_file_path;
-};
-
-using IcebergFileSpecificInfo = std::variant<DataFileSpecificInfo, PositionalDeleteFileSpecificInfo>;
-
 struct PartitionSpecsEntry
 {
     Int32 source_id;
@@ -65,7 +54,7 @@ struct ManifestFileEntry
     // It's the original string in the Iceberg metadata
     String file_path_key;
     // It's a processed file path to be used by Object Storage
-    String file_name;
+    String file_path;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;
@@ -74,7 +63,7 @@ struct ManifestFileEntry
     PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-    IcebergFileSpecificInfo specific_info;
+    std::optional<String> reference_data_file_path; // For position delete files only.
 };
 
 /**

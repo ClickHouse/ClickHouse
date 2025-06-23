@@ -73,9 +73,9 @@ public:
             : nullptr;
     }
 
-    bool hasDataTransformer(const ObjectInfoPtr & object_info) const override;
+    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override;
 
-    std::shared_ptr<ISimpleTransform> getDataTransformer(
+    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /* object_info */,
         const Block & /* header */,
         const std::optional<FormatSettings> & /* format_settings */,
