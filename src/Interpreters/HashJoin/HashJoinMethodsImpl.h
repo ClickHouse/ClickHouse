@@ -380,11 +380,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     auto & block = added_columns.src_block;
     if (block.getSelector().isContinuousRange())
     {
-        if (mapv.size() > 1)
+        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
             return joinRightColumns<KeyGetter, Map, need_filter, /*flag_per_row=*/true>(
                 std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
         else
         {
+            chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
@@ -395,11 +396,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     }
     else
     {
-        if (mapv.size() > 1)
+        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
             return joinRightColumns<KeyGetter, Map, need_filter, /*flag_per_row=*/true>(
                 std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
         else
         {
+            chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
