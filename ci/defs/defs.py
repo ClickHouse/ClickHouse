@@ -98,7 +98,7 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
@@ -107,16 +107,10 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-util",
-        path="./ci/docker/test-util",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
+        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -138,13 +132,13 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
-        path="./ci/docker/keeper-jepsen",
+        path="./ci/docker/keeper-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/server-jepsen-test",
-        path="./ci/docker/server-jepsen",
+        path="./ci/docker/server-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
@@ -154,12 +148,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/integration-test",
-    #     path="./ci/docker/integration/integration-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
