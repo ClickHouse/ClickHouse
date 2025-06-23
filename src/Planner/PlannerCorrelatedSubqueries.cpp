@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Functions/IFunction.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
 #include <Interpreters/Context.h>
