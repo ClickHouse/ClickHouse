@@ -69,8 +69,12 @@ def started_cluster():
 
 
 def get_zk_client(nodename, timeout=30.0):
-    return KeeperClient.from_cluster(cluster, nodename, connection_timeout=timeout, secure=True)
-
+    return KeeperClient(
+        cluster.server_bin_path,
+        cluster.get_instance_ip(nodename),
+        cluster.zookeeper_port,
+        connection_timeout=timeout, secure=True,
+    )
 
 def run_test():
     node_zks = []
