@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 namespace
@@ -598,7 +599,12 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+    }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     auto table_storage_define = table_engine_definition->clone();
