@@ -3,6 +3,8 @@
 #include <optional>
 #include <base/types.h>
 
+#include <Common/AwsNodumpMemoryManager.h>
+
 #include "config.h"
 
 namespace DB::S3
@@ -348,6 +350,8 @@ private:
 
     Aws::SDKOptions aws_options;
     std::atomic<bool> s3_requests_logging_enabled;
+
+    std::unique_ptr<AwsNodumpMemoryManager> memory_manager;
 };
 
 }

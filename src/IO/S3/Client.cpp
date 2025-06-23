@@ -987,6 +987,9 @@ ClientFactory::ClientFactory()
     /// We don't need to initialize TLS, because we use PocoHTTPClientFactory
     aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
 
+    memory_manager = std::make_unique<AwsNodumpMemoryManager>();
+    aws_options.memoryManagementOptions.memoryManager = memory_manager.get();
+
     Aws::InitAPI(aws_options);
 }
 
