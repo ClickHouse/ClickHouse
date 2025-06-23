@@ -173,7 +173,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_ipv6);
     const uint32_t geo_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_geo);
     const uint32_t str_lit = 50;
-    const uint32_t special_val = 40;
+    const uint32_t special_val = 20;
     const uint32_t json_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_JSON);
     const uint32_t null_lit = 10;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
