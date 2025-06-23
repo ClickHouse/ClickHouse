@@ -345,9 +345,6 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    /// For memory tracking
-    MainThreadStatus::getInstance();
-
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
@@ -887,7 +884,10 @@ void Client::processOptions(
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
-    initClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
+    query_scope.emplace(client_context);
+
 
     /// Allow to pass-through unknown settings to the server.
     client_context->getAccessControl().allowAllSettings();
@@ -1129,6 +1129,8 @@ void Client::readArguments(
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::Client client;
