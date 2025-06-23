@@ -249,6 +249,8 @@ struct FormatSettings
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
+        bool write_map_as_array_of_tuples = false;
+        bool read_map_as_array_of_tuples = false;
     } json{};
 
     struct

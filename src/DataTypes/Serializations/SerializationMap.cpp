@@ -267,6 +267,12 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSON(extractNestedColumn(column), row_num, ostr, settings);
+        return;
+    }
+
     serializeTextImpl(column, row_num, ostr,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
@@ -283,6 +289,12 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSONPretty(extractNestedColumn(column), row_num, ostr, settings, indent);
+        return;
+    }
+
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
     const auto & nested_array = column_map.getNestedColumn();
@@ -357,11 +369,20 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        nested->deserializeTextJSON(extractNestedColumn(column), istr, settings);
+        return;
+    }
     deserializeTextJSONImpl<void>(column, istr, settings);
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        return nested->tryDeserializeTextJSON(extractNestedColumn(column), istr, settings);
+    }
     return deserializeTextJSONImpl<bool>(column, istr, settings);
 }
 
