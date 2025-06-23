@@ -22,20 +22,20 @@ INSERT INTO tab VALUES (1, 'b', 'b', ['c']);
 
 -- Must accept two arguments
 SELECT id FROM tab WHERE searchAny(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT id FROM tab WHERE searchAny('a', 'b', 'c', 'd', 'e'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT id FROM tab WHERE searchAny('a', 'b', 'c'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT id FROM tab WHERE searchAll(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT id FROM tab WHERE searchAll('a', 'b', 'c', 'd', 'e'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT id FROM tab WHERE searchAll('a', 'b', 'c'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 -- 1st arg must be String or FixedString
 SELECT id FROM tab WHERE searchAny(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- 2nd arg must be const Array(String)
-SELECT id FROM tab WHERE searchAny(message, toFixedString('b', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAny(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAny(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE searchAll(message, toFixedString('b', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT id FROM tab WHERE searchAny(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM tab WHERE searchAll(message, 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE searchAll(message, materialize('b')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT id FROM tab WHERE searchAny(message, arr); -- { serverError ILLEGAL_COLUMN }
-SELECT id FROM tab WHERE searchAll(message, arr); -- { serverError ILLEGAL_COLUMN }
--- search functions should be used with the index column
+SELECT id FROM tab WHERE searchAll(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
+-- search functions must be called on a column with text index
 SELECT id FROM tab WHERE searchAny('a', ['b']); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE searchAny(col_str, ['b']); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE searchAll('a', ['b']); -- { serverError BAD_ARGUMENTS }

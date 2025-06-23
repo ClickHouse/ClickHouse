@@ -2,9 +2,11 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Common/FunctionDocumentation.h>
 
@@ -13,10 +15,28 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_full_text_index;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+template <class SearchTraits>
+FunctionPtr FunctionSearchImpl<SearchTraits>::create(ContextPtr context)
+{
+    return std::make_shared<FunctionSearchImpl>(context);
+}
+
+template <class SearchTraits>
+FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
+    : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+{
 }
 
 template <class SearchTraits>
@@ -33,6 +53,11 @@ void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterPar
 template <class SearchTraits>
 DataTypePtr FunctionSearchImpl<SearchTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
+    if (!allow_experimental_full_text_index)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Enable the setting 'allow_experimental_full_text_index' to use function {}", getName());
+
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
         {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array"}};

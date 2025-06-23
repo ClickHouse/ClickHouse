@@ -757,6 +757,10 @@ Result:
 
 ## searchAny {#searchany}
 
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
+
 Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
 **Syntax**
@@ -791,17 +795,17 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE `text_table` (
-    `id` UInt32,
-    `msg` String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
+CREATE TABLE text_table (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO text_table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() from `text_table` where searchAny(msg, ['a', 'd']);
+SELECT count() FROM `text_table` WHERE searchAny(msg, ['a', 'd']);
 ```
 
 Result:
@@ -811,6 +815,10 @@ Result:
 ```
 
 ## searchAll {#searchall}
+
+:::note
+This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is true.
+:::
 
 Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
 
@@ -846,17 +854,17 @@ Refer [tokens](splitting-merging-functions.md#tokens) for more information about
 Query:
 
 ```sql
-CREATE TABLE `text_table` (
-    `id` UInt32,
-    `msg` String,
+CREATE TABLE text_table (
+    id UInt32,
+    msg String,
     INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT into `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO `text_table` VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() from `text_table` where searchAll(msg, ['a', 'd']);
+SELECT count() FROM `text_table` WHERE searchAll(msg, ['a', 'd']);
 ```
 
 Result:
