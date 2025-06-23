@@ -64,7 +64,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
 
-    auto row_count_a = estimateReadRowsCount(*source_a);
     auto row_count_b = estimateReadRowsCount(*source_b);
 
     /// Extract expressions for calculating join on keys
@@ -113,30 +112,28 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     if (strategy == Broadcast)
     {
         LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
-            "Estimated number of rows in left source: {}, right source: {}. Using broadcast join",
-            row_count_a.transform(toString<UInt64>).value_or("unknown"),
+            "Estimated number of rows in right source: {}. Using broadcast join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"));
 
-            size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+        size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
 
-            exchange_scatter_a_node = &nodes.emplace_back();
-            exchange_scatter_b_node = &nodes.emplace_back();
+        exchange_scatter_a_node = &nodes.emplace_back();
+        exchange_scatter_b_node = &nodes.emplace_back();
 
-            /// Add scatter exchange step above read from left source
-            exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), Names{}, bucket_count);
-            exchange_scatter_a_node->step->setStepDescription("any scatter");
+        /// Add scatter exchange step above read from left source
+        exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), Names{}, bucket_count);
+        exchange_scatter_a_node->step->setStepDescription("any scatter");
 
-            /// Add broadcast exchange step above read from right source
-            exchange_scatter_b_node->step = std::make_unique<BroadcastExchangeStep>(source_b->step->getOutputHeader(), bucket_count);
-            exchange_scatter_b_node->step->setStepDescription("");
-        }
+        /// Add broadcast exchange step above read from right source
+        exchange_scatter_b_node->step = std::make_unique<BroadcastExchangeStep>(source_b->step->getOutputHeader(), bucket_count);
+        exchange_scatter_b_node->step->setStepDescription("");
+    }
     else
     {
         size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
 
         LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
-            "Estimated number of rows in left source: {}, right source: {}. Using {} buckets for shuffle join",
-            row_count_a.transform(toString<UInt64>).value_or("unknown"),
+            "Estimated number of rows in right source: {}. Using {} buckets for shuffle join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
             bucket_count);
 
