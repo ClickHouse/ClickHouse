@@ -287,7 +287,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                 element_types.resize(element_size);
                 for (size_t i = 0; i < element_size; ++i)
                     element_types[i].reserve(types.size());
-                if (type_tuple->haveExplicitNames())
+                if (type_tuple->hasExplicitNames())
                     element_names = type_tuple->getElementNames();
             }
 
@@ -297,7 +297,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                 element_types[i].emplace_back(current_elements[i]);
 
             // If there are different names, drop all names. The result will be an unnamed tuple.
-            if (element_names.empty() == type_tuple->haveExplicitNames())
+            if (element_names.empty() == type_tuple->hasExplicitNames())
                 element_names.clear();
             if (!element_names.empty())
             {
