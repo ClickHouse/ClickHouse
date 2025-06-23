@@ -14,7 +14,7 @@ class IcebergPositionDeleteTransform : public ISimpleTransform
 {
 public:
     static constexpr const char * positions_column_name = "pos";
-    static constexpr const char * filename_column_name = "file_path";
+    static constexpr const char * data_file_path_column_name = "file_path";
 
     IcebergPositionDeleteTransform(
         const Block & header_,

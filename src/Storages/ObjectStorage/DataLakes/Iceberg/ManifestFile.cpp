@@ -339,17 +339,13 @@ ManifestFileContent::ManifestFileContent(
                     /*reference_data_file = */ std::nullopt);
                 break;
             case FileContentType::POSITIONAL_DELETE: {
+                /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                 std::optional<String> reference_file_path = std::nullopt;
-                try
+                if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
-                    // reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                     reference_file_path
                         = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
                               .safeGet<String>();
-                }
-                catch (const DB::Exception &)
-                {
-                    reference_file_path = std::nullopt;
                 }
                 this->position_deletes_files.emplace_back(
                     file_path_key,

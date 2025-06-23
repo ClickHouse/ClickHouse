@@ -37,7 +37,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     auto iceberg_data_path = iceberg_object_info->getIcebergDataPath();
     ASTPtr where_ast = makeASTFunction(
         "equals",
-        std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::filename_column_name),
+        std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
     for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
@@ -140,7 +140,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
         while (auto delete_chunk = delete_source->read())
         {
             int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
-            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::filename_column_name);
+            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
             auto position_column = delete_chunk.getColumns()[position_index];
             auto filename_column = delete_chunk.getColumns()[filename_index];
@@ -148,11 +148,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
             {
                 auto position_to_delete = position_column->get64(i);
-                auto filename_to_delete = filename_column->getDataAt(i).toString();
-                if (filename_to_delete == iceberg_data_path)
-                {
-                    bitmap.add(position_to_delete);
-                }
+                bitmap.add(position_to_delete);
             }
         }
     }
