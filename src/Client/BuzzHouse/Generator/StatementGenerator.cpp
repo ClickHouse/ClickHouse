@@ -558,17 +558,53 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
-    generateNextOptimizeTableInternal(rg, rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda)), false, ot);
+    if (systemTables.empty() || rg.nextMediumNumber() < 91)
+    {
+        generateNextOptimizeTableInternal(rg, rg.pickRandomly(filterCollection<SQLTable>(optimize_table_lambda)), false, ot);
+    }
+    else
+    {
+        /// Optimize system table
+        ExprSchemaTable * est = ot->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        ot->set_final(rg.nextBool());
+        if (rg.nextBool())
+        {
+            DeduplicateExpr * dde = ot->mutable_dedup();
+
+            if (rg.nextBool())
+            {
+                dde->set_ded_star(true);
+            }
+        }
+        if (rg.nextSmallNumber() < 3)
+        {
+            generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+        }
+    }
 }
 
 void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable * ct)
 {
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-
-    t.setName(ct->mutable_est(), false);
-    if (t.isMergeTreeFamily() && rg.nextBool())
+    if (systemTables.empty() || rg.nextMediumNumber() < 91)
     {
-        generateNextTablePartition(rg, true, t, ct->mutable_single_partition()->mutable_partition());
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+        t.setName(ct->mutable_est(), false);
+        if (t.isMergeTreeFamily() && rg.nextBool())
+        {
+            generateNextTablePartition(rg, true, t, ct->mutable_single_partition()->mutable_partition());
+        }
+    }
+    else
+    {
+        /// Check system table
+        ExprSchemaTable * est = ct->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -1025,10 +1061,11 @@ void StatementGenerator::generateNextUpdateOrDelete(RandomGenerator & rg, T * st
 void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * trunc)
 {
     const bool trunc_database = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
-    const uint32_t trunc_table = 980 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t trunc_table = 950 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database);
     const uint32_t trunc_db = 5 * static_cast<uint32_t>(trunc_database);
-    const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db;
+    const uint32_t trunc_system_table = 30 * static_cast<uint32_t>(!systemTables.empty());
+    const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db + trunc_system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
@@ -1053,6 +1090,13 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 
         cluster = d->getCluster();
         d->setName(trunc->mutable_database());
+    }
+    else if (trunc_system_table && nopt < (trunc_table + trunc_db_tables + trunc_db + trunc_system_table + 1))
+    {
+        ExprSchemaTable * est = trunc->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
     }
     else
     {
