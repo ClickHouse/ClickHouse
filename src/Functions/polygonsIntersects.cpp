@@ -120,7 +120,7 @@ REGISTER_FUNCTION(PolygonsIntersects)
            {"polygon2",
             "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
             "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
-        .returned_value = "Returns true (1) if the two polygons intersect. [`Bool`](/sql-reference/data-types/boolean).",
+        .returned_value = {"Returns true (1) if the two polygons intersect. [`Bool`](/sql-reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
@@ -147,8 +147,8 @@ REGISTER_FUNCTION(PolygonsIntersects)
            {"polygon2",
             "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
             "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
-        .returned_value = "Returns true (1) if the two polygons intersect (share any common area or boundary). "
-                          "[`Bool`](/sql-reference/data-types/boolean).",
+        .returned_value = {"Returns true (1) if the two polygons intersect (share any common area or boundary). "
+                           "[`Bool`](/sql-reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
