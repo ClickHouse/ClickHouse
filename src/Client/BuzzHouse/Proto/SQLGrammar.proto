@@ -2203,11 +2203,6 @@ message ExprSchemaTable {
     required Table table = 2;
 }
 
-message ExprColumnList {
-    required ExprColumn col = 1;
-    repeated ExprColumn extra_cols = 2;
-}
-
 enum InFormat {
     IN_Arrow = 1;
     IN_ArrowStream = 2;
@@ -2388,7 +2383,7 @@ enum InOutFormat {
 }
 
 message UsingExpr {
-    required ExprColumnList col_list = 1;
+    repeated ExprColumn columns = 1;
 }
 
 message JoinConstraint {

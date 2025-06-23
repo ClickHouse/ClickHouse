@@ -1713,16 +1713,6 @@ CONV_FN(ResultColumn, rc)
 CONV_FN(JoinedQuery, tos);
 CONV_FN(TableOrSubquery, tos);
 
-CONV_FN(ExprColumnList, cl)
-{
-    ExprColumnToString(ret, cl.col());
-    for (int i = 0; i < cl.extra_cols_size(); i++)
-    {
-        ret += ", ";
-        ExprColumnToString(ret, cl.extra_cols(i));
-    }
-}
-
 CONV_FN(JoinConstraint, jc)
 {
     if (jc.has_on_expr())
@@ -1732,8 +1722,17 @@ CONV_FN(JoinConstraint, jc)
     }
     else if (jc.has_using_expr())
     {
+        const UsingExpr & uexpr = jc.using_expr();
+
         ret += " USING (";
-        ExprColumnListToString(ret, jc.using_expr().col_list());
+        for (int i = 0; i < uexpr.columns_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
+        }
         ret += ")";
     }
     else
