@@ -25,24 +25,22 @@ public:
 
     struct Symbol
     {
-        /// Here addresses are relative to objects.
-        const void * offset_begin;
-        const void * offset_end;
+        const void * address_begin;
+        const void * address_end;
         const char * name;
     };
 
     struct Object
     {
-        /// Here addresses are absolute virtual memory addresses.
         const void * address_begin;
         const void * address_end;
         std::string name;
         std::shared_ptr<Elf> elf;
     };
 
-    const Symbol * findSymbol(const void * offset) const;
+    /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.
+    const Symbol * findSymbol(const void * address) const;
     const Object * findObject(const void * address) const;
-    const Object * thisObject() const;
 
     const std::vector<Symbol> & symbols() const { return data.symbols; }
     const std::vector<Object> & objects() const { return data.objects; }
