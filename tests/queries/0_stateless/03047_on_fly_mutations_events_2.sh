@@ -38,10 +38,12 @@ DROP TABLE IF EXISTS t_mutation_events_1 SYNC;
 DROP TABLE IF EXISTS t_mutation_events_2 SYNC;
 
 CREATE TABLE t_mutation_events_1 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_events', '1') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_events', '1') ORDER BY id
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 
 CREATE TABLE t_mutation_events_2 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_events', '2') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_events', '2') ORDER BY id
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_mutation_events_1 VALUES (1, 10);
 SYSTEM SYNC REPLICA t_mutation_events_2;

@@ -304,7 +304,7 @@ void MergeTreeReadersChain::applyPatches(
     bool after_conversions,
     const Block & additional_columns) const
 {
-    if (patch_readers.empty())
+    if (patch_readers.empty() || result_columns.empty())
         return;
 
     auto result_block = result_header.cloneWithColumns(result_columns);

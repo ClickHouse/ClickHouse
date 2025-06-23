@@ -20,4 +20,8 @@ UPDATE lwu_on_fly SET u = 0 WHERE id % 3 = 1;
 
 SELECT * FROM lwu_on_fly ORDER BY id settings apply_mutations_on_fly = 1, apply_patch_parts = 1;
 
+ALTER TABLE lwu_on_fly DELETE WHERE 1 SETTINGS mutations_sync = 0;
+
+SELECT count() FROM lwu_on_fly WHERE NOT ignore(*) SETTINGS apply_mutations_on_fly = 1, apply_patch_parts = 1;
+
 DROP TABLE IF EXISTS lwu_on_fly;
