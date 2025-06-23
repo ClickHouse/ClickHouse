@@ -1665,6 +1665,10 @@ CONV_FN(ComplicatedExpr, expr)
             ExprListToString(ret, expr.tuple());
             ret += ")";
             break;
+        case ExprType::kTable:
+            TableToString(ret, expr.table());
+            ret += ".*";
+            break;
         default:
             ret += "1";
     }
@@ -1699,11 +1703,6 @@ CONV_FN(ResultColumn, rc)
     else if (rc.has_eca())
     {
         ExprColAliasToString(ret, rc.eca());
-    }
-    else if (rc.has_table_star())
-    {
-        TableToString(ret, rc.table_star());
-        ret += ".*";
     }
     else
     {

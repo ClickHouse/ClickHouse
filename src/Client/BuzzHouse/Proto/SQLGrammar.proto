@@ -2173,6 +2173,7 @@ message ComplicatedExpr {
         string columns = 18;
         ExprList array = 19;
         ExprList tuple = 20;
+        Table table = 21;
     }
 }
 
@@ -2194,7 +2195,6 @@ message ResultColumn {
     oneof result_col_oneof {
         ExprSchemaTableColumn etc = 1;
         ExprColAlias eca = 2;
-        Table table_star = 3;
     }
 }
 
