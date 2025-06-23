@@ -107,6 +107,7 @@ add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
 add_subdirectory (keeper-data-dumper)
+add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
 add_subdirectory (server)
@@ -169,6 +170,10 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
+if (ENABLE_LEXER_TEST)
+    list(APPEND CLICKHOUSE_BUNDLE lexer_test)
+endif ()
+
 if (ENABLE_CHDIG)
     message(STATUS "Adding chdig to clickhouse-bundle")
     list(APPEND CLICKHOUSE_BUNDLE chdig)
@@ -206,6 +211,7 @@ clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-
 
 if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
+    clickhouse_program_install(clickhouse-keeper-utils keeper-utils)
 endif ()
 
 if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
