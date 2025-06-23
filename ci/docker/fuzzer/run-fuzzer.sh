@@ -450,7 +450,7 @@ case "$stage" in
         # Run the testing script from the repository
         echo Using the testing script from the repository
         export stage=download
-        time ch/docker/test/fuzzer/run-fuzzer.sh
+        time ch/ci/docker/fuzzer/run-fuzzer.sh
         # Keep the error code
         exit $?
     fi

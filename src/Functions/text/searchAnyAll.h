@@ -28,10 +28,8 @@ class FunctionSearchImpl : public IFunction
 public:
     static constexpr auto name = SearchTraits::name;
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionSearchImpl>();
-    }
+    static FunctionPtr create(ContextPtr context);
+    explicit FunctionSearchImpl<SearchTraits>(ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -41,9 +39,10 @@ public:
     void setGinFilterParameters(const GinFilterParameters & params);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+
 private:
+    const bool allow_experimental_full_text_index;
     std::optional<GinFilterParameters> parameters;
 };
 }
