@@ -4,8 +4,8 @@
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include "Interpreters/ActionsDAG.h"
-#include "Storages/ObjectStorage/StorageObjectStorageSource.h"
+#include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
 
 namespace DB

@@ -1,6 +1,5 @@
 #include "StorageObjectStorageStableTaskDistributor.h"
 #include <Common/SipHash.h>
-#include "Storages/ObjectStorage/IObjectIterator.h"
 #include <consistent_hashing.h>
 #include <optional>
 

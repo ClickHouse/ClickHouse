@@ -944,7 +944,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
     {
-        return callback()->getObjectInfo();
+        auto task = callback();
+        if (!task)
+            return nullptr;
+        return task->getObjectInfo();
     }
 
     return buffer[current_index];

@@ -480,6 +480,9 @@ void Connection::sendAddendum()
     if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
         writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
 
+    if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+        writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+
     out->next();
 }
 
@@ -599,6 +602,11 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         if (server_revision >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
         {
             readVarUInt(server_query_plan_serialization_version, *in);
+        }
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+        {
+            readVarUInt(server_cluster_function_protocol_version, *in);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -1036,7 +1044,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    response.serialize(*out, server_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }
