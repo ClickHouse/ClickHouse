@@ -747,7 +747,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "non-uniform, and still get the average resource utilization metric."};
 }
 void readPressureFile(
-    AsynchronousMetricValues & new_values, const std::string & fileType, ReadBufferFromFilePRead & fileHandle)
+    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in)
 {
     fileHandle.rewind();
     // The shape of this file is:
