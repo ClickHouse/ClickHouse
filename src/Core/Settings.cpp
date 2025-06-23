@@ -5451,6 +5451,9 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(Bool, query_plan_correlated_subqueries_use_substitution, true, R"(
+Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.

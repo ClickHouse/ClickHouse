@@ -32,6 +32,9 @@
 
 #include <memory>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+
 #include <fmt/format.h>
 
 namespace DB
@@ -49,6 +52,7 @@ namespace Setting
 {
 
 extern const SettingsBool join_use_nulls;
+extern const SettingsBool query_plan_correlated_subqueries_use_substitution;
 
 }
 
@@ -100,6 +104,29 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     return result;
 }
 
+struct EquivalenceClasses
+{
+    void add(const String & lhs, const String & rhs)
+    {
+        for (auto & equivalence_class : classes)
+        {
+            if (equivalence_class.contains(lhs))
+            {
+                equivalence_class.insert(rhs);
+                return;
+            }
+            if (equivalence_class.contains(rhs))
+            {
+                equivalence_class.insert(lhs);
+                return;
+            }
+        }
+        classes.emplace_back(std::unordered_set<String>{ lhs, rhs });
+    }
+
+    std::vector<std::unordered_set<String>> classes;
+};
+
 struct DecorrelationContext
 {
     const CorrelatedSubquery & correlated_subquery;
@@ -107,6 +134,9 @@ struct DecorrelationContext
     QueryPlan query_plan; // LHS plan
     QueryPlan correlated_query_plan;
     CorrelatedPlanStepMap correlated_plan_steps;
+    /// Equivalence classes stack for subqeiries. Equivalence classes should not be propagated
+    /// to the subqueries of the JOIN or UNION steps.
+    std::vector<EquivalenceClasses> equivalence_class_stack;
 };
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -129,7 +159,50 @@ QueryPlan decorrelateQueryPlan(
 
         ColumnsWithTypeAndName output_columns_and_types;
         output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan.getCurrentHeader().getColumnsWithTypeAndName());
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), node->step->getOutputHeader().getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header.getColumnsWithTypeAndName());
+
+        if (settings[Setting::query_plan_correlated_subqueries_use_substitution])
+        {
+            ActionsDAG dag(decorrelated_plan_header.getNamesAndTypesList());
+            auto & outputs = dag.getOutputs();
+
+            std::unordered_map<std::string_view, const ActionsDAG::Node *> decorrelated_nodes_names;
+            for (const auto * output : outputs)
+                decorrelated_nodes_names[output->result_name] = output;
+
+            std::vector<std::pair<const ActionsDAG::Node *, const String &>> expression_renamings;
+            for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            {
+                for (const auto & equivalence_class : context.equivalence_class_stack.back().classes)
+                {
+                    if (equivalence_class.contains(correlated_column_identifier))
+                    {
+                        for (const auto & column_name : equivalence_class)
+                        {
+                            auto it = decorrelated_nodes_names.find(column_name);
+                            if (it != decorrelated_nodes_names.end())
+                            {
+                                expression_renamings.emplace_back(it->second, correlated_column_identifier);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (context.correlated_subquery.correlated_column_identifiers.size() == expression_renamings.size())
+            {
+                for (const auto & [from, to] : expression_renamings)
+                    outputs.push_back(&dag.addAlias(*from, to));
+
+                auto result_plan = context.correlated_query_plan.extractSubplan(node);
+                auto renaming_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag));
+                renaming_step->setStepDescription("Renaming correlated columns to evuivalent expressions in subquery");
+                result_plan.addStep(std::move(renaming_step));
+                return result_plan;
+            }
+        }
 
         JoinExpressionActions join_expression_actions(
             lhs_plan_header.getColumnsWithTypeAndName(),
@@ -186,6 +259,27 @@ QueryPlan decorrelateQueryPlan(
     }
     if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
     {
+        auto & dag = filter_step->getExpression();
+        auto * predicate = const_cast<ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        auto conjuncts_list = getConjunctsList(predicate);
+        for (const auto * conjunct : conjuncts_list)
+        {
+            bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
+            if (is_equality)
+            {
+                const auto & arguments = conjunct->children;
+                if (arguments.size() != 2)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Correlated subquery equality predicate must have exactly two arguments, but has {}",
+                        arguments.size());
+
+                const auto & lhs = arguments[0]->result_name;
+                const auto & rhs = arguments[1]->result_name;
+
+                context.equivalence_class_stack.back().add(lhs, rhs);
+            }
+        }
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
@@ -201,8 +295,19 @@ QueryPlan decorrelateQueryPlan(
     }
     if (auto * union_step = typeid_cast<UnionStep *>(node->step.get()))
     {
-        auto decorrelated_lhs_plan = decorrelateQueryPlan(context, node->children.front());
-        auto decorrelated_rhs_plan = decorrelateQueryPlan(context, node->children.back());
+        auto process_isolated_subplan = [](
+            DecorrelationContext & current_context,
+            QueryPlan::Node * subplan_root
+        ) -> QueryPlan
+        {
+            current_context.equivalence_class_stack.emplace_back();
+            auto decorrelated_isolated_plan = decorrelateQueryPlan(current_context, subplan_root);
+            current_context.equivalence_class_stack.pop_back();
+            return decorrelated_isolated_plan;
+        };
+
+        auto decorrelated_lhs_plan = process_isolated_subplan(context, node->children.front());
+        auto decorrelated_rhs_plan = process_isolated_subplan(context, node->children.back());
 
         Headers query_plans_headers{ decorrelated_lhs_plan.getCurrentHeader(), decorrelated_rhs_plan.getCurrentHeader() };
 
@@ -546,7 +651,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
-                .correlated_plan_steps = std::move(correlated_step_map)
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .equivalence_class_stack = { EquivalenceClasses{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -586,7 +692,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
-                .correlated_plan_steps = std::move(correlated_step_map)
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .equivalence_class_stack = { EquivalenceClasses{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
