@@ -746,6 +746,38 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+void readPressureFile(
+    AsynchronousMetricValues & new_values, const std::string & fileType, ReadBufferFromFilePRead & fileHandle)
+{
+    fileHandle.rewind();
+    // The shape of this file is: 
+    // some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+    // full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+    // We need the first field to capture whether it's a partial or total stall.
+    // We also ignore the time averages as well. Recording the counter (the last field)
+    // lets us recreate any average, with better identification of any short spikes
+    while (!fileHandle.eof())
+    {
+        String stallType;
+        readStringUntilWhitespace(stallType, fileHandle);
+
+        String rest;
+        readStringUntilNewlineInto(rest, fileHandle);
+
+        auto pos = rest.find("total=");
+        if (pos != String::npos)
+        {
+            // total= is 6 chars, skip forward that much.
+            auto total = rest.substr(pos + 6);
+            uint64_t counter = std::stoull(total);
+            new_values[fmt::format("PSI_{}_{}", fileType, stallType)] = AsynchronousMetricValue(counter,
+                "Total microseconds of stall time."
+                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
+        }
+        skipToNextLineOrEOF(fileHandle);
+    }
+}
 #endif
 
 // Warnings for pending mutations
@@ -1385,60 +1417,22 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
 
     if (cpu_pressure)
-        {
-            try
-            {
-                cpu_pressure->rewind();
-                while (!cpu_pressure->eof())
-                {
-                    String stallType;
-                    readStringUntilWhitespace(stallType, *cpu_pressure);
-
-                    String rest;
-                    readStringUntilNewlineInto(rest, *cpu_pressure);
-
-                    auto total_pos = rest.find("total=");
-                    if (total_pos != String::npos)
-                    {
-                        auto total = rest.substr(total_pos + 1);
-                        uint64_t counter = std::stoull(total);
-                        new_values[fmt::format("PSICPU_{}", stallType)] = AsynchronousMetricValue(counter,
-                            "Total microseconds of CPU stall time");
-                    }
-                    skipToNextLineOrEOF(*cpu_pressure);
-                }
-
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-            }
+    {
+        try {
+            readPressureFile(new_values, "CPU", cpu_pressure.value());
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/cpu", memory_pressure);
+        }
+    }
 
     if (memory_pressure)
     {
-        try
+        try 
         {
-            memory_pressure->rewind();
-            while (!memory_pressure->eof())
-            {
-                String stallType;
-                readStringUntilWhitespace(stallType, *memory_pressure);
-
-                String rest;
-                readStringUntilNewlineInto(rest, *memory_pressure);
-
-                auto pos = rest.find("total=");
-                if (pos != String::npos)
-                {
-                    auto total = rest.substr(pos + 1);
-                    uint64_t counter = std::stoull(total);
-                    new_values[fmt::format("PSIMemory_{}", stallType)] = AsynchronousMetricValue(counter,
-                        "Total microseconds of memory stall time");
-                }
-                skipToNextLineOrEOF(*memory_pressure);
-            }
+            readPressureFile(new_values, "MEM", memory_pressure.value());
         }
         catch (...)
         {
@@ -1449,27 +1443,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     if (io_pressure)
     {
-        try
+         try 
         {
-            io_pressure->rewind();
-            while (!io_pressure->eof())
-            {
-                String stallType;
-                readStringUntilWhitespace(stallType, *io_pressure);
-
-                String rest;
-                readStringUntilNewlineInto(rest, *io_pressure);
-
-                auto pos = rest.find("total=");
-                if (pos != String::npos)
-                {
-                    auto total = rest.substr(pos + 1);
-                    uint64_t counter = std::stoull(total);
-                    new_values[fmt::format("PSIIO_{}", stallType)] = AsynchronousMetricValue(counter,
-                        "Total microseconds of IO stall time");
-                }
-                skipToNextLineOrEOF(*io_pressure);
-            }
+            readPressureFile(new_values, "IO", io_pressure.value());
         }
         catch (...)
         {
