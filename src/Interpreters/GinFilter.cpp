@@ -104,7 +104,8 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
     return false;
 }
 
-bool hasAlwaysMatchFlag(const GinIndexPostingsList & posting_bitset) {
+bool hasAlwaysMatchFlag(const GinIndexPostingsList & posting_bitset)
+{
     return posting_bitset.cardinality() == 1 && posting_bitset.minimum() == UINT32_MAX;
 }
 
