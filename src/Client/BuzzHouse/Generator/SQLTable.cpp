@@ -7,7 +7,7 @@
 namespace BuzzHouse
 {
 
-String StatementGenerator::nextComment(RandomGenerator & rg)
+String StatementGenerator::nextComment(RandomGenerator & rg) const
 {
     std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
 

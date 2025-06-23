@@ -289,7 +289,7 @@ private:
     String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
-    String nextComment(RandomGenerator & rg);
+    String nextComment(RandomGenerator & rg) const;
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     SQLRelation createViewRelation(const String & rel_name, size_t ncols);
