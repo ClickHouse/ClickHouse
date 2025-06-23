@@ -18,6 +18,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 100000000
               Parts: 1/1
               Granules: 1/1
+              Ranges: 1
 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
 6	[0,2]	0
 7	[0,2.1]	0.09999990463256836
@@ -38,6 +39,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 2/4
+              Ranges: 2
 Special cases
 -- Non-default metric, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction
 6	[1,9.3]	0.005731362878640178
@@ -59,6 +61,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 -- Setting "max_limit_for_vector_search_queries"
 Expression (Project names)
   LazilyRead (Lazily Read)
@@ -71,6 +74,7 @@ Expression (Project names)
               Condition: true
               Parts: 1/1
               Granules: 4/4
+              Ranges: 1
 -- Test all distance metrics x all quantization
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
@@ -91,6 +95,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 4/4
+              Ranges: 1
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
@@ -110,6 +115,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 4/4
+              Ranges: 1
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
@@ -129,6 +135,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 4/4
+              Ranges: 1
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
@@ -148,6 +155,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 4/4
+              Ranges: 1
 1	[2,3.2]	2.3323807824711897
 4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
@@ -167,6 +175,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
@@ -186,6 +195,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
@@ -205,6 +215,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
@@ -224,6 +235,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
@@ -243,6 +255,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
@@ -262,6 +275,7 @@ Expression (Project names)
               Description: vector_similarity GRANULARITY 2
               Parts: 1/1
               Granules: 3/4
+              Ranges: 1
 -- Index on Array(Float64) column
 6	[0,2]	0
 7	[0,2.1]	0.10000000000000009
