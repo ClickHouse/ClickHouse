@@ -264,6 +264,8 @@ class ClickHouseProc:
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
     WD2 = f"{temp_dir}/ft_wd2"
+    CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
+    CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
@@ -346,7 +348,17 @@ class ClickHouseProc:
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
-        return True
+
+        for _ in range(20):
+            res = Shell.check(
+                "/mc ls clickminio/test | grep -q .",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start minio")
+        return False
 
     def start_azurite(self):
         command = (
@@ -702,7 +714,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         self._flush_system_logs()
         print("Terminate ClickHouse processes")
 
-        timeout = 60
         Shell.check(f"ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
             (self.proc, self.pid_file, self.pid_0, self.run_path0),
@@ -717,33 +728,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     verbose=True,
                 ):
                     print("Failed to stop ClickHouse process gracefully")
+
         return self
-
-        # for proc, pid_file, pid in (
-        #     (self.proc, self.pid_file, self.pid_0),
-        #     (self.proc_2, self.pid_file_replica_2, self.pid_2),
-        #     (self.proc_1, self.pid_file_replica_1, self.pid_1),
-        # ):
-        #     if proc and pid:
-        #         try:
-        #             proc.wait(timeout=timeout)
-        #             print(f"Process {proc.pid} terminated gracefully.")
-        #         except Exception:
-        #             print(
-        #                 f"Process {proc.pid} did not terminate in {timeout} seconds, killing it..."
-        #             )
-        #             Shell.check("ps -ef | grep clickhouse | grep -v grep", verbose=True)
-        #             Utils.terminate_process_group(proc.pid, force=True)
-        #             Utils.terminate_process(pid, force=True)
-        #             proc.wait()  # Wait for the process to be fully killed
-        #             print(f"Process {pid} was killed.")
-        #         Shell.check("ps -ef | grep clickhouse | grep -v grep", verbose=True)
-
-        if self.minio_proc:
-            Utils.terminate_process_group(self.minio_proc.pid)
-
-        if self.azurite_proc:
-            Utils.terminate_process_group(self.azurite_proc.pid)
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
@@ -760,6 +746,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.GDB_LOG)
             if Path(self.DMESG_LOG).exists():
                 res.append(self.DMESG_LOG)
+            if Path(self.CH_LOCAL_ERR_LOG).exists():
+                res.append(self.CH_LOCAL_ERR_LOG)
+            if Path(self.CH_LOCAL_LOG).exists():
+                res.append(self.CH_LOCAL_LOG)
         self.logs = res
         return res
 
@@ -968,15 +958,24 @@ quit
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
+
         command_args += " --config-file=/etc/clickhouse-server/config.xml"
+        # Change log files for local in config.xml as command args do not override
+        Shell.check(
+            f"sed -i 's|<log>.*</log>|<log>{self.CH_LOCAL_LOG}</log>|' /etc/clickhouse-server/config.xml"
+        )
+        Shell.check(
+            f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
+        )
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        # NOTE: we also need to override logger.level, but logger.level will not work
-        command_args_post = "-- --zookeeper.implementation=testkeeper --logger.log=/dev/null --logger.errorlog=/dev/null --logger.console=1"
+        #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
@@ -986,7 +985,7 @@ quit
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res = Shell.check(
-                f"{temp_dir}/clickhouse-local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                f"cd {self.run_path0} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                 verbose=True,
             )
             if not res:
@@ -995,10 +994,13 @@ quit
                     Result(name=f"Scraping {table}", status="FAIL")
                 )
                 res = False
+            if "minio" in table:
+                # minio tables are not replicated
+                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res = Shell.check(
-                    f"clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path1} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if not res:
@@ -1010,7 +1012,7 @@ quit
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
                 res = Shell.check(
-                    f"clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path2} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if not res:

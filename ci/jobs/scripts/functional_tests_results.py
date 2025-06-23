@@ -109,7 +109,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] == "FAIL"
+                    and test_results[-1][1] in ("FAIL", "SKIPPED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -226,23 +226,7 @@ class FTResultsProcessor:
         if not info:
             info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
-        # TODO: !!!
-        # def test_result_comparator(item):
-        #     # sort by status then by check name
-        #     order = {
-        #         "FAIL": 0,
-        #         "SERVER_DIED": 1,
-        #         "Timeout": 2,
-        #         "NOT_FAILED": 3,
-        #         "BROKEN": 4,
-        #         "OK": 5,
-        #         "SKIPPED": 6,
-        #     }
-        #     return order.get(item[1], 10), str(item[0]), item[1]
-        #
-        # test_results.sort(key=test_result_comparator)
-
-        return Result.create_from(
+        result = Result.create_from(
             name="Tests",
             results=test_results,
             status=state,
@@ -251,28 +235,16 @@ class FTResultsProcessor:
             with_info_from_results=False,
         )
 
+        if not result.is_ok():
+            order = {
+                "FAIL": 0,
+                "SERVER_DIED": 1,
+                "Timeout": 2,
+                "NOT_FAILED": 3,
+                "BROKEN": 4,
+                "OK": 5,
+                "SKIPPED": 6,
+            }
+            result.results.sort(key=lambda x: order.get(x.status, -1))
 
-# if __name__ == "__main__":
-#     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-#     parser = argparse.ArgumentParser(
-#         description="ClickHouse script for parsing results of functional tests"
-#     )
-#
-#     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
-#     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-#     args = parser.parse_args()
-#
-#     broken_tests = []
-#     state, description, test_results = process_result(
-#         args.in_results_dir,
-#         broken_tests,
-#         args.in_test_result_file,
-#         args.in_results_file,
-#     )
-#     logging.info("Result parsed")
-#     status = (state, description)
-#
-#
-#
-#     write_results(args.out_results_file, args.out_status_file, test_results, status)
-#     logging.info("Result written")
+        return result
