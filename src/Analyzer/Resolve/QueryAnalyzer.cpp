@@ -2245,12 +2245,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
           * We are taking the nearest JoinNode to check to which table column belongs,
           * because for LEFT/RIGHT join, we convert only the corresponding side.
           */
-        const auto * nearest_query_scope = scope.getNearestQueryScope();
-        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
-        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
-        if (nearest_scope_join_node)
+        for (const auto & table_expression : scope.registered_table_expression_nodes)
         {
+            const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
+            if (!nearest_scope_join_node)
+                continue;
+
             for (auto & [node, node_name] : matched_expression_nodes_with_names)
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
