@@ -9,6 +9,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -964,7 +965,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     if (!is_archive)
         return object_info;
 
-    auto [path_to_archive, path_in_archive] = S3::URI::getURIAndArchivePattern(object_info->getPath());
+    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(object_info->getPath());
     if (!path_in_archive.has_value())
         return object_info;
 
