@@ -163,18 +163,18 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t uhugeint_lit = 20;
     const uint32_t int_lit = 80;
     const uint32_t uint_lit = 80;
-    const uint32_t time_lit = 30 * static_cast<uint32_t>(this->fc.type_mask & allow_time);
-    const uint32_t date_lit = 30 * static_cast<uint32_t>(this->fc.type_mask & allow_dates);
-    const uint32_t datetime_lit = 30 * static_cast<uint32_t>(this->fc.type_mask & allow_datetimes);
-    const uint32_t dec_lit = 60 * static_cast<uint32_t>(this->fc.type_mask & allow_decimals);
+    const uint32_t time_lit = 25 * static_cast<uint32_t>((this->fc.type_mask & allow_time) != 0);
+    const uint32_t date_lit = 25 * static_cast<uint32_t>((this->fc.type_mask & allow_dates) != 0);
+    const uint32_t datetime_lit = 25 * static_cast<uint32_t>((this->fc.type_mask & allow_datetimes) != 0);
+    const uint32_t dec_lit = 50 * static_cast<uint32_t>((this->fc.type_mask & allow_decimals) != 0);
     const uint32_t random_str = 30 * static_cast<uint32_t>(complex && this->allow_not_deterministic);
-    const uint32_t uuid_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_uuid);
-    const uint32_t ipv4_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_ipv4);
-    const uint32_t ipv6_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_ipv6);
-    const uint32_t geo_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_geo);
+    const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->fc.type_mask & allow_uuid) != 0);
+    const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->fc.type_mask & allow_ipv4) != 0);
+    const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->fc.type_mask & allow_ipv6) != 0);
+    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->fc.type_mask & allow_geo) != 0);
     const uint32_t str_lit = 50;
     const uint32_t special_val = 20;
-    const uint32_t json_lit = 20 * static_cast<uint32_t>(this->fc.type_mask & allow_JSON);
+    const uint32_t json_lit = 20 * static_cast<uint32_t>((this->fc.type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
         + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit;
@@ -340,6 +340,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
                 + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + 1))
     {
         lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
+    }
+    else
+    {
+        chassert(0);
     }
     addFieldAccess(rg, expr, nested_prob);
 }
