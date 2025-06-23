@@ -161,6 +161,7 @@ private:
     std::vector<std::reference_wrapper<const SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
+    std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
     std::unordered_map<uint32_t, QueryLevel> levels;

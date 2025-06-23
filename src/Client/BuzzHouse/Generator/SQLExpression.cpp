@@ -931,9 +931,13 @@ void StatementGenerator::generateWindowDefinition(RandomGenerator & rg, WindowDe
     }
 }
 
+static const auto has_rel_name_lambda = [](const SQLRelation & rel) { return !rel.name.empty(); };
+
 void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     ExprColAlias * eca = nullptr;
+    const auto & level_rels = this->levels[this->current_level].rels;
+
     const uint32_t literal_value = this->inside_projection ? 50 : 100;
     const uint32_t col_ref_expr = 300;
     const uint32_t predicate_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
@@ -950,7 +954,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const uint32_t window_func_expr = 75
         * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->levels[this->current_level].allow_window_funcs
                                 && !this->levels[this->current_level].inside_aggregate);
-    const uint32_t table_star_expr = 10 * static_cast<uint32_t>(!this->levels[this->current_level].rels.empty());
+    const uint32_t table_star_expr
+        = 10 * static_cast<uint32_t>(std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -1237,7 +1242,15 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
                + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + 1))
     {
-        expr->mutable_comp_expr()->mutable_table()->set_table(rg.pickRandomly(this->levels[this->current_level].rels).name);
+        filtered_relations.clear();
+        for (const auto & entry : level_rels)
+        {
+            if (has_rel_name_lambda(entry))
+            {
+                filtered_relations.emplace_back(std::ref(entry));
+            }
+        }
+        expr->mutable_comp_expr()->mutable_table()->set_table(rg.pickRandomly(filtered_relations).get().name);
     }
     else
     {
