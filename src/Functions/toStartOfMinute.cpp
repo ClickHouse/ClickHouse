@@ -21,10 +21,10 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toStartOfMinute(datetime)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A date with time to convert. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+        {"datetime", "A date with time to convert.", {"DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
-        "Returns the date with time rounded down to the start of the minute. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+        {"Returns the date with time rounded down to the start of the minute.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Round down to the start of the minute", R"(
 SELECT
