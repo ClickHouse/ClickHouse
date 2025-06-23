@@ -258,11 +258,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))
     {
         const DecimalType * tp = static_cast<DecimalType *>(randomDecimalType(rg, std::numeric_limits<uint32_t>::max(), nullptr));
-        const uint32_t right = tp->scale.value_or(0);
-        const uint32_t left = tp->precision.value_or(10) - right;
 
+        lv->set_no_quote_str(DecimalType::appendDecimalValue(rg, complex && rg.nextSmallNumber() < 9, tp));
         delete tp;
-        lv->set_no_quote_str(appendDecimal(rg, complex && rg.nextSmallNumber() < 9, left, right));
     }
     else if (
         random_str
@@ -308,7 +306,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
                 + ipv4_lit + ipv6_lit + geo_lit + str_lit + 1))
     {
-        std::uniform_int_distribution<int> strlens(0, 1009);
+        std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
 
         lv->set_no_quote_str(rg.nextString("'", true, strlens(rg.generator)));
     }

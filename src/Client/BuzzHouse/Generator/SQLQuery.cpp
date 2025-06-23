@@ -865,7 +865,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
@@ -1273,7 +1273,9 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+            std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
+
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, strlens(rg.generator)));
         }
         else
         {

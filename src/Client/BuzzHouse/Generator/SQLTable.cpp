@@ -9,7 +9,9 @@ namespace BuzzHouse
 
 String StatementGenerator::nextComment(RandomGenerator & rg)
 {
-    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
+    std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
+
+    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, strlens(rg.generator));
 }
 
 void collectColumnPaths(
@@ -1199,7 +1201,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_num(rg.nextRandomUInt64());
         if (rg.nextBool())
         {
-            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             te->add_params()->set_num(string_length_dist(rg.generator));

@@ -47,7 +47,7 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     }
     else
     {
-        std::uniform_int_distribution<uint32_t> next_dist(0, 9);
+        std::uniform_int_distribution<uint32_t> next_dist(0, 76);
         const uint32_t left = next_dist(rg.generator);
         const uint32_t right = next_dist(rg.generator);
 
@@ -400,12 +400,17 @@ SQLType * DecimalType::typeDeepCopy() const
     return new DecimalType(short_notation, precision, scale);
 }
 
+String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
+{
+    const uint32_t right = dt->scale.value_or(0);
+    const uint32_t left = dt->precision.value_or(10) - right;
+
+    return appendDecimal(rg, use_func, left, right);
+}
+
 String DecimalType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    const uint32_t right = scale.value_or(0);
-    const uint32_t left = precision.value_or(10) - right;
-
-    return appendDecimal(rg, true, left, right);
+    return appendDecimalValue(rg, true, this);
 }
 
 String StringType::typeName(const bool) const
@@ -454,9 +459,11 @@ SQLType * StringType::typeDeepCopy() const
     return new StringType(precision);
 }
 
-String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return rg.nextString("'", true, precision.value_or(rg.nextRandomUInt32() % 1009));
+    std::uniform_int_distribution<uint32_t> strlens(0, gen.fc.max_string_length);
+
+    return rg.nextString("'", true, precision.value_or(strlens(rg.generator)));
 }
 
 String UUIDType::typeName(const bool) const
@@ -1455,7 +1462,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : ((rg.nextRandomUInt32() % 1009) + 1));
+            std::uniform_int_distribution<uint32_t> strlens(1, fc.max_string_length);
+
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : strlens(rg.generator));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());
@@ -2072,7 +2081,7 @@ String strBuildJSONElement(RandomGenerator & rg)
         case 9:
         case 10: {
             /// Decimal
-            std::uniform_int_distribution<uint32_t> next_dist(0, 8);
+            std::uniform_int_distribution<uint32_t> next_dist(0, 76);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
@@ -2081,10 +2090,13 @@ String strBuildJSONElement(RandomGenerator & rg)
         break;
         case 11:
         case 12:
-        case 13:
+        case 13: {
             /// String
-            ret = rg.nextString("\"", false, rg.nextRandomUInt32() % 1009);
-            break;
+            std::uniform_int_distribution<uint32_t> strlens(0, 1009);
+
+            ret = rg.nextString("\"", false, strlens(rg.generator));
+        }
+        break;
         case 14:
             /// Date
             ret = '"' + rg.nextDate() + '"';
