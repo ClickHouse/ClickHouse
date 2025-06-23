@@ -2,6 +2,8 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Common/Macros.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
@@ -26,6 +28,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsString s3queue_default_zookeeper_path;
+}
+
 template <typename Configuration>
 StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 {
@@ -41,10 +48,39 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     // session and user are ignored.
     std::optional<FormatSettings> format_settings;
 
+    const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
+
+    if (!is_attach)
+    {
+        if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
+        {
+            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
+            const String database_engine = database ? database->getEngineName() : "";
+
+            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+                database_engine == "Replicated";
+
+            /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
+            /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
+            bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
+
+            String path = path_setting->safeGet<String>();
+
+            Macros::MacroExpansionInfo info;
+            info.expand_special_macros_only = true;
+            info.table_id = args.table_id;
+            if (!allow_uuid_macro)
+                info.table_id.uuid = UUIDHelpers::Nil;
+
+            path = args.getContext()->getMacros()->expand(path, info);
+            args.storage_def->settings->changes.setSetting("keeper_path", Field(path));
+        }
+    }
+
     auto queue_settings = std::make_unique<ObjectStorageQueueSettings>();
     if (args.storage_def->settings)
     {
-        const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
         queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
 
         Settings settings = args.getContext()->getSettingsCopy();
@@ -66,7 +102,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.getContext(),
         format_settings,
         args.storage_def,
-        args.mode);
+        args.mode,
+        /* keep_data_in_keeper */ false);
 }
 
 #if USE_AWS_S3
