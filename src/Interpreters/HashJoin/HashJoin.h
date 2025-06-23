@@ -361,23 +361,19 @@ public:
     {
         Columns columns;
         ScatteredBlock::Selector selector;
+
+        size_t allocatedBytes() const;
     };
 
-    using RawScatteredColumnsPtr = const ScatteredColumns *;
     struct NullMapHolder
     {
-        size_t allocatedBytes() const
-        {
-            if (column->empty())
-                return 0;
-            return column->allocatedBytes() * columns->selector.size() / column->size();
-        }
-
-        RawScatteredColumnsPtr columns;
+        const ScatteredColumns * columns;
         ColumnPtr column;
-    };
-    using NullmapList = std::deque<NullMapHolder>;
 
+        size_t allocatedBytes() const;
+    };
+
+    using NullmapList = std::deque<NullMapHolder>;
     using ScatteredColumnsList = std::list<ScatteredColumns>;
 
     struct RightTableData

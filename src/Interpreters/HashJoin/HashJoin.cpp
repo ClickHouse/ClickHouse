@@ -260,6 +260,29 @@ HashJoin::HashJoin(
     }
 }
 
+size_t HashJoin::ScatteredColumns::allocatedBytes() const
+{
+    if (columns.empty())
+        return 0;
+
+    size_t rows = columns.front()->size();
+    if (rows == 0)
+        return 0;
+
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->allocatedBytes();
+    return res * selector.size() / rows;
+}
+
+size_t HashJoin::NullMapHolder::allocatedBytes() const
+{
+    size_t rows = column->size();
+    if (rows == 0)
+        return 0;
+    return column->allocatedBytes() * columns->selector.size() / rows;
+}
+
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
     using Type = HashJoin::Type;
@@ -430,8 +453,7 @@ void HashJoin::doDebugAsserts() const
 #ifdef DEBUG_OR_SANITIZER_BUILD
     size_t debug_allocated_size = 0;
     for (const auto & columns : data->columns)
-        for (const auto & column : columns.columns)
-            debug_allocated_size += column->allocatedBytes();
+        debug_allocated_size += data->columns.allocatedBytes();
 
     if (data->allocated_size != debug_allocated_size)
         throw Exception(
@@ -663,10 +685,10 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         }
 
         doDebugAsserts();
-        size_t data_allocated_bytes = block_to_save.allocatedBytes();
-        data->allocated_size += data_allocated_bytes;
         data->columns.emplace_back(block_to_save.getColumns(), source_block.detachSelector());
         const auto * stored_columns = &data->columns.back();
+        size_t data_allocated_bytes = stored_columns->allocatedBytes();
+        data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
 
         if (rows)
@@ -813,15 +835,12 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     {
         doDebugAsserts();
 
-        size_t old_size = 0;
-        size_t new_size = 0;
+        size_t old_size = stored_columns.allocatedBytes();
 
         for (auto & column : stored_columns.columns)
-        {
-            old_size += column->allocatedBytes();
             column = column->cloneResized(column->size());
-            new_size += column->allocatedBytes();
-        }
+
+        size_t new_size = stored_columns.allocatedBytes();
 
         if (old_size >= new_size)
         {
@@ -1670,9 +1689,11 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         doDebugAsserts();
         data->columns.swap(sorted_columns);
         size_t new_blocks_allocated_size = 0;
-        for (const auto & columns : data->columns)
-            for (const auto & column : columns.columns)
-                new_blocks_allocated_size += column->allocatedBytes();
+        for (auto & columns : data->columns)
+        {
+            columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
+            new_blocks_allocated_size += columns.allocatedBytes();
+        }
         data->allocated_size = new_blocks_allocated_size;
         doDebugAsserts();
     }
