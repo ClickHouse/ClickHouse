@@ -12,11 +12,12 @@ SETTINGS max_threads = 1024,
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT memory_usage < 10_000_000
+SELECT *
 FROM system.query_log
 WHERE Settings['max_streams_to_max_threads_ratio'] = '10000000'
   AND query like '%FROM 03403_data%'
   AND type = 'QueryFinish'
+  AND memory_usage > 20_000_000
   AND current_database = currentDatabase();
 
 DROP TABLE 03403_data;

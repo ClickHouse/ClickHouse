@@ -112,7 +112,7 @@ class GH:
         TAG_COMMENT_END = "<!-- CI automatic comment end :{TAG}: -->"
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
-            --jq \'[.[] | {{id: .id, body: .body}}]\''
+            --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
         output = Shell.get_output(cmd_check_created, verbose=True)
 
         comments = json.loads(output)
@@ -295,6 +295,24 @@ class GH:
             f"-f description='{description}' -f context='{name}'"
         )
         return cls.do_command_with_retries(command)
+
+    @classmethod
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        extra_args = ""
+        if not keep_branch:
+            extra_args += " --delete-branch"
+        if squash:
+            extra_args += " --squash"
+        else:
+            extra_args += " --merge"
+
+        cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
+        return cls.do_command_with_retries(cmd)
 
     @classmethod
     def convert_to_gh_status(cls, status):
