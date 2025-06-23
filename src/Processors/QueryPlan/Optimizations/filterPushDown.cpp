@@ -156,10 +156,12 @@ static size_t addNewFilterStepOrThrow(
 
         if (!filter_node || filter_is_constant)
         {
+            auto filter_description = filter->getStepDescription();
+
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
-            parent->setStepDescription(filter->getStepDescription());
+            parent->setStepDescription(std::move(filter_description));
         }
         else
         {
