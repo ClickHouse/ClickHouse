@@ -479,7 +479,7 @@ bool HashJoin::isUsedByAnotherAlgorithm() const
 
 bool HashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && strictness != JoinStrictness::RightAny;
+    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && strictness != JoinStrictness::RightAny;
 }
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
@@ -1126,7 +1126,7 @@ void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_bloc
         maps_vector.push_back(&data->maps[i]);
 
     bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-    const bool joined = joinDispatch(
+    [[maybe_unused]] const bool joined = joinDispatch(
         kind,
         strictness,
         maps_vector,

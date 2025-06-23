@@ -176,6 +176,9 @@ void RestorerFromBackup::run(Mode mode_)
     insertDataToTables();
     runDataRestoreTasks();
 
+    setStage(Stage::FINALIZING_TABLES);
+    finalizeTables();
+
     /// Restored successfully!
     setStage(Stage::COMPLETED);
 }
@@ -485,7 +488,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     res_table_info.has_data = table_has_data;
     res_table_info.data_path_in_backup = data_path_in_backup;
 
-    tables_dependencies.addDependencies(table_name, table_dependencies);
+    tables_dependencies.addDependencies(table_name, table_dependencies.dependencies);
 
     if (partitions)
     {
@@ -1001,6 +1004,8 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
+        create_query_context->setUnderRestore(true);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
@@ -1170,6 +1175,20 @@ void RestorerFromBackup::runDataRestoreTasks()
 
         waitFutures();
     }
+}
+
+void RestorerFromBackup::finalizeTables()
+{
+    std::vector<StoragePtr> tables;
+    {
+        std::lock_guard lock{mutex};
+        tables.reserve(table_infos.size());
+        for (const auto & [_, info] : table_infos)
+            tables.push_back(info.storage);
+    }
+
+    for (const auto & storage : tables)
+        storage->finalizeRestoreFromBackup();
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

@@ -22,11 +22,12 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
+PACKAGES_DIR=/repo/tests/ci/tmp/packages
 # shellcheck disable=SC2016
-previous_release_tag=$(dpkg-deb --showformat='${Version}' --show package_folder/clickhouse-client*.deb | get_previous_release_tag)
+previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -130,7 +131,7 @@ stop 300 false
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # Install and start new server
-install_packages package_folder
+install_packages $PACKAGES_DIR
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
@@ -142,7 +143,7 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
-  save_merge_tree_settings_clean 'new_merge_tree_settings.native'
+  save_mergetree_settings_clean 'new_merge_tree_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
@@ -161,7 +162,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
@@ -197,7 +198,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))

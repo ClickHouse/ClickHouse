@@ -46,6 +46,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
@@ -241,8 +242,24 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
+bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 {
+    auto * query_node = node->as<QueryNode>();
+    auto * union_node = node->as<UnionNode>();
+
+    return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
+}
+
+bool checkCorrelatedColumn(
+    const IdentifierResolveScope * scope_to_check,
+    const QueryTreeNodePtr & column
+)
+{
+    const auto * current_scope = scope_to_check;
+    chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
+    auto * column_node = column->as<ColumnNode>();
+    auto column_source = column_node->getColumnSource();
+
     /// The case of lambda argument. Example:
     /// arrayMap(X -> X + Y, [0])
     ///
@@ -251,15 +268,37 @@ bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeN
     if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
+    bool is_correlated = false;
+
     while (scope_to_check != nullptr)
     {
+        /// Check if column source is in the FROM section of the current scope (query).
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            return false;
+            break;
+
+        /// Previous check wouldn't work in the case of resolution of alias columns.
+        /// In that case table expression is not registered yet and table expression data is being computed.
+        if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
+            break;
+
         if (isQueryOrUnionNode(scope_to_check->scope_node))
-            return true;
+        {
+            is_correlated = true;
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
+                query_node->addCorrelatedColumn(column);
+            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
+                union_node->addCorrelatedColumn(column);
+        }
         scope_to_check = scope_to_check->parent_scope;
     }
-    return true;
+    if (!scope_to_check)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot find the original scope of the column '{}'. Current scope: {}",
+            column_node->getColumnName(),
+            current_scope->scope_node->formatASTForErrorMessage());
+
+    return is_correlated;
 }
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
@@ -333,7 +372,10 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
+static ASTPtr convertIntoTableExpressionAST(
+    const QueryTreeNodePtr & table_expression_node,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     ASTPtr table_expression_node_ast;
     auto node_type = table_expression_node->getNodeType();
@@ -356,7 +398,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     }
     else
     {
-        table_expression_node_ast = table_expression_node->toAST();
+        table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
     auto result_table_expression = std::make_shared<ASTTableExpression>();
@@ -407,7 +449,11 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(
+    ASTPtr & tables_in_select_query_ast,
+    const QueryTreeNodePtr & table_expression,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -423,7 +469,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            auto table_expression_ast = convertIntoTableExpressionAST(table_expression);
+            auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
             auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));

@@ -12,6 +12,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
@@ -215,7 +216,8 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

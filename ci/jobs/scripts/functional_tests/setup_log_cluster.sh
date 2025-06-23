@@ -10,18 +10,16 @@ set -e
 # CLICKHOUSE_CI_LOGS_HOST - remote host
 # CLICKHOUSE_CI_LOGS_USER - password for user
 # CLICKHOUSE_CI_LOGS_PASSWORD - password for user
-CLICKHOUSE_CI_LOGS_CREDENTIALS=${CLICKHOUSE_CI_LOGS_CREDENTIALS:-/tmp/export-logs-config.sh}
-CLICKHOUSE_CI_LOGS_USER=${CLICKHOUSE_CI_LOGS_USER:-ci}
 
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
-EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
-EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, toLowCardinality('') AS check_name, toLowCardinality('') AS instance_type, '' AS instance_id"}
+[ -n "$EXTRA_COLUMNS_EXPRESSION" ] || { echo "ERROR: EXTRA_COLUMNS_EXPRESSION env must be defined"; exit 1; }
+EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
+echo "EXTRA_COLUMNS_EXPRESSION=$EXTRA_COLUMNS_EXPRESSION"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
 # trace_log needs more columns for symbolization
-EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
 EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
 
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
@@ -57,6 +55,7 @@ function check_logs_credentials
 
     # First check, if all necessary parameters are set
     set +x
+    echo "Check CI Log cluster..."
     for parameter in CLICKHOUSE_CI_LOGS_HOST CLICKHOUSE_CI_LOGS_USER CLICKHOUSE_CI_LOGS_PASSWORD; do
       export -p | grep -q "$parameter" || {
         echo "Credentials parameter $parameter is unset"
@@ -75,51 +74,12 @@ function check_logs_credentials
     fi
 )
 
-function config_logs_export_cluster
-(
-    # The function is launched in a separate shell instance to not expose the
-    # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
-    set +x
-    if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
-        echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
-        return
-    fi
-    set -a
-    # shellcheck disable=SC1090
-    source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
-    set +a
-    __shadow_credentials
-    echo "Checking if the credentials work"
-    check_logs_credentials || return 0
-    cluster_config="${1:-/etc/clickhouse-server/config.d/system_logs_export.yaml}"
-    mkdir -p "$(dirname "$cluster_config")"
-    echo "remote_servers:
-    ${CLICKHOUSE_CI_LOGS_CLUSTER}:
-        shard:
-            replica:
-                secure: 1
-                user: '${CLICKHOUSE_CI_LOGS_USER}'
-                host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-" > "$cluster_config"
-    echo "Cluster ${CLICKHOUSE_CI_LOGS_CLUSTER} is confugured in ${cluster_config}"
-)
-
 function setup_logs_replication
 (
     # The function is launched in a separate shell instance to not expose the
-    # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
+    # exported values
     set +x
     # disable output
-    if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
-        echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
-        return 0
-    fi
-    set -a
-    # shellcheck disable=SC1090
-    source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
-    set +a
     __shadow_credentials
     echo "Checking if the credentials work"
     check_logs_credentials || return 0
@@ -152,7 +112,6 @@ function setup_logs_replication
     do
         if [[ "$table" = "trace_log" ]]
         then
-            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
             # Do not try to resolve stack traces in case of debug/sanitizers
             # build, since it is too slow (flushing of trace_log can take ~1min
             # with such MV attached)
@@ -171,13 +130,14 @@ function setup_logs_replication
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
         fi
 
-        # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
+        # Calculate hash of its structure according to the columns and their types, including extra columns
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(9, groupArray((name, type)))
+            SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
-            ")
+            " --external --name=external --file=- --structure='columns String' <<< "$EXTRA_COLUMNS_FOR_TABLE"
+        )
 
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
@@ -218,9 +178,11 @@ function setup_logs_replication
         echo "Creating materialized view system.${table}_watcher" >&2
 
         clickhouse-client --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
-            FROM system.${table}
+            CREATE MATERIALIZED VIEW system.${table}_watcher
+            TO system.${table}_sender
+            DEFINER = ci_logs_sender
+            AS
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
 )
@@ -231,7 +193,7 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
+        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
     }
 }
 
@@ -246,14 +208,9 @@ while [[ "$#" -gt 0 ]]; do
             echo "Setting up log replication..."
             setup_logs_replication
             ;;
-        --config-logs-export-cluster)
-            echo "Configuring logs export for the cluster..."
-            config_logs_export_cluster "$2"
-            shift
-            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--stop-log-replication | --setup-logs-replication | --config-logs-export-cluster ]"
+            echo "Usage: $0 [--stop-log-replication | --setup-logs-replication ]"
             exit 1
             ;;
     esac

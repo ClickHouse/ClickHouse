@@ -43,14 +43,17 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.lexer_test,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
+    enable_automerge=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[

@@ -146,9 +146,9 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    void refresh() override
+    void refresh(UInt64 not_sooner_than_milliseconds) override
     {
-        metadata_storage->refresh();
+        metadata_storage->refresh(not_sooner_than_milliseconds);
     }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -205,7 +205,7 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    bool isPlain() const;
+    bool isPlain() const override;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it

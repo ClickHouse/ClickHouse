@@ -11,6 +11,7 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB::ErrorCodes
@@ -73,20 +74,25 @@ PartitionPruner::PartitionPruner(
             partition_columns_description,
             context);
 
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
         key_condition.emplace(
-            &filter_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
+            inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
     }
 }
 
-bool PartitionPruner::canBePruned(const DB::ObjectInfoWithPartitionColumns & object_info) const
+bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
 {
     if (!key_condition.has_value())
         return false;
 
-    DB::Row partition_key_values;
-    partition_key_values.reserve(object_info.partitions_info.size());
+    if (!object_info.data_lake_metadata)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not set");
 
-    for (const auto & [name_and_type, value] : object_info.partitions_info)
+    DB::Row partition_key_values;
+    const auto partition_values = object_info.data_lake_metadata->partition_values;
+    partition_key_values.reserve(partition_values.size());
+
+    for (const auto & value : partition_values)
     {
         if (value.isNull())
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST

@@ -45,7 +45,7 @@ private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
     int executeEditor(const std::string & path);
-    void openEditor();
+    void openEditor(bool format_query);
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;

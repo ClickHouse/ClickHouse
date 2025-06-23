@@ -30,7 +30,6 @@ public:
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
-        bool read_schema_same_as_table_schema_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -55,6 +54,7 @@ public:
     /// Therefore "table schema" would contain partition columns,
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
+    const DB::NameToNameMap & getPhysicalNamesMap() const;
 
 private:
     class Iterator;
@@ -64,7 +64,6 @@ private:
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
-    const bool read_schema_same_as_table_schema;
     const LoggerPtr log;
 
     mutable KernelExternEngine engine;
@@ -72,16 +71,16 @@ private:
     mutable KernelScan scan;
     mutable size_t snapshot_version;
 
-    mutable std::optional<DB::NamesAndTypesList> table_schema;
-    mutable std::optional<DB::NamesAndTypesList> read_schema;
-    mutable std::optional<DB::Names> partition_columns;
+    using TableSchema = DB::NamesAndTypesList;
+    using ReadSchema = DB::NamesAndTypesList;
+
+    mutable TableSchema table_schema;
+    mutable ReadSchema read_schema;
+    mutable DB::NameToNameMap physical_names_map;
+    mutable DB::Names partition_columns;
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
-    /// Both read schema and partition columns are loaded with the same data scan object,
-    /// therefore we load them together.
-    void loadReadSchemaAndPartitionColumns() const;
-    ffi::SharedSnapshot * getSnapshot() const;
 };
 
 /// TODO; Enable event tracing in DeltaKernel.

@@ -431,7 +431,12 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
     {
         if (metadata_storage.existsFile(path_to))
         {
-            objects_to_remove = metadata_storage.getStorageObjects(path_to);
+            if (metadata_storage.getType() != MetadataStorageType::PlainRewritable
+                && metadata_storage.getType() != MetadataStorageType::Plain)
+            {
+                //  MetadataStorageFromPlainObjectStorageTransaction removes the source objects by itself.
+                objects_to_remove = metadata_storage.getStorageObjects(path_to);
+            }
             tx->replaceFile(path_from, path_to);
         }
         else
@@ -766,11 +771,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (metadata_helper)
     {
         if (!object_key.hasPrefix())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "metadata helper is not supported with absolute paths");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata helper is not supported with absolute paths");
 
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter++;
-        object_attributes = {
+        auto revision = ++metadata_helper->revision_counter;
+        object_attributes =
+        {
             {"path", path}
         };
 
@@ -782,7 +787,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
     const bool do_not_write_empty_blob = metadata_storage.supportsEmptyFilesWithoutBlobs();
 
-    /// seems ok
+    /// Seems ok
     auto object = StoredObject(object_key.serialize(), path);
     std::function<void(size_t count)> create_metadata_callback;
 
@@ -861,7 +866,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
         operations_to_execute.emplace_back(std::move(write_operation));
     }
-
 
     auto impl = object_storage.writeObject(
         object,

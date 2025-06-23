@@ -204,11 +204,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
-if (NOT BUILD_STANDALONE_KEEPER)
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
-else ()
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
-endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -581,6 +576,9 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
+if (LEXER_STANDALONE_BUILD)
+    add_subdirectory(tests/lexer)
+endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
@@ -618,9 +616,11 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache")
+if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
+    message(STATUS "Adding chcache as dependency to all other targets")
     get_all_targets(all_targets)
-    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+
     foreach(target ${all_targets})
         if (target IN_LIST chcache_targets)
             continue()

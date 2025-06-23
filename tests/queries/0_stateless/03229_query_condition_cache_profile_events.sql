@@ -1,5 +1,8 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+
+ -- w/o local plan for parallel replicas the test will fail in ParallelReplicas CI run since filter steps will be executed as part of remote queries
+set parallel_replicas_local_plan=1;
 
 SET allow_experimental_analyzer = 1;
 

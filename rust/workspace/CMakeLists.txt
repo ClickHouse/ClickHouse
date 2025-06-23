@@ -16,30 +16,8 @@ if (OS_FREEBSD)
 endif()
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
-
-# Set cargo config (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
-get_property(
-    INTERFACE_PRQL_CARGO_FLAGS
-    TARGET _ch_rust_prql
-    PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-SET(INTERFACE_PRQL_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}")
-set_property(
-        TARGET _ch_rust_prql
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS}"
-)
-set_property(
-        TARGET _ch_rust_skim_rust
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS}"
-)
-
-get_property(
-        INTERFACE_PRQL_CARGO_FLAGS
-        TARGET _ch_rust_prql
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-
-message(STATUS "Workspace libs cargo flags: ${INTERFACE_PRQL_CARGO_FLAGS}")
+clickhouse_config_crate_flags(_ch_rust_prql)
+clickhouse_config_crate_flags(_ch_rust_skim_rust)
 
 target_include_directories(_ch_rust_prql INTERFACE prql/include)
 add_library(ch_rust::prql ALIAS _ch_rust_prql)
