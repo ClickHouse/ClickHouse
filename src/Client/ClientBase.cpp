@@ -813,33 +813,34 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::adjustSettings()
+void ClientBase::adjustSettings(ContextMutablePtr context)
 {
-    Settings settings = global_context->getSettingsCopy();
+    Settings settings = context->getSettingsCopy();
 
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
     /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
     if (!pager.empty() || !stdout_is_a_tty)
     {
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
+        if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
         {
             settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_rows].changed = false;
         }
 
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
+        if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
         {
             settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_value_width].changed = false;
         }
     }
 
-    global_context->setSettings(settings);
+    context->setSettings(settings);
 }
 
 void ClientBase::initClientContext()
 {
+    client_context = Context::createCopy(global_context);
     client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     client_context->setQuotaClientKey(getClientConfiguration().getString("quota_key", ""));
     client_context->setQueryKindInitial();
@@ -2888,7 +2889,7 @@ void ClientBase::applySettingsFromServerIfNeeded()
             changes_to_apply.push_back(change);
     }
 
-    global_context->applySettingsChanges(changes_to_apply);
+    client_context->applySettingsChanges(changes_to_apply);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()

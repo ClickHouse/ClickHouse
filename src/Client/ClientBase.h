@@ -271,7 +271,7 @@ protected:
     static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
+    void adjustSettings(ContextMutablePtr context);
 
     /// Initializes the client context.
     void initClientContext();
@@ -288,8 +288,6 @@ protected:
     /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
 
     String default_database;
