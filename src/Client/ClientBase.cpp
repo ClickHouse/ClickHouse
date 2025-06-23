@@ -838,9 +838,10 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
     context->setSettings(settings);
 }
 
-void ClientBase::initClientContext()
+void ClientBase::initClientContext(ContextMutablePtr context)
 {
-    client_context = Context::createCopy(global_context);
+    client_context = context;
+
     client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     client_context->setQuotaClientKey(getClientConfiguration().getString("quota_key", ""));
     client_context->setQueryKindInitial();

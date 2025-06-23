@@ -274,7 +274,7 @@ protected:
     void adjustSettings(ContextMutablePtr context);
 
     /// Initializes the client context.
-    void initClientContext();
+    void initClientContext(ContextMutablePtr context);
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
@@ -341,10 +341,6 @@ protected:
     /// Settings specified via command line args
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
-
-    /// thread status should be destructed before shared context because it relies on process list.
-    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
-    std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
