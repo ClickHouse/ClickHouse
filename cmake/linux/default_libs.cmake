@@ -15,6 +15,12 @@ if (SANITIZE STREQUAL undefined)
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
+include (cmake/libllvmlibc.cmake)
+
+if (EXISTS "${LLVM_LIBC_DIR}")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+endif()
+
 if (NOT EXISTS "${BUILTINS_LIBRARY}")
     set (BUILTINS_LIBRARY "-lgcc")
 endif ()
@@ -25,7 +31,7 @@ if (OS_ANDROID)
 elseif (USE_MUSL)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -llibllvmlibc -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
