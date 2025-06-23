@@ -16,10 +16,17 @@ from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import exec_query_with_retry
+from helpers.config_cluster import minio_secret_key
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+S3_DATA = [
+    "minio_data/archive1.tar",
+    "minio_data/archive2.tar",
+    "minio_data/archive3.tar.gz",
+]
 
 
 def put_s3_file_content(started_cluster, bucket, filename, data):
@@ -53,6 +60,7 @@ def started_cluster():
             "dummy",
             with_minio=True,
             main_configs=[
+                "configs/remote_servers.xml",
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
@@ -94,6 +102,44 @@ def started_cluster():
             },
             main_configs=["configs/use_environment_credentials.xml"],
         )
+        cluster.add_instance(
+            "dummy2",
+            with_minio=True,
+            main_configs=[
+                "configs/remote_servers.xml",
+                "configs/defaultS3.xml",
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+                "configs/blob_log.xml",
+                "configs/filesystem_caches.xml",
+            ],
+            user_configs=[
+                "configs/access.xml",
+                "configs/users.xml",
+                "configs/s3_retry.xml",
+            ],
+        )
+        cluster.add_instance(
+            "dummy_old",
+            with_minio=True,
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="25.3.3.42",
+            stay_alive=True,
+            main_configs=[
+                "configs/remote_servers.xml",
+                "configs/defaultS3.xml",
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+                "configs/blob_log.xml",
+                "configs/filesystem_caches.xml",
+            ],
+            user_configs=[
+                "configs/access.xml",
+                "configs/users.xml",
+                "configs/s3_retry.xml",
+            ],
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -102,6 +148,13 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
         run_s3_mocks(cluster)
+
+        for file in S3_DATA:
+            cluster.minio_client.fput_object(
+                bucket_name=cluster.minio_bucket,
+                object_name=file,
+                file_path=os.path.join(SCRIPT_DIR, file),
+            )
 
         yield cluster
     finally:
@@ -121,7 +174,9 @@ def run_query(instance, query, *args, **kwargs):
     "maybe_auth,positive,compression",
     [
         pytest.param("", True, "auto", id="positive"),
-        pytest.param(f"'minio','{minio_secret_key}',", True, "auto", id="auth_positive"),
+        pytest.param(
+            f"'minio','{minio_secret_key}',", True, "auto", id="auth_positive"
+        ),
         pytest.param("'wrongid','wrongkey',", False, "auto", id="auto"),
         pytest.param("'wrongid','wrongkey',", False, "gzip", id="gzip"),
         pytest.param("'wrongid','wrongkey',", False, "deflate", id="deflate"),
@@ -293,7 +348,9 @@ def test_get_path_with_special(started_cluster, special):
 
 
 # Test put no data to S3.
-@pytest.mark.parametrize("auth", [pytest.param(f"'minio','{minio_secret_key}',", id="minio")])
+@pytest.mark.parametrize(
+    "auth", [pytest.param(f"'minio','{minio_secret_key}',", id="minio")]
+)
 def test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster, str) -> None
     id = uuid.uuid4()
@@ -2519,4 +2576,46 @@ def test_filesystem_cache(started_cluster):
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
+    )
+
+
+def test_archive(started_cluster):
+    id = uuid.uuid4()
+    bucket = started_cluster.minio_bucket
+    table_name = f"test_archive-{id}"
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    node = started_cluster.instances["dummy"]
+    node2 = started_cluster.instances["dummy2"]
+    node_old = started_cluster.instances["dummy_old"]
+
+    function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
+
+    expected_paths = 7
+    expected_paths_list = node.query(f"SELECT distinct(_path) FROM {function}")
+
+    cluster_function_old = f"s3Cluster(cluster_with_old_server, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
+    cluster_function_new = f"s3Cluster(cluster, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
+
+    # Note: max_threads = 1 is used in this test to reduce the change of one replica processing all the files.
+
+    assert expected_paths == int(
+        node.query(f"SELECT uniqExact(_path) FROM {function} SETTINGS max_threads=1")
+    )
+    assert "Failed to get object info" in node.query_and_get_error(
+        f"SELECT count() FROM {cluster_function_old} SETTINGS max_threads=1"
+    )
+    assert expected_paths == int(
+        node.query(
+            f"SELECT uniqExact(_path) FROM {cluster_function_new} SETTINGS max_threads=1",
+        )
+    )
+
+    expected_count = 14
+    assert expected_count == int(
+        node.query(f"SELECT count() FROM {function} SETTINGS max_threads=1")
+    )
+    assert expected_count == int(
+        node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS max_threads=1")
     )
