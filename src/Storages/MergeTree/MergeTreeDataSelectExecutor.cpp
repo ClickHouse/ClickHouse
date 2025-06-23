@@ -823,6 +823,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     index_and_condition.condition,
                     ranges.data_part,
                     ranges.ranges,
+                    ranges.read_hints,
                     settings,
                     reader_settings,
                     mark_cache.get(),
@@ -995,12 +996,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const ContextPtr & context,
+    const std::optional<VectorSearchParameters> & vector_search_parameters,
     LoggerPtr log)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
-            || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
+            || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
+            || (vector_search_parameters.has_value())) /// vector search has filter in the ORDER BY
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
@@ -1610,6 +1613,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
+    const RangesInDataPartReadHints & in_read_hints,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
@@ -1622,7 +1626,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return {ranges, {}};
+        return {ranges, in_read_hints};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -1641,10 +1645,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
+    RangesInDataPartReadHints read_hints = in_read_hints;
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
     if (index_helper->isVectorSimilarityIndex() && !all_match)
     {
-        return {ranges, {}};
+        return {ranges, read_hints};
     }
     else if (index_helper->isVectorSimilarityIndex() && is_pk_range_pruning_revert)
     {
@@ -1671,7 +1676,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         reader_settings);
 
     MarkRanges res;
-    RangesInDataPartReadHints read_hints;
     size_t ranges_size = ranges.size();
 
     if (bulk_filtering)
@@ -1692,7 +1696,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
-            return {res, {}};
+            return {res, read_hints};
 
         auto it = filtered_granules.begin();
         current_granule_num = 0;

@@ -91,6 +91,7 @@ private:
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
+        const RangesInDataPartReadHints & in_read_hints,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
@@ -214,6 +215,7 @@ public:
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
         const ContextPtr & context,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
         LoggerPtr log);
 
     /// Create expression for sampling.

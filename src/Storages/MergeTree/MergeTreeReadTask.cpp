@@ -74,16 +74,23 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
+    auto has_read_hints = read_info->read_hints.ann_search_results.has_value();
     new_readers.main = create_reader(read_info->task_columns.columns, false);
+    if (has_read_hints)
+    {
+        new_readers.main->data_part_info_for_read->setReadHints(
+            read_info->read_hints, read_info->task_columns.columns);
+    }
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
+    {
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
-
-    /// the read hints go into the first prewhere or to the main reader if no prewhere.
-    if (!new_readers.prewhere.empty())
-        new_readers.prewhere[0]->data_part_info_for_read->setReadHints(read_info->read_hints);
-    else
-        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints);
+        if (has_read_hints)
+        {
+            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(
+                read_info->read_hints, pre_columns_per_step);
+        }
+    }
 
     return new_readers;
 }
