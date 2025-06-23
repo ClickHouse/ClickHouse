@@ -32,7 +32,6 @@ import socket
 import string
 import subprocess
 import sys
-import tempfile
 import traceback
 import urllib.parse
 
@@ -1646,9 +1645,13 @@ class TestCase:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         stderr = kill_output
-        stderr += str(
-            self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8"
-        )
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            with open(path, "rb") as stream:
+                content = str(stream.read(), errors="replace", encoding="utf-8")
+                if content:
+                    stderr += f"Path: {path}\n"
+                    stderr += content
+                    stderr += "\n"
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1833,7 +1836,8 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
-        os.remove(self.fatal_sanitizer_log.name)
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
 
@@ -1916,11 +1920,13 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
-        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
-            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir, delete=False
-        )
 
-        log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
+        # NOTE:
+        # - client writes to fatal_sanitizer_prefix
+        # - sanitizers write to fatal_sanitizer_prefix.PID
+        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+
+        log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
 
         for env_name in [
@@ -1931,9 +1937,9 @@ class TestCase:
         ]:
             current_options = os.environ.get(env_name, None)
             if current_options is None:
-                os.environ[env_name] = f"log_path={self.fatal_sanitizer_log.name}"
+                os.environ[env_name] = f"log_path={self.fatal_sanitizer_prefix}"
             elif "log_path=" not in current_options:
-                os.environ[env_name] += f":log_path={self.fatal_sanitizer_log.name}"
+                os.environ[env_name] += f":log_path={self.fatal_sanitizer_prefix}"
 
         os.environ["CLICKHOUSE_CLIENT_OPT"] = (
             os.environ["CLICKHOUSE_CLIENT_OPT"]
