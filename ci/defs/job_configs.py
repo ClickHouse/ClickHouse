@@ -415,18 +415,9 @@ class JobConfigs:
                 "arm_asan, azure, 3/3",
             ],
             requires=[
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 1
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 2
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 3
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 1
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 2
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 3
             ],
         )
     )
