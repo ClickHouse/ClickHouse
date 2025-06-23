@@ -99,4 +99,49 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs ${GREP_CMD} 'license = "' | (${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
+for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | grep -v flatbuffers | grep -v winapi | grep -v r-efi | grep -v prqlc-parser | grep -v thrift | grep -v clickhouse-rs-cityhash | grep -v wasite-0.1.0 | grep -v wit-bindgen-rt | grep -v cursive | grep -v fortanix-sgx | grep -v hdfs-native | grep -v skim | grep -v prqlc | grep -v xi-unicode | grep -v valuable | grep -v roaring | grep -v alloc-stdlib);
+do
+    FOLDER=$(dirname "$dependency")
+    NAME=$(echo "$dependency" | awk -F'/' '{ print $(NF-1) }' | awk -F'-' '{ NF=(NF-1); print $0 }')
+    LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
+    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA';
+    then
+        echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code"
+        exit 1
+    fi
+
+    LICENSE_PATH=""
+    declare -a arr=(
+      "LICENSE"
+      "LICENCE"
+      "LICENSE.md"
+      "LICENSE.txt"
+      "LICENSE.TXT"
+      "COPYING"
+      "LICENSE_APACHE"
+      "LICENSE-APACHE"
+      "license-apache-2.0"
+      "LICENSES/Apache-2.0.txt"
+      "LICENSE-MIT"
+      "LICENSE-MIT.txt"
+      "LICENSE-MIT.md"
+      "LICENSE.MIT"
+    )
+    for possible_path in "${arr[@]}"
+    do
+        if test -f "${FOLDER}/${possible_path}";
+        then
+            LICENSE_PATH="${FOLDER}/${possible_path}"
+            break
+        fi
+    done
+
+    if [ -z "${LICENSE_PATH}" ];
+    then
+        echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
+        ls "$FOLDER"
+        exit 1
+    fi
+
+    echo -e "$NAME\t$LICENSE_TYPE\t$LICENSE_PATH"
+done
