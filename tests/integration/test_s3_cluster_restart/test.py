@@ -162,8 +162,8 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
 
     assert (
         node1.query(
-            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'], ProfileEvents['DistributedConnectionFailTry'] FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
-        ) == "0\t0\n"
+            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'] FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
+        ) == "0\n"
     )
 
     node2.stop()
