@@ -439,7 +439,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         String host = config().getString("host", "localhost");
         String port = config().getString("port", default_port);
 
-        if (is_secure)
+        if (is_secure && !host.starts_with("secure://"))
             host = "secure://" + host;
 
         zk_args.hosts.push_back(host + ":" + port);
