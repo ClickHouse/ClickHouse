@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -63,13 +64,14 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type], settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_, bool optimize_if_transform_const_strings_to_lowcardinality_)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , allow_experimental_variant_type(allow_experimental_variant_type_)
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , optimize_if_transform_const_strings_to_lowcardinality(optimize_if_transform_const_strings_to_lowcardinality_)
     {}
 
     String getName() const override { return name; }
@@ -156,7 +158,7 @@ public:
 
         auto const num_branches = types_of_branches.size();
 
-        if (const_branches_count == num_branches)
+        if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches)
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -552,6 +554,7 @@ private:
     const bool allow_execute_multiif_columnar;
     const bool allow_experimental_variant_type;
     const bool use_variant_as_common_type;
+    const bool optimize_if_transform_const_strings_to_lowcardinality;
 };
 
 }
@@ -616,9 +619,16 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
+    bool allow_execute_multiif_columnar,
+    bool allow_experimental_variant_type,
+    bool use_variant_as_common_type,
+    bool optimize_if_transform_const_strings_to_lowcardinality)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(
+        allow_execute_multiif_columnar,
+        allow_experimental_variant_type,
+        use_variant_as_common_type,
+        optimize_if_transform_const_strings_to_lowcardinality));
 }
-
 }

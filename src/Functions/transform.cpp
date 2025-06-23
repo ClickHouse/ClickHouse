@@ -38,6 +38,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool optimize_if_transform_strings_to_enum;
 }
 
@@ -71,7 +72,9 @@ namespace
         static constexpr auto name = "transform";
         static FunctionPtr create(ContextPtr context)
         {
-            return std::make_shared<FunctionTransform>(!context->getSettingsRef()[Setting::optimize_if_transform_strings_to_enum]);
+            auto const & settings = context->getSettingsRef();
+            auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
+            return std::make_shared<FunctionTransform>(use_low_cardinality_optimisation);
         }
 
         explicit FunctionTransform(bool use_low_cardinality_optimisation_ = false)

@@ -42,6 +42,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool optimize_if_transform_strings_to_enum;
 }
 
@@ -271,10 +272,11 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(
-            context->getSettingsRef()[Setting::allow_experimental_variant_type]
-                && context->getSettingsRef()[Setting::use_variant_as_common_type],
-            !context->getSettingsRef()[Setting::optimize_if_transform_strings_to_enum]);
+        auto const & settings = context->getSettingsRef();
+        auto const use_variant_as_common_type
+            = settings[Setting::allow_experimental_variant_type] && settings[Setting::use_variant_as_common_type];
+        auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
+        return std::make_shared<FunctionIf>(use_variant_as_common_type, use_low_cardinality_optimisation);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool use_low_cardinality_optimisation_ = false)

@@ -1,3 +1,5 @@
+SET optimize_if_transform_const_strings_to_lowcardinality = 1;
+
 SELECT 'With optimize_if_transform_strings_to_enum = 0';
 SET optimize_if_transform_strings_to_enum = 0;
 
