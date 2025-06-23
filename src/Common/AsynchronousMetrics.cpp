@@ -1418,7 +1418,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     if (cpu_pressure)
     {
-        try {
+        try
+        {
             readPressureFile(new_values, "CPU", cpu_pressure.value());
         }
         catch (...)
@@ -1430,7 +1431,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     if (memory_pressure)
     {
-        try 
+        try
         {
             readPressureFile(new_values, "MEM", memory_pressure.value());
         }
@@ -1443,7 +1444,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     if (io_pressure)
     {
-         try 
+        try
         {
             readPressureFile(new_values, "IO", io_pressure.value());
         }
