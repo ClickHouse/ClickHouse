@@ -385,6 +385,7 @@ def test_postgresql_fetch_tables(started_cluster):
     assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
     assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
 
+    node1.query("DROP DATABASE postgres_database")
     cursor.execute(f"DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
