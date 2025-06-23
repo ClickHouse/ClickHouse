@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
+            {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
