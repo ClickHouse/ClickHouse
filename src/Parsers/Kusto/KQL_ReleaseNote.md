@@ -800,10 +800,10 @@ Please note that the functions listed below only take constant parameters for no
  Note: case-insensitive not supported yet
 - **has_all**  (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-all-operator)  
     `Customers|where Occupation has_any ('Skilled','abcd')`  
-     note : subquery not supported yet
+     Note : subquery not supported yet
 - **has _any**  (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-anyoperator)  
     `Customers|where Occupation has_all ('Skilled','abcd')`  
-    note : subquery not supported yet
+    Note : subquery not supported yet
 - **countof**  (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/countoffunction)  
    `Customers | project countof('The cat sat on the mat', 'at')`  
    `Customers | project countof('The cat sat on the mat', 'at', 'normal')`  
@@ -818,7 +818,7 @@ Please note that the functions listed below only take constant parameters for no
 - **extract_all** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractallfunction)  
 
     `Customers | project extract_all('(\\w)(\\w+)(\\w)','The price of PINEAPPLE ice cream is 20')`  
-    note:  captureGroups not supported yet
+    Note:  captureGroups not supported yet
 
 - **split** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/splitfunction)  
     `Customers | project split('aa_bb', '_')`  
@@ -830,13 +830,13 @@ Please note that the functions listed below only take constant parameters for no
 - **strcat_delim**  (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcat-delimfunction)  
     `Customers | project strcat_delim('-', '1', '2', 'A') , 1s)`  
     `Customers | project strcat_delim('-', '1', '2', strcat('A','b'))`  
-    note: only support string now.
+    Note: only support string now.
 
 - **indexof** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/indexoffunction)  
     `Customers | project indexof('abcdefg','cde')`  
     `Customers | project indexof('abcdefg','cde',2)`  
     `Customers | project indexof('abcdefg','cde',6)`  
-    note: length and occurrence not supported yet
+    Note: length and occurrence not supported yet
 
 
 
