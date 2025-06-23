@@ -749,7 +749,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
 void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in)
 {
-    fileHandle.rewind();
+    in.rewind();
     // The shape of this file is:
     // some avg10=0.00 avg60=0.00 avg300=0.00 total=0
     // full avg10=0.00 avg60=0.00 avg300=0.00 total=0
@@ -757,13 +757,13 @@ void readPressureFile(
     // We need the first field to capture whether it's a partial or total stall.
     // We also ignore the time averages as well. Recording the counter (the last field)
     // lets us recreate any average, with better identification of any short spikes
-    while (!fileHandle.eof())
+    while (!in.eof())
     {
-        String stallType;
-        readStringUntilWhitespace(stallType, fileHandle);
+        String stall_type;
+        readStringUntilWhitespace(stall_type, in);
 
         String rest;
-        readStringUntilNewlineInto(rest, fileHandle);
+        readStringUntilNewlineInto(rest, in);
 
         auto pos = rest.find("total=");
         if (pos != String::npos)
@@ -771,11 +771,11 @@ void readPressureFile(
             // total= is 6 chars, skip forward that much.
             auto total = rest.substr(pos + 6);
             uint64_t counter = std::stoull(total);
-            new_values[fmt::format("PSI_{}_{}", fileType, stallType)] = AsynchronousMetricValue(counter,
+            new_values[fmt::format("PSI_{}_{}", type, stall_type)] = AsynchronousMetricValue(counter,
                 "Total microseconds of stall time."
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
-        skipToNextLineOrEOF(fileHandle);
+        skipToNextLineOrEOF(in);
     }
 }
 #endif
