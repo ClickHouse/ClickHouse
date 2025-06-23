@@ -181,12 +181,11 @@ public:
 
     bool hasMutations();
 
-    String getRandomMutation(const uint64_t rand_val);
+    String getRandomMutation(uint64_t rand_val);
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String
-    tableGetRandomPartitionOrPart(const uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
+    String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };
