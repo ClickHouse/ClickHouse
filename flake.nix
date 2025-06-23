@@ -161,7 +161,7 @@
     contrib-miniselect = { url = "github:danlark1/miniselect/be0af6bd0b6eb044d1acc4f754b229972d99903a"; flake = false; };
     contrib-rocksdb = { url = "github:ClickHouse/rocksdb/4d479be3591e7855cecebfb894585e04cd9e4245"; flake = false; };
     contrib-xz = { url = "github:xz-mirror/xz/869b9d1b4edd6df07f819d360d306251f8147353"; flake = false; };
-    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/9ac7062b1860d895fb5a8cbf58c3e9ef8f674b5f"; flake = false; };
+    contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/bc257a88f7c1939f24e0379f14a3589e926c950c"; flake = false; };
     contrib-dragonbox = { url = "github:ClickHouse/dragonbox/923705af6fd953aa948fc175f6020b15f7359838"; flake = false; };
     contrib-fast_float = { url = "github:fastfloat/fast_float/7eae925b51fd0f570ccd5c880c12e3e27a23b86f"; flake = false; };
     contrib-NuRaft = { url = "github:ClickHouse/NuRaft/c01f5cd9e0edb90c4febf49685b962cf0de91833"; flake = false; };
@@ -215,8 +215,8 @@
     contrib-isa-l = { url = "github:ClickHouse/isa-l/9f2b68f05752097f0f16632fc4a9a86950831efd"; flake = false; };
     contrib-c-ares = { url = "github:c-ares/c-ares/d3a507e920e7af18a5efb7f9f1d8044ed4750013"; flake = false; };
     contrib-incbin = { url = "github:graphitemaster/incbin/6e576cae5ab5810f25e2631f2e0b80cbe7dc8cbf"; flake = false; };
-    contrib-usearch = { url = "github:ClickHouse/usearch/07e14f83337b3ad067d2557c88da3501f961b5c6"; flake = false; };
-    contrib-SimSIMD = { url = "github:ClickHouse/SimSIMD/bee6bb499ab526007fc5d5289f1d998aa1eb6249"; flake = false; };
+    contrib-usearch = { url = "github:ClickHouse/usearch/19dc059f0016d815284076cadc24f55baf12aba3"; flake = false; };
+    contrib-SimSIMD = { url = "github:ClickHouse/SimSIMD/401d14fab9edc02e27366bab8443540ba36796b2"; flake = false; };
     contrib-FP16 = { url = "github:Maratyszcza/FP16/0a92994d729ff76a58f692d3028ca1b64b145d91"; flake = false; };
     contrib-aklomp-base64 = { url = "github:aklomp/base64/e77bd70bdd860c52c561568cffb251d88bba064c"; flake = false; };
     contrib-pocketfft = { url = "github:mreineck/pocketfft/f4c1aa8aa9ce79ad39e80f2c9c41b92ead90fda3"; flake = false; };
