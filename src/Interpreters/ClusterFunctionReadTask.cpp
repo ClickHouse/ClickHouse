@@ -58,8 +58,11 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
     {
         writeStringBinary("", out);
 
-        SerializedSetsRegistry registry;
-        ActionsDAG().serialize(out, registry);
+        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
+        {
+            SerializedSetsRegistry registry;
+            ActionsDAG().serialize(out, registry);
+        }
         return;
     }
 
