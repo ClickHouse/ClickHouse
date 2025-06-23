@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: fails due to additional shard.
+
 DROP TABLE IF EXISTS t_detach_attach_patches SYNC;
 DROP TABLE IF EXISTS t_detach_attach_patches_dst SYNC;
 

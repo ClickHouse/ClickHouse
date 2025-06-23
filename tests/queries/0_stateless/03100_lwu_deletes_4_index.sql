@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: read_rows in query_log differs because of replicated database.
+
 DROP TABLE IF EXISTS t_lwd_index SYNC;
 
 CREATE TABLE t_lwd_index (id UInt64)

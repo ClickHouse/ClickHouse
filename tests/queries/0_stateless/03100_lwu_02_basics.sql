@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: SYSTEM STOP MERGES works only on one replica.
+
 SET insert_keeper_fault_injection_probability = 0.0;
 SET allow_experimental_lightweight_update = 1;
 

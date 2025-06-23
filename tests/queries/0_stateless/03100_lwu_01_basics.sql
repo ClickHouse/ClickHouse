@@ -1,5 +1,6 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-replicated-database
 -- no-parallel-replicas: profile events may differ with parallel replicas.
+-- no-replicated-database: fails due to additional shard.
 
 SET insert_keeper_fault_injection_probability = 0.0;
 SET allow_experimental_lightweight_update = 1;
