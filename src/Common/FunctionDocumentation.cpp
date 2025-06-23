@@ -31,11 +31,13 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 
         String type = unmodified_type;
         bool is_const = type.starts_with("const ");
-        
-        if (is_const) {
+
+        if (is_const)
+        {
             type = type.substr(6); // Remove "const " prefix
             result += "const [`";
-        } else {
+        } else
+        {
             result += "[`" + type;
         }
 

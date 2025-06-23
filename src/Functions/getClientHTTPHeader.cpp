@@ -95,13 +95,13 @@ If the function is used in the context of a distributed query, it returns non-em
         {"name", "The HTTP header name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The value of the header", {"String"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::Examples example = {
         {"Usage example", "SELECT getClientHTTPHeader('Content-Type')", "application/x-www-form-urlencoded"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, {}, introduced_in, category};
-    
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
     factory.registerFunction("getClientHTTPHeader",
         [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
         documentation);
