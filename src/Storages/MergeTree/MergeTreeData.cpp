@@ -7352,6 +7352,9 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 {
     if (!isEmpty())
     {
+        if (data.isSharedStorage())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rollback non-empty precommitted_parts to Outdated state in SMT, it's a bug");
+
         for (const auto & part : precommitted_parts)
             part->version.creation_csn.store(Tx::RolledBackCSN);
 
