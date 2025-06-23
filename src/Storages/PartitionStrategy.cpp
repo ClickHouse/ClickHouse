@@ -106,8 +106,32 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File format can't be empty for hive style partitioning");
         }
 
+        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
+
+        for (const auto & partition_expression_column : partition_key_description.sample_block)
+        {
+            if (!sample_block.has(partition_expression_column.name))
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Hive partitioning expects that the partition by expression columns are a part of the storage columns, could not find '{}' in storage",
+                    partition_expression_column.name);
+            }
+
+            const auto & type = partition_expression_column.type;
+            const bool is_type_supported = isInteger(type) || isDate(type) || isDateTime(type) || isStringOrFixedString(type);
+
+            if (!is_type_supported)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Hive partitioning supports only partition columns of types: Integer, Date, DateTime and String/FixedString. Found '{}'",
+                    type->getName());
+            }
+        }
+
         return std::make_shared<HiveStylePartitionStrategy>(
-            partition_by,
+            partition_key_description,
             sample_block,
             context,
             file_format,
@@ -133,20 +157,21 @@ namespace
         // in theory, we should not accept wildcard partition strategy without a wildcard in the path
         // but it has been made that way by default, it just won't include the partition id in the filepath
 
-        return std::make_shared<WildcardPartitionStrategy>(partition_by, sample_block, context);
+        return std::make_shared<WildcardPartitionStrategy>(
+            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context),
+            sample_block,
+            context);
     }
 }
 
-PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
-: partition_by(partition_by_), sample_block(sample_block_), context(context_)
+PartitionStrategy::PartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
+: partition_key_description(partition_key_description_), sample_block(sample_block_), context(context_)
 {
-    auto key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
-    partition_columns = key_description.sample_block.getNamesAndTypesList();
 }
 
-const NamesAndTypesList & PartitionStrategy::getPartitionColumns() const
+NamesAndTypesList PartitionStrategy::getPartitionColumns() const
 {
-    return partition_columns;
+    return partition_key_description.sample_block.getNamesAndTypesList();
 }
 
 std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
@@ -195,10 +220,10 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
     return get(strategy, partition_by, block, context, file_format, globbed_path, partition_columns_in_data_file);
 }
 
-WildcardPartitionStrategy::WildcardPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_)
-    : PartitionStrategy(partition_by_, sample_block_, context_)
+WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
+    : PartitionStrategy(partition_key_description_, sample_block_, context_)
 {
-    ASTs arguments(1, partition_by);
+    ASTs arguments(1, partition_key_description_.definition_ast);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
     auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
     actions_with_column_name.actions = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
@@ -228,20 +253,21 @@ std::string WildcardPartitionStrategy::getPathForWrite(
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
-    ASTPtr partition_by_,
+    KeyDescription partition_key_description_,
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
     bool partition_columns_in_data_file_)
-    : PartitionStrategy(partition_by_, sample_block_, context_),
+    : PartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
     partition_columns_in_data_file(partition_columns_in_data_file_)
 {
+    const auto partition_columns = getPartitionColumns();
     for (const auto & partition_column : partition_columns)
     {
         partition_columns_name_set.insert(partition_column.name);
     }
-    actions_with_column_name = buildExpressionHive(partition_by, partition_columns, sample_block, context);
+    actions_with_column_name = buildExpressionHive(partition_key_description.definition_ast, partition_columns, sample_block, context);
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
 }
 

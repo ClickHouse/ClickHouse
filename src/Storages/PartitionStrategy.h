@@ -2,7 +2,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
-
+#include <Storages/KeyDescription.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -23,7 +23,7 @@ struct PartitionStrategy
         std::string column_name;
     };
 
-    PartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
+    PartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
     virtual ~PartitionStrategy() = default;
 
@@ -36,13 +36,12 @@ struct PartitionStrategy
 
     virtual Block getFormatHeader() { return sample_block; }
 
-    const NamesAndTypesList & getPartitionColumns() const;
+    NamesAndTypesList getPartitionColumns() const;
 
 protected:
-    ASTPtr partition_by;
+    KeyDescription partition_key_description;
     Block sample_block;
     ContextPtr context;
-    NamesAndTypesList partition_columns;
 };
 
 /*
@@ -83,7 +82,7 @@ struct PartitionStrategyFactory
  */
 struct WildcardPartitionStrategy : PartitionStrategy
 {
-    WildcardPartitionStrategy(ASTPtr partition_by_, const Block & sample_block_, ContextPtr context_);
+    WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
     ColumnPtr computePartitionKey(const Chunk & chunk) override;
     std::string getPathForRead(const std::string & prefix) override;
@@ -101,7 +100,7 @@ private:
 struct HiveStylePartitionStrategy : PartitionStrategy
 {
     HiveStylePartitionStrategy(
-        ASTPtr partition_by_,
+        KeyDescription partition_key_description_,
         const Block & sample_block_,
         ContextPtr context_,
         const std::string & file_format_,

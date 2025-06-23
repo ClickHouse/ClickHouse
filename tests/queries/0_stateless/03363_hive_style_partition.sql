@@ -95,3 +95,13 @@ ENGINE = S3(s3_conn, filename = 't_03363_parquet', format=Parquet, partition_col
 select * from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=Parquet, partition_strategy='hive'); -- {serverError BAD_ARGUMENTS}
 
 DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;
+
+-- do not support expressions in hive partitioning
+CREATE TABLE t_invalid_expression (year UInt16, country String, counter UInt8)
+                                  ENGINE = S3(s3_conn, filename = 'invalid', format = Parquet, partition_strategy='hive')
+                                  PARTITION BY toString(year); -- {serverError BAD_ARGUMENTS}
+
+-- floating types not supported
+CREATE TABLE t_invalid_expression (year UInt16, country String, counter Float64)
+                                  ENGINE = S3(s3_conn, filename = 'invalid', format = Parquet, partition_strategy='hive')
+                                  PARTITION BY counter; -- {serverError BAD_ARGUMENTS}
