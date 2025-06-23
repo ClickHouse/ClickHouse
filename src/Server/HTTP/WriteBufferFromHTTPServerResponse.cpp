@@ -53,8 +53,6 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
     accumulated_progress.writeJSON(progress_string_writer);
     progress_string_writer.finalize();
 
-    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "writeHeaderProgress {}", progress_string_writer.str());
-
     socketSendBytes(header_name, strlen(header_name));
     socketSendBytes(progress_string_writer.str().data(), progress_string_writer.str().size());
     socketSendBytes("\r\n", 2);
@@ -118,11 +116,6 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    LOG_DEBUG(getLogger("WriteBufferFromHTTPServerResponse"), "nextImpl, out count {}, offset {}", count(), offset());
-
-    if (!offset())
-        return;
-
     {
         std::lock_guard lock(mutex);
         startSendHeaders();
