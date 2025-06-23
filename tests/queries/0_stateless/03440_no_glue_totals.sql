@@ -4,4 +4,4 @@ SET output_format_pretty_squash_consecutive_ms = 0;
 SET max_threads = 2;
 SET max_block_size = 1;
 
-SELECT number, count() FROM numbers(5) GROUP BY number WITH TOTALS ORDER BY number FORMAT PrettyCompact;
+SELECT number, count() FROM numbers(5) GROUP BY number WITH TOTALS ORDER BY number, sleep(0.01) FORMAT PrettyCompact;
