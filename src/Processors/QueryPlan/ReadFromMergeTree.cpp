@@ -2003,9 +2003,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, context_, log);
+
         auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
+
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            std::move(parts),
+            parts,
             metadata_snapshot,
             context_,
             indexes->key_condition,
@@ -2020,14 +2023,104 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal());
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
-
         if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
             add_index_stat_row_for_pk_expand = true;
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            RangesInDataParts remaining;
+
+            auto it_parts = parts.begin();
+            auto it_result = result.parts_with_ranges.begin();
+
+            while (it_parts != parts.end())
+            {
+                if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
+                {
+                    auto & full_ranges = it_parts->ranges;
+                    const auto & kept_ranges = it_result->ranges;
+
+                    MarkRanges diff_ranges;
+
+                    auto it_full = full_ranges.begin();
+                    auto it_kept = kept_ranges.begin();
+
+                    while (it_full != full_ranges.end())
+                    {
+                        if (it_kept == kept_ranges.end() || it_full->end <= it_kept->begin)
+                        {
+                            /// full range is completely before kept range, keep it
+                            diff_ranges.push_back(*it_full);
+                            ++it_full;
+                        }
+                        else if (it_full->begin >= it_kept->end)
+                        {
+                            /// full range is completely after kept range, move to next kept
+                            ++it_kept;
+                        }
+                        else
+                        {
+                            /// overlap, need to slice
+                            if (it_full->begin < it_kept->begin)
+                                diff_ranges.push_back({it_full->begin, it_kept->begin});
+
+                            if (it_full->end > it_kept->end)
+                            {
+                                /// adjust full range and check next kept range
+                                *it_full = {it_kept->end, it_full->end};
+                                ++it_kept;
+                            }
+                            else
+                            {
+                                /// fully covered or trimmed
+                                ++it_full;
+                            }
+                        }
+                    }
+
+                    if (!diff_ranges.empty())
+                    {
+                        remaining.emplace_back(
+                            it_parts->data_part,
+                            it_parts->parent_part,
+                            it_parts->part_index_in_query,
+                            it_parts->part_starting_offset_in_query,
+                            std::move(diff_ranges));
+                    }
+
+                    ++it_parts;
+                    ++it_result;
+                }
+                else
+                {
+                    /// part was erased entirely, keep it whole
+                    remaining.push_back(*it_parts);
+                    ++it_parts;
+                }
+            }
+
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            for (const auto & remaining_ranges : remaining)
+            {
+                auto data_part = remaining_ranges.data_part;
+                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                                                 : data_part->name;
+                query_condition_cache->write(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    output->getHash(),
+                    reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
+                    remaining_ranges.ranges,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark());
+            }
         }
     }
 

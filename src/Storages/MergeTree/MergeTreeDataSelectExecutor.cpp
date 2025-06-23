@@ -1240,22 +1240,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (marks_count == 0)
         return res;
 
-    bool has_final_mark = part->index_granularity->hasFinalMark();
-
     bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
     bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
     bool total_offset_condition_useful = total_offset_condition && !total_offset_condition->alwaysUnknownOrTrue();
 
     /// If index is not used.
     if (!key_condition_useful && !part_offset_condition_useful && !total_offset_condition_useful)
-    {
-        if (has_final_mark)
-            res.push_back(MarkRange(0, marks_count - 1));
-        else
-            res.push_back(MarkRange(0, marks_count));
-
-        return res;
-    }
+        return part_with_ranges.ranges;
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -1432,52 +1423,55 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-        /// At each step, take the left segment and check if it fits.
-        /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-        /// If the segment is already of one mark length, add it to response and discard it.
-        std::vector<MarkRange> ranges_stack = { {0, marks_count - (has_final_mark ? 1 : 0)} };
-
         size_t steps = 0;
 
-        while (!ranges_stack.empty())
+        for (const auto & part_range : part_with_ranges.ranges)
         {
-            MarkRange range = ranges_stack.back();
-            ranges_stack.pop_back();
+            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
+            /// At each step, take the left segment and check if it fits.
+            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
+            /// If the segment is already of one mark length, add it to response and discard it.
 
-            ++steps;
-
-            auto result
-                = check_in_range(range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
-            if (!result.can_be_true)
-                continue;
-
-            if (range.end == range.begin + 1)
+            std::vector<MarkRange> ranges_stack = {part_range};
+            while (!ranges_stack.empty())
             {
-                /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                    res.push_back(range);
-                else
-                    res.back().end = range.end;
+                MarkRange range = ranges_stack.back();
+                ranges_stack.pop_back();
 
-                if (exact_ranges && !result.can_be_false)
+                ++steps;
+
+                auto result = check_in_range(
+                    range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
+                if (!result.can_be_true)
+                    continue;
+
+                if (range.end == range.begin + 1)
                 {
-                    if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                        exact_ranges->push_back(range);
+                    /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
+                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
+                        res.push_back(range);
                     else
-                        exact_ranges->back().end = range.end;
+                        res.back().end = range.end;
+
+                    if (exact_ranges && !result.can_be_false)
+                    {
+                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
+                            exact_ranges->push_back(range);
+                        else
+                            exact_ranges->back().end = range.end;
+                    }
                 }
-            }
-            else
-            {
-                /// Break the segment and put the result on the stack from right to left.
-                size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                size_t end;
+                else
+                {
+                    /// Break the segment and put the result on the stack from right to left.
+                    size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
+                    size_t end;
 
-                for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.emplace_back(end - step, end);
+                    for (end = range.end; end > range.begin + step; end -= step)
+                        ranges_stack.emplace_back(end - step, end);
 
-                ranges_stack.emplace_back(range.begin, end);
+                    ranges_stack.emplace_back(range.begin, end);
+                }
             }
         }
 
@@ -1502,81 +1496,84 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         size_t steps = 0;
 
-        MarkRange result_range;
-
-        size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
-        size_t searched_left = 0;
-        size_t searched_right = last_mark;
-
-        bool check_left = false;
-        bool check_right = false;
-        while (searched_left + 1 < searched_right)
+        for (const auto & part_range : part_with_ranges.ranges)
         {
-            const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(0, middle);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
-                searched_right = middle;
-            else
-                searched_left = middle;
-            ++steps;
-            check_left = true;
-        }
-        result_range.begin = searched_left;
-        LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            MarkRange result_range;
 
-        searched_right = last_mark;
-        while (searched_left + 1 < searched_right)
-        {
-            const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(middle, last_mark);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
-                searched_left = middle;
-            else
-                searched_right = middle;
-            ++steps;
-            check_right = true;
-        }
-        result_range.end = searched_right;
-        LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            size_t last_mark = part_range.end;
+            size_t searched_left = part_range.begin;
+            size_t searched_right = part_range.end;
 
-        if (result_range.begin < result_range.end)
-        {
-            if (exact_ranges)
+            bool check_left = false;
+            bool check_right = false;
+            while (searched_left + 1 < searched_right)
             {
-                if (result_range.begin + 1 == result_range.end)
+                const size_t middle = (searched_left + searched_right) / 2;
+                MarkRange range(0, middle);
+                if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+                    searched_right = middle;
+                else
+                    searched_left = middle;
+                ++steps;
+                check_left = true;
+            }
+            result_range.begin = searched_left;
+            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+
+            searched_right = last_mark;
+            while (searched_left + 1 < searched_right)
+            {
+                const size_t middle = (searched_left + searched_right) / 2;
+                MarkRange range(middle, last_mark);
+                if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+                    searched_left = middle;
+                else
+                    searched_right = middle;
+                ++steps;
+                check_right = true;
+            }
+            result_range.end = searched_right;
+            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+
+            if (result_range.begin < result_range.end)
+            {
+                if (exact_ranges)
                 {
-                    auto check_result = check_in_range(result_range);
-                    if (check_result.can_be_true)
+                    if (result_range.begin + 1 == result_range.end)
                     {
-                        if (!check_result.can_be_false)
-                            exact_ranges->emplace_back(result_range);
+                        auto check_result = check_in_range(result_range);
+                        if (check_result.can_be_true)
+                        {
+                            if (!check_result.can_be_false)
+                                exact_ranges->emplace_back(result_range);
+                            res.emplace_back(std::move(result_range));
+                        }
+                    }
+                    else
+                    {
+                        /// Candidate range with size > 1 is already can_be_true
+                        auto result_exact_range = result_range;
+                        if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                            ++result_exact_range.begin;
+
+                        if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                            --result_exact_range.end;
+
+                        if (result_exact_range.begin < result_exact_range.end)
+                        {
+                            chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
+                            exact_ranges->emplace_back(std::move(result_exact_range));
+                        }
+
                         res.emplace_back(std::move(result_range));
                     }
                 }
                 else
                 {
-                    /// Candidate range with size > 1 is already can_be_true
-                    auto result_exact_range = result_range;
-                    if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
-                        ++result_exact_range.begin;
-
-                    if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
-                        --result_exact_range.end;
-
-                    if (result_exact_range.begin < result_exact_range.end)
-                    {
-                        chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
-                        exact_ranges->emplace_back(std::move(result_exact_range));
-                    }
-
-                    res.emplace_back(std::move(result_range));
+                    /// Candidate range with both ends checked is already can_be_true
+                    if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
+                        res.emplace_back(std::move(result_range));
                 }
-            }
-            else
-            {
-                /// Candidate range with both ends checked is already can_be_true
-                if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
-                    res.emplace_back(std::move(result_range));
             }
         }
 

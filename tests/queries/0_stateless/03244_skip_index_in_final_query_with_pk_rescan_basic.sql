@@ -1,6 +1,7 @@
 -- Tags: no-random-settings
 -- Testcase from https://github.com/ClickHouse/ClickHouse/pull/34243
 
+SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS data_02201;
 
 CREATE TABLE data_02201 (

@@ -1,3 +1,4 @@
+SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 

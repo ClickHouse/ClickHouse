@@ -2,6 +2,8 @@
 
 -- Tests that match() utilizes the inverted index
 
+SET use_query_condition_cache = 0;
+
 SET allow_experimental_full_text_index = true;
 
 DROP TABLE IF EXISTS tab;

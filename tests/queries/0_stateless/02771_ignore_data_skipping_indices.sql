@@ -1,5 +1,6 @@
-DROP TABLE IF EXISTS data_02771;
+SET use_query_condition_cache = 0;
 
+DROP TABLE IF EXISTS data_02771;
 
 CREATE TABLE data_02771
 (
