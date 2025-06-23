@@ -386,6 +386,9 @@ def main():
                 stopwatch=sw_,
             )
         )
+        CH.check_log_patterns()
+        assert False
+
         # fatal failures found in logs represented as normal test cases
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []

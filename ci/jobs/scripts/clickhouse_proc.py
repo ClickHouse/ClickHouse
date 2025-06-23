@@ -955,10 +955,8 @@ quit
             "minio_server_logs",
         ]
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
-        # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
-
         command_args += " --config-file=/etc/clickhouse-server/config.xml"
         # Change log files for local in config.xml as command args do not override
         Shell.check(
@@ -1022,6 +1020,33 @@ quit
                     )
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
+
+    def check_log_patterns(self):
+        command_args = self.LOGS_SAVER_CLIENT_OPTIONS
+        command_args += " --only-system-tables --stacktrace"
+        # we need disk definitions for S3 configurations, but it is OK to always use server config
+        command_args += " --config-file=/etc/clickhouse-server/config.xml"
+        # Change log files for local in config.xml as command args do not override
+        Shell.check(
+            f"sed -i 's|<log>.*</log>|<log>{self.CH_LOCAL_LOG}</log>|' /etc/clickhouse-server/config.xml"
+        )
+        Shell.check(
+            f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
+        )
+        # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
+        # the problem is that whenever we need disks all disks will be
+        # initialized [1])
+        #
+        #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
+        path_arg = f" --path {self.run_path0}"
+        res, stdout, stderr = Shell.get_res_stdout_stderr(f"clickhouse local {command_args} {path_arg} {command_args_post} < ./ci/jobs/scripts/functional_tests/check_logs.sql")
+        print(stdout)
+        print(stderr)
+        return res
 
 
 if __name__ == "__main__":
