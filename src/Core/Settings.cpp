@@ -5578,6 +5578,13 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, query_plan_rewrite_order_by_limit, true, R"(
+Use query plan rewrite for optimize order by limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_rewrite_order_by_limit, 1000000, R"(Control maximum limit value that allows to rewrite query plan for optimize order by limit. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_to_use_rewrite_order_by_limit, 50, R"(Control minimum columns that allows to rewrite query plan for optimize order by limit.
+)", 0) \
     DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan.", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
@@ -7195,7 +7202,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
 
 // clang-format on
 
@@ -7251,7 +7258,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile[")) /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));

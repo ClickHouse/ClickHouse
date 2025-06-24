@@ -198,6 +198,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"query_plan_remove_redundant_distinct", trueOrFalseSetting},
     {"query_plan_remove_redundant_sorting", trueOrFalseSetting},
     {"query_plan_reuse_storage_ordering_for_window_functions", trueOrFalseSetting},
+    {"query_plan_rewrite_order_by_limit", trueOrFalseSetting},
     {"query_plan_split_filter", trueOrFalseSetting},
     {"query_plan_try_use_vector_search", trueOrFalseSetting},
     {"read_in_order_two_level_merge_threshold",
