@@ -393,13 +393,7 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
-        return false;
-
-    return true;
+    return node->isDeterministic();
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)

@@ -70,7 +70,7 @@ size_t tryPushDownOrderByLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     if (!sort_column_from_read || !sort_column_from_read->type->equals(*sort_column.type))
         return 0;
 
-    read_from_mergetree_step->setTopNColumn({sort_description.front().column_name_in_storage, sort_column.type});
+    read_from_mergetree_step->setTopNFilterParams({sort_description.front().column_name_in_storage, sort_column.type, n});
 
     return 0;
 }

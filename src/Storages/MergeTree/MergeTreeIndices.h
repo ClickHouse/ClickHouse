@@ -95,6 +95,16 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
+struct TopNFilterParameters
+{
+    String column;
+    DataTypePtr type;
+    size_t limit;
+    size_t condition_hash;
+
+    TopNFilterParameters(String column_, DataTypePtr type_, size_t limit_);
+};
+
 /// A vehicle which transports elements of the SELECT query to the vector similarity index.
 struct VectorSearchParameters
 {

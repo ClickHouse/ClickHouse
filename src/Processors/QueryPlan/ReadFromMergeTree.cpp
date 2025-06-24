@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -58,7 +59,7 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
-
+#include <boost/functional/hash.hpp>
 #include <fmt/ranges.h>
 
 #include "config.h"
@@ -1687,6 +1688,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
+        top_n_filter_params,
         vector_search_parameters,
         storage_snapshot->metadata,
         query_info,
@@ -1901,6 +1903,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    std::optional<TopNFilterParameters> & top_n_filter_params,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
@@ -2005,7 +2008,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, context_, log);
+        if (top_n_filter_params)
+        {
+            SipHash hash;
+            for (const auto & part : parts)
+            {
+                hash.update(part.data_part->name.size());
+                hash.update(part.data_part->name);
+            }
+
+            boost::hash_combine(top_n_filter_params->condition_hash, hash.get64());
+        }
+
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, top_n_filter_params, query_info_, context_, log);
 
         auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
 
@@ -2033,8 +2048,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             add_index_stat_row_for_pk_expand = true;
         }
 
-        /// Fill query condition cache with ranges excluded by index analysis.
+        std::optional<size_t> condition_hash;
+
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+                condition_hash = outputs.front()->getHash();
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (condition_hash)
         {
             RangesInDataParts remaining;
 
@@ -2117,7 +2141,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
-                    output->getHash(),
+                    *condition_hash,
                     reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
@@ -2521,7 +2545,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
 
-    if (top_n_column)
+    if (prewhere_info)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    continue;
+
+                prewhere_info->condition_hash = output->getHash();
+                break;
+            }
+        }
+    }
+
+    if (top_n_filter_params)
     {
         auto global_threshold_columns_ptr = std::make_shared<GlobalThresholdColumns>();
         FunctionOverloadResolverPtr func_builder_top_n = createInternalFunctionTopN(global_threshold_columns_ptr);
@@ -2533,11 +2572,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             {
                 for (const auto & input : prewhere_info->prewhere_actions.getInputs())
                 {
-                    if (input->result_name == top_n_column->name)
+                    if (input->result_name == top_n_filter_params->column)
                         return input;
                 }
 
-                const auto & in = prewhere_info->prewhere_actions.addInput(top_n_column->name, top_n_column->type);
+                const auto & in = prewhere_info->prewhere_actions.addInput(top_n_filter_params->column, top_n_filter_params->type);
                 prewhere_info->prewhere_actions.addOrReplaceInOutputs(in);
                 return &in;
             }();
@@ -2571,17 +2610,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             }
 
             prewhere_info->need_filter = true;
+            prewhere_info->top_n_condition_hash = top_n_filter_params->condition_hash;
+            boost::hash_combine(*prewhere_info->top_n_condition_hash, *prewhere_info->condition_hash);
         }
         else
         {
             prewhere_info = std::make_shared<PrewhereInfo>();
-            prewhere_info->prewhere_actions = ActionsDAG({*top_n_column});
+            prewhere_info->prewhere_actions = ActionsDAG({{top_n_filter_params->column, top_n_filter_params->type}});
             const auto & prewhere_node = prewhere_info->prewhere_actions.addFunction(
                 func_builder_top_n, {prewhere_info->prewhere_actions.getInputs().front()}, {});
             prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
             prewhere_info->prewhere_column_name = prewhere_node.result_name;
             prewhere_info->remove_prewhere_column = true;
             prewhere_info->need_filter = true;
+            prewhere_info->top_n_condition_hash = top_n_filter_params->condition_hash;
         }
 
         prewhere_info->global_threshold_columns_ptr = std::move(global_threshold_columns_ptr);

@@ -976,6 +976,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
+    const std::optional<TopNFilterParameters> & top_n_filter_params,
     const SelectQueryInfo & select_query_info,
     const ContextPtr & context,
     LoggerPtr log)
@@ -994,9 +995,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges =[&](const ActionsDAG::Node * dag)
+    auto drop_mark_ranges =[&](size_t condition_hash)
     {
-        size_t condition_hash = dag->getHash();
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1050,27 +1050,55 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return stats;
     };
 
+    std::optional<size_t> prewhere_condition_hash;
+    std::optional<String> prewhere_column_name;
     if (const auto & prewhere_info = select_query_info.prewhere_info)
     {
-        for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
         {
-            if (outputs->result_name == prewhere_info->prewhere_column_name)
+            if (output->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs);
-                LOG_DEBUG(log,
-                        "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
-                        stats.granules_dropped,
-                        stats.total_granules,
-                        prewhere_info->prewhere_column_name);
+                prewhere_condition_hash = output->getHash();
+                prewhere_column_name = prewhere_info->prewhere_column_name;
+                auto stats = drop_mark_ranges(*prewhere_condition_hash);
+                LOG_DEBUG(
+                    log,
+                    "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
+                    stats.granules_dropped,
+                    stats.total_granules,
+                    *prewhere_column_name);
+
                 break;
             }
+        }
+    }
+
+    if (top_n_filter_params)
+    {
+        size_t condition_hash = top_n_filter_params->condition_hash;
+        if (prewhere_condition_hash)
+            boost::hash_combine(condition_hash, *prewhere_condition_hash);
+
+        auto stats = drop_mark_ranges(condition_hash);
+        if (prewhere_column_name)
+        {
+            LOG_DEBUG(log,
+                      "Query condition cache has dropped {}/{} granules for PREWHERE condition {} with Top N filter.",
+                      stats.granules_dropped,
+                      stats.total_granules,
+                      *prewhere_column_name);
+        }
+        else
+        {
+            LOG_DEBUG(
+                log, "Query condition cache has dropped {}/{} granules for Top N filter.", stats.granules_dropped, stats.total_granules);
         }
     }
 
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output);
+        auto stats = drop_mark_ranges(output->getHash());
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
@@ -1126,10 +1154,12 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     if (total_parts == 0)
         return std::make_shared<ReadFromMergeTree::AnalysisResult>();
 
+    std::optional<TopNFilterParameters> top_n_filter_params;
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         mutations_snapshot,
+        top_n_filter_params,
         std::nullopt,
         metadata_snapshot,
         query_info,
