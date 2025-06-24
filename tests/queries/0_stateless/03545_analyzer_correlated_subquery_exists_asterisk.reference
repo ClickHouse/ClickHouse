@@ -41,21 +41,21 @@ Positions: 0
             Type: INNER
             Strictness: ALL
             Algorithm: HashJoin
-            Clauses: [(__table4.i2) = (__table1.i1)]
+            Clauses: [(__table1.i1) = (__table4.i2)]
               Expression (Change column names to column identifiers)
               Actions: INPUT : 0 -> i1 Int64 : 0
-                       INPUT : 1 -> i2 Int64 : 1
-                       ALIAS i1 :: 0 -> __table4.i1 Int64 : 2
-                       ALIAS i2 :: 1 -> __table4.i2 Int64 : 0
-              Positions: 2 0
+                       ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
+              Positions: 1
                 ReadFromMergeTree (default.test)
                 ReadType: Default
                 Parts: 1
                 Granules: 1
               Expression (Change column names to column identifiers)
               Actions: INPUT : 0 -> i1 Int64 : 0
-                       ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
-              Positions: 1
+                       INPUT : 1 -> i2 Int64 : 1
+                       ALIAS i1 :: 0 -> __table4.i1 Int64 : 2
+                       ALIAS i2 :: 1 -> __table4.i2 Int64 : 0
+              Positions: 2 0
                 ReadFromMergeTree (default.test)
                 ReadType: Default
                 Parts: 1
