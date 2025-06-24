@@ -1,6 +1,9 @@
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 
+-- Disable table swaps during query planning
+SET query_plan_join_swap_table = false;
+
 CREATE TABLE test(
     i1 Int64,
     i2 Int64,
