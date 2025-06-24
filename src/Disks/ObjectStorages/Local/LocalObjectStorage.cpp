@@ -204,14 +204,6 @@ void LocalObjectStorage::throwIfReadonly() const
         throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
 }
 
-std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
-    const std::string & /* new_namespace */,
-    const Poco::Util::AbstractConfiguration & /* config */,
-    const std::string & /* config_prefix */, ContextPtr /* context */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for LocalObjectStorage");
-}
-
 ObjectStorageKey
 LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
