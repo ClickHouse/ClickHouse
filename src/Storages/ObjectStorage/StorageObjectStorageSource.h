@@ -2,6 +2,7 @@
 #include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -14,8 +15,6 @@ namespace DB
 {
 
 class SchemaCache;
-
-using ReadTaskCallback = std::function<String()>;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
@@ -155,7 +154,7 @@ class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator, pri
 {
 public:
     ReadTaskIterator(
-        const ReadTaskCallback & callback_,
+        const ClusterFunctionReadTaskCallback & callback_,
         size_t max_threads_count,
         bool is_archive_,
         ObjectStoragePtr object_storage_,
@@ -168,7 +167,7 @@ public:
 private:
     ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
-    ReadTaskCallback callback;
+    ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
     bool is_archive;
