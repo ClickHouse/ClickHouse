@@ -144,7 +144,7 @@ REGISTER_FUNCTION(ArrayCumSumNonNegative)
     FunctionDocumentation::Description description = "Returns an array of the partial (running) sums of the elements in the source array, replacing any negative running sum with zero. If a lambda function is specified, the sum is computed from applying the lambda to the array elements at each position.";
     FunctionDocumentation::Syntax syntax = "arrayCumSumNonNegative([func,] arr1[, arr2, ... , arrN])";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "Optional. A lambda function to apply to the array elements at each position.", {"Lambda"}},
+        {"func", "Optional. A lambda function to apply to the array elements at each position.", {"Lambda function"}},
         {"arr1", "The source array of numeric values.", {"Array(T)"}},
         {"[arr2, ..., arrN]", "Optional. Additional arrays of the same size, passed as arguments to the lambda function if specified.", {"Array(T)"}}
     };

@@ -32,9 +32,7 @@ import socket
 import string
 import subprocess
 import sys
-import tempfile
 import traceback
-from functools import cache
 import urllib.parse
 
 # for crc32
@@ -288,9 +286,6 @@ class SharedEngineReplacer:
     ):
         self.args = args
         self.file_name = file_name
-        self.temp_file_path = "{0}.{2}{1}".format(
-            *os.path.splitext(file_name), os.getpid()
-        )
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
         self.reference_file = reference_file
@@ -301,6 +296,9 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
+        self.temp_file_path = "{0}.{2}{1}".format(
+            *os.path.splitext(file_name), os.getpid()
+        )
         shutil.copy2(self.file_name, self.temp_file_path)
 
         with (
@@ -1219,16 +1217,32 @@ def replace_in_file(filename, what, with_what):
         f.write(data.replace(what.encode(), with_what.encode()))
 
 
-@cache
-def is_old_analyzer_used():
+def replace_in_file_re(filename, what, with_what):
+    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
+
+
+# unlike functools.cache() ignore args
+# (since args can be non-hashable)
+def cache_ignore_args(func):
+    cached_result = None
+    has_result = False
+
+    def wrapper(*args, **kwargs):
+        nonlocal cached_result, has_result
+        if not has_result:
+            cached_result = func(*args, **kwargs)
+            has_result = True
+        return cached_result
+
+    return wrapper
+
+
+@cache_ignore_args
+def is_old_analyzer_used(args):
     return (
         clickhouse_execute(args, "SELECT getSetting('enable_analyzer')").strip()
         == b"false"
     )
-
-
-def replace_in_file_re(filename, what, with_what):
-    os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
 class TestResult:
@@ -1267,14 +1281,14 @@ class TestCase:
         return description
 
     @staticmethod
-    def get_reference_file(suite_dir, name):
+    def get_reference_file(args, suite_dir, name):
         """
         Returns reference file name for specified test
         """
         name = removesuffix(name, ".gen")
 
         file_extentions = [".reference", ".gen.reference"]
-        if is_old_analyzer_used():
+        if is_old_analyzer_used(args):
             file_extentions = [".oldanalyzer.reference", *file_extentions]
 
         for ext in file_extentions:
@@ -1420,7 +1434,7 @@ class TestCase:
         (self.name, self.ext) = os.path.splitext(case)
 
         file_suffix = f".{os.getpid()}" if is_concurrent and args.test_runs > 1 else ""
-        self.reference_file = self.get_reference_file(suite.suite_path, self.name)
+        self.reference_file = self.get_reference_file(args, suite.suite_path, self.name)
         self.stdout_file = (
             os.path.join(suite.suite_tmp_path, self.name) + file_suffix + ".stdout"
         )
@@ -1631,9 +1645,14 @@ class TestCase:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
         stderr = kill_output
-        stderr += str(
-            self.fatal_sanitizer_log.read(), errors="replace", encoding="utf-8"
-        )
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            with open(path, "rb") as stream:
+                content = str(stream.read(), errors="replace", encoding="utf-8")
+                content = "\n".join(filter(lambda l: "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!" not in l, content.splitlines()))
+                if content:
+                    stderr += f"Path: {path}\n"
+                    stderr += content
+                    stderr += "\n"
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1818,7 +1837,8 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
-        os.remove(self.fatal_sanitizer_log.name)
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
 
@@ -1901,11 +1921,13 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
-        self.fatal_sanitizer_log = tempfile.NamedTemporaryFile(
-            "rb", prefix="clickhouse-test-", suffix=".log", dir=args.test_tmp_dir, delete=False
-        )
 
-        log_opt = " --client_logs_file=" + self.fatal_sanitizer_log.name + " "
+        # NOTE:
+        # - client writes to fatal_sanitizer_prefix
+        # - sanitizers write to fatal_sanitizer_prefix.PID
+        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+
+        log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
 
         for env_name in [
@@ -1916,9 +1938,9 @@ class TestCase:
         ]:
             current_options = os.environ.get(env_name, None)
             if current_options is None:
-                os.environ[env_name] = f"log_path={self.fatal_sanitizer_log.name}"
+                os.environ[env_name] = f"log_path={self.fatal_sanitizer_prefix}"
             elif "log_path=" not in current_options:
-                os.environ[env_name] += f":log_path={self.fatal_sanitizer_log.name}"
+                os.environ[env_name] += f":log_path={self.fatal_sanitizer_prefix}"
 
         os.environ["CLICKHOUSE_CLIENT_OPT"] = (
             os.environ["CLICKHOUSE_CLIENT_OPT"]

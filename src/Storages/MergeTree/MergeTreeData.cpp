@@ -3872,7 +3872,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
-        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+        checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -8776,21 +8776,24 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
-void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
+    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
-    if (!command.isDropSomething() || unfinished_mutations.empty())
+    if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
     auto throw_exception = [] (
         const std::string & mutation_name,
+        const std::string & action_name,
         const std::string & entity_name,
         const std::string & identifier_name)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot drop {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+            "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
             "Wait this mutation, or KILL it with command "
             "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+            action_name,
             entity_name,
             backQuoteIfNeed(identifier_name),
             mutation_name,
@@ -8803,17 +8806,19 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
         {
             if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
             {
-                throw_exception(mutation_name, "index", command.index_name);
+                throw_exception(mutation_name, "drop", "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)
             {
-                throw_exception(mutation_name, "projection", command.projection_name);
+                throw_exception(mutation_name, "drop", "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
             {
+                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
+
                 if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, "column", command.column_name);
+                    throw_exception(mutation_name, action, "column", command.column_name);
 
                 if (mutation_command.predicate)
                 {
@@ -8821,18 +8826,18 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
                 for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
                     if (name == command.column_name)
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
 
                     auto query_tree = buildQueryTree(expr, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -8840,7 +8845,7 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                 for (const auto & stats_col1 : command.statistics_columns)
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
-                            throw_exception(mutation_name, "statistics", stats_col1);
+                            throw_exception(mutation_name, "drop", "statistics", stats_col1);
             }
         }
     }
