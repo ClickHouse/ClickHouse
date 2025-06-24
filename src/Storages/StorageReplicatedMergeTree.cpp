@@ -6577,7 +6577,7 @@ void StorageReplicatedMergeTree::alter(
         std::map<std::string, MutationCommands> unfinished_mutations;
         for (const auto & command : commands)
         {
-            if (command.isDropSomething())
+            if (command.isDropOrRename())
             {
                 if (shutdown_called || partial_shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
@@ -6590,7 +6590,7 @@ void StorageReplicatedMergeTree::alter(
                     pulled_queue = true;
                 }
 
-                checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+                checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
             }
         }
 
