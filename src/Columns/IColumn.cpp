@@ -499,31 +499,31 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+static void gather(ColumnType * col, const PaddedPODArray<const IColumn *> & columns, const PaddedPODArray<UInt32> & row_nums)
 {
     chassert(columns.size() == row_nums.size());
     col->reserve(col->size() + columns.size());
     for (size_t j = 0; j < columns.size(); ++j)
     {
         if (columns[j])
-            col->insertFrom(*(*columns[j])[source_column_index_in_block], row_nums[j]);
+            col->insertFrom(*columns[j], row_nums[j]);
         else
-            type->insertDefaultInto(*col);
+            col->insertDefault();
     }
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumn::gather(const PaddedPODArray<const IColumn *> & columns, const PaddedPODArray<UInt32> & row_nums)
 {
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns, row_nums);
+    DB::gather(this, columns, row_nums);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumnHelper<Derived, Parent>::gather(const PaddedPODArray<const IColumn *> & columns, const PaddedPODArray<UInt32> & row_nums)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns, row_nums);
+    DB::gather(&self, columns, row_nums);
 }
 
 template <typename Derived, typename Parent>

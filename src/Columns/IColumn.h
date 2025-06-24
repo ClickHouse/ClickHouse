@@ -453,6 +453,10 @@ public:
     /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
+    /// Fills column values from list of columns and row numbers
+    /// `columns` and `row_nums` must have same size
+    virtual void gather(const PaddedPODArray<const IColumn *> & columns, const PaddedPODArray<UInt32> & row_nums);
+
     /** Computes minimum and maximum element of the column.
       * In addition to numeric types, the function is completely implemented for Date and DateTime.
       * For strings and arrays function should return default value.
@@ -571,10 +575,6 @@ public:
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
-
-    /// Fills column values from list of blocks and row numbers
-    /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -788,6 +788,10 @@ private:
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
 
+    /// Fills column values from columns and row numbers
+    /// `columns` and `row_nums` must have same size
+    void gather(const PaddedPODArray<const IColumn *> & columns, const PaddedPODArray<UInt32> & row_nums) override;
+
     /// Devirtualize compareAt.
     void compareColumn(
         const IColumn & rhs_base,
@@ -815,10 +819,6 @@ private:
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
-
-    /// Fills column values from list of columns and row numbers
-    /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
