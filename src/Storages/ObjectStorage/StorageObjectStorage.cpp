@@ -241,11 +241,16 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    // todo arthur perhaps set partition key description?
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
+
+    /// I am not sure this is actually required, but just in case
+    if (configuration->partition_strategy)
+    {
+        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+    }
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
     setInMemoryMetadata(metadata);

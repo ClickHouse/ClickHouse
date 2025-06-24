@@ -174,6 +174,11 @@ NamesAndTypesList PartitionStrategy::getPartitionColumns() const
     return partition_key_description.sample_block.getNamesAndTypesList();
 }
 
+const KeyDescription & PartitionStrategy::getPartitionKeyDescription() const
+{
+    return partition_key_description;
+}
+
 std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
                                                                  const Block & sample_block,
