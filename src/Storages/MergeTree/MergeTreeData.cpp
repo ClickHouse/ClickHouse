@@ -607,6 +607,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
     desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
+    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
 
     if (metadata.hasPartitionKey())

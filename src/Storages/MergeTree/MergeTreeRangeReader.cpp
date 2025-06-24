@@ -4,6 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
@@ -861,7 +862,7 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset"};
+const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset", "_distance"};
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
@@ -1035,7 +1036,62 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
+
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
+    {
+        ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+        fillDistanceColumnAndFilter(columns, result, part_offsets_auto_column);
+    }
 }
+
+void MergeTreeRangeReader::fillDistanceColumnAndFilter(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column)
+{
+    /// Populate the "_distance" virtual column from the distances we got from vector index
+    auto distance_column = ColumnFloat32::create(result.numReadRows(), float(999999.99));
+    ColumnFloat32::Container & container = distance_column->getData();
+    Float32 * distances = container.data();
+
+    /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
+    auto filter_data = ColumnUInt8::create(result.numReadRows(), UInt8(0));
+    IColumn::Filter & filter = filter_data->getData();
+
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    const auto & offsets_and_distances = read_hints.ann_search_results.value();
+    auto exact_part_offsets = offsets_and_distances.rows;
+    chassert (offsets_and_distances.distances.has_value());
+    const auto exact_distances = offsets_and_distances.distances.value();
+    chassert (exact_part_offsets.size() == exact_distances.size());
+
+    /// stash the distance for an offset before sorting the offsets
+    std::unordered_map<UInt64, float> offset_to_distance;
+    for (size_t i = 0; i < exact_distances.size(); i++)
+        offset_to_distance[exact_part_offsets[i]] = exact_distances[i];
+
+    std::sort(exact_part_offsets.begin(), exact_part_offsets.end());
+
+    const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
+    size_t j = 0;
+    for (size_t i = 0; i < result.numReadRows();i++)
+    {
+        while (j < exact_part_offsets.size() && offsets[i] > exact_part_offsets[j])
+            j++;
+
+        if (j >= exact_part_offsets.size())
+            break;
+
+        if (offsets[i] == exact_part_offsets[j])
+        {
+            filter[i] = true;
+            distances[i] = offset_to_distance[offsets[i]];
+            j++;
+        }
+    }
+
+    auto distance_pos = read_sample_block.getPositionByName("_distance");
+    columns[distance_pos] = std::move(distance_column);
+    part_offsets_filter = FilterWithCachedCount(std::move(filter_data));
+}
+
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
@@ -1355,6 +1411,11 @@ void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Col
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
 {
     result.checkInternalConsistency();
+
+    if (merge_tree_reader->data_part_info_for_read->getReadHints().ann_search_results.has_value())
+    {
+        result.optimize(part_offsets_filter, merge_tree_reader->canReadIncompleteGranules());
+    }
 
     if (!prewhere_info)
         return;
