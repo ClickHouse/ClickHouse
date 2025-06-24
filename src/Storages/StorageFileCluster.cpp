@@ -2,6 +2,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -84,7 +85,14 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const size_t) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
-    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)](size_t) mutable -> String { return iter->next(); });
+    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    {
+        auto file = iter->next();
+        if (file.empty())
+            return std::make_shared<ClusterFunctionReadTaskResponse>();
+        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
+    };
+    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

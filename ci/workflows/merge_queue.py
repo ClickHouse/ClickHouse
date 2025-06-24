@@ -17,11 +17,6 @@ workflow = Workflow.Config(
             for a in ArtifactConfigs.clickhouse_binaries
             if a.name == ArtifactNames.CH_AMD_BINARY
         ],
-        *[
-            a
-            for a in ArtifactConfigs.lexer_test
-            if a.name == ArtifactNames.LEXER_AMD_BINARY
-        ],
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

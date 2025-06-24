@@ -6133,7 +6133,7 @@ PartUUIDsPtr Context::getPartUUIDs() const
 }
 
 
-ReadTaskCallback Context::getReadTaskCallback() const
+ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
@@ -6141,7 +6141,7 @@ ReadTaskCallback Context::getReadTaskCallback() const
 }
 
 
-void Context::setReadTaskCallback(ReadTaskCallback && callback)
+void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback)
 {
     next_task_callback = callback;
 }
