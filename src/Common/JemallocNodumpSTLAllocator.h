@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_JEMALLOC
+
 #include <limits>
 #include <new>
 
@@ -63,3 +65,4 @@ bool operator !=(const JemallocNodumpSTLAllocator<T> & a, const JemallocNodumpST
 }
 
 }
+#endif

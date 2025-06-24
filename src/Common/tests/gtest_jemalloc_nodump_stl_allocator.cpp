@@ -1,3 +1,5 @@
+#ifdef USE_JEMALLOC
+
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
@@ -86,3 +88,4 @@ TEST(JemallocNodumpSTLAllocatorTest, EqualityOperators)
     EXPECT_TRUE(alloc1 == alloc3);
     EXPECT_FALSE(alloc1 != alloc3);
 }
+#endif

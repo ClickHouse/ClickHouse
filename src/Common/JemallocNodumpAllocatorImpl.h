@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef USE_JEMALLOC
 #include <jemalloc/jemalloc.h>
 
 namespace DB
@@ -33,3 +34,4 @@ private:
     int flags{0};
 };
 }
+#endif

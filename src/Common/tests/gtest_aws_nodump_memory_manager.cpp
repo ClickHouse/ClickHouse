@@ -1,5 +1,5 @@
 #ifdef USE_AWS_S3
-
+#ifdef USE_JEMALLOC
 #include <gtest/gtest.h>
 #include <cstdint>
 
@@ -29,4 +29,5 @@ TEST(AwsNodumpMemoryManagerTest, AlignedAllocation)
     ASSERT_NO_THROW(allocator.FreeMemory(ptr));
 }
 
+#endif
 #endif

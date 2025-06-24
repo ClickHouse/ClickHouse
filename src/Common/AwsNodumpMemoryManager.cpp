@@ -1,4 +1,5 @@
 #ifdef USE_AWS_S3
+#ifdef USE_JEMALLOC
 
 #include <Common/AwsNodumpMemoryManager.h>
 
@@ -19,4 +20,5 @@ namespace DB
     void AwsNodumpMemoryManager::End() {}
 }
 
+#endif
 #endif

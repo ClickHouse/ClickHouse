@@ -1,3 +1,4 @@
+#ifdef USE_JEMALLOC
 #include <Poco/Format.h>
 #include <Common/JemallocNodumpAllocatorImpl.h>
 #include <base/errnoToString.h>
@@ -72,3 +73,4 @@ void JemallocNodumpAllocatorImpl::setupArena()
 }
 
 }
+#endif
