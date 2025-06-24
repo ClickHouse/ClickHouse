@@ -232,7 +232,7 @@ possible_properties = {
 distributed_ddl_properties = {
     "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
     "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
-    "pool_size": threads_lambda,
+    "pool_size": no_zero_threads_lambda,
     "task_max_lifetime": threshold_generator(0.2, 0.2, 0, 60),
 }
 
@@ -788,7 +788,9 @@ def modify_server_settings(
         modified = True
         distributed_ddl_xml = ET.SubElement(root, "distributed_ddl")
         path_xml = ET.SubElement(distributed_ddl_xml, "path")
-        path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+        path_xml.text = "/clickhouse/task_queue/ddl"
+        replicas_path_xml = ET.SubElement(distributed_ddl_xml, "replicas_path")
+        replicas_path_xml.text = "/clickhouse/task_queue/replicas"
         if random.randint(1, 100) <= 70:
             modified = (
                 apply_properties_recursively(root, distributed_ddl_properties)
