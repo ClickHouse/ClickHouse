@@ -27,10 +27,12 @@
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 0;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
 #endif
 
 namespace DB
@@ -1031,11 +1033,11 @@ The table below shows the behavior of this setting for various date-time functio
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 )", 0) \
-    DECLARE(Bool, use_legacy_to_time, false, R"(
+    DECLARE(Bool, use_legacy_to_time, true, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
 The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
-)", IMPORTANT) \
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_time64_type, false, R"(
 Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
 )", EXPERIMENTAL, enable_time_time64_type) \
@@ -5944,6 +5946,9 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
 )", 0) \
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_credentials_refresh_period_seconds, default_distributed_cache_credentials_refresh_period_seconds, R"(
+Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 )", 0) \
     DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
