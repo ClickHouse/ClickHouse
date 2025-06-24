@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
@@ -423,12 +424,21 @@ void SortingStep::fullSortStreams(
         for (const auto & sorting : sorting_transforms)
         {
             IProcessor * input_processor = sorting.get();
+            FilterTransform * filter_transform = nullptr;
             while (input_processor->getInputs().size() == 1 && input_processor->getInputs().front().isConnected())
+            {
                 input_processor = &input_processor->getInputs().front().getOutputPort().getProcessor();
+                if (!filter_transform)
+                    filter_transform = typeid_cast<FilterTransform *>(input_processor);
+            }
 
             if (auto * merge_tree_source = typeid_cast<MergeTreeSource *>(input_processor);
                 merge_tree_source && merge_tree_source->getPrewhereInfo())
+            {
                 sorting->setGlobalThresholdColumnsPtr(merge_tree_source->getPrewhereInfo()->global_threshold_columns_ptr);
+                if (filter_transform && merge_tree_source->getPrewhereInfo()->top_n_condition_hash)
+                    filter_transform->updateQueryConditionHash(*merge_tree_source->getPrewhereInfo()->top_n_condition_hash);
+            }
         }
 
         StreamLocalLimits limits;

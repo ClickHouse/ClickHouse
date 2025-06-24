@@ -61,6 +61,9 @@ struct PrewhereInfo
     /// During read, rows with values below this threshold can be skipped
     GlobalThresholdColumnsPtr global_threshold_columns_ptr;
 
+    std::optional<size_t> condition_hash;
+    std::optional<size_t> top_n_condition_hash;
+
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}

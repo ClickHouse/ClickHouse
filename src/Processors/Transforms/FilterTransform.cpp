@@ -14,6 +14,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace ProfileEvents
 {
     extern const Event FilterTransformPassedRows;
@@ -317,6 +319,12 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
         }
     }
+}
+
+void FilterTransform::updateQueryConditionHash(UInt64 top_n_hash)
+{
+    if (condition)
+        boost::hash_combine(condition->first, top_n_hash);
 }
 
 }

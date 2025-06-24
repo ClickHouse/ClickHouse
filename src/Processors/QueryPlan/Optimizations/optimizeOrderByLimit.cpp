@@ -59,7 +59,7 @@ size_t tryPushDownOrderByLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         return 0;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
-    if (!sort_column.type->isValueRepresentedByNumber())
+    if (!sort_column.type->isValueRepresentedByNumber() && read_from_mergetree_step->getPrewhereInfo())
         return 0;
 
     const auto * sort_column_from_read
@@ -67,7 +67,8 @@ size_t tryPushDownOrderByLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     if (!sort_column_from_read || !sort_column_from_read->type->equals(*sort_column.type))
         return 0;
 
-    read_from_mergetree_step->setTopNColumn({sort_description.front().column_name_in_storage, sort_column.type});
+    read_from_mergetree_step->setTopNFilterParams(
+        {sort_description.front().column_name_in_storage, sort_column.type, n, sort_description.size() > 1});
 
     return 0;
 }
