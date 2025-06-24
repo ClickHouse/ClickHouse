@@ -61,7 +61,8 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-        auto it = unprocessed_files.find(next_file->getPath());
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        auto it = unprocessed_files.find(file_path);
         if (it == unprocessed_files.end())
             continue;
 
@@ -70,7 +71,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         LOG_TRACE(
             log,
             "Assigning pre-queued file {} to replica {}",
-            next_file->getPath(),
+            file_path,
             number_of_current_replica
         );
 
@@ -105,27 +106,24 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
 
         String file_path;
-        if (send_over_whole_archive)
+        if (send_over_whole_archive && object_info->isArchive())
         {
-            auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
-            if (archive_object_info)
-            {
-                file_path = archive_object_info->getPathToArchive();
-                LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                         "This will be suboptimal, consider turning on "
-                         "cluster_function_with_archives_send_over_whole_archive setting", file_path);
-            }
+            file_path = object_info->getPathOrPathToArchiveIfArchive();
+            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
+                     "This will be suboptimal, consider turning on "
+                     "cluster_function_with_archives_send_over_whole_archive setting", file_path);
+        }
+        else
+        {
+            file_path = object_info->getPath();
         }
 
-        if (file_path.empty())
-            file_path = object_info->getPath();
-
-        size_t file_replica_idx = getReplicaForFile(path);
+        size_t file_replica_idx = getReplicaForFile(file_path);
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
                 log, "Found file {} for replica {}",
-                path, number_of_current_replica
+                file_path, number_of_current_replica
             );
 
             return object_info;
@@ -141,7 +139,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            unprocessed_files.emplace(object_info->getPath(), object_info);
+            unprocessed_files.emplace(file_path, object_info);
             connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
@@ -159,10 +157,11 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         auto next_file = it->second;
         unprocessed_files.erase(it);
 
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
         LOG_TRACE(
             log,
             "Iterator exhausted. Assigning unprocessed file {} to replica {}",
-            next_file->getPath(),
+            file_path,
             number_of_current_replica
         );
 

@@ -199,14 +199,16 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*skip_object_metadata=*/true);
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator, number_of_replicas, local_context->getGlobalContext()->getSettingsRef()[Setting::cluster_function_with_archives_send_over_whole_archive]);
+        iterator,
+        number_of_replicas,
+        local_context->getSettingsRef()[Setting::cluster_function_with_archives_send_over_whole_archive]);
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task));
+                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
