@@ -342,6 +342,10 @@ add_compile_definitions(LIBC_COPT_PUBLIC_PACKAGING=1)
 add_compile_definitions(LIBC_MATH_NO_ERRNO=1)
 add_compile_definitions(LIBC_MATH_NO_EXCEPT=1)
 
+if (ARCH_AMD64)
+    add_compile_options(-mfma -msse2 -msse4.2 -mavx -mavx2 -mavx512f -mavx512bw)
+endif()
+
 add_library(libllvmlibc ${SRCS})
 set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
 
