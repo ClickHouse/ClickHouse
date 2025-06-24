@@ -18,12 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 /** Chimp column codec implementation.
  *
  * Implementation of Chimp128 algorithm proposed in: Panagiotis Liakos, Katia Papakonstantinopoulou, Yannis Kotidis:
@@ -369,7 +363,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 curr_value = prev_value;
                 break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid flag value");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value");
         }
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
@@ -401,7 +395,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecChimp::CompressionCodecChimp(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Chimp");
+    setCodecDescription("Chimp", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecChimp::getMethodByte() const
