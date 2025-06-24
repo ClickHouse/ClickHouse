@@ -26,6 +26,8 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageMemory.h>
 
+#include <Columns/ColumnBLOB.h>
+
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -348,7 +350,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
                 auto col = block.getByName(elem.name);
-                col.column = block.getByName(elem.name).column->cut(0, 1);
+                if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
+                    col.column = blob->convertFrom();
+                col.column = col.column->cut(0, 1);
 
                 column = castColumn(col, elem.type);
 
@@ -362,7 +366,16 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 column = elem.column->cloneResized(block.rows());
         }
         else
-            column = castColumn(block.getByName(elem.name), elem.type);
+        {
+            const auto & col = block.getByName(elem.name);
+            if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
+            {
+                blob->addCast(col.type, elem.type);
+                column = col.column;
+            }
+            else
+                column = castColumn(col, elem.type);
+        }
 
         res.insert({column, elem.type, elem.name});
     }
@@ -380,7 +393,7 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     ///
     ///     Unexpected packet Data received from client
     ///
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     sendQueryUnlocked(query_kind, async_callback);
 }
 
@@ -421,7 +434,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     // Collect all roles granted on this node and pass those to the remote node
     std::vector<String> local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;
@@ -454,7 +467,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 int RemoteQueryExecutor::sendQueryAsync()
 {
 #if defined(OS_LINUX)
-    std::lock_guard lock(was_cancelled_mutex);
+    LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
 
@@ -506,7 +519,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -528,7 +541,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -541,7 +554,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
     while (true)
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -605,7 +618,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
 {
     {
-        std::lock_guard lock(was_cancelled_mutex);
+        LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
@@ -780,7 +793,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
 
     /** If one of:
       * - nothing started to do;
@@ -854,14 +867,14 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
 
 void RemoteQueryExecutor::cancelUnlocked()
 {
     {
-        std::lock_guard lock(external_tables_mutex);
+        LockAndBlocker lock(external_tables_mutex);
 
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
@@ -975,7 +988,7 @@ bool RemoteQueryExecutor::hasThrownException() const
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
 
     if (extension && extension->parallel_reading_coordinator)
@@ -984,7 +997,7 @@ void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 
 void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
-    std::lock_guard guard(was_cancelled_mutex);
+    LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
 }
 
@@ -1002,7 +1015,7 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
-    std::lock_guard lock(was_cancelled_mutex);
+    LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return false;
 

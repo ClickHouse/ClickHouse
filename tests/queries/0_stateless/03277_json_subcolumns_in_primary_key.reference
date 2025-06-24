@@ -90,25 +90,25 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression ((Project names + Projection))
 Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 CAST(json.b, \'String\')
 Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
 Granules: 1/8
-Search algorithm: binary search
+Search Algorithm: binary search
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -117,13 +117,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -132,12 +132,12 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 1
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 2	{"a":0,"b":"str_2","c":["0","1"]}	Hello, World!
@@ -231,13 +231,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -246,12 +246,12 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=1000000, index_granularity=1;
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 2	{"a":0,"b":"str_2","c":["0","1"]}	Hello, World!
@@ -344,25 +344,25 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression ((Project names + Projection))
 Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 CAST(json.b, \'String\')
 Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
 Granules: 1/8
-Search algorithm: binary search
+Search Algorithm: binary search
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -371,13 +371,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -386,12 +386,12 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 1
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 2	{"a":0,"b":"str_2","c":["0","1"]}	Hello, World!
@@ -485,13 +485,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -500,12 +500,12 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity=1;
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 2	{"a":0,"b":"str_2","c":["0","1"]}	Hello, World!
@@ -598,25 +598,25 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 Expression ((Project names + Projection))
 Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 CAST(json.b, \'String\')
 Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
 Granules: 1/8
-Search algorithm: binary search
+Search Algorithm: binary search
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -625,13 +625,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -640,12 +640,12 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/2
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search
 1
 0	{"a":0,"b":"str_0","c":[]}	Hello, World!
 2	{"a":0,"b":"str_2","c":["0","1"]}	Hello, World!
@@ -739,13 +739,13 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
@@ -754,9 +754,9 @@ Expression
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 json.a
 Condition: (json.a in [0, 0])
 Parts: 1/1
 Granules: 2/8
-Search algorithm: binary search
+Search Algorithm: binary search

@@ -1740,7 +1740,7 @@ Settings for the [backup_log](../../operations/system-tables/backup_log.md) syst
 </clickhouse>
 ```
 
-## blog_storage_log {#blog_storage_log}
+## blob_storage_log {#blob_storage_log}
 
 Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
 
@@ -1887,7 +1887,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over MySQL protocol.
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 :::
 
 **Example**
