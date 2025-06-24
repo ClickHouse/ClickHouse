@@ -352,8 +352,36 @@ def apply_properties_recursively(next_root: ET.Element, next_properties: dict):
     return is_modified
 
 
+def generate_xml_safe_string(length: int = 10) -> str:
+    """
+    Generate a random string that is safe to use as XML value content.
+
+    Args:
+        length (int): Desired length of the string (default: 10)
+
+    Returns:
+        str: Random string containing only XML-safe characters
+    """
+    # XML 1.0 valid characters (excluding control chars except tab, LF, CR)
+    xml_safe_chars = (
+        "\t\n\r"  # allowed control chars
+        + string.ascii_letters
+        + string.digits
+        + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
+        + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
+    )
+    # For Python 3, we need to handle the Unicode ranges properly
+    # Create a list of valid characters
+    valid_chars = []
+    # Add basic ASCII characters
+    valid_chars.extend(c for c in xml_safe_chars if ord(c) < 0xD800)
+    # Add higher Unicode characters (avoid surrogates)
+    valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
+    # Generate the random string
+    return "".join(random.choice(valid_chars) for _ in range(length))
+
+
 def add_single_cluster(
-    i: int,
     existing_nodes: list[str],
     next_cluster: ET.Element,
 ):
@@ -368,14 +396,7 @@ def add_single_cluster(
     # Add secret
     if random.randint(1, 100) <= 30:
         secret_xml = ET.SubElement(next_cluster, "secret")
-        secret_xml.text = "".join(
-            [
-                random.choice(
-                    string.ascii_lowercase + string.ascii_uppercase + string.digits
-                )
-                for _ in range(random.randint(1, 128))
-            ]
-        )
+        secret_xml.text = generate_xml_safe_string(random.randint(1, 128))
     # Add allow_distributed_ddl_queries
     if random.randint(1, 100) <= 16:
         allow_ddl_xml = ET.SubElement(next_cluster, "allow_distributed_ddl_queries")
@@ -662,7 +683,6 @@ def modify_server_settings(
         number_clusters = random.randint(lower_bound, upper_bound)
         for i in range(0, number_clusters):
             add_single_cluster(
-                i,
                 existing_nodes,
                 ET.SubElement(remote_server_config, f"cluster{i}"),
             )
