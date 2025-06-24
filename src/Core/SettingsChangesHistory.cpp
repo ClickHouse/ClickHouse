@@ -95,6 +95,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
