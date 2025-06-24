@@ -388,10 +388,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
-                    key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
+                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
             else
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
-                    key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
+                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, block.getSelector().getRange());
         }
     }
     else
@@ -404,10 +404,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
-                    key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
+                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
             else
                 return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
-                    key_getter_vector.at(0), *mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
+                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, block.getSelector().getIndexes());
         }
     }
 }
@@ -514,7 +514,7 @@ template <
     typename AddedColumns,
     typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
-    KeyGetter & key_getter, const Map & map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
+    KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     static constexpr bool flag_per_row = false; // Always false in single map case
     const auto & join_keys = added_columns.join_on_keys.at(0);
@@ -572,7 +572,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 row_acceptable = !join_keys.isRowFiltered(ind);
 
             using FindResult = typename KeyGetter::FindResult;
-            auto find_result = row_acceptable ? key_getter.findKey(map, ind, pool) : FindResult();
+            auto find_result = row_acceptable ? key_getter.findKey(*map, ind, pool) : FindResult();
 
             if (find_result.isFound())
             {
@@ -600,7 +600,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
-    KeyGetter & key_getter, const Map & map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
+    KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     switch (added_columns.join_on_keys.at(0).join_mask_column.getKind())
     {

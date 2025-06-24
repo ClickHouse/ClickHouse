@@ -153,7 +153,7 @@ private:
         typename Selector>
     static size_t joinRightColumns(
         KeyGetter & key_getter,
-        const Map & map,
+        const Map * map,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
@@ -161,7 +161,7 @@ private:
     template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
     static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
-        const Map & map,
+        const Map * map,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
