@@ -283,7 +283,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     hash_join->space_was_preallocated = true;
                 }
 
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
+                auto [block, selector] = std::move(dispatched_block).detachData();
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
                 dispatched_block = {};
                 blocks_left--;

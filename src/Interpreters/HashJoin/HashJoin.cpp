@@ -581,19 +581,18 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     auto materialized = materializeColumnsFromRightBlock(source_block);
-    auto scattered_block = ScatteredBlock{materialized};
-    return addBlockToJoin(scattered_block, check_limits);
+    return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), check_limits);
 }
 
-bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", source_block.rows());
+    if (unlikely(selector.size() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
@@ -610,7 +609,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         /// We support only INNER/LEFT ASOF join, so rows with NULLs never return from the right joined table.
         /// So filter them out here not to handle in implementation.
         const auto & asof_key_name = table_join->getOnlyClause().key_names_right.back();
-        const auto & asof_column = source_block.getByName(asof_key_name);
+        const auto & asof_column = block.getByName(asof_key_name);
 
         if (asof_column.type->isNullable())
         {
@@ -624,26 +623,29 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             {
                 const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
 
-                NullMap negative_null_map(asof_column_nullable.size());
-                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
-                    negative_null_map[i] = !asof_column_nullable[i];
+                auto new_selector = ScatteredBlock::Indexes::create();
+                auto & new_selector_data = new_selector->getData();
 
-                source_block.filter(negative_null_map);
+                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
+                    if (!asof_column_nullable[i])
+                        new_selector_data.push_back(i);
+
+                selector = ScatteredBlock::Selector(std::move(new_selector));
             }
         }
     }
 
-    const size_t rows = source_block.rows();
+    const size_t rows = selector.size();
     data->rows_to_join += rows;
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
     {
-        const auto & column = source_block.getByName(column_name).column;
+        const auto & column = block.getByName(column_name).column;
         all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
-    Block block_to_save = filterColumnsPresentInSampleBlock(source_block.getSourceBlock(), savedBlockSample());
+    Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
@@ -657,7 +659,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         if (!tmp_stream)
             tmp_stream.emplace(right_sample_block, tmp_data.get());
 
-        chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
+        chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
         return true;
     }
@@ -679,13 +681,13 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
-            chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
+            chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
             block_to_save = block_to_save.compress();
             have_compressed = true;
         }
 
         doDebugAsserts();
-        data->columns.emplace_back(block_to_save.getColumns(), source_block.detachSelector());
+        data->columns.emplace_back(block_to_save.getColumns(), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
@@ -715,7 +717,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                     save_nullmap |= (*null_map)[i];
             }
 
-            auto join_mask_col = JoinCommon::getColumnAsMask(source_block.getSourceBlock(), onexprs[onexpr_idx].condColumnNames().second);
+            auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
