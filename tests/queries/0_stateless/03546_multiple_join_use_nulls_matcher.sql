@@ -10,6 +10,8 @@ INSERT INTO tableA VALUES ('a'), ('b'), ('c'), ('d'), ('e'), ('f');
 INSERT INTO tableB VALUES ('c', 3), ('d', 4), ('e', 5), ('f', 6), ('g', 7), ('h', 8);
 INSERT INTO tableC VALUES ('d'), ('e'), ('f'), ('g'), ('h'), ('i'), ('j');
 
+SET enable_analyzer = 1;
+
 SET join_use_nulls = 1;
 
 SELECT value2 = 1 as x, toTypeName(x)
@@ -37,6 +39,13 @@ FROM (
 ) ORDER BY 1;
 
 
+SELECT value2 = 1 as x, toTypeName(x)
+FROM (
+    SELECT tableB.*
+    FROM tableA
+    INNER JOIN tableB ON tableB.key = tableA.key
+    RIGHT JOIN tableC AS t ON tableB.key = t.key
+) ORDER BY 1;
 
 DROP TABLE IF EXISTS tableA;
 DROP TABLE IF EXISTS tableB;
