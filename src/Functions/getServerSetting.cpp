@@ -85,9 +85,9 @@ Returns the current value of server setting.
 )",
         .syntax = "getServerSetting('custom_setting')",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."}
+            {"custom_setting", "The setting name.", {"String"}}
         },
-        .returned_value = "The setting's current value.",
+        .returned_value = {"The setting's current value."},
         .examples = {
             {"getServerSetting", "SELECT getSetting('page_cache_size_ratio');", "SRLU"},
         },

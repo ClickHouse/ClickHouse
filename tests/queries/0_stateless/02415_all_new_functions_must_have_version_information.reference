@@ -112,12 +112,6 @@ caseWithExpression
 catboostEvaluate
 cbrt
 ceil
-changeDay
-changeHour
-changeMinute
-changeMonth
-changeSecond
-changeYear
 char
 cityHash64
 coalesce
@@ -299,7 +293,6 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
-getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
@@ -610,7 +603,6 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
-reverse
 reverseUTF8
 revision
 right
@@ -802,6 +794,12 @@ toStartOfMillisecond
 toString
 toStringCutToZero
 toTime
+toTime64
+toTime64OrNull
+toTime64OrZero
+toTimeOrNull
+toTimeOrZero
+toTimeWithFixedDate
 toTypeName
 toUInt128
 toUInt128OrDefault

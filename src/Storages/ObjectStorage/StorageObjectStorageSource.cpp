@@ -19,7 +19,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -128,7 +127,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
-    const std::optional<ActionsDAG> & filter_actions_dag,
+    const ActionsDAG * filter_actions_dag,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
     std::function<void(FileProgress)> file_progress_callback,
@@ -139,7 +138,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
+            local_context->getClusterFunctionReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -172,7 +172,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         return configuration->iterate(
-            filter_actions_dag.has_value() ? &filter_actions_dag.value() : nullptr,
+            filter_actions_dag,
             file_progress_callback,
             query_settings.list_object_keys_size,
             local_context);
@@ -268,35 +268,14 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+#if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
-                const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
-                if (object_with_partition_columns_info)
+                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
+                if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
-                    for (const auto & [name_and_type, value] : object_with_partition_columns_info->partitions_info)
-                    {
-                        if (!read_from_format_info.source_header.has(name_and_type.name))
-                            continue;
-
-                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-
-                        /// This column is filled with default value now, remove it.
-                        chunk.erase(column_pos);
-
-                        /// Add correct values.
-                        if (column_pos < chunk.getNumColumns())
-                            chunk.addColumn(column_pos, std::move(partition_column));
-                        else
-                            chunk.addColumn(std::move(partition_column));
-                    }
-                }
-                else
-                {
-#if USE_PARQUET && USE_AWS_S3
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// By release 25.3.
                     /// (Because it does not make sense to support it in a nice way
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
@@ -335,9 +314,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
 
                     }
-#endif
                 }
             }
+#endif
 
             return chunk;
         }
@@ -485,7 +464,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
+        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -519,7 +498,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
+        std::shared_ptr<const ActionsDAG> transformer;
+        if (object_info->data_lake_metadata)
+            transformer = object_info->data_lake_metadata->transform;
+        if (!transformer)
+            transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
+
+        if (transformer)
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
@@ -527,7 +512,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
         }
-
 
         if (read_from_format_info.columns_description.hasDefaults())
         {
@@ -563,13 +547,13 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
 }
 
 std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(
-    ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
+    ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log, const std::optional<ReadSettings> & read_settings)
 {
     const auto & settings = context_->getSettingsRef();
-    const auto & read_settings = context_->getReadSettings();
+    const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
 
     const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-    bool use_cache = read_settings.enable_filesystem_cache
+    bool use_cache = effective_read_settings.enable_filesystem_cache
         && !filesystem_cache_name.empty()
         && (object_storage->getType() == ObjectStorageType::Azure
             || object_storage->getType() == ObjectStorageType::S3);
@@ -577,14 +561,14 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     if (!object_info.metadata)
     {
         if (!use_cache)
-            return object_storage->readObject(StoredObject(object_info.getPath()), read_settings);
+            return object_storage->readObject(StoredObject(object_info.getPath()), effective_read_settings);
 
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
     }
 
     const auto & object_size = object_info.metadata->size_bytes;
 
-    auto modified_read_settings = read_settings.adjustBufferSize(object_size);
+    auto modified_read_settings = effective_read_settings.adjustBufferSize(object_size);
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
@@ -639,7 +623,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                use_async_buffer ? nested_buffer_read_settings : read_settings,
+                use_async_buffer ? nested_buffer_read_settings : effective_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
@@ -665,10 +649,10 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
+    bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
-        : read_settings.remote_fs_buffer_size;
+        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : effective_read_settings.remote_fs_buffer_size;
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
 
@@ -924,7 +908,7 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_, size_t max_threads_count)
+    const ClusterFunctionReadTaskCallback & callback_, size_t max_threads_count)
     : callback(callback_)
 {
     ThreadPool pool(
@@ -932,22 +916,26 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         CurrentMetrics::StorageObjectStorageThreadsActive,
         CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, "ReadTaskIter");
 
-    std::vector<std::future<String>> keys;
-    keys.reserve(max_threads_count);
+    std::vector<std::future<ObjectInfoPtr>> objects;
+    objects.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
-        keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
+        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
+        {
+            auto task = callback();
+            if (!task || task->isEmpty())
+                return nullptr;
+            return task->getObjectInfo();
+        }, Priority{}));
 
     pool.wait();
     buffer.reserve(max_threads_count);
-    for (auto & key_future : keys)
+    for (auto & object_future : objects)
     {
-        auto key = key_future.get();
-        if (key.empty())
-            continue;
-
-        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        auto object = object_future.get();
+        if (object)
+            buffer.push_back(object);
     }
 }
 
@@ -956,11 +944,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
     {
-        auto key = callback();
-        if (key.empty())
+        auto task = callback();
+        if (!task || task->isEmpty())
             return nullptr;
-
-        return std::make_shared<ObjectInfo>(key, std::nullopt);
+        return task->getObjectInfo();
     }
 
     return buffer[current_index];

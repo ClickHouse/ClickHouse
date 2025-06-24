@@ -116,9 +116,17 @@ public:
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
+    bool isAtomicDatabase() const { return deng == DatabaseEngineValues::DAtomic; }
+
+    bool isMemoryDatabase() const { return deng == DatabaseEngineValues::DMemory; }
+
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
+
+    bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
+
+    bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
 
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
