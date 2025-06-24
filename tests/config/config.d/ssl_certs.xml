@@ -1,8 +1,8 @@
 <clickhouse>
     <openSSL>
           <server>
-              <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-              <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+              <certificateFile>/home/useruser/dev/ClickHouse3/ci/tmp//etc/clickhouse-server/server.crt</certificateFile>
+              <privateKeyFile>/home/useruser/dev/ClickHouse3/ci/tmp//etc/clickhouse-server/server.key</privateKeyFile>
           </server>
     </openSSL>
 </clickhouse>
