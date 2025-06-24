@@ -293,7 +293,6 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
-getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
