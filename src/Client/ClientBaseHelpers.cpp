@@ -212,6 +212,52 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         }
     }
 
+    size_t depth = 0;
+    // Pride flag colors.
+    auto colormap = std::array<Replxx::Color, 8>{
+        //pink, red, orange, yellow, green, turquoise, indigo, violet
+
+        replxx::color::rgb666(5, 2, 4), // Pink      ≈ #FF87D7
+        replxx::color::rgb666(5, 0, 0), // Red       ≈ #FF0000
+        replxx::color::rgb666(5, 3, 0), // Orange    ≈ #FFAF00
+        replxx::color::rgb666(5, 5, 0), // Yellow    ≈ #FFFF00
+        replxx::color::rgb666(0, 5, 0), // Green     ≈ #00FF00
+        replxx::color::rgb666(0, 5, 4), // Turquoise ≈ #00FFD7
+        replxx::color::rgb666(2, 0, 5), // Indigo    ≈ #8700FF
+        replxx::color::rgb666(5, 0, 5)  // Violet    ≈ #FF00FF
+    };
+    // Trans flag colors.
+    // auto colormap = std::array<Replxx::Color, 6>{
+    //     Replxx::Color::BLUE,         // Blue
+    //     replxx::color::rgb666(0, 4, 0), // Pink
+    //     Replxx::Color::WHITE,        // White
+    //     replxx::color::rgb666(0, 4, 0), // Pink
+    //     Replxx::Color::BLUE,         // Blue
+    // };
+
+    for (const auto * it = begin; it != end; it++)
+    {
+        size_t pos2 = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), it - begin);
+
+        if (*it == '(')
+        {
+            colors[pos2] = colormap[depth % colormap.size()];
+            depth++;
+            continue;
+        }
+
+        if (*it == ')')
+        {
+            if (depth < 1)
+                continue;
+
+            colors[pos2] = colormap[(depth - 1) % colormap.size()];
+            depth--;
+
+            continue;
+        }
+    }
+
     Token last_token = token_iterator.max();
     /// Raw data in INSERT queries, which is not necessarily tokenized.
     const char * insert_data = ast ? getInsertData(ast) : nullptr;
