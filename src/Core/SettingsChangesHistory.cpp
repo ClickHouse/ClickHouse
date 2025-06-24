@@ -72,7 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
-            {"cluster_function_with_archives_send_over_whole_archive", "", "", "New setting"},
+            {"cluster_function_with_archives_send_over_whole_archive", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
