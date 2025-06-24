@@ -82,7 +82,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * /* filter */,
     const ContextPtr & context,
-    const size_t) const
+    ClusterPtr) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
