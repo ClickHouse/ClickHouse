@@ -376,8 +376,6 @@ protected:
     String history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
-    String current_profile;
-
     UInt64 server_revision = 0;
     String server_version;
     String prompt;
