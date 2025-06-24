@@ -12,6 +12,7 @@ enum class SectionHeaderType : uint32_t
     SYMTAB = 2,
     STRTAB = 3,
     NOTE = 7,
+    DYNSYM = 11,
 };
 
 enum class ProgramHeaderType : uint32_t

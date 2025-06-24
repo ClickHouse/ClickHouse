@@ -443,7 +443,7 @@ void collectSymbolsFromELF(
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
 #endif
 }
 
