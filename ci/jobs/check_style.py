@@ -191,12 +191,15 @@ def check_repo_submodules():
     return out
 
 def check_nix_submodule_inputs():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_nix_submodule_inputs.sh"
-    )
-    if err:
-        out += err
-    return out
+    # res, out, err = Shell.get_res_stdout_stderr(
+    #     "./ci/jobs/scripts/check_style/check_nix_submodule_inputs.sh"
+    # )
+    Shell.check("utils/nix/update_submodule_inputs.sh", verbose = True)
+    if Shell.check("git diff --quiet -- flake.nix"):
+        return "Nix submodule inputs are not up to date, please run `utils/nix/update_submodule_inputs.sh`"
+    # if err:
+    #     out += err
+    # return out
 
 
 def check_other():
