@@ -376,6 +376,7 @@ client = generator.run_generator(servers[0])
 def dolor_cleanup():
     if client.process.poll() is None:
         client.process.kill()
+    cluster.shutdown()
     if modified_server_settings:
         try:
             os.unlink(server_settings)
@@ -512,5 +513,3 @@ while all_running:
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
-
-cluster.shutdown()
