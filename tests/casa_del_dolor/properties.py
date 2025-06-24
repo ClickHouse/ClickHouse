@@ -148,7 +148,7 @@ possible_properties = {
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "max_thread_pool_size": threshold_generator(0.2, 0.2, 1, 128),
+    "max_thread_pool_size": threshold_generator(0.2, 0.2, 700, 10000),
     "max_unexpected_parts_loading_thread_pool_size": threads_lambda,
     "max_waiting_queries": threshold_generator(0.2, 0.2, 0, 100),
     "memory_worker_correct_memory_tracker": true_false_lambda,
@@ -198,7 +198,7 @@ possible_properties = {
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 0, 300),
+    "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 0, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "throw_on_unknown_workload": true_false_lambda,
     "transaction_log": {
