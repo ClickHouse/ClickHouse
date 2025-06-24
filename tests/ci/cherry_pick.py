@@ -34,7 +34,7 @@ from typing import List, Optional
 from ci_buddy import CIBuddy
 from ci_config import Labels
 from ci_utils import Shell
-from env_helper import IS_CI, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
@@ -648,12 +648,10 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--token", help="github token, if not set, used from smm")
-    parser.add_argument(
-        "--repo", default="ClickHouse/ClickHouse", help="repo owner/name"
-    )
+    parser.add_argument("--repo", default=GITHUB_REPOSITORY, help="repo owner/name")
     parser.add_argument(
         "--from-repo",
-        default="ClickHouse/ClickHouse",
+        default=GITHUB_REPOSITORY,
         help="if set, the commits will be taken from this repo, but PRs will be created in the main repo",
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
