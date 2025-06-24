@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_AWS_S3
+
 #include <Common/JemallocNodumpAllocatorImpl.h>
 #include <aws/core/utils/memory/MemorySystemInterface.h>
 
@@ -16,3 +18,5 @@ public:
 };
 
 }
+
+#endif

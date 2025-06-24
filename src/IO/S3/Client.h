@@ -3,8 +3,6 @@
 #include <optional>
 #include <base/types.h>
 
-#include <Common/AwsNodumpMemoryManager.h>
-
 #include "config.h"
 
 namespace DB::S3
@@ -29,6 +27,7 @@ struct ServerSideEncryptionKMSConfig
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <Common/AwsNodumpMemoryManager.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>

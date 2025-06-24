@@ -1,3 +1,5 @@
+#ifdef USE_AWS_S3
+
 #include <Common/AwsNodumpMemoryManager.h>
 
 namespace DB
@@ -16,3 +18,5 @@ namespace DB
 
     void AwsNodumpMemoryManager::End() {}
 }
+
+#endif
