@@ -1,4 +1,4 @@
-#include <Functions/text/searchAnyAll.h>
+#include <Functions/searchAnyAll.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
