@@ -352,10 +352,7 @@ done
 QUOTE_EXCLUSIONS=(
     --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
 )
-find $ROOT_PATH/{programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | grep -v config\.h | grep -v config_tools\.h | while read -r line;
-do
-   echo "Found include with quotes in '${line}'. Please use <> instead"
-done
+find $ROOT_PATH/{programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | grep -v -F -e config.h -e config_tools.h | xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
 
 # Context.h (and a few similar headers) is included in many parts of the
 # codebase, so any modifications to it trigger a large-scale recompilation.
