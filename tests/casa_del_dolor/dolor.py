@@ -220,8 +220,15 @@ parser.add_argument(
 )
 parser.add_argument(
     "--add-keeper-map-prefix",
-    action="store_true",
+    action="store_false",
+    dest="add_keeper_map_prefix",
     help="Add 'keeper_map_path_prefix' server setting",
+)
+parser.add_argument(
+    "--add-transactions",
+    action="store_false",
+    dest="add_transactions",
+    help="Add 'allow_experimental_transactions' server setting",
 )
 args = parser.parse_args()
 
