@@ -459,7 +459,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [has](/sql-reference/functions/array-functions#has)                                                                            | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
 | [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
 | [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
 | [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
 | [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
 | [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitiveornull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |

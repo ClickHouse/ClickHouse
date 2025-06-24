@@ -255,7 +255,7 @@ ClickHouse supports different subsets of functions for the `text` index and supp
 | [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)       |
 | [in](/sql-reference/functions/in-functions)                                                 |
 | [notIn](/sql-reference/functions/in-functions)                                              |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                   |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken)                   |
 | [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)       |
 | [searchAny](/sql-reference/functions/string-search-functions.md/#searchany)                 |
 | [searchAll](/sql-reference/functions/string-search-functions.md/#searchall)                 |
