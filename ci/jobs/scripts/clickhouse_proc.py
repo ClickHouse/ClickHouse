@@ -1023,6 +1023,19 @@ quit
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
+    @staticmethod
+    def set_random_timezone():
+        tz = Shell.get_output(
+            f"rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{{print $3}}' | shuf | head -n1"
+        )
+        print(f"Chosen random timezone: {tz}")
+        assert tz, "Failed to get random TZ"
+        Shell.check(
+            f"cat /usr/share/zoneinfo/{tz} > /etc/localtime && echo '{tz}' > /etc/timezone",
+            verbose=True,
+            strict=True,
+        )
+
 
 if __name__ == "__main__":
     ch = ClickHouseProc()
