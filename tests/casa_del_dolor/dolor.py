@@ -230,6 +230,12 @@ parser.add_argument(
     dest="add_transactions",
     help="Add 'allow_experimental_transactions' server setting",
 )
+parser.add_argument(
+    "--add-distributed-ddl",
+    action="store_false",
+    dest="add_distributed_ddl",
+    help="Add 'add_distributed_ddl' settings",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):

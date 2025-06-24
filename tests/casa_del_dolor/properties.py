@@ -88,12 +88,6 @@ possible_properties = {
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
-    "distributed_ddl": {
-        "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
-        "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
-        "pool_size": threads_lambda,
-        "task_max_lifetime": threshold_generator(0.2, 0.2, 0, 60),
-    },
     "enable_azure_sdk_logging": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
@@ -235,6 +229,12 @@ possible_properties = {
     },
 }
 
+distributed_ddl_properties = {
+    "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
+    "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
+    "pool_size": threads_lambda,
+    "task_max_lifetime": threshold_generator(0.2, 0.2, 0, 60),
+}
 
 object_storages_properties = {
     "local": {},
@@ -782,6 +782,18 @@ def modify_server_settings(
         modified = True
         new_element = ET.SubElement(root, "allow_experimental_transactions")
         new_element.text = "1"
+
+    # Add distributed_ddl
+    if args.add_distributed_ddl and root.find("distributed_ddl") is None:
+        modified = True
+        distributed_ddl_xml = ET.SubElement(root, "distributed_ddl")
+        path_xml = ET.SubElement(distributed_ddl_xml, "path")
+        path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+        if random.randint(1, 100) <= 70:
+            modified = (
+                apply_properties_recursively(root, distributed_ddl_properties)
+                or modified
+            )
 
     # Select random properties to the XML
     if random.randint(1, 100) <= args.server_settings_prob:
