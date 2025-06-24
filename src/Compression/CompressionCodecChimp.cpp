@@ -18,6 +18,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** Chimp column codec implementation.
  *
  * Implementation of Chimp128 algorithm proposed in: Panagiotis Liakos, Katia Papakonstantinopoulou, Yannis Kotidis:
