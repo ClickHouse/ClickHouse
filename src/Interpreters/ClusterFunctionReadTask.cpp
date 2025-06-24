@@ -54,18 +54,6 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protocol_version) const
 {
     writeVarUInt(protocol_version, out);
-    if (isEmpty())
-    {
-        writeStringBinary("", out);
-
-        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
-        {
-            SerializedSetsRegistry registry;
-            ActionsDAG().serialize(out, registry);
-        }
-        return;
-    }
-
     writeStringBinary(path, out);
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)

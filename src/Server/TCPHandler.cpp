@@ -1947,7 +1947,6 @@ void TCPHandler::sendHello()
     {
         writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
-    LOG_TEST(log, "KSSENII {} VS {}", client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL);
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
     {

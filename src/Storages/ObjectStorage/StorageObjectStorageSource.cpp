@@ -945,7 +945,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     if (current_index >= buffer.size())
     {
         auto task = callback();
-        if (!task)
+        if (!task || task->isEmpty())
             return nullptr;
         return task->getObjectInfo();
     }
