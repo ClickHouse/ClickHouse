@@ -232,6 +232,6 @@
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
-    contrib-chdig = { url = "github:azat/chdig/e5d3cfdb163c6fdb2c9f1359eda8d22d0db38a0e"; flake = false; };
+    contrib-chdig = { url = "github:azat/chdig/76421350a7689eb2c69e1b92c825db5c08f9026c"; flake = false; };
   };
 }
