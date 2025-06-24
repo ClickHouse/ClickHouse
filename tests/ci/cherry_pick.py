@@ -370,7 +370,7 @@ close it.
         return self.name
 
 
-class Backport:
+class BackportPRs:
     def __init__(
         self,
         gh: GitHub,
@@ -635,29 +635,29 @@ def main():
     token = args.token or get_best_robot_token()
 
     gh = GitHub(token, create_cache_dir=False)
-    bp = Backport(
+    bpp = BackportPRs(
         gh,
         args.repo,
         args.from_repo,
         args.dry_run,
     )
     # https://github.com/python/mypy/issues/3004
-    bp.gh.cache_path = temp_path / "gh_cache"
-    bp.receive_release_prs()
-    bp.update_local_release_branches()
-    bp.receive_prs_for_backport(args.reserve_search_days)
-    bp.process_backports()
-    if bp.error is not None:
+    bpp.gh.cache_path = temp_path / "gh_cache"
+    bpp.receive_release_prs()
+    bpp.update_local_release_branches()
+    bpp.receive_prs_for_backport(args.reserve_search_days)
+    bpp.process_backports()
+    if bpp.error is not None:
         logging.error("Finished successfully, but errors occurred!")
         if IS_CI:
             ci_buddy = CIBuddy()
             ci_buddy.post_job_error(
-                f"The cherry-pick finished with errors: {bp.error}",
+                f"The cherry-pick finished with errors: {bpp.error}",
                 with_instance_info=True,
                 with_wf_link=True,
                 critical=True,
             )
-        raise bp.error
+        raise bpp.error
 
 
 if __name__ == "__main__":
