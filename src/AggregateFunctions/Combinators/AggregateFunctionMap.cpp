@@ -37,6 +37,12 @@ struct CompareHelperEqual
     bool operator()(const T & a, const T & b) const { return CompareHelper<T>::equals(a, b, 1); }
 };
 
+template <typename T>
+struct CompareHelperLess
+{
+    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
+};
+
 template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
@@ -327,7 +333,7 @@ public:
         {
             keys.push_back(it.first);
         }
-        ::sort(keys.begin(), keys.end());
+        ::sort(keys.begin(), keys.end(), CompareHelperLess<KeyType>{});
 
         // insert using sorted keys to result column
         for (auto & key : keys)
