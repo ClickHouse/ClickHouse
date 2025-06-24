@@ -2788,6 +2788,11 @@ CONV_FN(CreateDatabase, create_database)
         ret += " COMMENT ";
         ret += create_database.comment();
     }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
 }
 
 CONV_FN(CreateFunction, create_function)
@@ -3454,6 +3459,17 @@ CONV_FN(SinglePartitionExpr, spexpr)
     PartitionExprToString(ret, pexpr);
 }
 
+CONV_FN(Delete, del)
+{
+    if (del.has_single_partition())
+    {
+        ret += " IN ";
+        SinglePartitionExprToString(ret, del.single_partition());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, del.where());
+}
+
 CONV_FN(LightDelete, del)
 {
     ret += "DELETE FROM ";
@@ -3462,17 +3478,52 @@ CONV_FN(LightDelete, del)
     {
         ClusterToString(ret, true, del.cluster());
     }
-    if (del.has_single_partition())
-    {
-        ret += " IN ";
-        SinglePartitionExprToString(ret, del.single_partition());
-    }
-    ret += " WHERE ";
-    WhereStatementToString(ret, del.where());
+    DeleteToString(ret, del.del());
     if (del.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, del.setting_values());
+    }
+}
+
+CONV_FN(UpdateSet, upt)
+{
+    ColumnPathToString(ret, 0, upt.col());
+    ret += " = ";
+    ExprToString(ret, upt.expr());
+}
+
+CONV_FN(Update, upt)
+{
+    UpdateSetToString(ret, upt.update());
+    for (int i = 0; i < upt.other_updates_size(); i++)
+    {
+        ret += ", ";
+        UpdateSetToString(ret, upt.other_updates(i));
+    }
+    if (upt.has_single_partition())
+    {
+        ret += " IN ";
+        SinglePartitionExprToString(ret, upt.single_partition());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, upt.where());
+}
+
+CONV_FN(LightUpdate, upt)
+{
+    ret += "UPDATE ";
+    ExprSchemaTableToString(ret, upt.est());
+    if (upt.has_cluster())
+    {
+        ClusterToString(ret, true, upt.cluster());
+    }
+    ret += " SET ";
+    UpdateToString(ret, upt.upt());
+    if (upt.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, upt.setting_values());
     }
 }
 
@@ -3644,30 +3695,6 @@ CONV_FN(Exchange, et)
         ret += " SETTINGS ";
         SettingValuesToString(ret, et.setting_values());
     }
-}
-
-CONV_FN(UpdateSet, upt)
-{
-    ColumnPathToString(ret, 0, upt.col());
-    ret += " = ";
-    ExprToString(ret, upt.expr());
-}
-
-CONV_FN(Update, upt)
-{
-    UpdateSetToString(ret, upt.update());
-    for (int i = 0; i < upt.other_updates_size(); i++)
-    {
-        ret += ", ";
-        UpdateSetToString(ret, upt.other_updates(i));
-    }
-    if (upt.has_single_partition())
-    {
-        ret += " IN ";
-        SinglePartitionExprToString(ret, upt.single_partition());
-    }
-    ret += " WHERE ";
-    WhereStatementToString(ret, upt.where());
 }
 
 CONV_FN(RefreshInterval, ri)
@@ -4051,18 +4078,6 @@ CONV_FN(RemoveColumnSetting, rcp)
     SettingListToString(ret, rcp.setting_values());
 }
 
-CONV_FN(HeavyDelete, hdel)
-{
-    if (hdel.has_single_partition())
-    {
-        ret += "IN ";
-        SinglePartitionExprToString(ret, hdel.single_partition());
-        ret += " ";
-    }
-    ret += "WHERE ";
-    WhereStatementToString(ret, hdel.del());
-}
-
 CONV_FN(AlterItem, alter)
 {
     ret += "(";
@@ -4070,8 +4085,8 @@ CONV_FN(AlterItem, alter)
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
-            HeavyDeleteToString(ret, alter.del());
+            ret += "DELETE";
+            DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
             ret += "UPDATE ";
@@ -4830,6 +4845,15 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.async())
+    {
+        ret += " ASYNC";
+    }
     if (backup.has_informat())
     {
         ret += " FORMAT ";
@@ -4839,15 +4863,6 @@ CONV_FN(BackupRestore, backup)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
-    }
-    if (backup.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, backup.setting_values());
-    }
-    if (backup.async())
-    {
-        ret += " ASYNC";
     }
 }
 
@@ -4889,6 +4904,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kDel:
             LightDeleteToString(ret, query.del());
+            break;
+        case QueryType::kUpt:
+            LightUpdateToString(ret, query.upt());
             break;
         case QueryType::kTrunc:
             TruncateToString(ret, query.trunc());
