@@ -53,7 +53,7 @@ private:
 namespace LeadingZero
 {
     static const auto BIT_LENGTH = 3;
-    static const short round[65] =
+    static const Int16 round[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
         8, 8, 8, 8, 12, 12, 12, 12,
@@ -64,7 +64,7 @@ namespace LeadingZero
         24, 24, 24, 24, 24, 24, 24, 24,
         24, 24, 24, 24, 24, 24, 24, 24, 24
     };
-    static const short binaryRepresentation[65] =
+    static const Int16 binaryRepresentation[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 2, 2, 2, 2,
@@ -75,7 +75,7 @@ namespace LeadingZero
         7, 7, 7, 7, 7, 7, 7, 7,
         7, 7, 7, 7, 7, 7, 7, 7, 7
     };
-    static const short reverseBinaryRepresentation[8] = {0, 8, 12, 16, 18, 20, 22, 24};
+    static const Int16 reverseBinaryRepresentation[8] = {0, 8, 12, 16, 18, 20, 22, 24};
 }
 
 namespace ErrorCodes
@@ -90,7 +90,7 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr short log2(unsigned int n)
+constexpr Int16 log2(unsigned int n)
 {
     return (n < 2) ? 0 : 1 + log2(n / 2);
 }
@@ -114,7 +114,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(log2(data_bytes_size * 16));
+    static const Int16 LOG_NO_PREVIOUS_VALUES = log2(data_bytes_size * 16);
     // worst case (for 32-bit value):
     // 2 bits (flag) + 6 bits (previous values index) + 3 bits (no of leading zeroes) + 5 bits(data bit-size) + non-zero data bits.
     const UInt32 max_item_size_bits = 2 + LOG_NO_PREVIOUS_VALUES + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
@@ -151,21 +151,21 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     const UInt32 items_count = source_size / sizeof(T);
 
-    static constexpr short NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    static constexpr Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
     std::vector<T> stored_values(NO_PREVIOUS_VALUES);
     for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
     {
         stored_values[i] = 0;
     }
-    static constexpr short LOG_NO_PREVIOUS_VALUES = static_cast<short>(log2(NO_PREVIOUS_VALUES));
-    static constexpr short THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
+    static constexpr Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
+    static constexpr Int16 THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
     static constexpr int ARRAY_SIZE = 1 << (THRESHOLD + 1);
     std::vector<int> indices(ARRAY_SIZE);
     for (int i = 0; i < ARRAY_SIZE; i++)
     {
         indices[i] = 0;
     }
-    static const short setLsb = ARRAY_SIZE - 1;
+    static const Int16 setLsb = ARRAY_SIZE - 1;
 
     unalignedStoreLittleEndian<UInt32>(dest, items_count);
     dest += sizeof(items_count);
@@ -276,8 +276,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
-    static const short NO_PREVIOUS_VALUES = sizeof(T) * 16;
-    static const short LOG_NO_PREVIOUS_VALUES = static_cast<short>(log2(NO_PREVIOUS_VALUES));
+    static const Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    static const Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     int current_index = 0;
     std::vector<T> stored_values(NO_PREVIOUS_VALUES);
     for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
@@ -362,6 +362,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 prev_value = stored_values[match_index];
                 curr_value = prev_value;
                 break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid flag value");
         }
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
