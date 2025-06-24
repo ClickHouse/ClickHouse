@@ -326,6 +326,7 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();

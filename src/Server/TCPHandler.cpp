@@ -2442,19 +2442,26 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 }
 
 
+void TCPHandler::initMaybeCompressedOut(QueryState & state)
+{
+    const Settings & query_settings = state.query_context->getSettingsRef();
+    if (!state.maybe_compressed_out)
+    {
+        if (auto codec = getCompressionCodec(query_settings, state.compression))
+            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+        else
+            state.maybe_compressed_out = out;
+    }
+}
+
+
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
     {
-        const Settings & query_settings = state.query_context->getSettingsRef();
-        if (!state.maybe_compressed_out)
-        {
-            if (auto codec = getCompressionCodec(query_settings, state.compression))
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
-            else
-                state.maybe_compressed_out = out;
-        }
+        initMaybeCompressedOut(state);
 
+        const Settings & query_settings = state.query_context->getSettingsRef();
         state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
@@ -2469,10 +2476,17 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.logs_block_out)
     {
+        WriteBuffer * logs_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        {
+            initMaybeCompressedOut(state);
+            logs_buf = state.maybe_compressed_out.get();
+        }
+
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *logs_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2481,9 +2495,16 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 {
     if (!state.profile_events_block_out)
     {
+        WriteBuffer * profile_events_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        {
+            initMaybeCompressedOut(state);
+            profile_events_buf = state.maybe_compressed_out.get();
+        }
+
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 

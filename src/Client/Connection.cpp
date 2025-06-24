@@ -1422,7 +1422,19 @@ Block Connection::receiveProfileEvents()
 
 void Connection::initInputBuffers()
 {
+}
 
+
+void Connection::initMaybeCompressedInput()
+{
+    if (!maybe_compressed_in)
+    {
+        if (compression == Protocol::Compression::Enable)
+            // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
+        else
+            maybe_compressed_in = in;
+    }
 }
 
 
@@ -1430,15 +1442,7 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (!maybe_compressed_in)
-        {
-            if (compression == Protocol::Compression::Enable)
-                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
-            else
-                maybe_compressed_in = in;
-        }
-
+        initMaybeCompressedInput();
         block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
@@ -1448,8 +1452,15 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
+        ReadBuffer * logs_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        {
+            initMaybeCompressedInput();
+            logs_buf = maybe_compressed_in.get();
+        }
+
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1458,7 +1469,14 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        ReadBuffer * profile_events_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        {
+            initMaybeCompressedInput();
+            profile_events_buf = maybe_compressed_in.get();
+        }
+
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
