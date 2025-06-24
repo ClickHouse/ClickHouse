@@ -141,6 +141,36 @@ struct DecorrelationContext
     std::vector<EquivalenceClasses> equivalence_class_stack;
 };
 
+namespace
+{
+
+void projectCorrelatedColumns(
+    QueryPlan & lhs_plan,
+    const ColumnIdentifiers & correlated_column_identifiers)
+{
+    ActionsDAG project_only_correlated_columns_actions;
+
+    NameSet correlated_column_identifiers_set(correlated_column_identifiers.begin(), correlated_column_identifiers.end());
+
+    const auto & lhs_plan_header = lhs_plan.getCurrentHeader();
+
+    auto & outputs = project_only_correlated_columns_actions.getOutputs();
+    for (const auto & column : lhs_plan_header.getColumnsWithTypeAndName())
+    {
+        const auto * input_node = &project_only_correlated_columns_actions.addInput(column);
+        if (correlated_column_identifiers_set.contains(column.name))
+        {
+            outputs.push_back(input_node);
+        }
+    }
+
+    lhs_plan.addStep(std::make_unique<ExpressionStep>(
+        lhs_plan_header,
+        std::move(project_only_correlated_columns_actions)));
+}
+
+}
+
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
 /// pushing dependent join down and replacing it with CROSS JOIN.
@@ -151,17 +181,9 @@ QueryPlan decorrelateQueryPlan(
 {
     if (!context.correlated_plan_steps[node])
     {
-        /// The rest of the query plan doesn't use any correlated columns.
-        auto lhs_plan = context.query_plan.clone();
-
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
 
-        auto lhs_plan_header = lhs_plan.getCurrentHeader();
         auto decorrelated_plan_header = node->step->getOutputHeader();
-
-        ColumnsWithTypeAndName output_columns_and_types;
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan.getCurrentHeader().getColumnsWithTypeAndName());
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header.getColumnsWithTypeAndName());
 
         if (settings[Setting::query_plan_correlated_subqueries_use_substitution])
         {
@@ -206,13 +228,24 @@ QueryPlan decorrelateQueryPlan(
             }
         }
 
+        /// The rest of the query plan doesn't use any correlated columns.
+        auto lhs_plan = context.query_plan.clone();
+
+        projectCorrelatedColumns(lhs_plan, context.correlated_subquery.correlated_column_identifiers);
+
+        auto lhs_plan_header = lhs_plan.getCurrentHeader();
+
+        ColumnsWithTypeAndName output_columns_and_types;
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header.getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header.getColumnsWithTypeAndName());
+
         JoinExpressionActions join_expression_actions(
             lhs_plan_header.getColumnsWithTypeAndName(),
             decorrelated_plan_header.getColumnsWithTypeAndName(),
             output_columns_and_types);
 
         Names output_columns;
-        output_columns.insert_range(output_columns.cend(), lhs_plan.getCurrentHeader().getNames());
+        output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
         output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader().getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(

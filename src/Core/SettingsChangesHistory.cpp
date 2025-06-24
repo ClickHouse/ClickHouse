@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
+            {"query_plan_correlated_subqueries_use_substitution", false, true, "New setting to correlated subquery planning optimization."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
