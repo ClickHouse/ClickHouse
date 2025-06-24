@@ -189,3 +189,6 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
             f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'], ProfileEvents['DistributedConnectionFailTry'] > 0 FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
         ) == "1\t1\n"
     )
+
+    # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
+    node2.wait_for_start(30)
