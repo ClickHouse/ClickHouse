@@ -14,7 +14,7 @@ select dynamicType(json.a), isDynamicElementInSharedData(json.a), count() from t
 select 'Dynamic types';
 select dynamicType(dynamic), isDynamicElementInSharedData(dynamic), count() from test_updates group by all order by all;
 
-select json, json.a, dynamic from test_updates limit 2 offset 499999 ;
+select json, json.a, dynamic from test_updates where id in (499999, 500000) order by id;
 select json, dynamic from test_updates format Null;
 
 alter table test_updates update json = '{}' where 1;
@@ -29,7 +29,7 @@ select dynamicType(json.a), isDynamicElementInSharedData(json.a), count() from t
 select 'Dynamic types';
 select dynamicType(dynamic), isDynamicElementInSharedData(dynamic), count() from test_updates group by all order by all;
 
-select json, json.a, dynamic from test_updates limit 2 offset 499999 ;
+select json, json.a, dynamic from test_updates where id in (499999, 500000) order by id;
 select json, dynamic from test_updates format Null;
 
 drop table test_updates;
@@ -47,7 +47,7 @@ select dynamicType(json.a), isDynamicElementInSharedData(json.a), count() from t
 select 'Dynamic types';
 select dynamicType(dynamic), isDynamicElementInSharedData(dynamic), count() from test_updates group by all order by all;
 
-select json, json.a, dynamic from test_updates limit 2 offset 499999 ;
+select json, json.a, dynamic from test_updates where id in (499999, 500000) order by id;
 select json, dynamic from test_updates format Null;
 
 alter table test_updates update json = '{}' where 1;
@@ -62,7 +62,7 @@ select dynamicType(json.a), isDynamicElementInSharedData(json.a), count() from t
 select 'Dynamic types';
 select dynamicType(dynamic), isDynamicElementInSharedData(dynamic), count() from test_updates group by all order by all;
 
-select json, json.a, dynamic from test_updates limit 2 offset 499999 ;
+select json, json.a, dynamic from test_updates where id in (499999, 500000) order by id;
 select json, dynamic from test_updates format Null;
 
 drop table test_updates;
