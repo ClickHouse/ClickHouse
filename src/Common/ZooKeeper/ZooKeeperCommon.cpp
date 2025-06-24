@@ -1,4 +1,3 @@
-#include <utility>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -1005,7 +1004,6 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
 {
-    // return std::make_shared<ZooKeeperSessionIDResponse>();
     auto response = std::make_shared<ZooKeeperSessionIDResponse>();
     response->server_id = server_id;
     response->internal_id = internal_id;
