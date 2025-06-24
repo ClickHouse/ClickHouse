@@ -187,10 +187,6 @@ public:
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
 
-    /// TODO: remove or at least remove const.
-    virtual void syncRevision(UInt64 revision) const = 0;
-    virtual UInt64 getRevision() const = 0;
-
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;
 

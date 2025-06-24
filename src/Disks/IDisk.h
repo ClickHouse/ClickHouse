@@ -481,9 +481,6 @@ public:
     /// Required for remote disk to ensure that the replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
 
-    /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) {}
-
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
