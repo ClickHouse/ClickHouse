@@ -593,6 +593,53 @@ class BackportPRs:
         return self.repo.default_branch
 
 
+class CherryPickPRs:
+    def __init__(self, gh: GitHub, repo: str, dry_run: bool):
+        self.gh = gh
+        self.repo_name = repo
+        self.dry_run = dry_run
+
+    def get_open_cherry_pick_prs(self) -> PullRequests:
+        """
+        Get all open cherry-pick PRs in the repository.
+        """
+        query = f"type:pr repo:{self.repo_name} label:{Labels.PR_CHERRYPICK}"
+        logging.info("Query to find the cherry-pick PRs:\n %s", query)
+        return self.gh.get_pulls_from_search(query=query, state="open")
+
+    def ping_stale_cherry_pick_prs(self) -> None:
+        """
+        Ping stale cherry-pick PRs that are not updated for more than 30 hours.
+        These PRs are probably stuck and require manual intervention.
+        """
+        for pr in self.get_open_cherry_pick_prs():
+            # The `updated_at` is Optional[datetime]
+            cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
+            since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
+            if since_updated < 30 * 3600:
+                logging.info(
+                    "The cherry-pick PR #%s was updated %d seconds ago, "
+                    "waiting for the next running",
+                    pr.number,
+                    since_updated,
+                )
+                continue
+            assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
+            comment_body = (
+                f"Dear {assignees}, the PR is not updated for more than 30 hours. "
+                "Probably, it's stuck. Please, review the state following the "
+                "`Troubleshooting` section in the PR description."
+            )
+            if self.dry_run:
+                logging.info(
+                    "DRY RUN: would comment the cherry-pick PR #%s:\n",
+                    pr.number,
+                )
+                continue
+
+            pr.create_issue_comment(comment_body)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         "Create cherry-pick and backport PRs",
@@ -647,6 +694,8 @@ def main():
     bpp.update_local_release_branches()
     bpp.receive_prs_for_backport(args.reserve_search_days)
     bpp.process_backports()
+    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
+    cpp.ping_stale_cherry_pick_prs()
     if bpp.error is not None:
         logging.error("Finished successfully, but errors occurred!")
         if IS_CI:
