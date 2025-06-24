@@ -99,7 +99,7 @@ do
 done
 
 # Special care for Rust
-for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | grep -v flatbuffers | grep -v winapi | grep -v r-efi | grep -v prqlc-parser | grep -v thrift | grep -v clickhouse-rs-cityhash | grep -v wasite-0.1.0 | grep -v wit-bindgen-rt | grep -v cursive | grep -v fortanix-sgx | grep -v hdfs-native | grep -v skim | grep -v prqlc | grep -v xi-unicode | grep -v valuable | grep -v roaring | grep -v alloc-stdlib);
+for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
     FOLDER=$(dirname "$dependency")
     NAME=$(echo "$dependency" | awk -F'/' '{ print $(NF-1) }' | awk -F'-' '{ NF=(NF-1); print $0 }')
@@ -138,10 +138,31 @@ do
 
     if [ -z "${LICENSE_PATH}" ];
     then
-        echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
-        ls "$FOLDER"
-        exit 1
+        # It's important that we match exactly the license that we want for those projects that don't include a LICENSE file
+        if [ "$LICENSE_TYPE" == "Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT OR Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
+           [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
+        then
+            LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "MIT" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/MIT.txt"
+        elif [ "$LICENSE_TYPE" == "MPL-2.0" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/MPL-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "BSD-3-Clause" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/BSD-3-Clause.txt"
+        else
+            echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER"
+            ls "$FOLDER"
+            exit 1
+        fi
     fi
 
-    echo -e "$NAME\t$LICENSE_TYPE\t$LICENSE_PATH"
+    RELATIVE_PATH=$(echo "$LICENSE_PATH" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
+    echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
 done
