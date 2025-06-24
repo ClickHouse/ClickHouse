@@ -5,7 +5,6 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
-#include <variant>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -15,45 +14,25 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
-#include <Common/Exception.h>
-#include <Common/ObjectStorageKey.h>
-#include <Common/ThreadPool.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
-
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
 #include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
-
-#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
-
 #include <Interpreters/Context_fwd.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <azure/core/credentials/credentials.hpp>
-#include <azure/storage/common/storage_credential.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-
 namespace DB::AzureBlobStorage
 {
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
-
-using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
-
-using AuthMethod = std::variant<
-    ConnectionString,
-    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
-    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
-
 }
-
-
 #endif
 
 #if USE_AWS_S3
@@ -85,15 +64,10 @@ struct ObjectMetadata
     ObjectAttributes attributes;
 };
 
-struct DataLakeObjectMetadata;
-
 struct RelativePathWithMetadata
 {
     String relative_path;
-    /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Delta lake related object metadata.
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
@@ -146,10 +120,6 @@ public:
 
     virtual ObjectStorageType getType() const = 0;
 
-    /// The logical root or base path used to group a set of related objects.
-    virtual std::string getRootPrefix() const { return ""; }
-
-    /// Common object key prefix relative to the root path.
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
@@ -290,11 +260,6 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
-
-    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

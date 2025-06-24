@@ -1,12 +1,8 @@
-#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Storages/PartitionCommands.h>
-
-#include <IO/ReadHelpers.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <IO/WriteHelpers.h>
-
-#include <memory>
+#include <IO/ReadHelpers.h>
+#include <ranges>
 #include <shared_mutex>
 
 
@@ -46,11 +42,6 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
 time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
-}
-
-bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
 }
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
@@ -176,7 +167,9 @@ void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    addOperation(std::make_unique<WriteInlineDataOperation>(path, data, *metadata_storage.getDisk(), metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->setInlineData(data);
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -244,7 +237,12 @@ void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::stri
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<RewriteFileOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->addObject(std::move(object_key), size_in_bytes);
+
+    auto data = metadata->serializeToString();
+    if (!data.empty())
+        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)

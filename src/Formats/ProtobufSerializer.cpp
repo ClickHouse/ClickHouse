@@ -46,6 +46,7 @@
 #    include <boost/container/flat_set.hpp>
 #    include <boost/numeric/conversion/cast.hpp>
 #    include <boost/range/algorithm.hpp>
+#    include <boost/range/algorithm_ext/erase.hpp>
 #    include <google/protobuf/descriptor.h>
 #    include <google/protobuf/descriptor.pb.h>
 
@@ -3622,9 +3623,9 @@ namespace
 
                     if (const auto * message_type = field_descriptor.message_type())
                     {
-                        bool has_explicit_names = tuple_data_type.hasExplicitNames();
+                        bool have_explicit_names = tuple_data_type.haveExplicitNames();
                         Names element_names;
-                        if (has_explicit_names)
+                        if (have_explicit_names)
                         {
                             element_names = tuple_data_type.getElementNames();
                         }
