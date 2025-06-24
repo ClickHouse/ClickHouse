@@ -574,8 +574,8 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
             result_column = ColumnUInt8::create();
             break;
         }
-        //const Block & sample_right_block = *((*selected_rows.begin())->block);
-        if (/*!sample_right_block ||*/ !added_columns.additional_filter_expression)
+
+        if (!added_columns.additional_filter_expression)
         {
             auto filter = ColumnUInt8::create();
             filter->insertMany(1, selected_rows.size());
