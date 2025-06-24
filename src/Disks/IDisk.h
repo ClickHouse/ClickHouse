@@ -458,10 +458,10 @@ public:
     virtual void shutdown() {}
 
     /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
+    void startup(bool skip_access_check);
 
     /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    virtual void startupImpl() {}
 
     /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
     /// but don't do it more frequently than the specified parameter.

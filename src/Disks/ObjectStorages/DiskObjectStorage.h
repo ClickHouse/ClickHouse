@@ -139,7 +139,7 @@ public:
 
     void shutdown() override;
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void refresh(UInt64 not_sooner_than_milliseconds) override
     {

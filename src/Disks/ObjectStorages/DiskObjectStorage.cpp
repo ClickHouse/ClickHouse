@@ -444,7 +444,7 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startupImpl(ContextPtr)
+void DiskObjectStorage::startupImpl()
 {
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
