@@ -82,8 +82,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
             {"optimize_use_projection_filtering", false, true, "New setting"},
             {"input_format_parquet_enable_json_parsing", false, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
-            {"optimize_use_projection_filtering", true, true, "New setting"},
-            {"input_format_parquet_enable_json_parsing", true, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
@@ -91,8 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
-
+            {"format_schema_message_name", "", "", "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -783,7 +780,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
-            {"allow_coalescing_columns_in_partition_or_order_key", true, false, "New setting to allow coalescing of partition or sorting key columns."},
+            {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
