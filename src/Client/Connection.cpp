@@ -16,7 +16,6 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
-#include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
@@ -36,12 +35,9 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <pcg_random.hpp>
-#include <base/scope_guard.h>
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 

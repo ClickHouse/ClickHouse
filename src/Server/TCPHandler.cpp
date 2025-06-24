@@ -1495,7 +1495,6 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     state.block_out->write(totals);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1513,7 +1512,6 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     state.block_out->write(extremes);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1531,7 +1529,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-
+        state.profile_events_block_out->flush();
         out->finishChunk();
         out->next();
 
@@ -2648,7 +2646,7 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-
+    state.logs_block_out->flush();
     out->finishChunk();
     out->next();
 }
