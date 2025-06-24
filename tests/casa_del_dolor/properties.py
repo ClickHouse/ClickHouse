@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
 import random
+import string
 import typing
 
 from integration.helpers.cluster import ClickHouseCluster
@@ -367,7 +368,12 @@ def add_single_cluster(
     # Add secret
     if random.randint(1, 100) <= 30:
         secret_xml = ET.SubElement(next_cluster, "secret")
-        secret_xml.text = f"{i % 10}23457"
+        secret_xml.text = "".join(
+            [
+                random.choice(string.ascii_lowercase + string.digits)
+                for _ in range(random.randint(1, 128))
+            ]
+        )
     # Add allow_distributed_ddl_queries
     if random.randint(1, 100) <= 16:
         allow_ddl_xml = ET.SubElement(next_cluster, "allow_distributed_ddl_queries")
@@ -527,13 +533,14 @@ def add_single_disk(
 
             if enc_algorithm == "aes_128_ctr":
                 key_xml = ET.SubElement(next_disk, "key")
-                key_xml.text = f"{i % 10}234567812345678"
+                key_xml.text = "".join([random.choice("0123456789") for _ in range(16)])
             else:
                 key_hex_xml = ET.SubElement(next_disk, "key_hex")
-                key_hex_xml.text = (
-                    f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6A"
-                    if enc_algorithm == "aes_192_ctr"
-                    else f"{i % 10}09105c600c12066f82f1a4dbb41a08e4A4348C8387ADB6AB827410C4EF71CA5"
+                key_hex_xml.text = "".join(
+                    [
+                        random.choice("abcdef0123456789")
+                        for _ in range(48 if enc_algorithm == "aes_192_ctr" else 64)
+                    ]
                 )
 
     if random.randint(1, 100) <= 50:
