@@ -178,6 +178,7 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting tokens which are separated by certain strings.

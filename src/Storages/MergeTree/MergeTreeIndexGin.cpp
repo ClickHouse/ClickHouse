@@ -668,7 +668,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 
             gin_filters.back().emplace_back(gin_filter_params);
             const auto & value = element.safeGet<String>();
-            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back().back());
+            token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
         }
         out.set_gin_filters = std::move(gin_filters);
         return true;
@@ -697,14 +697,14 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             for (const auto & alternative : alternatives)
             {
                 gin_filters.back().emplace_back(gin_filter_params);
-                token_extractor->stringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back());
+                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
             }
             out.set_gin_filters = std::move(gin_filters);
         }
         else
         {
             out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-            token_extractor->stringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter);
+            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
         }
 
         return true;
