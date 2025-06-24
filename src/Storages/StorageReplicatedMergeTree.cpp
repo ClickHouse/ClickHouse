@@ -8255,7 +8255,7 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
 
         if (haveCommittingOps(committing_blocks, partitions, ops))
         {
-            LOG_DEBUG(log, "Have uncommitted inserts with allocated block number. Will retry updating virtual parts in {} ms to satisfy update_sequential_consistency", backoff_ms);
+            LOG_DEBUG(log, "Have uncommitted operations with allocated block number. Will retry updating committing blocks in {} ms", backoff_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
             continue;
         }
@@ -8264,7 +8264,7 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
     }
 
     if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout_ms);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {}", sync_timeout_ms);
 }
 
 QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)

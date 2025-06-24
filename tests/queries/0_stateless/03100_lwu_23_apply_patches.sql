@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: profile events for mutations may differ because of additional replicas.
+
 DROP TABLE IF EXISTS t_apply_patches SYNC;
 DROP TABLE IF EXISTS t_apply_patches_smt SYNC;
 

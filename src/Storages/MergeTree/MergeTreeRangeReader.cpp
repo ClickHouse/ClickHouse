@@ -575,6 +575,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
             shrink(additional_columns, rows_per_granule_previous);
             shrink(columns_for_patches, rows_per_granule_previous);
+            shrink(patch_versions_block, rows_per_granule_previous);
 
             num_rows = total_rows_per_granule;
 
