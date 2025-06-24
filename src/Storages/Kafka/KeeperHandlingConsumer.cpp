@@ -73,6 +73,7 @@ const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::c
     return kafka_consumer.currentHeaderList();
 }
 
+
 KeeperHandlingConsumer::OffsetGuard::OffsetGuard(KeeperHandlingConsumer & consumer_, const int64_t new_offset_)
     : consumer(&consumer_)
     , new_offset(new_offset_)
@@ -655,4 +656,10 @@ void KeeperHandlingConsumer::appendToAssignedTopicPartitions(const TopicPartitio
     for (const auto & [topic_partition, info] : locks)
         assigned_topic_partitions.push_back(topic_partition);
 }
+
+void KeeperHandlingConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
+{
+    kafka_consumer->setExceptionInfo(text, with_stacktrace);
+}
+
 }

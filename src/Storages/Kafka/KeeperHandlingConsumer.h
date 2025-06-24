@@ -123,6 +123,10 @@ public:
     /// Can be called simultaneously with most of the functions, see the class comment for details.
     StorageKafkaUtils::ConsumerStatistics getStat() const;
     IKafkaExceptionInfoSinkPtr getExceptionInfoSink() const;
+
+    void setExceptionInfo(const std::string & text, bool with_stacktrace);
+
+
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
