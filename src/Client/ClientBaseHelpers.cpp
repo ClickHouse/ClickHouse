@@ -212,11 +212,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         }
     }
 
-    size_t depth = 0;
     // Pride flag colors.
-    auto colormap = std::array<Replxx::Color, 8>{
-        //pink, red, orange, yellow, green, turquoise, indigo, violet
-
+    auto colormap = std::array<Replxx::Color, 8>
+    {
         replxx::color::rgb666(5, 2, 4), // Pink      ≈ #FF87D7
         replxx::color::rgb666(5, 0, 0), // Red       ≈ #FF0000
         replxx::color::rgb666(5, 3, 0), // Orange    ≈ #FFAF00
@@ -226,14 +224,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         replxx::color::rgb666(2, 0, 5), // Indigo    ≈ #8700FF
         replxx::color::rgb666(5, 0, 5)  // Violet    ≈ #FF00FF
     };
-    // Trans flag colors.
-    // auto colormap = std::array<Replxx::Color, 6>{
-    //     Replxx::Color::BLUE,         // Blue
-    //     replxx::color::rgb666(0, 4, 0), // Pink
-    //     Replxx::Color::WHITE,        // White
-    //     replxx::color::rgb666(0, 4, 0), // Pink
-    //     Replxx::Color::BLUE,         // Blue
-    // };
+
+    size_t current_color = 0;
+    std::vector<Replxx::Color> color_stack;
 
     for (const auto * it = begin; it != end; it++)
     {
@@ -241,18 +234,20 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
         if (*it == '(')
         {
-            colors[pos2] = colormap[depth % colormap.size()];
-            depth++;
+            color_stack.push_back(colormap[current_color % colormap.size()]);
+            current_color++;
+
+            colors[pos2] = color_stack.back();
             continue;
         }
 
         if (*it == ')')
         {
-            if (depth < 1)
+            if (color_stack.empty())
                 continue;
 
-            colors[pos2] = colormap[(depth - 1) % colormap.size()];
-            depth--;
+            colors[pos2] = color_stack.back();
+            color_stack.pop_back();
 
             continue;
         }
