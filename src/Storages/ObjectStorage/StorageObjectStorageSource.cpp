@@ -142,7 +142,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (distributed_processing)
     {
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
-            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+            local_context->getClusterFunctionReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -531,7 +531,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
-        else
+        if (!transformer)
             transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
 
         if (transformer)
@@ -937,7 +937,7 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_, size_t max_threads_count)
+    const ClusterFunctionReadTaskCallback & callback_, size_t max_threads_count)
     : callback(callback_)
 {
     ThreadPool pool(
@@ -945,22 +945,26 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         CurrentMetrics::StorageObjectStorageThreadsActive,
         CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, "ReadTaskIter");
 
-    std::vector<std::future<String>> keys;
-    keys.reserve(max_threads_count);
+    std::vector<std::future<ObjectInfoPtr>> objects;
+    objects.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
-        keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
+        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
+        {
+            auto task = callback();
+            if (!task || task->isEmpty())
+                return nullptr;
+            return task->getObjectInfo();
+        }, Priority{}));
 
     pool.wait();
     buffer.reserve(max_threads_count);
-    for (auto & key_future : keys)
+    for (auto & object_future : objects)
     {
-        auto key = key_future.get();
-        if (key.empty())
-            continue;
-
-        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        auto object = object_future.get();
+        if (object)
+            buffer.push_back(object);
     }
 }
 
@@ -969,11 +973,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
     {
-        auto key = callback();
-        if (key.empty())
+        auto task = callback();
+        if (!task || task->isEmpty())
             return nullptr;
-
-        return std::make_shared<ObjectInfo>(key, std::nullopt);
+        return task->getObjectInfo();
     }
 
     return buffer[current_index];
