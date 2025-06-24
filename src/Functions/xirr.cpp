@@ -531,7 +531,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullColumnIfConst();
+        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow argument must be an array");
@@ -630,9 +630,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullColumnIfConst();
-        auto cashflow_col = arguments[1].column->convertToFullColumnIfConst();
-        auto date_col = arguments[2].column->convertToFullColumnIfConst();
+        auto rate_col = arguments[0].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
+        auto date_col = arguments[2].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
@@ -746,8 +746,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullColumnIfConst();
-        auto cashflow_col = arguments[1].column->convertToFullColumnIfConst();
+        auto rate_col = arguments[0].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
@@ -870,7 +870,7 @@ SELECT round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2
         )",
          "0.099785"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
@@ -904,7 +904,7 @@ $$
         {"simple_example", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20])", "0.2809484211599611"},
         {"simple_example_with_guess", "SELECT financialInternalRateOfReturn([-100, 39, 59, 55, 20], 0.1)", "0.2809484211599611"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
@@ -954,7 +954,7 @@ SELECT financialNetPresentValueExtended(0.1, [-10000., 5750., 4250., 3250.], [to
          )",
          "2507.067268742502"},
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
@@ -1001,7 +1001,7 @@ $$
             "SELECT financialNetPresentValue(0.08, [-40000., 5000., 8000., 12000., 30000.], false)",
             "2838.1691372032656"}};
 
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
