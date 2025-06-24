@@ -3186,7 +3186,14 @@ void KeeperStorage<Container>::preprocessRequest(
 
     const auto preprocess_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
     {
-        if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
+        if (concrete_zk_request.xid == 1 && keeper_context->shouldInjectAuth())
+        {
+            auto new_auth = std::make_shared<KeeperStorageBase::AuthID>();
+            new_auth->scheme = "digest";
+            new_auth->id = KeeperStorageBase::generateDigest("clickhouse:injected");
+            new_deltas.emplace_back(new_last_zxid, AddAuthDelta{session_id, std::move(new_auth)});
+        }
+        else if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
         {
             /// Multi requests handle failures using FailedMultiDelta
             if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
