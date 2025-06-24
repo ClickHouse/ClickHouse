@@ -61,15 +61,7 @@ struct ITokenExtractor
     /// Updates GIN filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
     /// tokens depending on whether the substring is a prefix or a suffix.
-    virtual void substringToGinFilter(
-        const char * data,
-        size_t length,
-        GinFilter & gin_filter,
-        bool /*is_prefix*/,
-        bool /*is_suffix*/) const
-    {
-        stringToGinFilter(data, length, gin_filter);
-    }
+    virtual void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const = 0;
 
     virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const
     {
@@ -134,6 +126,17 @@ class ITokenExtractorHelper : public ITokenExtractor
             gin_filter.addTerm(data + token_start, token_len);
     }
 
+
+    void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override
+    {
+        /// In order to avoid filter updates with incomplete tokens,
+        /// first token is ignored, unless substring is prefix and
+        /// last token is ignored, unless substring is suffix.
+        const auto & tokens = static_cast<const Derived *>(this)->getTokens(data, length);
+        for (size_t i = (is_suffix ? 1 : 0); i < tokens.size() - (is_prefix ? 1 : 0); ++i)
+            gin_filter.addTerm(tokens[i].data(), tokens[i].size());
+    }
+
     void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
@@ -175,7 +178,6 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting tokens which are separated by certain strings.

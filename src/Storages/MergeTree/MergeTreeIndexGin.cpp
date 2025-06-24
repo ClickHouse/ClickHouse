@@ -444,7 +444,6 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
         }
         else if (function_name == "equals" ||
                  function_name == "notEquals" ||
-                 function_name == "has" ||
                  function_name == "mapContainsKey" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
@@ -546,7 +545,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (!key_exists && !map_key_exists)
         return false;
 
-    if (map_key_exists && (function_name == "has" || function_name == "mapContainsKey"))
+    if (map_key_exists && function_name == "mapContainsKey")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
@@ -555,16 +554,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "has")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_HAS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
-
     if (function_name == "notEquals")
     {
         out.key_column = key_column_num;
@@ -679,7 +668,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 
             gin_filters.back().emplace_back(gin_filter_params);
             const auto & value = element.safeGet<String>();
-            token_extractor->substringToGinFilter(value.data(), value.size(), gin_filters.back().back(), false, false);
+            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back().back());
         }
         out.set_gin_filters = std::move(gin_filters);
         return true;
@@ -708,14 +697,14 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             for (const auto & alternative : alternatives)
             {
                 gin_filters.back().emplace_back(gin_filter_params);
-                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
+                token_extractor->stringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back());
             }
             out.set_gin_filters = std::move(gin_filters);
         }
         else
         {
             out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
+            token_extractor->stringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter);
         }
 
         return true;

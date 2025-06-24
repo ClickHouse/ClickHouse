@@ -238,6 +238,28 @@ is performance. In practice, users often search for multiple terms at once. For 
 '%big%'` can be evaluated directly using a text index by forming the union of the row id lists for terms "little" and "big".
 :::
 
+### Functions Support {#functions-support}
+
+Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. 
+ClickHouse supports different subsets of functions for the `text` index and supported functions are as follows:
+
+| Function (operator)                                                                         |
+|---------------------------------------------------------------------------------------------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                  |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)      |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                           |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                     |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                         |
+| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                      |
+| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                          |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)       |
+| [in](/sql-reference/functions/in-functions)                                                 |
+| [notIn](/sql-reference/functions/in-functions)                                              |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                   |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)       |
+| [searchAny](/sql-reference/functions/string-search-functions.md/#searchany)                 |
+| [searchAll](/sql-reference/functions/string-search-functions.md/#searchall)                 |
+
 ## Related Content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
