@@ -9,11 +9,11 @@
     <img alt="The ClickHouse company logo." src="https://github.com/ClickHouse/clickhouse-docs/assets/9611008/b001dc7b-5a45-4dcd-9275-e03beb7f9177">
 </picture>
 
-<h4>ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.</h4>
+<h4>ClickHouse® is an open-source, column-oriented database management system that enables real-time analytical reporting.</h4>
 
 </div>
 
-## How To Install (Linux, macOS, FreeBSD)
+## How to Install (Linux, macOS, FreeBSD)
 
 ```
 curl https://clickhouse.com/ | sh
@@ -22,7 +22,7 @@ curl https://clickhouse.com/ | sh
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
-* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
+* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse Cloud — a managed service built by the creators and maintainers of ClickHouse
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
