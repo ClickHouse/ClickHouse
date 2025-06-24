@@ -826,10 +826,10 @@ public:
                     value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
                 case ElementType::UINT64:
-                    value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale);
+                    value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
-                    value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale);
+                    value.value = element.getInt64();
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
