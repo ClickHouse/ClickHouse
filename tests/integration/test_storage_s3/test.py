@@ -112,11 +112,13 @@ def started_cluster():
                 "configs/schema_cache.xml",
                 "configs/blob_log.xml",
                 "configs/filesystem_caches.xml",
+                "configs/test_logging.xml",
             ],
             user_configs=[
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
+                "configs/process_archives_as_whole_with_cluster.xml",
             ],
         )
         cluster.add_instance(
@@ -2590,6 +2592,9 @@ def test_archive(started_cluster):
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
 
+    assert "true" == node2.query("SELECT getSetting('cluster_function_with_archives_send_over_whole_archive')").strip()
+    assert "false" == node.query("SELECT getSetting('cluster_function_with_archives_send_over_whole_archive')").strip()
+
     function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
 
     expected_paths = 7
@@ -2598,24 +2603,46 @@ def test_archive(started_cluster):
     cluster_function_old = f"s3Cluster(cluster_with_old_server, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
     cluster_function_new = f"s3Cluster(cluster, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
 
-    # Note: max_threads = 1 is used in this test to reduce the change of one replica processing all the files.
+    paths_list_new = node.query(f"SELECT distinct(_path) FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
+    assert "Failed to get object info" in node.query_and_get_error(
+        f"SELECT distinct(_path) FROM {cluster_function_old} SETTINGS max_threads=1"
+    )
+
+    assert expected_paths == int(node.query(f"SELECT uniqExact(_path) FROM {function}"))
+
+    query_id = f"query_{uuid.uuid4()}"
+    assert expected_paths == int(
+        node2.query(
+            f"SELECT uniqExact(_path) FROM {cluster_function_old}",
+            query_id=query_id,
+        )
+    )
+    node.query("SYSTEM FLUSH LOGS")
+    node.contains_in_log("Will send over the whole archive")
 
     assert expected_paths == int(
-        node.query(f"SELECT uniqExact(_path) FROM {function} SETTINGS max_threads=1")
-    )
+        node.query(
+            f"SELECT uniqExact(_path) FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0",
+        )
+    ), f"Processed files {paths_list_new}, expected: {expected_paths_list}"
+
+    expected_count = 14
+    assert expected_count == int(node.query(f"SELECT count() FROM {function}"))
     assert "Failed to get object info" in node.query_and_get_error(
         f"SELECT count() FROM {cluster_function_old} SETTINGS max_threads=1"
     )
-    assert expected_paths == int(
-        node.query(
-            f"SELECT uniqExact(_path) FROM {cluster_function_new} SETTINGS max_threads=1",
+
+    query_id = f"query_{uuid.uuid4()}"
+    # Implementation with whole archive sending can have duplicates,
+    # this is was a mistake in implementation.
+    assert expected_count <= int(
+        node2.query(
+            f"SELECT count() FROM {cluster_function_old}", query_id = query_id
         )
     )
+    node2.query("SYSTEM FLUSH LOGS")
+    assert 7 == int(node2.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message ilike '%send over the whole%'"))
 
-    expected_count = 14
     assert expected_count == int(
-        node.query(f"SELECT count() FROM {function} SETTINGS max_threads=1")
-    )
-    assert expected_count == int(
-        node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS max_threads=1")
+        node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
     )

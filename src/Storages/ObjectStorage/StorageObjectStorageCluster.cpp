@@ -22,6 +22,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool cluster_function_with_archives_send_over_whole_archive;
 }
 
 namespace ErrorCodes
@@ -197,7 +198,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+        iterator, number_of_replicas, local_context->getGlobalContext()->getSettingsRef()[Setting::cluster_function_with_archives_send_over_whole_archive]);
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor](size_t number_of_current_replica) mutable -> String {

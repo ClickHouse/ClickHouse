@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+          <cluster_function_with_archives_send_over_whole_archive>1</cluster_function_with_archives_send_over_whole_archive>
+        </default>
+    </profiles>
+</clickhouse>

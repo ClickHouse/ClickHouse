@@ -8,8 +8,10 @@ namespace DB
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
-    size_t number_of_replicas_)
+    size_t number_of_replicas_,
+    bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
+    , send_over_whole_archive(send_over_whole_archive_)
     , connection_to_files(number_of_replicas_)
     , iterator_exhausted(false)
 {
@@ -94,7 +96,21 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
             }
         }
 
-        String file_path = object_info->getPath();
+        String file_path;
+        if (send_over_whole_archive)
+        {
+            auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
+            if (archive_object_info)
+            {
+                file_path = archive_object_info->getPathToArchive();
+                LOG_TEST(log, "Will send over the whole archive {} to replicas. "
+                         "This will be suboptimal, consider turning on "
+                         "cluster_function_with_archives_send_over_whole_archive setting", file_path);
+            }
+        }
+
+        if (file_path.empty())
+            file_path = object_info->getPath();
 
         size_t file_replica_idx = getReplicaForFile(file_path);
         if (file_replica_idx == number_of_current_replica)

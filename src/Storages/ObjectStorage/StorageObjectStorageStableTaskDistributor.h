@@ -17,7 +17,8 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(
         std::shared_ptr<IObjectIterator> iterator_,
-        size_t number_of_replicas_);
+        size_t number_of_replicas_,
+        bool send_over_whole_archive_);
 
     std::optional<String> getNextTask(size_t number_of_current_replica);
 
@@ -27,7 +28,8 @@ private:
     std::optional<String> getMatchingFileFromIterator(size_t number_of_current_replica);
     std::optional<String> getAnyUnprocessedFile(size_t number_of_current_replica);
 
-    std::shared_ptr<IObjectIterator> iterator;
+    const std::shared_ptr<IObjectIterator> iterator;
+    const bool send_over_whole_archive;
 
     std::vector<std::vector<String>> connection_to_files;
     std::unordered_set<String> unprocessed_files;
