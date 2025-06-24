@@ -431,7 +431,12 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
     {
         if (metadata_storage.existsFile(path_to))
         {
-            objects_to_remove = metadata_storage.getStorageObjects(path_to);
+            if (metadata_storage.getType() != MetadataStorageType::PlainRewritable
+                && metadata_storage.getType() != MetadataStorageType::Plain)
+            {
+                //  MetadataStorageFromPlainObjectStorageTransaction removes the source objects by itself.
+                objects_to_remove = metadata_storage.getStorageObjects(path_to);
+            }
             tx->replaceFile(path_from, path_to);
         }
         else
