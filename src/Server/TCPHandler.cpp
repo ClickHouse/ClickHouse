@@ -169,7 +169,7 @@ namespace DB::ErrorCodes
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
-    extern const int TCP_CONNECTION_LIMIT_EXCEEDED;
+    extern const int TCP_CONNECTION_LIMIT_REACHED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -510,16 +510,7 @@ void TCPHandler::runImpl()
 
             if (connectionLimitReached())
             {
-                try
-                {
-                    sendException({ErrorCodes::TCP_CONNECTION_LIMIT_EXCEEDED, "Connection limit reached"}, false);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Failed to send connection limit exception");
-                }
-
-                return;
+                throw Exception(ErrorCodes::TCP_CONNECTION_LIMIT_REACHED, "Connection limit reached");
             }
 
             /// Set up tracing context for this query on current thread
@@ -879,8 +870,8 @@ void TCPHandler::runImpl()
                 return;
             }
 
-            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
-                || exception->code() == ErrorCodes::USER_EXPIRED)
+            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
+                || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
