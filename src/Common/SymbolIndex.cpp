@@ -258,7 +258,7 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
 
 
 void collectSymbolsFromELFSymbolTable(
-    dl_phdr_info * info,
+    DynamicLinkingProgramHeaderInfo * info,
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
@@ -297,7 +297,7 @@ void collectSymbolsFromELFSymbolTable(
 
 
 bool searchAndCollectSymbolsFromELFSymbolTable(
-    dl_phdr_info * info,
+    DynamicLinkingProgramHeaderInfo * info,
     const Elf & elf,
     SectionHeaderType section_header_type,
     const char * string_table_name,
@@ -441,19 +441,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-<<<<<<< HEAD
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
-=======
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
-
-    /// Unneeded if they were parsed from "program headers" of loaded objects.
-#if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
->>>>>>> origin/master
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
 #endif
 }
 
