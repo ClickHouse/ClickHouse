@@ -16,7 +16,7 @@
 ELF object can contain three different places with symbol names and addresses:
 
 1. Symbol table in section headers. It is used for static linking and usually left in executable.
-It is not loaded in memory and they are not necessary for program to r
+It is not loaded in memory and they are not necessary for program to run.
 It does not relate to debug info and present regardless to -g flag.
 You can use strip to get rid of this symbol table.
 If you have this symbol table in your binary, you can manually read it and get symbol names, even for symbols from anonymous namespaces.
