@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int LOGICAL_ERROR;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(

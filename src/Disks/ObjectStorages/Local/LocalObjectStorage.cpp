@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
