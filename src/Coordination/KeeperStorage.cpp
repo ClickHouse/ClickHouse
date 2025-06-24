@@ -3191,7 +3191,8 @@ void KeeperStorage<Container>::preprocessRequest(
             auto new_auth = std::make_shared<KeeperStorageBase::AuthID>();
             new_auth->scheme = "digest";
             new_auth->id = KeeperStorageBase::generateDigest("clickhouse:injected");
-            new_deltas.emplace_back(new_last_zxid, AddAuthDelta{session_id, std::move(new_auth)});
+            auto auth_deltas = std::list<Delta>{Delta{new_last_zxid, AddAuthDelta{session_id, std::move(new_auth)}}};
+            uncommitted_state.applyDeltas(auth_deltas, nullptr);
         }
         else if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
         {
