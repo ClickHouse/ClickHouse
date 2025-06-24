@@ -148,7 +148,7 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node",
+            "node1",
             main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
@@ -168,7 +168,7 @@ def started_cluster():
 
 
 def test_list_tables(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
 
     root_namespace = f"clickhouse_{uuid.uuid4()}"
     namespace_1 = f"{root_namespace}.testA.A"
@@ -234,7 +234,7 @@ def test_list_tables(started_cluster):
 
 
 def test_many_namespaces(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
     root_namespace_1 = f"A_{uuid.uuid4()}"
     root_namespace_2 = f"B_{uuid.uuid4()}"
     namespaces = [
@@ -267,7 +267,7 @@ def test_many_namespaces(started_cluster):
 
 
 def test_select(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
 
     test_ref = f"test_list_tables_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -309,7 +309,7 @@ def test_select(started_cluster):
 
 
 def test_hide_sensitive_info(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
 
     test_ref = f"test_hide_sensitive_info_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -339,7 +339,7 @@ def test_hide_sensitive_info(started_cluster):
 
 
 def test_tables_with_same_location(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
 
     test_ref = f"test_tables_with_same_location_{uuid.uuid4()}"
     namespace = f"{test_ref}_namespace"
@@ -376,7 +376,7 @@ def test_tables_with_same_location(started_cluster):
 
 
 def test_backup_database(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node1"]
     create_clickhouse_iceberg_database(started_cluster, node, "backup_database")
 
     backup_id = uuid.uuid4().hex
