@@ -34,7 +34,7 @@ def file_size_value(max_val: int):
 
 true_false_lambda = lambda: random.randint(0, 1)
 threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
-no_zero_threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
+no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 
 possible_properties = {
