@@ -174,6 +174,7 @@ private:
     ObjectStoragePtr object_storage;
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
+    std::mutex archive_readers_mutex;
     LoggerPtr log = getLogger("ReadTaskIterator");
 };
 

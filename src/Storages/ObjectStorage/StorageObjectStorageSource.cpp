@@ -997,21 +997,24 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    if (auto it = archive_readers.find(path_to_archive); it != archive_readers.end())
     {
-        archive_reader = it->second;
-    }
-    else
-    {
-        archive_reader = DB::createArchiveReader(
-            path_to_archive,
-            [=, this]()
-            {
-                return StorageObjectStorageSource::createReadBuffer(*archive_object, object_storage, getContext(), log);
-            },
-            archive_object->metadata->size_bytes);
+        std::lock_guard lock(archive_readers_mutex);
+        if (auto it = archive_readers.find(path_to_archive); it != archive_readers.end())
+        {
+            archive_reader = it->second;
+        }
+        else
+        {
+            archive_reader = DB::createArchiveReader(
+                path_to_archive,
+                [=, this]()
+                {
+                    return StorageObjectStorageSource::createReadBuffer(*archive_object, object_storage, getContext(), log);
+                },
+                archive_object->metadata->size_bytes);
 
-        archive_readers.emplace(path_to_archive, archive_reader);
+            archive_readers.emplace(path_to_archive, archive_reader);
+        }
     }
 
     return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
