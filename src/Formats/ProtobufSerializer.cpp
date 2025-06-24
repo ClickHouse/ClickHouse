@@ -3622,9 +3622,9 @@ namespace
 
                     if (const auto * message_type = field_descriptor.message_type())
                     {
-                        bool have_explicit_names = tuple_data_type.haveExplicitNames();
+                        bool has_explicit_names = tuple_data_type.hasExplicitNames();
                         Names element_names;
-                        if (have_explicit_names)
+                        if (has_explicit_names)
                         {
                             element_names = tuple_data_type.getElementNames();
                         }

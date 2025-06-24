@@ -73,7 +73,8 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            db_disk->removeRecursive(getTableDataPath(table_name));
+            auto metdata_disk = getDisk();
+            metdata_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -128,6 +129,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
+    auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }
 

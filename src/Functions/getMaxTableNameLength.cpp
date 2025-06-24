@@ -95,8 +95,8 @@ REGISTER_FUNCTION(getMaxTableName)
     factory.registerFunction<FunctionGetMaxTableNameLengthForDatabase>(FunctionDocumentation{
         .description=R"(Returns the maximum table name length in a specified database.)",
         .syntax=R"(getMaxTableNameLengthForDatabase(database_name))",
-        .arguments={{"database_name", "The name of the specified database. String."}},
-        .returned_value=R"(Returns the length of the maximum table name, an Integer)",
+        .arguments={{"database_name", "The name of the specified database.", {"String"}}},
+        .returned_value={R"(Returns the length of the maximum table name, an Integer)"},
         .examples{
             {"typical",
             "SELECT getMaxTableNameLengthForDatabase('default');",

@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/Defines.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -16,8 +17,9 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Common/OptimizedRegularExpression.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/searchAnyAll.h>
 #include <Core/Field.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
@@ -35,6 +37,7 @@ namespace ErrorCodes
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
+static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
@@ -51,7 +54,7 @@ MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
 void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty GIN index {}.", backQuote(index_name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty text index {}.", backQuote(index_name));
 
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
@@ -227,6 +230,8 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
         rpn,
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_NOT_EQUALS,
+         RPNElement::FUNCTION_SEARCH_ANY,
+         RPNElement::FUNCTION_SEARCH_ALL,
          RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
@@ -255,6 +260,36 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
+        {
+            chassert(element.set_gin_filters.size() == 1);
+            const GinFilters & gin_filters = element.set_gin_filters.front();
+            bool exists_in_gin_filter = false;
+            for (const GinFilter & gin_filter : gin_filters)
+            {
+                if (granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::Any))
+                {
+                    exists_in_gin_filter = true;
+                    break;
+                }
+            }
+            rpn_stack.emplace_back(exists_in_gin_filter, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
+        {
+            chassert(element.set_gin_filters.size() == 1);
+            const GinFilters & gin_filters = element.set_gin_filters.front();
+            bool exists_in_gin_filter = true;
+            for (const GinFilter & gin_filter : gin_filters)
+            {
+                if (!granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::All))
+                {
+                    exists_in_gin_filter = false;
+                    break;
+                }
+            }
+            rpn_stack.emplace_back(exists_in_gin_filter, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
@@ -418,18 +453,20 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny" ||
+                 function_name == "searchAny" ||
+                 function_name == "searchAll" ||
                  function_name == "match")
         {
             Field const_value;
             DataTypePtr const_type;
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseASTEquals(function_name, lhs_argument, const_type, const_value, out))
+                if (traverseASTEquals(function, lhs_argument, const_type, const_value, out))
                     return true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
             {
-                if (traverseASTEquals(function_name, rhs_argument, const_type, const_value, out))
+                if (traverseASTEquals(function, rhs_argument, const_type, const_value, out))
                     return true;
             }
         }
@@ -439,12 +476,14 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
 }
 
 bool MergeTreeIndexConditionGin::traverseASTEquals(
-    const String & function_name,
+    const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & key_ast,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out)
 {
+    const String& function_name = function_node.getFunctionName();
+
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
@@ -560,6 +599,42 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "searchAny" || function_name == "searchAll")
+    {
+        {
+            /// TODO(ahmadov): move this block to another place, e.g. optimizations.
+            const auto * function_dag_node = function_node.getDAGNode();
+            chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
+            chassert(adaptor != nullptr);
+            if (function_name == "searchAny")
+            {
+                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
+                chassert(search_function != nullptr);
+                search_function->setGinFilterParameters(gin_filter_params);
+            }
+            else
+            {
+                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
+                chassert(search_function != nullptr);
+                search_function->setGinFilterParameters(gin_filter_params);
+            }
+        }
+
+        GinFilters gin_filters;
+        for (const auto & element : const_value.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                return false;
+            const auto & value = element.safeGet<String>();
+            gin_filters.emplace_back(GinFilter(gin_filter_params));
+            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
+        }
+        out.key_column = key_column_num;
+        out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
+        out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
@@ -736,14 +811,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
     /// Index type 'inverted' was renamed to 'full_text' in May 2024.
     /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    /// Index type 'gin' was renamed to 'text' in May 2025.
     ///
     /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
     /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
     /// have an old index.
     ///
-    /// TODO: remove this one year after GIN indexes became GA.
-    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted' and 'full_text' are no longer supported. Please drop and recreate the index as type 'gin'");
+    /// TODO: remove this one year after text indexes became GA.
+    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME || index.type == GIN_INDEX_NAME)
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted', 'full_text' and 'gin' are no longer supported. Please drop and recreate the index as type 'text'");
 
     return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), gin_filter_params);
 }
@@ -774,11 +850,11 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
     for (const Field & argument : arguments)
     {
         if (argument.getType() != Field::Types::Tuple)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of GIN index must be key-value pair (identifier = literal)");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of text index must be key-value pair (identifier = literal)");
         Tuple tuple = argument.template safeGet<Tuple>();
         String key = tuple[0].safeGet<String>();
         if (options.contains(key))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index '{}' argument is specified more than once", key);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index '{}' argument is specified more than once", key);
         options[key] = tuple[1];
     }
     return options;
@@ -794,15 +870,28 @@ std::optional<Type> getOption(const std::unordered_map<String, Field> & options,
         if (value.getType() != expected_type)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "GIN index argument '{}' expected to be {}, but got {}",
+                "Text index argument '{}' expected to be {}, but got {}",
                 option,
                 fieldTypeToString(expected_type),
                 value.getTypeName());
         return value.safeGet<Type>();
     }
-    return std::nullopt;
+    return {};
 }
 
+template <typename... Args>
+std::optional<std::vector<String>> getOptionAsStringArray(Args &&... args)
+{
+    auto array = getOption<Array>(std::forward<Args>(args)...);
+    if (array.has_value())
+    {
+        std::vector<String> values;
+        for (const auto & entry : array.value())
+            values.emplace_back(entry.template safeGet<String>());
+        return values;
+    }
+    return {};
+}
 }
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
@@ -812,21 +901,28 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     String tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER).value();
 
     std::unique_ptr<ITokenExtractor> token_extractor;
-    if (tokenizer == SplitTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<SplitTokenExtractor>();
-    else if (tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
+    std::optional<UInt64> ngram_size;
+    std::optional<std::vector<String>> separators;
+    if (tokenizer == DefaultTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
     else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
-        UInt64 ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE).value_or(3);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
+        ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size.value_or(DEFAULT_NGRAM_SIZE));
     }
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        separators = getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators.value());
+    }
+    else if (tokenizer == NoOpTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
     UInt64 max_rows_per_postings_list = getOption<UInt64>(options, ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
 
-    GinFilterParameters params(tokenizer, max_rows_per_postings_list);
+    GinFilterParameters params(tokenizer, max_rows_per_postings_list, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -837,25 +933,43 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// Check that tokenizer is present and supported
     std::optional<String> tokenizer = getOption<String>(options, ARGUMENT_TOKENIZER);
     if (!tokenizer)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "GIN index must have an '{}' argument", ARGUMENT_TOKENIZER);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
-    const bool is_supported_tokenizer = (tokenizer.value() == SplitTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName()
-                                      || tokenizer.value() == NgramTokenExtractor::getExternalName());
+    const bool is_supported_tokenizer = (tokenizer.value() == DefaultTokenExtractor::getExternalName()
+                                      || tokenizer.value() == NgramTokenExtractor::getExternalName()
+                                      || tokenizer.value() == SplitTokenExtractor::getExternalName()
+                                      || tokenizer.value() == NoOpTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index '{}' argument supports only 'default', 'ngram', and 'noop', but got {}",
+            "Text index '{}' argument supports only 'default', 'ngram', 'split', and 'no_op', but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer.value());
 
+    std::optional<UInt64> ngram_size;
     if (tokenizer.value() == NgramTokenExtractor::getExternalName())
     {
-        UInt64 ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE).value_or(3);
-        if (ngram_size < 2 || ngram_size > 8)
+        ngram_size = getOption<UInt64>(options, ARGUMENT_NGRAM_SIZE);
+        if (ngram_size.has_value() && (*ngram_size < 2 || *ngram_size > 8))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "GIN index '{}' argument must be between 2 and 8, but got {}", ARGUMENT_NGRAM_SIZE, ngram_size);
+                "Text index '{}' argument must be between 2 and 8, but got {}",
+                ARGUMENT_NGRAM_SIZE,
+                *ngram_size);
+    }
+    else if (tokenizer.value() == SplitTokenExtractor::getExternalName())
+    {
+        std::optional<DB::FieldVector> separators = getOption<Array>(options, ARGUMENT_SEPARATORS);
+        if (separators.has_value())
+        {
+            for (const auto & separator : separators.value())
+                if (separator.getType() != Field::Types::String)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_QUERY,
+                        "Element of text index argument {} expected to be String, but got {}",
+                        ARGUMENT_SEPARATORS,
+                        separator.getTypeName());
+        }
     }
 
     /// Check that max_rows_per_postings_list is valid (if present)
@@ -863,13 +977,17 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (max_rows_per_postings_list != UNLIMITED_ROWS_PER_POSTINGS_LIST && max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
+            "Text index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
 
-    GinFilterParameters gin_filter_params(tokenizer.value(), max_rows_per_postings_list); /// Just validate
+    GinFilterParameters gin_filter_params(
+        tokenizer.value(),
+        max_rows_per_postings_list,
+        ngram_size,
+        getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "GIN index must be created on a single column");
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
@@ -888,8 +1006,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "GIN index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
-
+            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
 }
 
 }
