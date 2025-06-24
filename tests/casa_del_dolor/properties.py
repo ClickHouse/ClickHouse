@@ -370,7 +370,9 @@ def add_single_cluster(
         secret_xml = ET.SubElement(next_cluster, "secret")
         secret_xml.text = "".join(
             [
-                random.choice(string.ascii_lowercase + string.digits)
+                random.choice(
+                    string.ascii_lowercase + string.ascii_uppercase + string.digits
+                )
                 for _ in range(random.randint(1, 128))
             ]
         )
