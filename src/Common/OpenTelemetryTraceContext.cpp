@@ -14,17 +14,11 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsFloat opentelemetry_start_trace_probability;
-}
-
 namespace OpenTelemetry
 {
 
 /// This code can be executed inside fibers, we should use fiber local tracing context.
-thread_local static FiberLocal<TracingContextOnThread> current_trace_context;
+thread_local FiberLocal<TracingContextOnThread> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -147,7 +141,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     current_trace_context->span_id = this->span_id;
 }
 
-void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
+void SpanHolder::finish() noexcept
 {
     if (!this->isTraceEnabled())
         return;
@@ -163,7 +157,9 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         /// The log might be disabled, check it before use
         if (log)
         {
-            this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch()).count();
+            this->finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
             log->add(OpenTelemetrySpanLogElement(*this));
         }
     }
@@ -177,7 +173,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 
 SpanHolder::~SpanHolder()
 {
-    finish(std::chrono::system_clock::now());
+    finish();
 }
 
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
@@ -333,7 +329,7 @@ TracingContextHolder::TracingContextHolder(
                 return;
 
             // Start the trace with some configurable probability.
-            std::bernoulli_distribution should_start_trace{(*settings_ptr)[Setting::opentelemetry_start_trace_probability]};
+            std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
             if (!should_start_trace(thread_local_rng))
                 /// skip tracing context initialization on current thread
                 return;

@@ -6,7 +6,6 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
-#include <Core/Block.h>
 #include <Core/Field.h>
 
 
@@ -20,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-/** Get scalar value of sub queries from query context via IASTHash.
+/** Get scalar value of sub queries from query context via IAST::Hash.
   */
 class FunctionGetScalar : public IFunction, WithContext
 {
@@ -88,7 +87,7 @@ public:
     {
         if (auto block = context_->tryGetSpecialScalar(Scalar::scalar_name))
             return block->getByPosition(0);
-        if (context_->hasQueryContext())
+        else if (context_->hasQueryContext())
         {
             if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
                 return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);

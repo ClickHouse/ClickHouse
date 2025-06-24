@@ -3,14 +3,11 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
-
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
-
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
 #include <arrow/result.h>
+#include "ArrowBufferedStreams.h"
+#include "CHColumnToArrowColumn.h"
 
 
 namespace DB
@@ -134,8 +131,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
-    factory.markOutputFormatNotTTYFriendly("Arrow");
-    factory.setContentType("Arrow", "application/octet-stream");
 
     factory.registerOutputFormat(
         "ArrowStream",
@@ -147,8 +142,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
-    factory.markOutputFormatNotTTYFriendly("ArrowStream");
-    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }

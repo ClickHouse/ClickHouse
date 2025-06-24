@@ -1,12 +1,14 @@
 #pragma once
 
+#include <Common/Allocator.h>
+#include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
-#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Common/Allocator.h>
+#include <Core/NamesAndTypes.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -20,7 +22,6 @@ namespace DB
 
 class Block;
 struct Settings;
-class SettingsChanges;
 struct FormatFactorySettings;
 struct ReadSettings;
 
@@ -49,7 +50,9 @@ template <typename Allocator>
 struct Memory;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
-FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+
+template <typename T>
+FormatSettings getFormatSettings(const ContextPtr & context, const T & settings);
 
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
@@ -92,13 +95,13 @@ private:
 
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const FormatSettings & settings,
-        const ReadSettings & read_settings,
-        bool is_remote_fs,
-        size_t max_download_threads,
-        size_t max_parsing_threads)>;
+            ReadBuffer & buf,
+            const Block & header,
+            const FormatSettings & settings,
+            const ReadSettings& read_settings,
+            bool is_remote_fs,
+            size_t max_download_threads,
+            size_t max_parsing_threads)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -113,9 +116,6 @@ private:
     /// Some formats can support append depending on settings.
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
-
-    /// Obtain HTTP content-type for the output format.
-    using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
@@ -142,8 +142,6 @@ private:
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
-        bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
-        ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
@@ -192,8 +190,10 @@ public:
         const ContextPtr & context,
         const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
 
-    /// Content-Type to set when sending HTTP response with this output format.
-    String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
+    String getContentType(
+        const String & name,
+        const ContextPtr & context,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     SchemaReaderPtr getSchemaReader(
         const String & name,
@@ -238,10 +238,6 @@ public:
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
-    void markOutputFormatNotTTYFriendly(const String & name);
-
-    void setContentType(const String & name, const String & content_type);
-    void setContentType(const String & name, ContentTypeGetter content_type);
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
@@ -251,7 +247,6 @@ public:
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
-    bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 

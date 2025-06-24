@@ -45,7 +45,7 @@ namespace
 
         roles_info.names_of_roles[role_id] = role->getName();
         roles_info.access.makeUnion(role->access);
-        roles_info.settings_from_enabled_roles.merge(role->settings, /* normalize= */ false);
+        roles_info.settings_from_enabled_roles.merge(role->settings);
 
         for (const auto & granted_role : role->granted_roles.getGranted())
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);

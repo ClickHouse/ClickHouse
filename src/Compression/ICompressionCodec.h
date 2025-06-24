@@ -4,9 +4,9 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
+#include <Common/SipHash.h>
 
-class SipHash;
 
 namespace DB
 {
@@ -126,9 +126,6 @@ public:
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
-
-    // Returns a string with a high level codec description.
-    virtual std::string getDescription() const = 0;
 
 protected:
     /// This is used for fuzz testing

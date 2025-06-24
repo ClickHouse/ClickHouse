@@ -29,11 +29,6 @@ function find_reference_sha
 {
     git -C right/ch log -1 origin/master
     git -C right/ch log -1 pr
-
-    # Ensure that trees are available
-    git -C right/ch show -s origin/master
-    git -C right/ch show -s pr
-
     # Go back from the revision to be tested, trying to find the closest published
     # testing release. The PR branch may be either pull/*/head which is the
     # author's branch, or pull/*/merge, which is head merged with some master
@@ -68,18 +63,14 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        if [[ "$BUILD_NAME" == *"release"* ]]; then
-            build_name_new="build_amd_release"
-        else
-            build_name_new="build_arm_release"
-        fi
         declare -a urls_to_try=(
-            "$S3_URL/REFs/master/$REF_SHA/$build_name_new/performance.tar.zst"
             "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do
-            if curl --fail --head "$path"
+            if curl_with_retry "$path"
             then
                 found="$path"
                 break
@@ -126,12 +117,9 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
-
-    set -o pipefail
     git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
     git -C right/ch diff --name-only --diff-filter=d "$base" pr -- tests/performance/*.xml | tee changed-test-definitions.txt
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance/*.xml :!docker/test/performance-comparison | tee other-changed-files.txt
-    set +o pipefail
 fi
 
 # Set python output encoding so that we can print queries with non-ASCII letters.
@@ -164,7 +152,7 @@ cat /proc/sys/kernel/core_pattern
 {
     time $SCRIPT_DIR/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
-} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee -a compare.log
+} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script

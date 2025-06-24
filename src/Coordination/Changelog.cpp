@@ -23,7 +23,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SharedLockGuard.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -82,6 +81,36 @@ void moveChangelogBetweenDisks(
 
 constexpr auto DEFAULT_PREFIX = "changelog";
 
+inline std::string
+formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
+{
+    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
+}
+
+ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path)
+{
+    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
+    std::string filename_with_extension = path.filename();
+    std::string_view filename_with_extension_view = filename_with_extension;
+
+    auto first_dot = filename_with_extension.find('.');
+    if (first_dot == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
+
+    Strings filename_parts;
+    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
+    if (filename_parts.size() < 3)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
+
+    auto result = std::make_shared<ChangelogFileDescription>();
+    result->prefix = filename_parts[0];
+    result->from_log_index = parse<uint64_t>(filename_parts[1]);
+    result->to_log_index = parse<uint64_t>(filename_parts[2]);
+    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
+    result->path = path.generic_string();
+    return result;
+}
+
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -95,11 +124,6 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
     return hash.get64();
 }
 
-}
-
-std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
-{
-    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
 /// Appendable log writer
@@ -139,26 +163,20 @@ public:
             // we have a file we need to finalize first
             if (tryGetFileBaseBuffer() && prealloc_done)
             {
+                finalizeCurrentFile();
+
                 assert(current_file_description);
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
                 // contained logs
                 // file can be deleted from disk earlier by compaction
-                if (current_file_description->deleted)
+                if (!current_file_description->deleted)
                 {
-                    LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
-                    prealloc_done = false;
-                    cancelCurrentFile();
-                }
-                else
-                {
-                    finalizeCurrentFile();
-
                     auto log_disk = current_file_description->disk;
                     const auto & path = current_file_description->path;
                     std::string new_path = path;
                     if (last_index_written && *last_index_written != current_file_description->to_log_index)
                     {
-                        new_path = Changelog::formatChangelogPath(
+                        new_path = formatChangelogPath(
                             current_file_description->prefix,
                             current_file_description->from_log_index,
                             *last_index_written,
@@ -186,10 +204,6 @@ public:
                     }
                 }
             }
-            else
-            {
-                cancelCurrentFile();
-            }
 
             auto latest_log_disk = getLatestLogDisk();
             chassert(file_description->disk == latest_log_disk);
@@ -203,7 +217,7 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()] { return latest_log_disk->readFile(path, read_settings); });
+                    [latest_log_disk, path = current_file_description->path] { return latest_log_disk->readFile(path); });
 
             prealloc_done = false;
         }
@@ -319,7 +333,7 @@ public:
         if (log_file_settings.compress_logs)
             new_description->extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
-        new_description->path = Changelog::formatChangelogPath(
+        new_description->path = formatChangelogPath(
             new_description->prefix,
             new_start_log_index,
             new_start_log_index + log_file_settings.rotate_interval - 1,
@@ -335,8 +349,6 @@ public:
     {
         if (isFileSet() && prealloc_done)
             finalizeCurrentFile();
-        else
-            cancelCurrentFile();
     }
 
 private:
@@ -346,15 +358,16 @@ private:
 
         chassert(current_file_description);
         // compact can delete the file and we don't need to do anything
-        chassert(!current_file_description->deleted);
+        if (current_file_description->deleted)
+        {
+            LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
+            return;
+        }
 
-        if (compressed_buffer)
+        if (log_file_settings.compress_logs)
             compressed_buffer->finalize();
 
         flush();
-
-        if (file_buf)
-            file_buf->finalize();
 
         const auto * file_buffer = tryGetFileBuffer();
 
@@ -370,20 +383,16 @@ private:
                 LOG_WARNING(log, "Could not ftruncate file. Error: {}, errno: {}", errnoToString(), errno);
         }
 
-        compressed_buffer.reset();
-        file_buf.reset();
-    }
-
-    void cancelCurrentFile()
-    {
-        if (compressed_buffer)
-            compressed_buffer->cancel();
-
-        if (file_buf)
-            file_buf->cancel();
-
-        compressed_buffer.reset();
-        file_buf.reset();
+        if (log_file_settings.compress_logs)
+        {
+            compressed_buffer.reset();
+        }
+        else
+        {
+            chassert(file_buf);
+            file_buf->finalize();
+            file_buf.reset();
+        }
     }
 
     WriteBuffer & getBuffer()
@@ -581,9 +590,8 @@ LogEntryPtr getLogEntry(const CacheEntry & cache_entry)
     if (const auto * log_entry = std::get_if<LogEntryPtr>(&cache_entry))
         return *log_entry;
 
-    const auto & prefetched_log_entry = std::get<PrefetchedCacheEntryPtr>(cache_entry);
-    chassert(prefetched_log_entry);
-    return prefetched_log_entry->getLogEntry();
+    const auto & prefetched_log_entry = std::get<PrefetchedCacheEntry>(cache_entry);
+    return prefetched_log_entry.getLogEntry();
 }
 
 }
@@ -591,10 +599,10 @@ LogEntryPtr getLogEntry(const CacheEntry & cache_entry)
 class ChangelogReader
 {
 public:
-    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(std::move(changelog_description_))
+    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
-        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path);
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
@@ -722,7 +730,7 @@ void LogEntryStorage::prefetchCommitLogs()
                     [&]
                     {
                         const auto & [changelog_description, position, count] = prefetch_file_info;
-                        auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+                        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                         file->seek(position, SEEK_SET);
                         LOG_TRACE(
                             log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
@@ -742,12 +750,7 @@ void LogEntryStorage::prefetchCommitLogs()
                                     current_index,
                                     record.header.index);
 
-                            PrefetchedCacheEntryPtr prefetched_cache_entry;
-                            {
-                                SharedLockGuard lock(commit_logs_cache_mutex);
-                                prefetched_cache_entry = commit_logs_cache.getPrefetchedCacheEntry(record.header.index);
-                            }
-                            prefetched_cache_entry->resolve(std::move(entry));
+                            commit_logs_cache.getPrefetchedCacheEntry(record.header.index).resolve(std::move(entry));
                             ++current_index;
                         }
                     });
@@ -762,14 +765,7 @@ void LogEntryStorage::prefetchCommitLogs()
             auto exception = std::current_exception();
 
             for (; current_index <= prefetch_info->commit_prefetch_index_range.second; ++current_index)
-            {
-                PrefetchedCacheEntryPtr prefetched_cache_entry;
-                {
-                    SharedLockGuard lock(commit_logs_cache_mutex);
-                    prefetched_cache_entry = commit_logs_cache.getPrefetchedCacheEntry(current_index);
-                }
-                prefetched_cache_entry->resolve(exception);
-            }
+                commit_logs_cache.getPrefetchedCacheEntry(current_index).resolve(exception);
         }
 
         prefetch_info->done = true;
@@ -780,10 +776,6 @@ void LogEntryStorage::prefetchCommitLogs()
 void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) const
 {
     if (keeper_context->isShutdownCalled())
-        return;
-
-    /// we don't start prefetch if there is no limit on latest logs cache
-    if (latest_logs_cache.size_threshold == 0)
         return;
 
     /// commit logs is not empty and it's not next log
@@ -843,7 +835,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         }
 
         total_size += entry_size;
-        commit_logs_cache.addEntry(current_index, entry_size, std::make_shared<PrefetchedCacheEntry>());
+        commit_logs_cache.addEntry(current_index, entry_size, PrefetchedCacheEntry());
     }
 
     if (!file_infos.empty())
@@ -853,7 +845,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         LOG_TRACE(log, "Will prefetch {} commit log entries [{} - {}]", prefetch_to - prefetch_from + 1, prefetch_from, prefetch_to);
 
         current_prefetch_info->file_infos = std::move(file_infos);
-        auto inserted = prefetch_queue.push(current_prefetch_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        auto inserted = prefetch_queue.push(current_prefetch_info);
         chassert(inserted);
     }
 }
@@ -931,13 +923,13 @@ const CacheEntry * LogEntryStorage::InMemoryCache::getCacheEntry(uint64_t index)
     return const_cast<InMemoryCache &>(*this).getCacheEntry(index);
 }
 
-PrefetchedCacheEntryPtr LogEntryStorage::InMemoryCache::getPrefetchedCacheEntry(uint64_t index)
+PrefetchedCacheEntry & LogEntryStorage::InMemoryCache::getPrefetchedCacheEntry(uint64_t index)
 {
     auto * cache_entry = getCacheEntry(index);
     if (cache_entry == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing expected index {} in cache", index);
 
-    return std::get<PrefetchedCacheEntryPtr>(*cache_entry);
+    return std::get<PrefetchedCacheEntry>(*cache_entry);
 }
 
 
@@ -1059,11 +1051,8 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
     {
         auto entry_handle = latest_logs_cache.popOldestEntry();
         size_t removed_entry_size = logEntrySize(getLogEntry(entry_handle.mapped()));
-        {
-            std::lock_guard lock(commit_logs_cache_mutex);
-            if (shouldMoveLogToCommitCache(entry_handle.key(), removed_entry_size))
-                commit_logs_cache.addEntry(std::move(entry_handle));
-        }
+        if (shouldMoveLogToCommitCache(entry_handle.key(), removed_entry_size))
+            commit_logs_cache.addEntry(std::move(entry_handle));
     }
     latest_logs_cache.addEntry(index, entry_size, CacheEntry(log_entry));
 
@@ -1134,11 +1123,8 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
         {
             current_prefetch_info->cancel = true;
             current_prefetch_info->done.wait(false);
-        }
-
-        std::lock_guard lock(commit_logs_cache_mutex);
-        if (index > prefetch_from)
             commit_logs_cache.clear();
+        }
 
         /// start prefetching logs for committing at the current index
         /// the last log index in the snapshot should be the
@@ -1146,10 +1132,7 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
         startCommitLogsPrefetch(index - 1);
     }
     else
-    {
-        std::lock_guard lock(commit_logs_cache_mutex);
         commit_logs_cache.cleanUpTo(index);
-    }
 
     std::erase_if(logs_with_config_changes, [&](const auto conf_index) { return conf_index < index; });
     if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
@@ -1219,7 +1202,6 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     /// if we cleared all latest logs, there is a possibility we would need to clear commit logs
     if (latest_logs_cache.empty())
     {
-        std::lock_guard lock(commit_logs_cache_mutex);
         /// we will clean everything after the index, if there is a prefetch in progress
         /// wait until we fetch everything until index
         /// afterwards we can stop prefetching of newer logs because they will be cleaned up
@@ -1267,11 +1249,8 @@ bool LogEntryStorage::contains(uint64_t index) const
 LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 {
     auto last_committed_index = keeper_context->lastCommittedIndex();
-    {
-        std::lock_guard lock(commit_logs_cache_mutex);
-        commit_logs_cache.cleanUpTo(last_committed_index);
-        startCommitLogsPrefetch(last_committed_index);
-    }
+    commit_logs_cache.cleanUpTo(last_committed_index);
+    startCommitLogsPrefetch(last_committed_index);
 
     LogEntryPtr entry = nullptr;
 
@@ -1287,13 +1266,10 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
         return entry_from_latest_cache;
     }
 
+    if (auto entry_from_commit_cache = commit_logs_cache.getEntry(index))
     {
-        SharedLockGuard lock(commit_logs_cache_mutex);
-        if (auto entry_from_commit_cache = commit_logs_cache.getEntry(index))
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromCommitCache);
-            return entry_from_commit_cache;
-        }
+        ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromCommitCache);
+        return entry_from_commit_cache;
     }
 
     if (auto it = logs_location.find(index); it != logs_location.end())
@@ -1302,7 +1278,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
             [&]
             {
                 const auto & [changelog_description, position, entry_size, size_in_file] = it->second;
-                auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
                     log,
@@ -1332,12 +1308,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
 void LogEntryStorage::clear()
 {
     latest_logs_cache.clear();
-
-    {
-        std::lock_guard lock(commit_logs_cache_mutex);
-        commit_logs_cache.clear();
-    }
-
+    commit_logs_cache.clear();
     logs_location.clear();
 }
 
@@ -1397,7 +1368,6 @@ void LogEntryStorage::refreshCache()
     if (logs_location.empty())
         return;
 
-    std::lock_guard lock(commit_logs_cache_mutex);
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
            && latest_logs_cache.cache_size > latest_logs_cache.size_threshold)
     {
@@ -1436,7 +1406,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
             [&]
             {
                 const auto & [file_description, start_position, count] = *read_info;
-                auto file = file_description->disk->readFile(file_description->path, getReadSettings());
+                auto file = file_description->disk->readFile(file_description->path);
                 file->seek(start_position, SEEK_SET);
 
                 for (size_t i = 0; i < count; ++i)
@@ -1450,7 +1420,6 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         read_info.reset();
     };
 
-    SharedLockGuard commit_logs_lock(commit_logs_cache_mutex);
     for (size_t i = start; i < end; ++i)
     {
         if (auto commit_cache_entry = commit_logs_cache.getEntry(i))
@@ -1495,7 +1464,6 @@ void LogEntryStorage::getKeeperLogInfo(KeeperLogInfo & log_info) const
     log_info.latest_logs_cache_entries = latest_logs_cache.numberOfEntries();
     log_info.latest_logs_cache_size = latest_logs_cache.cache_size;
 
-    SharedLockGuard lock(commit_logs_cache_mutex);
     log_info.commit_logs_cache_entries = commit_logs_cache.numberOfEntries();
     log_info.commit_logs_cache_size = commit_logs_cache.cache_size;
 }
@@ -1560,63 +1528,6 @@ void LogEntryStorage::shutdown()
     if (commit_logs_prefetcher->joinable())
         commit_logs_prefetcher->join();
 }
-
-
-ChangelogFileDescriptionPtr Changelog::getChangelogFileDescription(const std::filesystem::path & path)
-{
-    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
-    std::string filename_with_extension = path.filename();
-    std::string_view filename_with_extension_view = filename_with_extension;
-
-    auto first_dot = filename_with_extension.find('.');
-    if (first_dot == std::string::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
-
-    Strings filename_parts;
-    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
-    if (filename_parts.size() < 3)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
-
-    auto result = std::make_shared<ChangelogFileDescription>();
-    result->prefix = filename_parts[0];
-    result->from_log_index = parse<uint64_t>(filename_parts[1]);
-    result->to_log_index = parse<uint64_t>(filename_parts[2]);
-    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
-    result->path = path.generic_string();
-    return result;
-}
-
-void Changelog::readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage)
-{
-    ChangelogReader reader(changelog_description);
-    reader.readChangelog(entry_storage, changelog_description->from_log_index, getLogger("Changelog"));
-}
-
-void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog)
-{
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    auto keeper_context = std::make_shared<KeeperContext>(true, settings);
-    keeper_context->setLogDisk(destination_changelog->disk);
-    LogFileSettings log_file_settings
-    {
-        .compress_logs = chooseCompressionMethod(destination_changelog->path, "auto") != CompressionMethod::None
-    };
-    LogEntryStorage entry_storage{log_file_settings, keeper_context};
-    readChangelog(source_changelog, entry_storage);
-
-    std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
-    ChangelogWriter writer(existing_changelogs, entry_storage, keeper_context, log_file_settings);
-    writer.setFile(destination_changelog, WriteMode::Rewrite);
-
-    for (auto i = destination_changelog->from_log_index; i <= destination_changelog->to_log_index; ++i)
-    {
-        auto entry = entry_storage.getEntry(i);
-        writer.appendRecord(buildRecord(i, entry));
-    }
-
-    writer.finalize();
-}
-
 
 Changelog::Changelog(
     LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
@@ -1793,7 +1704,7 @@ try
                     initialized = true;
                     return;
                 }
-                if (changelog_description.from_log_index > start_to_read_from)
+                else if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(
@@ -1997,7 +1908,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
     {
         auto & changelog_description = itr->second;
 
-        if (!disk->existsDirectory(timestamp_folder))
+        if (!disk->exists(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);
@@ -2502,14 +2413,6 @@ Changelog::~Changelog()
     try
     {
         flush();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    try
-    {
         shutdown();
     }
     catch (...)

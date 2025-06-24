@@ -1,18 +1,22 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
-#include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <tuple>
+#include <unordered_set>
+#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -21,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -36,12 +39,10 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
-    : object_storage(object_storage_)
-    , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
+        object_metadata_cache.emplace(object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -51,49 +52,41 @@ MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction(
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return storage_path_full;
+    return storage_path_prefix;
 }
 
-bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
-{
-    ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-    StoredObject object(object_key.serialize(), path);
-    if (!object_storage->exists(object))
-        return false;
-
-    /// The path does not correspond to a directory.
-    /// This check is required for a local object storage since it supports hierarchy.
-    auto directory = std::filesystem::path(object_key.serialize()) / "";
-    ObjectStorageKey directory_key = object_storage->generateObjectKeyForPath(directory, std::nullopt /* key_prefix */);
-    return !object_storage->exists(StoredObject(directory_key.serialize(), directory));
-}
-
-bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
-{
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
-    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
-    return object_storage->existsOrHasAnyChild(directory);
-}
-
-bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
     /// NOTE: exists() cannot be used here since it works only for existing
     /// key, and does not work for some intermediate path.
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
-    return object_storage->existsOrHasAnyChild(key_prefix);
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    return object_storage->existsOrHasAnyChild(object_key.serialize());
 }
 
+bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
+{
+    /// NOTE: This check is inaccurate and has excessive API calls
+    return exists(path) && !isDirectory(path);
+}
+
+bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
+{
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
+    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
+
+    return object_storage->existsOrHasAnyChild(directory);
+}
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     if (auto res = getFileSizeIfExists(path))
         return *res;
-    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist on {}", path, object_storage->getName());
+    /// Throws a FILE_DOESNT_EXIST exception in newer releases.
+    return 0;
 }
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    Expect404ResponseScope scope;  // 404 is not an error
     if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;
@@ -110,14 +103,9 @@ Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std
 std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastModifiedIfExists(const std::string & path) const
 {
     /// Since the plain object storage is used for backups only, return the current time.
-    if (existsFileOrDirectory(path))
+    if (exists(path))
         return Poco::Timestamp{};
     return std::nullopt;
-}
-
-bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
@@ -125,18 +113,18 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    std::string absolute_key = key_prefix;
-    if (!absolute_key.ends_with('/'))
-        absolute_key += '/';
+    std::string abs_key = key_prefix;
+    if (!abs_key.ends_with('/'))
+        abs_key += '/';
 
-    object_storage->listObjects(absolute_key, files, 0);
+    object_storage->listObjects(abs_key, files, 0);
 
     std::unordered_set<std::string> result;
     for (const auto & elem : files)
     {
         const auto & p = elem->relative_path;
-        chassert(p.find(absolute_key) == 0);
-        const auto child_pos = absolute_key.size();
+        chassert(p.find(abs_key) == 0);
+        const auto child_pos = abs_key.size();
         /// string::npos is ok.
         const auto slash_pos = p.find('/', child_pos);
         if (slash_pos == std::string::npos)
@@ -151,7 +139,6 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
-
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
     std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
@@ -163,16 +150,6 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     size_t object_size = getFileSize(path);
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return {StoredObject(object_key.serialize(), path, object_size)};
-}
-
-std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageObjectsIfExist(const std::string & path) const
-{
-    if (auto object_size = getFileSizeIfExists(path))
-    {
-        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-        return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
-    }
-    return std::nullopt;
 }
 
 MetadataStorageFromPlainObjectStorage::ObjectMetadataEntryPtr
@@ -209,7 +186,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 {
     auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto object = StoredObject(object_key.serialize());
-    metadata_storage.object_storage->removeObjectIfExists(object);
+    metadata_storage.object_storage->removeObject(object);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
@@ -217,7 +194,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     if (metadata_storage.object_storage->isWriteOnce())
     {
         for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-            metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
+            metadata_storage.object_storage->removeObject(StoredObject(it->path()));
     }
     else
     {
@@ -225,49 +202,6 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
             normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
 }
-
-void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
-{
-    if (metadata_storage.object_storage->isWriteOnce())
-        throwNotImplemented();
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
-        path_from, path_to, *metadata_storage.getPathMap(), object_storage));
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
-{
-    if (metadata_storage.object_storage->isWriteOnce())
-        throwNotImplemented();
-
-    if (metadata_storage.existsDirectory(path_from))
-    {
-        moveDirectory(path_from, path_to);
-        return;
-    }
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
-{
-    if (metadata_storage.object_storage->isWriteOnce())
-        throwNotImplemented();
-
-    if (metadata_storage.object_metadata_cache)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing file is not supported with object metadata cache");
-
-    if (metadata_storage.existsDirectory(path_from))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing from directory is not supported {}", path_from);
-
-    if (metadata_storage.existsDirectory(path_to))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
-}
-
 
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
 {

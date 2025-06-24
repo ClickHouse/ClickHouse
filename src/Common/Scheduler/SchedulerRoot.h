@@ -4,13 +4,14 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
+
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <atomic>
 
@@ -27,47 +28,45 @@ namespace ErrorCodes
  * Resource scheduler root node with a dedicated thread.
  * Immediate children correspond to different resources.
  */
-class SchedulerRoot final : public ISchedulerNode
+class SchedulerRoot : public ISchedulerNode
 {
 private:
-    struct Resource
+    struct TResource
     {
         SchedulerNodePtr root;
 
         // Intrusive cyclic list of active resources
-        Resource * next = nullptr;
-        Resource * prev = nullptr;
+        TResource * next = nullptr;
+        TResource * prev = nullptr;
 
-        explicit Resource(const SchedulerNodePtr & root_)
+        explicit TResource(const SchedulerNodePtr & root_)
             : root(root_)
         {
             root->info.parent.ptr = this;
         }
 
         // Get pointer stored by ctor in info
-        static Resource * get(SchedulerNodeInfo & info)
+        static TResource * get(SchedulerNodeInfo & info)
         {
-            return reinterpret_cast<Resource *>(info.parent.ptr);
+            return reinterpret_cast<TResource *>(info.parent.ptr);
         }
     };
 
 public:
-    explicit SchedulerRoot()
+    SchedulerRoot()
         : ISchedulerNode(&events)
     {}
 
     ~SchedulerRoot() override
     {
         stop();
-        while (!children.empty())
-            removeChild(children.begin()->first);
     }
 
     /// Runs separate scheduler thread
-    void start(const String & name)
+    void start()
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+            scheduler = ThreadFromGlobalPool([this] { schedulerThread(); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -86,7 +85,7 @@ public:
                 {
                     auto [request, _] = dequeueRequest();
                     if (request)
-                        request->execute();
+                        execute(request);
                     else
                         has_work = false;
                     while (events.forceProcess())
@@ -96,17 +95,11 @@ public:
         }
     }
 
-    const String & getTypeName() const override
-    {
-        static String type_name("scheduler");
-        return type_name;
-    }
-
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * o = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
     }
@@ -186,11 +179,16 @@ public:
 
     void activateChild(ISchedulerNode * child) override
     {
-        activate(Resource::get(child->info));
+        activate(TResource::get(child->info));
+    }
+
+    void setParent(ISchedulerNode *) override
+    {
+        abort(); // scheduler must be the root and this function should not be called
     }
 
 private:
-    void activate(Resource * value)
+    void activate(TResource * value)
     {
         assert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
@@ -208,7 +206,7 @@ private:
         }
     }
 
-    void deactivate(Resource * value)
+    void deactivate(TResource * value)
     {
         if (value->next == nullptr)
             return; // Already deactivated
@@ -223,8 +221,8 @@ private:
                 busy_periods++;
                 return;
             }
-            // Just move current to next to avoid invalidation
-            current = current->next;
+            else // Just move current to next to avoid invalidation
+                current = current->next;
         }
         value->prev->next = value->next;
         value->next->prev = value->prev;
@@ -232,15 +230,14 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(const String & name)
+    void schedulerThread()
     {
-        setThreadName(name.c_str(), true);
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();
             if (request)
-                request->execute();
+                execute(request);
             else // No more requests -- block until any event happens
                 events.process();
 
@@ -249,8 +246,13 @@ private:
         }
     }
 
-    Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
+    void execute(ResourceRequest * request)
+    {
+        request->execute();
+    }
+
+    TResource * current = nullptr; // round-robin pointer
+    std::unordered_map<ISchedulerNode *, TResource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
     ThreadFromGlobalPool scheduler;

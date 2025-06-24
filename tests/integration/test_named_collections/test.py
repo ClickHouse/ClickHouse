@@ -1,12 +1,10 @@
 import logging
+import pytest
 import os
 import time
-from contextlib import nullcontext as does_not_raise
-
-import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from contextlib import nullcontext as does_not_raise
+from helpers.client import QueryRuntimeException
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -794,7 +792,6 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
         node.query(
             f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
-    node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
 
 
 @pytest.mark.parametrize(
@@ -809,55 +806,3 @@ def test_name_escaping(cluster, instance_name):
     node.restart_clickhouse()
 
     node.query("DROP NAMED COLLECTION `test_!strange/symbols!`")
-
-
-@pytest.mark.parametrize(
-    "instance_name, show_secrets",
-    [("node", True), ("node_only_named_collection_control", False)],
-)
-def test_system_named_collection(cluster, instance_name, show_secrets):
-    node = cluster.instances[instance_name]
-
-    def validate_named_collection(collection_name, source, key_value):
-        assert (
-            node.query(
-                f"SELECT name FROM system.named_collections WHERE name='{collection_name}'"
-            )
-            == f"{collection_name}\n"
-        )
-        assert (
-            node.query(
-                f"SELECT collection['key1'] FROM system.named_collections WHERE name='{collection_name}'"
-            )
-            == f"{f'{key_value}' if show_secrets else '[HIDDEN]'}\n"
-        )
-        assert (
-            node.query(
-                f"SELECT source FROM system.named_collections WHERE name='{collection_name}'"
-            )
-            == f"{source}\n"
-        )
-        if source == "CONFIG":
-            assert (
-                node.query(
-                    f"SELECT create_query FROM system.named_collections WHERE name='{collection_name}'"
-                )
-                == "\n"
-            )
-        else:
-            hidden_str = "\\'[HIDDEN]\\'"
-            assert (
-                node.query(
-                    f"SELECT create_query FROM system.named_collections WHERE name='{collection_name}'"
-                )
-                == f"CREATE NAMED COLLECTION collection2 AS key1 = {f'{key_value}' if show_secrets else hidden_str} OVERRIDABLE\n"
-            )
-
-    validate_named_collection("collection1", "CONFIG", "value1")
-
-    node.query("CREATE NAMED COLLECTION collection2 AS key1=1 OVERRIDABLE")
-    validate_named_collection("collection2", "SQL", "1")
-    node.query("ALTER NAMED COLLECTION collection2 SET key1 = 30")
-    validate_named_collection("collection2", "SQL", "30")
-
-    node.query("DROP NAMED COLLECTION collection2")
