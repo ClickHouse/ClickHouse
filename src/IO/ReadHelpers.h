@@ -1163,7 +1163,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             else
                 return false;
         }
-        
+
         // after minus sign, we must have a numeric character
         if (!isNumericASCII(*buf.position()))
         {
@@ -1180,7 +1180,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 
     // Additional safety check for buffer boundaries
     size_t available_bytes = buf_end - s;
-    
+
     // For time-only formats, we need sufficient bytes available
     // - hh:mm:ss needs 8 characters
     // - h:mm:ss needs 7 characters
@@ -1377,7 +1377,7 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
         else
             return ReturnType(false);
     }
-    
+
     // try to parse the whole part
     bool parse_success = false;
     if constexpr (throw_exception)
