@@ -46,6 +46,11 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
 
+    std::string getDescription() const override
+    {
+        return "XOR-based floating-point compression algorithm.";
+    }
+
 private:
     const UInt8 data_bytes_size;
 };
