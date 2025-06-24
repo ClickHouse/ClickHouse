@@ -89,7 +89,7 @@ struct ChangelogFileDescription
 
     bool deleted = false;
 
-    std::deque<ChangelogFileOperationPtr> file_operations;
+    std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
 
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }

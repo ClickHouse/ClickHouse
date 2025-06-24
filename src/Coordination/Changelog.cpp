@@ -127,7 +127,8 @@ void ChangelogFileDescription::waitAllAsyncOperations()
 {
     for (const auto & op : file_operations)
     {
-        op->done.wait(false);
+        if (auto op_locked = op.lock())
+            op_locked->done.wait(false);
     }
 
     file_operations.clear();
