@@ -225,8 +225,8 @@ cat <<EOF >>$SOURCE_FILE
 std::barrier barrier($THREADS + 1);
 std::mutex log_mutex;
 #define SYNC() barrier.arrive_and_wait()
-#define LOG(msg) { std::scoped_lock lock{log_mutex}; std::cout << "\033[01;3" << (1 + thread_id % 8) << "m[" << std::setw(2) << std::setfill('0') << thread_id << "] " << msg << "\033[00m" << std::endl; } while (false)
-#define LOG_MAIN(msg) { std::scoped_lock lock{log_mutex}; std::cout << "     " << msg << std::endl; } while (false)
+#define LOG(msg) do { std::scoped_lock lock{log_mutex}; std::cout << "\033[01;3" << (1 + thread_id % 8) << "m[" << std::setw(2) << std::setfill('0') << thread_id << "] " << msg << "\033[00m" << std::endl; } while (false)
+#define LOG_MAIN(msg) do { std::scoped_lock lock{log_mutex}; std::cout << "     " << msg << std::endl; } while (false)
 #define AVERAGE "Average"
 #endif
 size_t max_tests = $BENCHMARK_TESTS;
@@ -283,7 +283,7 @@ int main(int argc, char** argv) {
 EOF
 if [ $THREADS -gt 1 ] && [ $BENCHMARK_STEPS -ne 0 ]; then
     cat <<EOF >>$SOURCE_FILE
-  std::cout << "Threads: " << $THREADS << std::endl;
+  LOG_MAIN("Threads: " << $THREADS);
   std::vector<std::thread> threads;
   for (size_t i = 0; i < $THREADS; ++i)
     threads.emplace_back(work, i);
