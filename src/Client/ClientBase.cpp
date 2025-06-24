@@ -815,13 +815,13 @@ void ClientBase::initLogsOutputStream()
 
 void ClientBase::adjustSettings(ContextMutablePtr context)
 {
-    Settings settings = context->getSettingsCopy();
-
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
     /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
     if (!pager.empty() || !stdout_is_a_tty)
     {
+        Settings settings = context->getSettingsCopy();
+
         if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
         {
             settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
@@ -833,9 +833,9 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
             settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_value_width].changed = false;
         }
-    }
 
-    context->setSettings(settings);
+        context->setSettings(settings);
+    }
 }
 
 void ClientBase::initClientContext(ContextMutablePtr context)
