@@ -113,8 +113,9 @@ public:
 
     DB::ContextPtr getContext() const { return context; }
 
-    /// Get result of a parsed expression.
-    std::shared_ptr<DB::ActionsDAG> getResult()
+    /// Get result of a parsed scanCallback expression.
+    /// Its result is always a Tuple.
+    std::shared_ptr<DB::ActionsDAG> getScanCallbackExpressionResult()
     {
         /// In the process of parsing `node_lists` can have size > 1,
         /// but once parsing is finished -
@@ -143,10 +144,15 @@ public:
                 nodes.size(), schema.size());
         }
 
-        /// Finalize the result in outputs.
         auto schema_it = schema.begin();
+
+        DB::ColumnsWithTypeAndName result_columns;
+
+        /// Finalize the result in result_dag with requested schema.
         for (const auto & node : nodes)
         {
+            LOG_TEST(log, "Node type: {}, result name: {}", node->type, node->result_name);
+
             /// During parsing we assigned temporary const_{i} names
             /// to constant expressions,
             /// because we do not know their names at the moment of parsing,
@@ -155,26 +161,44 @@ public:
             /// (only nullability of types can differ,
             /// because when we parse non-null values, they are assigned non-nullable types).
             /// So we substitute constant column names here.
+            DB::ColumnWithTypeAndName column_with_type_and_name;
             if (node->type == DB::ActionsDAG::ActionType::COLUMN)
             {
-                auto * current_node = const_cast<DB::ActionsDAG::Node *>(node);
-                current_node->result_name = schema_it->name;
+                DB::ColumnPtr column;
+                DB::DataTypePtr type;
                 if (schema_it->type->isNullable())
                 {
-                    current_node->result_type = DB::makeNullable(node->result_type);
-                    current_node->column = DB::makeNullable(current_node->column);
+                    type = DB::makeNullable(node->result_type);
+                    column = DB::makeNullable(node->column);
                 }
                 else
-                    current_node->column = current_node->column;
+                {
+                    type = node->result_type;
+                    column = node->column;
+                }
+                column_with_type_and_name = DB::ColumnWithTypeAndName(column, type, schema_it->name);
+            }
+            else
+            {
+                column_with_type_and_name = DB::ColumnWithTypeAndName(node->column, node->result_type, node->result_name);
             }
 
-            /// Form the outputs.
-            dag->addOrReplaceInOutputs(*node);
-            LOG_TEST(log, "Added output: {}", node->result_name);
+            LOG_TEST(
+                log, "Added output: {}, type: {}",
+                column_with_type_and_name.name, column_with_type_and_name.type->getTypeId());
 
+            result_columns.push_back(column_with_type_and_name);
             ++schema_it;
         }
-        return dag;
+
+        auto result_dag = std::make_shared<DB::ActionsDAG>(result_columns);
+
+        DB::FunctionOverloadResolverPtr function =
+            std::make_unique<DB::FunctionToOverloadResolverAdaptor>(
+                std::make_shared<DB::FunctionTuple>());
+        result_dag->addFunction(function, result_dag->getOutputs(), {});
+
+        return result_dag;
     }
 
     const LoggerPtr & logger() const { return log; }
@@ -235,7 +259,7 @@ public:
         }
 
         auto column = DB::ColumnWithTypeAndName(
-            name_and_type->type->createColumnConstWithDefaultValue(1),
+            name_and_type->type->createColumn(),
             name_and_type->type,
             name_and_type->name);
 
@@ -697,23 +721,19 @@ private:
     }
 };
 
-ParsedExpression::ParsedExpression(std::shared_ptr<DB::ActionsDAG> dag_, const DB::NamesAndTypesList & schema_)
-    : dag(dag_), schema(schema_)
+std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, const DB::ActionsDAG & dag)
 {
-}
-
-std::vector<DB::Field> ParsedExpression::getConstValues(const DB::Names & columns) const
-{
-    auto nodes = dag->findInOutputs(columns);
+    auto nodes = dag.findInOutputs(columns);
     std::vector<DB::Field> values;
     for (const auto & node : nodes)
     {
-        if (node->type != DB::ActionsDAG::ActionType::COLUMN)
+        if (node->type != DB::ActionsDAG::ActionType::COLUMN
+            || !DB::isColumnConst(*node->column))
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
-                "Not a constant column: {}",
-                magic_enum::enum_name(node->type));
+                "Not a constant column: {} (column type: {})",
+                magic_enum::enum_name(node->type), node->column->getDataType());
         }
 
         DB::Field value;
@@ -723,13 +743,13 @@ std::vector<DB::Field> ParsedExpression::getConstValues(const DB::Names & column
     return values;
 }
 
-std::unique_ptr<ParsedExpression> visitExpression(
+std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
     const DB::NamesAndTypesList & expression_schema)
 {
     ExpressionVisitorData data(expression_schema);
     ExpressionVisitor::visit(expression, data);
-    return std::make_unique<ParsedExpression>(data.getResult(), expression_schema);
+    return data.getScanCallbackExpressionResult();
 }
 
 std::shared_ptr<DB::ActionsDAG> visitExpression(
@@ -738,7 +758,7 @@ std::shared_ptr<DB::ActionsDAG> visitExpression(
 {
     ExpressionVisitorData data(expression_schema);
     ExpressionVisitor::visit(expression, data);
-    return data.getResult();
+    return data.getScanCallbackExpressionResult();
 }
 
 }
