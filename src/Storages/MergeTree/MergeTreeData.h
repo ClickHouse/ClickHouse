@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mutex>
-#include <unordered_map>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -37,10 +36,7 @@
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include "Storages/ProjectionsDescription.h"
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>

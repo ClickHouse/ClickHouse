@@ -198,11 +198,6 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_storage_snapshot_sleep_ms;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-
-    /// Cloud only
-    extern const SettingsInt64 ignore_cold_parts_seconds;
-    extern const SettingsInt64 prefer_warmed_unmerged_parts_seconds;
-    extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool apply_patch_parts;
 }
 
@@ -268,13 +263,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
-
-    /// Cloud only
-    extern const MergeTreeSettingsBool cache_populated_by_fetch;
-    extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
-    extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
-    extern const MergeTreeSettingsString cache_populated_by_fetch_filename_regexp;
 }
 
 namespace ServerSetting
