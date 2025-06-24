@@ -67,6 +67,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.7",
+        {
+            {"function_date_trunc_use_datetime64_and_date32_return_type_on_datetime64_and_date32_arguments", true, true, "Add new setting to preserve old behaviour of dateTrunc function"},
+        });
         addSettingsChanges(settings_changes_history, "25.6",
         {
             {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
@@ -147,6 +151,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"function_date_trunc_use_datetime64_and_date32_return_type_on_datetime64_and_date32_arguments", false, true, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",

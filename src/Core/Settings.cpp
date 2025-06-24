@@ -6598,6 +6598,9 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
+    DECLARE(Bool, function_date_trunc_use_datetime64_and_date32_return_type_on_datetime64_and_date32_arguments, true, R"(
+If the second argument of the function `dateTrunc` is DateTime64/Date32, use DateTime64/Date32 type for the result regardless of the time unit in the first argument.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
