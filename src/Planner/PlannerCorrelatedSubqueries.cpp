@@ -309,6 +309,9 @@ QueryPlan decorrelateQueryPlan(
                         "Correlated subquery equality predicate must have exactly two arguments, but has {}",
                         arguments.size());
 
+                if (!arguments[0]->result_type->equals(*arguments[1]->result_type))
+                    continue;
+
                 const auto & lhs = arguments[0]->result_name;
                 const auto & rhs = arguments[1]->result_name;
 
