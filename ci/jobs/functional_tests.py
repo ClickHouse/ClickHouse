@@ -231,6 +231,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
+            f"chmod +x {ch_path}/lexer_test || true",
             f"chmod +x {ch_path}/clickhouse",
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
             # google *.proto files
