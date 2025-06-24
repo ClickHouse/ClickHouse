@@ -594,6 +594,8 @@ class BackportPRs:
 
 
 class CherryPickPRs:
+    STALE_THRESHOLD = 30 * 3600  # 30 hours in seconds
+
     def __init__(self, gh: GitHub, repo: str, dry_run: bool):
         self.gh = gh
         self.repo_name = repo
@@ -616,7 +618,7 @@ class CherryPickPRs:
             # The `updated_at` is Optional[datetime]
             cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
             since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
-            if since_updated < 30 * 3600:
+            if since_updated < self.STALE_THRESHOLD:
                 logging.info(
                     "The cherry-pick PR #%s was updated %d seconds ago, "
                     "waiting for the next running",
@@ -701,7 +703,7 @@ def main():
         if IS_CI:
             ci_buddy = CIBuddy()
             ci_buddy.post_job_error(
-                f"The cherry-pick finished with errors: {bpp.error}",
+                f"The backport process finished with errors: {bpp.error}",
                 with_instance_info=True,
                 with_wf_link=True,
                 critical=True,
