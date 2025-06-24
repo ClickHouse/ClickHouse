@@ -52,6 +52,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -227,6 +228,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
+        {
+            collect_filters = true;
+            break;
+        }
+        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
         {
             collect_filters = true;
             break;
