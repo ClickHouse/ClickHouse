@@ -394,8 +394,10 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
             return;
 
-        auto callback = new_session_id_response_callback[session_id_resp.internal_id];
-        callback(response, request);
+        auto callback = new_session_id_response_callback.find(session_id_resp.internal_id);
+        if (callback == new_session_id_response_callback.end())
+            return;
+        callback->second(response, request);
         new_session_id_response_callback.erase(session_id_resp.internal_id);
     }
     else /// Normal response, just write to client
