@@ -50,5 +50,4 @@ def test_system_reload_async_metrics(start_cluster):
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
     )
 
-    # Verify the count increased (could sometimes be more than +1 due to parallel tests)
-    assert int(res2.strip()) >= int(res1.strip()) + 1
+    assert int(res2.strip()) == int(res1.strip()) + 1
