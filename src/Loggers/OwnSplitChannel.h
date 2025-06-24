@@ -54,6 +54,9 @@ public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
+    void open() override;
+    void close() override;
+
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
 
     /// Adds a child channel
@@ -69,6 +72,7 @@ public:
     std::map<std::string, ExtendedChannelPtrPair> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
+    std::atomic<bool> stop_logging = false;
 };
 
 struct OwnRunnableForChannel;

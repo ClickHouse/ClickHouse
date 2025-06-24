@@ -21,8 +21,21 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
+void OwnSplitChannel::open()
+{
+    stop_logging = false;
+}
+
+void OwnSplitChannel::close()
+{
+    stop_logging = true;
+}
+
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+    if (stop_logging)
+        return;
+
     const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
     if (channels.empty() && (logs_queue == nullptr && !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
         return;
