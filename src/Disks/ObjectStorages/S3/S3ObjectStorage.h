@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool read_only;
+}
+
 struct S3ObjectStorageSettings
 {
     S3ObjectStorageSettings() = default;
@@ -49,7 +54,7 @@ private:
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
-        std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
+        std::unique_ptr<S3::S3RequestSettings> && s3_request_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
@@ -58,7 +63,7 @@ private:
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
-        , s3_settings(std::move(s3_settings_))
+        , s3_request_settings(std::move(s3_request_settings_))
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
@@ -153,7 +158,7 @@ public:
 
     bool areObjectKeysRandom() const override;
 
-    bool isReadOnly() const override { return s3_settings.get()->read_only; }
+    bool isReadOnly() const override { return (*s3_request_settings.get())[S3RequestSetting::read_only]; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
@@ -168,7 +173,7 @@ private:
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
-    MultiVersion<S3ObjectStorageSettings> s3_settings;
+    MultiVersion<S3::S3RequestSettings> s3_request_settings;
     S3Capabilities s3_capabilities;
 
     ObjectStorageKeysGeneratorPtr key_generator;
