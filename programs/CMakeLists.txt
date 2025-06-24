@@ -174,10 +174,6 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-if (ENABLE_LEXER_TEST)
-    list(APPEND CLICKHOUSE_BUNDLE lexer_test)
-endif ()
-
 if (TARGET ch_rust::chdig)
     clickhouse_program_alias(clickhouse-chdig)
     clickhouse_program_alias(chdig)
