@@ -89,7 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
@@ -198,7 +198,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
-            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {

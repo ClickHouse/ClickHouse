@@ -1,33 +1,35 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <base/getFQDNOrHostName.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
-#include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/TimeoutSetter.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 #include <IO/WriteBuffer.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Server/TCPProtocolStackData.h>
+#include <Storages/MergeTree/RequestResponse.h>
+
 #include "Client/IServerConnection.h"
 #include "IServer.h"
-#include "Interpreters/AsynchronousInsertQueue.h"
-#include "Server/TCPProtocolStackData.h"
-#include "Storages/MergeTree/RequestResponse.h"
-#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -300,7 +302,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(QueryState & state, const Block & block);    /// Write a block to the network.
+    void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     void sendLogData(QueryState & state, const Block & block);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
@@ -324,6 +326,7 @@ private:
     void initBlockOutput(QueryState & state, const Block & block);
     void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
+    static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);
 
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);

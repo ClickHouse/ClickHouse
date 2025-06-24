@@ -1017,6 +1017,7 @@ ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
 }
+
 ContextData::ContextData(const ContextData &o) :
     shared(o.shared),
     client_info(o.client_info),
@@ -1045,6 +1046,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    block_marshalling_callback(o.block_marshalling_callback),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
@@ -3982,7 +3984,12 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
 
 ThrottlerPtr Context::getLocalReadThrottler() const
 {
-    ThrottlerPtr throttler = shared->local_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->local_read_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3995,7 +4002,12 @@ ThrottlerPtr Context::getLocalReadThrottler() const
 
 ThrottlerPtr Context::getLocalWriteThrottler() const
 {
-    ThrottlerPtr throttler = shared->local_write_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->local_write_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -4050,6 +4062,29 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
 
     if (shared->remote_write_throttler)
         shared->remote_write_throttler->setMaxSpeed(write_bandwidth);
+}
+
+void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
+{
+    if (read_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->local_read_throttler)
+            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+    }
+
+    if (shared->local_read_throttler)
+        shared->local_read_throttler->setMaxSpeed(read_bandwidth);
+
+    if (write_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->local_write_throttler)
+            shared->local_write_throttler = std::make_shared<Throttler>(write_bandwidth);
+    }
+
+    if (shared->local_write_throttler)
+        shared->local_write_throttler->setMaxSpeed(write_bandwidth);
 }
 
 bool Context::hasDistributedDDL() const
@@ -6129,6 +6164,15 @@ void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callba
     merge_tree_all_ranges_callback = callback;
 }
 
+BlockMarshallingCallback Context::getBlockMarshallingCallback() const
+{
+    return block_marshalling_callback;
+}
+
+void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
+{
+    block_marshalling_callback = std::move(callback);
+}
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)
 {
