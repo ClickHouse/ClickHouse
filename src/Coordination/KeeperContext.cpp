@@ -176,6 +176,8 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
 
     inject_auth = config.getBool("keeper_server.inject_auth", false);
+
+    block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
 namespace
@@ -586,6 +588,32 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
     return *coordination_settings;
+}
+
+int64_t KeeperContext::getPrecommitSleepMillisecondsForTesting() const
+{
+    return precommit_sleep_ms_for_testing;
+}
+
+double KeeperContext::getPrecommitSleepProbabilityForTesting() const
+{
+    chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
+    return precommit_sleep_probability_for_testing;
+}
+
+bool KeeperContext::shouldInjectAuth() const
+{
+    return inject_auth;
+}
+
+bool KeeperContext::shouldBlockACL() const
+{
+    return block_acl;
+}
+
+void KeeperContext::setBlockACL(bool block_acl_)
+{
+    block_acl = block_acl_;
 }
 
 bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
