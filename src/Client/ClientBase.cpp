@@ -2254,9 +2254,7 @@ void ClientBase::processParsedSingleQuery(
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : set_query->changes)
             {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
+                if (change.name != "profile")
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
