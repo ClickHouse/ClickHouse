@@ -13,7 +13,7 @@ REGISTER_FUNCTION(NumericIndexedVector)
         = R"(Creates a NumericIndexedVector from a map. The map’s keys represent the vector's index and map's value represents the vector's value.)",
         .syntax = "SELECT numericIndexedVectorBuild(map)",
         .arguments = {{"map", "A mapping from index to value."}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             "SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);",
@@ -30,7 +30,7 @@ REGISTER_FUNCTION(NumericIndexedVector)
         = R"(Performs pointwise addition between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseAdd(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -54,7 +54,7 @@ SELECT
         = R"(Performs pointwise subtraction between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -78,7 +78,7 @@ SELECT
         = R"(Performs pointwise multiplication between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseMultiply(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -102,7 +102,7 @@ SELECT
         = R"(Performs pointwise division between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseDivide(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -126,7 +126,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseEqual(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -150,7 +150,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant.  The result is a NumericIndexedVector containing the indices where the values are not equal, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseNotEqual(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -174,7 +174,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than the second vector’s value, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseLess(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -198,7 +198,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than or equal to the second vector’s value, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseLessEqual(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -222,7 +222,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than the second vector’s value, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseGreater(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -246,7 +246,7 @@ SELECT
         = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than or equal to the second vector’s value, with all corresponding value set to 1.)",
         .syntax = "numericIndexedVectorPointwiseGreaterEqual(numericIndexedVector, numericIndexedVector | numeric)",
         .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
-        .returned_value = "NumericIndexedVector object.",
+        .returned_value = {"NumericIndexedVector object."},
         .examples
         = {{"",
             R"(
@@ -270,7 +270,7 @@ SELECT
         .syntax = "numericIndexedVectorGetValue(numericIndexedVector, index)",
         .arguments
         = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"index", "The index for which the value is to be retrieved."}},
-        .returned_value = "A Numeric value with the same type as the value type of NumericIndexedVector.",
+        .returned_value = {"A Numeric value with the same type as the value type of NumericIndexedVector."},
         .examples
         = {{"",
             R"(
@@ -290,7 +290,7 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
         .arguments = {
             {"numericIndexedVector", "A NumericIndexedVector object."},
             },
-        .returned_value = "Numeric value which type is UInt",
+        .returned_value = {"Numeric value which type is UInt"},
         .examples = {{
             "",
             R"(
@@ -311,7 +311,7 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
         .arguments = {
             {"numericIndexedVector", "A NumericIndexedVector object."},
             },
-        .returned_value = "Numeric value which type is Float64",
+        .returned_value = {"Numeric value which type is Float64"},
         .examples = {{
             "",
             R"(
@@ -332,7 +332,7 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
         .arguments = {
             {"numericIndexedVector", "A NumericIndexedVector object."},
             },
-        .returned_value = "String",
+        .returned_value = {"String"},
         .examples = {{
             "",
             R"(
@@ -353,7 +353,7 @@ res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer
         .arguments = {
             {"numericIndexedVector", "A NumericIndexedVector object."},
             },
-        .returned_value = "Map(IndexType, ValueType)",
+        .returned_value = {"Map(IndexType, ValueType)"},
         .examples = {{
             "",
             R"(
