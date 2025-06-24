@@ -1,3 +1,5 @@
+-- Tags: use-rocksdb
+
 CREATE TABLE t0 (c0 Bool) ENGINE = EmbeddedRocksDB PRIMARY KEY (c0);
 INSERT INTO TABLE t0 (c0) VALUES (TRUE);
 
