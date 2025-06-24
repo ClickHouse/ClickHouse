@@ -29,21 +29,26 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
 def test_system_reload_async_metrics(start_cluster):
-    try:
-        node.query("SYSTEM DROP QUERY CACHE")
+    node.query("SYSTEM DROP QUERY CACHE")
+    node.query("DROP TABLE IF EXISTS tab SYNC;")
 
-        res1 = node.query(
-            "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
-        )
+    # Reload asynchronous metrics to get the latest state (async metrics update period has been set to a large value
+    # intentionally in the test config to test the manual reload functionality)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
 
-        # create table and test that the table creation is reflected in the asynchronous metrics
-        node.query("CREATE TABLE tab (col UInt64) ENGINE MergeTree ORDER BY tuple()")
+    # Get table count before creating new table
+    res1 = node.query(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
+    )
 
-        node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    # Create table and test that SYSTEM RELOAD ASYNCHRONOUS METRICS reflects the change
+    node.query("CREATE TABLE tab (col UInt64) ENGINE MergeTree ORDER BY tuple()")
 
-        res2 = node.query(
-            "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
-        )
-        assert int(res1.rstrip()) + 1 == int(res2.rstrip())
-    finally:
-        node.query("DROP TABLE IF EXISTS tab;")
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    res2 = node.query(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
+    )
+
+    # Verify the count increased (could sometimes be more than +1 due to parallel tests)
+    assert int(res2.strip()) >= int(res1.strip()) + 1
