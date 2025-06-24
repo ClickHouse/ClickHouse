@@ -1352,16 +1352,15 @@ Result:
 Query with timezone:
 
 ```sql
-┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
-└─────────────────────────────────────────────┘
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 ```
 
 Result:
 
 ```text
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│                     2020-01-01 12:20:30.999 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
