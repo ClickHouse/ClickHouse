@@ -109,7 +109,6 @@ StorageObjectStorage::StorageObjectStorage(
 {
     const auto & data_lake_settings = configuration->getDataLakeSettings();
     auto metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-    std::cerr << "metadata path in constructor " << metadata_path << '\n';
 
     const bool need_resolve_columns_or_format = columns_.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
@@ -118,8 +117,6 @@ StorageObjectStorage::StorageObjectStorage(
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
     bool updated_configuration = false;
-    std::cerr << "init columns size " << columns_.size() << '\n';
-    configuration->setInitialColumns(columns_.getAll());
     try
     {
         if (!do_lazy_init)
@@ -186,8 +183,6 @@ StorageObjectStorage::StorageObjectStorage(
     setInMemoryMetadata(metadata);
 
     metadata_path = configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-    std::cerr << "metadata path in constructor end " << metadata_path << '\n';
-
 }
 
 String StorageObjectStorage::getName() const
@@ -457,7 +452,6 @@ void StorageObjectStorage::read(
 
     const auto & data_lake_settings = configuration->getDataLakeSettings();
     auto metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-    std::cerr << "metadata path in init read " << metadata_path << '\n';
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,

@@ -157,30 +157,13 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log)
 {
-    std::cerr << "metadata_file_path " << metadata_file_path << '\n';
-
     auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
-        {
-            auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
-            for (int i = 0; i < 10; ++i)
-            {
-                char c;
-                if (!buf->read(c))
-                {
-                    std::cerr << "EOF!\n";
-                    break;
-                }
-                std::cerr << c;
-            }
-            std::cerr << '\n';
-        }
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
         String json_str;
-        std::cerr << "available before reading " << buf->buffer().size() << '\n';
-        readJSONObjectPossiblyInvalid(json_str, *buf); // Почему-то мой json не читается
+        readJSONObjectPossiblyInvalid(json_str, *buf);
         
         return json_str;
     };
@@ -191,7 +174,6 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     else
         metadata_json_str = create_fn();
 
-    std::cerr << "metadata_json_str " << metadata_json_str << '\n';
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
     return json.extract<Poco::JSON::Object::Ptr>();
@@ -213,81 +195,6 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
 
     return std::make_pair(std::stoi(version_str), path);
-}
-
-String createDefaultMetadataPath(
-    const ObjectStoragePtr & object_storage,
-    const NamesAndTypesList & columns,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
-    const String & table_uuid,
-    ContextPtr context
-)
-{
-    std::cerr << "columns size " << columns.size() << '\n';
-    FileNamesGenerator filename_generator(configuration_ptr->getPath(), configuration_ptr->getPath());
-    auto filename = filename_generator.generateMetadataName();
-
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-
-    Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
-
-    root->set("format-version", 2);
-    root->set("table-uuid", table_uuid);
-    root->set("location", filename);
-    root->set("last-updated-ms", duration_cast<std::chrono::milliseconds>(duration).count());
-    root->set("last-column-id", 1);
-    root->set("current-schema-id", 0);
-
-    Poco::JSON::Object::Ptr schema = new Poco::JSON::Object;
-    schema->set("type", "struct");
-    schema->set("schema-id", 0);
-
-    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-    for (const auto & column : columns)
-    {
-        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set("id", column.name);
-        field->set("name", "id");
-        field->set("required", true);
-        // TODO: convert ch type into spark
-        field->set("type", column.type->getName());
-
-        fields->add(field);
-    }
-    schema->set("fields", fields);
-
-    root->set("schema", schema);
-
-    Poco::JSON::Array::Ptr partition_spec = new Poco::JSON::Array;
-    Poco::JSON::Object::Ptr spec = new Poco::JSON::Object;
-    spec->set("spec-id", 0);
-    //spec->set("fields", "");
-    partition_spec->add(spec);
-    root->set("partition-spec", partition_spec);
-    root->set("default-spec-id", 0);
-
-    Poco::JSON::Array::Ptr schemas = new Poco::JSON::Array;
-    schemas->add(schema);
-    root->set("schemas", schemas);
-
-    Poco::JSON::Array::Ptr partition_specs = new Poco::JSON::Array;
-    partition_specs->add(spec);
-    root->set("partition-specs", partition_specs);
-    
-    std::ostringstream oss;
-    Poco::JSON::Stringifier::stringify(root, oss, 4);
-
-    std::string json_representation = removeEscapedSlashes(oss.str());
-    std::cerr << "init meta json_representation " << json_representation << '\n';
-
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());                    
-    buffer_metadata->write(json_representation.data(), json_representation.size());
-
-    buffer_metadata->finalize();
-
-    return filename;
 }
 
 /**
@@ -313,16 +220,13 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
     auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
-        auto columns = configuration_ptr->getInitialColumns();
-        Poco::UUIDGenerator gen;
-        auto filename = createDefaultMetadataPath(object_storage, columns, configuration_ptr, table_uuid.has_value() ? *table_uuid : gen.createRandom().toString(), local_context);
-        metadata_files.push_back(filename);
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPath());
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        std::cerr << "strange way " << path << '\n';
         auto [version, metadata_file_path] = getMetadataFileAndVersion(path);
         if (need_all_metadata_files_parsing)
         {
@@ -390,7 +294,6 @@ std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        std::cerr << "explicit_metadata_path " << explicit_metadata_path << '\n';
         try
         {
             LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);

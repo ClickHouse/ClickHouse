@@ -226,7 +226,6 @@ Int32 IcebergMetadata::parseTableSchema(
 
 bool IcebergMetadata::update(const ContextPtr & local_context)
 {
-    std::cerr << "IcebergMetadata::update\n";
     auto configuration_ptr = configuration.lock();
 
     const auto [metadata_version, metadata_file_path]
@@ -247,12 +246,10 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     updateState(local_context, metadata_object, metadata_file_changed);
 
-    std::cerr << "snapshots ids " << previous_snapshot_id << ' ' << relevant_snapshot_id << ' ' << metadata_file_changed << '\n';
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
         schema_id_by_data_file_initialized.store(false);
-        std::cerr << "mismatched snapshots " << previous_snapshot_id << ' ' << relevant_snapshot_id << '\n';
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -260,7 +257,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
 void IcebergMetadata::updateSnapshot(Poco::JSON::Object::Ptr metadata_object)
 {
-    std::cerr << "updateSnapshot\n";
     auto configuration_ptr = configuration.lock();
     if (!metadata_object->has(f_snapshots))
         throw Exception(
@@ -400,7 +396,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
-    std::cerr << "IcebergMetadata " << configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].value << '\n';
 
     auto log = getLogger("IcebergMetadata");
 
@@ -444,7 +439,6 @@ void IcebergMetadata::initializeSchemasFromManifestFile(ManifestFilePtr manifest
 
 ManifestFileCacheKeys IcebergMetadata::getManifestList(const String & filename) const
 {
-    std::cerr << "getManifestList " << filename << '\n';
     auto configuration_ptr = configuration.lock();
     if (configuration_ptr == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
@@ -481,7 +475,6 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(const String & filename) 
     {
         manifest_file_cache_keys = create_fn();
     }
-    std::cerr << "manifest_file_cache_keys.size " << manifest_file_cache_keys.size() << '\n';
     return manifest_file_cache_keys;
 }
 
@@ -570,18 +563,14 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 
 ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 inherited_sequence_number) const
 {
-    std::cerr << "getManifestFile " << filename << '\n';   
     auto configuration_ptr = configuration.lock();
 
     auto create_fn = [&]()
     {
         ObjectInfo manifest_object_info(filename);
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
-        std::cerr << "getManifestFile bp1" << '\n';   
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
-        std::cerr << "getManifestFile bp2" << '\n';   
         auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
-        std::cerr << "getManifestFile bp3" << '\n';   
         schema_processor.addIcebergTableSchema(schema_object);
         return std::make_shared<ManifestFileContent>(
             manifest_file_deserializer,

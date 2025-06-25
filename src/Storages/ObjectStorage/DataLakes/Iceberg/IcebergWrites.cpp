@@ -152,11 +152,9 @@ void ManifestFileGenerator::generateManifestFile(
 
     std::ostringstream oss;
     int current_schema_id = metadata->getValue<Int32>("current-schema-id");
-    // CAREFUL HERE: id and index can be mismatched
     Poco::JSON::Stringifier::stringify(metadata->getArray("schemas")->getObject(current_schema_id), oss, 4);
 
     std::string json_representation = removeEscapedSlashes(oss.str());
-    std::cerr << "json_representation " << json_representation << '\n';
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<Apache::Iceberg::Manifest> writer(std::move(adapter), schema);
@@ -218,18 +216,14 @@ void ManifestListGenerator::generateManifestList(
         writer.write(entry_datum);
     }
     {
-        std::cerr << "bp1\n";
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(MetadataGenerator::f_parent_snapshot_id);
-        std::cerr << "bp2\n";
         auto snapshots = metadata->getArray(Iceberg::f_snapshots);
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
-            std::cerr << "iter over snaps " << i << ' ' << parent_snapshot_id << '\n';
             if (snapshots->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_snapshot_id) == parent_snapshot_id)
             {
                 auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
 
-                std::cerr << "manifest_list " << manifest_list << '\n';
                 StorageObjectStorage::ObjectInfo object_info(manifest_list);
                 auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, nullptr);
 
@@ -434,46 +428,32 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 
 std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher> ChunkPartitioner::participateChunk(const Chunk & chunk)
 {
-    std::cerr << "ChunkPartitioner::participateChunk bp0\n";
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
     for (size_t i = 0; i < sample_block.columns(); ++i)
     {
         auto column_ptr = chunk.getColumns()[i];
         auto column_name = sample_block.getNames()[i];
-        std::cerr << "ChunkPartitioner::participateChunk bp0.5 " << column_ptr->size() << ' ' << (sample_block.getDataTypes()[i] != nullptr) << ' ' << column_name << '\n';
         name_to_column[column_name] = ColumnWithTypeAndName(
             column_ptr,
             sample_block.getDataTypes()[i],
             column_name
         );
     }
-    std::cerr << "ChunkPartitioner::participateChunk bp1\n";
 
     std::vector<ChunkPartitioner::PartitionKey> transform_results(chunk.getNumRows());
     for (size_t transform_ind = 0; transform_ind < functions.size(); ++transform_ind)
     {
-        if (!functions[transform_ind])
-            std::cerr << "NULL AAAAA\n";
-        std::cerr << "ChunkPartitioner::participateChunk bp3\n";
         ColumnsWithTypeAndName arguments;
         if (function_params[transform_ind].has_value())
         {
             auto type = std::make_shared<DataTypeUInt64>();
             auto column_value = ColumnUInt64::create();
             column_value->insert(*function_params[transform_ind]);
-            std::cerr << "non-const size column " << column_value->size() << '\n';
             auto const_column = ColumnConst::create(std::move(column_value), chunk.getNumRows());
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#")); 
         }
-        std::cerr << "ChunkPartitioner::participateChunk bp4 " << columns_to_apply[transform_ind] << '\n';
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
-        for (const auto & arg : arguments)
-        {
-            std::cerr << "check arg " << (arg.type != nullptr) << ' ' << arg.name << '\n';
-            std::cerr << isDynamic(arg.type) << '\n';
-        }
         auto result = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
-        std::cerr << "ChunkPartitioner::participateChunk bp5\n";
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
             Field field;
@@ -481,7 +461,6 @@ std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::Part
             transform_results[i].push_back(field.dump());
         }
     }
-    std::cerr << "ChunkPartitioner::participateChunk bp2\n";
 
     std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher> result;
     for (const auto & transform_result : transform_results)
@@ -522,7 +501,6 @@ IcebergStorageSink::IcebergStorageSink(
     auto [last_version, metadata_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
     filename_generator.setVersion(last_version + 1);
-    std::cerr << "metadata_path " << metadata_path << '\n';
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log);
 
     Int64 partition_spec_id = metadata->getValue<Int64>("default-spec-id");
@@ -649,17 +627,8 @@ void IcebergStorageSink::initializeMetadata()
     auto manifest_list_name = filename_generator.generateManifestListName();
     auto metadata_name = filename_generator.generateMetadataName();
 
-    std::cerr << "metadata_name " << metadata_name << '\n';
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    std::cerr << "parent_snapshot " << parent_snapshot << '\n';
     auto new_snapshot = MetadataGenerator(metadata).generateNextMetadata(manifest_list_name, /*parent_snapshot_id TODO*/ parent_snapshot, 1, total_rows, total_chunks_size);
-
-    {
-        std::ostringstream oss;
-        Poco::JSON::Stringifier::stringify(new_snapshot, oss, 4);
-        std::cerr << "new snapshot " << oss.str() << '\n';
-
-    }
 
     Strings manifest_entries;
     for (const auto & [_, data_filename] : data_filenames)
@@ -690,8 +659,6 @@ void IcebergStorageSink::initializeMetadata()
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());                    
         buffer_metadata->write(json_representation.data(), json_representation.size());
-
-        std::cerr << "\n====\n\n\n" << json_representation << "\n\n\n====\n";
         buffer_metadata->finalize();
     }
 }

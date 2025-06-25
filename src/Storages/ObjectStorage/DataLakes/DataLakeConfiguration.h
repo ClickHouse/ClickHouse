@@ -71,7 +71,6 @@ public:
         BaseStorageConfiguration::update(
             object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
 
-        std::cerr << "DataLakeConfiguration " << getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].value << '\n';
         const bool changed = updateMetadataIfChanged(object_storage, local_context);
         if (!changed)
             return true;
