@@ -229,41 +229,50 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     std::vector<Replxx::Color> color_stack;
 
     IParser::Pos highlight_token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
-    while (!highlight_token_iterator->isEnd())
+    try
     {
-        if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
+        while (!highlight_token_iterator->isEnd())
         {
-            color_stack.push_back(colormap[current_color % colormap.size()]);
-            current_color++;
-
-            auto highlight_pos = highlight_token_iterator->begin - begin;
-
-            colors[highlight_pos] = color_stack.back();
-
-            ++highlight_token_iterator;
-            continue;
-        }
-
-        if (highlight_token_iterator->type == TokenType::ClosingRoundBracket)
-        {
-            if (color_stack.empty())
+            if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
+                color_stack.push_back(colormap[current_color % colormap.size()]);
+                current_color++;
+
+                auto highlight_pos = highlight_token_iterator->begin - begin;
+
+                colors[highlight_pos] = color_stack.back();
+
                 ++highlight_token_iterator;
                 continue;
             }
 
-            auto highlight_pos = highlight_token_iterator->begin - begin;
-            colors[highlight_pos] = color_stack.back();
-            color_stack.pop_back();
+            if (highlight_token_iterator->type == TokenType::ClosingRoundBracket)
+            {
+                if (color_stack.empty())
+                {
+                    ++highlight_token_iterator;
+                    continue;
+                }
+
+                auto highlight_pos = highlight_token_iterator->begin - begin;
+                colors[highlight_pos] = color_stack.back();
+                color_stack.pop_back();
+
+                ++highlight_token_iterator;
+                continue;
+            }
 
             ++highlight_token_iterator;
-            continue;
+
+            while (highlight_token_iterator->type == TokenType::Semicolon)
+                ++highlight_token_iterator;
         }
-
-        ++highlight_token_iterator;
-
-        while (highlight_token_iterator->type == TokenType::Semicolon)
-            ++highlight_token_iterator;
+    }
+    catch (...)
+    {
+        /// Skip highlighting in the case of exceptions during parsing.
+        /// It is ok to ignore unknown exceptions here.
+        return;
     }
 
     Token last_token = token_iterator.max();
