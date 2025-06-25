@@ -1567,18 +1567,38 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
-        case IndexType::IDX_text:
-            if (rg.nextBool())
-            {
-                static const DB::Strings & tokenizerVals = {"default", "ngram", "noop"};
+        case IndexType::IDX_text: {
+            static const DB::Strings & tokenizerVals = {"default", "ngram", "split", "no_op"};
+            const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
-                idef->add_params()->set_unescaped_sval("tokenizer = '" + rg.pickRandomly(tokenizerVals) + "'");
-            }
+            idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
                 idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (next_tokenizer == "split" && rg.nextBool())
+            {
+                String buf;
+                DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
+                std::uniform_int_distribution<size_t> next_dist(UINT32_C(0), separators.size());
+
+                std::shuffle(separators.begin(), separators.end(), rg.generator);
+                const size_t nlen = next_dist(rg.generator);
+                buf += "separators = [";
+                for (size_t i = 0; i < nlen; i++)
+                {
+                    if (i != 0)
+                    {
+                        buf += ", ";
+                    }
+                    buf += "'";
+                    buf += separators[i];
+                    buf += "'";
+                }
+                buf += "]";
+                idef->add_params()->set_unescaped_sval(std::move(buf));
             }
             if (rg.nextBool())
             {
@@ -1587,7 +1607,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 idef->add_params()->set_unescaped_sval(
                     "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
             }
-            break;
+        }
+        break;
         case IndexType::IDX_vector_similarity:
             idef->add_params()->set_sval("hnsw");
             idef->add_params()->set_sval(rg.nextBool() ? "cosineDistance" : "L2Distance");
