@@ -5,24 +5,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-from build_download_helper import read_build_urls
-from ci_config import CI
-from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
-from pr_info import PRInfo
+from env_helper import REPO_COPY, TEMP_PATH
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from pr_info import PRInfo
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
 
 def get_run_command(
-    pr_info: PRInfo,
-    build_url: str,
     workspace_path: Path,
-    ci_logs_args: str,
     image: DockerImage,
     check_name: str,
 ) -> str:
@@ -30,9 +24,6 @@ def get_run_command(
         "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
     )
     envs = [
-        f"-e PR_TO_TEST={pr_info.number}",
-        f"-e SHA_TO_TEST={pr_info.sha}",
-        f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
         f"-e FUZZER_TO_RUN='{fuzzer_name}'",
     ]
 
@@ -43,12 +34,13 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        f"{ci_logs_args}"
         "--tmpfs /tmp/clickhouse "
         f"--volume={workspace_path}:/workspace "
+        f"--volume={REPO_COPY}:/repo "
         f"{env_str} "
-        "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
-        f"{image}"
+        "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE --workdir /repo "
+        f"{image} "
+        "bash -c './ci/jobs/scripts/run-fuzzer.sh' "
     )
 
 
@@ -58,7 +50,6 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
@@ -66,38 +57,25 @@ def main():
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
-    pr_info = PRInfo()
+    assert (
+        Path(REPO_COPY) / "ci/tmp/clickhouse"
+    ).exists(), "ClickHouse binary not found"
 
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    if not urls:
-        raise ValueError("No build URLs found")
-
-    for url in urls:
-        if url.endswith("/clickhouse"):
-            build_url = url
-            break
-    else:
-        raise ValueError("Cannot find the clickhouse binary among build results")
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
-
-    logging.info("Got build url %s", build_url)
 
     workspace_path = temp_path / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
-
-    run_command = get_run_command(
-        pr_info, build_url, workspace_path, ci_logs_args, docker_image, check_name
-    )
+    run_command = get_run_command(workspace_path, docker_image, check_name)
     logging.info("Going to run %s", run_command)
 
+    pr_info = PRInfo(need_changed_files=True)
+    pr_info.changed_files
+
+    with open(workspace_path / "ci-changed-files.txt", "w") as f:
+        f.write("\n".join(pr_info.changed_files))
+
     run_log_path = temp_path / "run.log"
-    main_log_path = workspace_path / "main.log"
 
     with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
@@ -107,12 +85,8 @@ def main():
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
     paths = {
-        "run.log": run_log_path,
-        "main.log": main_log_path,
-        "report.html": workspace_path / "report.html",
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
         "fatal.log": workspace_path / "fatal.log",
