@@ -53,52 +53,20 @@ private:
     Int32 initial_version;
 };
 
-class ManifestFileGenerator
-{
-public:
-    explicit ManifestFileGenerator(Poco::JSON::Object::Ptr metadata_);
+void generateManifestFile(
+    Poco::JSON::Object::Ptr metadata,
+    const String & data_file_name,
+    Poco::JSON::Object::Ptr new_snapshot,
+    WriteBuffer & buf);
 
-    void generateManifestFile(
-        const String & data_file_name,
-        Poco::JSON::Object::Ptr new_snapshot,
-        WriteBuffer & buf);
-
-    static constexpr const char * f_format_version = "format-version";
-private:
-    avro::ValidSchema schema;
-    Poco::JSON::Object::Ptr metadata;
-};
-
-class ManifestListGenerator
-{
-public:
-    explicit ManifestListGenerator(Poco::JSON::Object::Ptr metadata_);
-
-    void generateManifestList(
-        ObjectStoragePtr object_storage,
-        ContextPtr context,
-        const Strings & manifest_entry_names,
-        Poco::JSON::Object::Ptr new_snapshot,
-        Int32 manifest_length,
-        WriteBuffer & buf);
-
-    static constexpr const char * f_manifest_path = "manifest_path";
-    static constexpr const char * f_manifest_length = "manifest_length";
-    static constexpr const char * f_partition_spec_id = "partition_spec_id";
-    static constexpr const char * f_content = "content";
-    static constexpr const char * f_sequence_number = "sequence_number";
-    static constexpr const char * f_min_sequence_number = "min_sequence_number";
-    static constexpr const char * f_added_snapshot_id = "added_snapshot_id";
-    static constexpr const char * f_added_files_count = "added_files_count";
-    static constexpr const char * f_existing_files_count = "existing_files_count";
-    static constexpr const char * f_deleted_files_count = "deleted_files_count";
-    static constexpr const char * f_added_rows_count = "added_rows_count";
-    static constexpr const char * f_existing_rows_count = "existing_rows_count";
-    static constexpr const char * f_deleted_rows_count = "deleted_rows_count";
-private:
-    Poco::JSON::Object::Ptr metadata;
-    avro::ValidSchema schema;
-};
+void generateManifestList(
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const Strings & manifest_entry_names,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Int32 manifest_length,
+    WriteBuffer & buf);
 
 class MetadataGenerator
 {
@@ -120,7 +88,7 @@ public:
     static constexpr const char * f_timestamp_ms = "timestamp-ms";
     static constexpr const char * f_added_data_files = "added-data-files";
     static constexpr const char * f_added_records = "added-records";
-    static constexpr const char * f_added_files_size = "added-files-size";
+    static constexpr const char * f_added_files_size = "add ed-files-size";
     static constexpr const char * f_changed_partition_count = "changed-partition-count";
     static constexpr const char * f_total_records = "total-records";
     static constexpr const char * f_total_files_size = "total-files-size";

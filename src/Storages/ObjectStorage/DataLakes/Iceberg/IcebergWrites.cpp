@@ -99,21 +99,6 @@ String FileNamesGenerator::generateMetadataName()
     return fmt::format("{}metadata/{}-{}.metadata.json", metadata_dir, initial_version, uuid_generator.createRandom().toString());
 }
 
-ManifestFileGenerator::ManifestFileGenerator(Poco::JSON::Object::Ptr metadata_)
-    : metadata(metadata_)
-{
-    Int32 version = metadata->getValue<Int32>(f_format_version);
-    String schema_representation;
-    if (version == 1)
-        schema_representation = manifest_entry_v1_schema;
-    else if (version == 2)
-        schema_representation = manifest_entry_v2_schema;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
-    std::istringstream iss(schema_representation);
-    avro::compileJsonSchema(iss, schema);
-}
-
 std::string removeEscapedSlashes(const std::string& jsonStr) {
     std::string result = jsonStr;
     size_t pos = 0;
@@ -124,11 +109,24 @@ std::string removeEscapedSlashes(const std::string& jsonStr) {
     return result;
 }
 
-void ManifestFileGenerator::generateManifestFile(
+void generateManifestFile(
+    Poco::JSON::Object::Ptr metadata,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     WriteBuffer & buf)
 {
+    avro::ValidSchema schema;
+    Int32 version = metadata->getValue<Int32>("format-version");
+    String schema_representation;
+    if (version == 1)
+        schema_representation = manifest_entry_v1_schema;
+    else if (version == 2)
+        schema_representation = manifest_entry_v2_schema;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
+    std::istringstream iss(schema_representation);
+    avro::compileJsonSchema(iss, schema);
+
     Apache::Iceberg::Manifest manifest;
 
     manifest.status = 1;
@@ -166,10 +164,17 @@ void ManifestFileGenerator::generateManifestFile(
     writer.close();
 }
 
-ManifestListGenerator::ManifestListGenerator(Poco::JSON::Object::Ptr metadata_)
-    : metadata(metadata_)
+void generateManifestList(
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const Strings & manifest_entry_names,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Int32 manifest_length,
+    WriteBuffer & buf)
 {
-    Int32 version = metadata->getValue<Int32>(ManifestFileGenerator::f_format_version);
+    avro::ValidSchema schema;
+    Int32 version = metadata->getValue<Int32>("format-version");
     String schema_representation;
     if (version == 1)
         schema_representation = manifest_list_v1_schema;
@@ -179,16 +184,7 @@ ManifestListGenerator::ManifestListGenerator(Poco::JSON::Object::Ptr metadata_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
     std::istringstream iss(schema_representation);
     avro::compileJsonSchema(iss, schema);
-}
 
-void ManifestListGenerator::generateManifestList(
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    const Strings & manifest_entry_names,
-    Poco::JSON::Object::Ptr new_snapshot,
-    Int32 manifest_length,
-    WriteBuffer & buf)
-{
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
@@ -199,19 +195,19 @@ void ManifestListGenerator::generateManifestList(
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord& entry = entry_datum.value<avro::GenericRecord>();
 
-        entry.field(f_manifest_path) = manifest_entry_name;
-        entry.field(f_manifest_length) = manifest_length;
-        entry.field(f_partition_spec_id) = 1;
-        entry.field(f_content) = 0;
-        entry.field(f_sequence_number) = new_snapshot->getValue<Int32>(MetadataGenerator::f_sequence_number);
-        entry.field(f_min_sequence_number) = new_snapshot->getValue<Int32>(MetadataGenerator::f_sequence_number);
-        entry.field(f_added_snapshot_id) = new_snapshot->getValue<Int32>(MetadataGenerator::f_snapshot_id);
-        entry.field(f_added_files_count) = 1;
-        entry.field(f_existing_files_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_total_data_files);
-        entry.field(f_deleted_files_count) = 0;
-        entry.field(f_added_rows_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_added_records);
-        entry.field(f_existing_rows_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_total_records);
-        entry.field(f_deleted_rows_count) = 0;
+        entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
+        entry.field(Iceberg::f_manifest_length) = manifest_length;
+        entry.field(Iceberg::f_partition_spec_id) = 1;
+        entry.field(Iceberg::f_content) = 0;
+        entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int32>(MetadataGenerator::f_sequence_number);
+        entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int32>(MetadataGenerator::f_sequence_number);
+        entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int32>(MetadataGenerator::f_snapshot_id);
+        entry.field(Iceberg::f_added_files_count) = 1;
+        entry.field(Iceberg::f_existing_files_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_total_data_files);
+        entry.field(Iceberg::f_deleted_files_count) = 0;
+        entry.field(Iceberg::f_added_rows_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_added_records);
+        entry.field(Iceberg::f_existing_rows_count) = new_snapshot->getObject(MetadataGenerator::f_summary)->getValue<Int32>(MetadataGenerator::f_total_records);
+        entry.field(Iceberg::f_deleted_rows_count) = 0;
 
         writer.write(entry_datum);
     }
@@ -638,7 +634,7 @@ void IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        ManifestFileGenerator(metadata).generateManifestFile(data_filename, new_snapshot, *buffer_manifest_entry);
+        generateManifestFile(metadata, data_filename, new_snapshot, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
     }
 
@@ -646,7 +642,7 @@ void IcebergStorageSink::initializeMetadata()
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());                    
 
-        ManifestListGenerator(metadata).generateManifestList(object_storage, context, manifest_entries, new_snapshot, /*TODO : size of manifest entry*/0, *buffer_manifest_list);
+        generateManifestList(metadata, object_storage, context, manifest_entries, new_snapshot, /*TODO : size of manifest entry*/0, *buffer_manifest_list);
         buffer_manifest_list->finalize();
     }
 

@@ -3123,7 +3123,7 @@ def test_cluster_table_function_with_partition_pruning(
     instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
 
 
-@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_writes(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
@@ -3132,7 +3132,7 @@ def test_writes(started_cluster, format_version, storage_type):
     TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
  
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id int) USING iceberg TBLPROPERTIES ('format-version' = '2')")
+        f"CREATE TABLE {TABLE_NAME} (id int) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}')")
 
     default_upload_directory(
         started_cluster,
@@ -3165,7 +3165,7 @@ def test_writes_from_zero(started_cluster, format_version, storage_type):
     TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
  
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id int) USING iceberg TBLPROPERTIES ('format-version' = '2')")
+        f"CREATE TABLE {TABLE_NAME} (id int) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}')")
     default_upload_directory(
         started_cluster,
         storage_type,
@@ -3209,7 +3209,7 @@ def test_writes_with_partitioned_table(started_cluster, format_version, storage_
             )
             USING iceberg
             PARTITIONED BY (bucket(3, id), bucket(2, name), bucket(4, value), bucket(5, created_at), bucket(3, event_time))
-            OPTIONS('format-version'='2')
+            OPTIONS('format-version'='{format_version}')
         """
     )
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
