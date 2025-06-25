@@ -928,6 +928,7 @@ class FailureReason(enum.Enum):
     NO_ZOOKEEPER = "no zookeeper"
     NO_SHARD = "no shard"
     FAST_ONLY = "running fast tests only"
+    NOT_FAST_ONLY = "running not only fast tests"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
@@ -1548,6 +1549,9 @@ class TestCase:
 
         if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
+        
+        if tags and ("fasttest-only" in tags) and not args.fast_tests_only:
+            return FailureReason.NOT_FAST_ONLY
 
         if (
             tags
@@ -1648,6 +1652,7 @@ class TestCase:
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
+                content = "\n".join(filter(lambda l: "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!" not in l, content.splitlines()))
                 if content:
                     stderr += f"Path: {path}\n"
                     stderr += content
