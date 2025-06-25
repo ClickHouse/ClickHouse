@@ -92,10 +92,12 @@ void AddedColumns<true>::buildOutputFromBlocks()
 {
     if (this->size() == 0)
         return;
-    PaddedPODArray<const IColumn *> column_ptrs;
+    PaddedPODArray<const Columns *> many_columns;
     PaddedPODArray<UInt32> row_nums;
-    column_ptrs.reserve(lazy_output.getRowCount());
-    row_nums.reserve(lazy_output.getRowCount());
+
+    size_t rows = lazy_output.getRowCount();
+    many_columns.reserve(rows);
+    row_nums.reserve(rows);
     for (auto row_ref_i : lazy_output.getRowRefs())
     {
         if (row_ref_i)
@@ -105,30 +107,31 @@ void AddedColumns<true>::buildOutputFromBlocks()
                 const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
                 for (auto it = row_ref_list->begin(); it.ok(); ++it)
                 {
-                    column_ptrs.emplace_back(it->columns->data()->get());
+                    many_columns.emplace_back(it->columns);
                     row_nums.emplace_back(it->row_num);
                 }
             }
             else
             {
                 const RowRef * row_ref = reinterpret_cast<const RowRefList *>(row_ref_i);
-                column_ptrs.emplace_back(row_ref->columns->data()->get());
+                many_columns.emplace_back(row_ref->columns);
                 row_nums.emplace_back(row_ref->row_num);
             }
         }
         else
         {
-            column_ptrs.emplace_back(nullptr);
+            many_columns.emplace_back(nullptr);
             row_nums.emplace_back(0);
         }
     }
-    size_t prev_index = 0;
+
+    rows = many_columns.size();
+    PaddedPODArray<const IColumn *> column_ptrs(rows, nullptr);
     for (size_t i = 0; i < this->size(); ++i)
     {
-        size_t curr_index = right_indexes[i];
-        for (auto & col : column_ptrs)
-            col = col - prev_index + curr_index;
-        prev_index = curr_index;
+        for (size_t row = 0; row < rows; ++row)
+            if (many_columns[row])
+                column_ptrs[row] = (*many_columns[row])[right_indexes[i]].get();
 
         columns[i]->gather(column_ptrs, row_nums);
     }
