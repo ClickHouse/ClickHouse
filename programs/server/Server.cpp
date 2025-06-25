@@ -209,6 +209,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
+    extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
@@ -316,6 +317,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
+    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
+    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -1374,6 +1378,11 @@ try
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
+    getFormatParsingThreadPool().initialize(
+        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
+        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
+        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
 
@@ -1983,6 +1992,8 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
+            global_context->setServerSetting("s3queue_disable_streaming", new_server_settings[ServerSetting::s3queue_disable_streaming].value);
+
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
             size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
@@ -2096,6 +2107,11 @@ try
                 new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
                 new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
                 new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
+
+            getFormatParsingThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_format_parsing_thread_pool_size],
+                new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
+                new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
