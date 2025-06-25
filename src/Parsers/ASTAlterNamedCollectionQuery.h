@@ -25,8 +25,6 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
-    bool hasSecretParts() const override { return true; }
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };

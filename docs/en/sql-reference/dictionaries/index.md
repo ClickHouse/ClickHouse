@@ -49,10 +49,10 @@ The [dictionaries](/operations/system-tables/dictionaries) system table contains
 ## Creating a dictionary with a DDL query {#creating-a-dictionary-with-a-ddl-query}
 
 Dictionaries can be created with [DDL queries](../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
-- No additional records are added to server configuration files.
-- The dictionaries can be worked with as first-class entities, like tables or views.
-- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores. 
-- The dictionaries can be easily renamed.
+- No additional records are added to server configuration files
+- The dictionaries can be worked with as first-class entities, like tables or views
+- Data can be read directly, using familiar SELECT rather than dictionary table functions
+- The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
 
@@ -205,8 +205,6 @@ Configuration example of a composite key (key has one element with [String](../.
 ```
 
 ## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
-
-Various methods of storing dictionary data in memory are associated with CPU and RAM-usage trade-offs. Decision tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
 
 - [flat](#flat)
 - [hashed](#hashed)

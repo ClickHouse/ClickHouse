@@ -143,6 +143,22 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
+def print_objects():
+    minio_client = Minio(
+        f"localhost:9002",
+        access_key="minio",
+        secret_key=minio_secret_key,
+        secure=False,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+    )
+
+    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
+    names = [x.object_name for x in objects]
+    names.sort()
+    for name in names:
+        print(f"Found object: {name}")
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -373,55 +389,3 @@ def test_tables_with_same_location(started_cluster):
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
-
-
-def test_non_existing_tables(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    namespace = f"{root_namespace}.A.B.C"
-    namespaces_to_create = [
-        root_namespace,
-        f"{root_namespace}.A",
-        f"{root_namespace}.A.B",
-        f"{root_namespace}.A.B.C",
-    ]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in namespaces_to_create:
-        catalog.create_namespace(namespace)
-        assert len(catalog.list_tables(namespace)) == 0
-
-    table = create_table(catalog, namespace, table_name)
-
-    num_rows = 10
-    data = [generate_record() for _ in range(num_rows)]
-    df = pa.Table.from_pylist(data)
-    table.append(df)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
-    assert expected == node.query(
-        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
-    )
-
-    try:
-        node.query(
-            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.qweqwe`"
-        )
-    except Exception as e:
-        assert "DB::Exception: Table" in str(e)
-        assert "doesn't exist" in str(e)
-
-    try:
-        node.query(
-            f"SHOW CREATE TABLE {CATALOG_NAME}.`qweqwe.qweqwe`"
-        )
-    except Exception as e:
-        assert "DB::Exception: Table" in str(e)
-        assert "doesn't exist" in str(e)

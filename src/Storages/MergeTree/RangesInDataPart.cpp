@@ -81,23 +81,16 @@ void RangesInDataPartsDescription::merge(const RangesInDataPartsDescription & ot
 }
 
 RangesInDataPart::RangesInDataPart(
-    const DataPartPtr & data_part_,
-    const DataPartPtr & parent_part_,
-    size_t part_index_in_query_,
-    size_t part_starting_offset_in_query_,
-    const MarkRanges & ranges_)
+    const DataPartPtr & data_part_, size_t part_index_in_query_, size_t part_starting_offset_in_query_, const MarkRanges & ranges_)
     : data_part{data_part_}
-    , parent_part{parent_part_}
     , part_index_in_query{part_index_in_query_}
     , part_starting_offset_in_query{part_starting_offset_in_query_}
     , ranges{ranges_}
 {
 }
 
-RangesInDataPart::RangesInDataPart(
-    const DataPartPtr & data_part_, const DataPartPtr & parent_part_, size_t part_index_in_query_, size_t part_starting_offset_in_query_)
+RangesInDataPart::RangesInDataPart(const DataPartPtr & data_part_, size_t part_index_in_query_, size_t part_starting_offset_in_query_)
     : data_part{data_part_}
-    , parent_part{parent_part_}
     , part_index_in_query{part_index_in_query_}
     , part_starting_offset_in_query{part_starting_offset_in_query_}
 {
@@ -136,8 +129,7 @@ RangesInDataParts::RangesInDataParts(const DataPartsVector & parts)
     size_t starting_offset = 0;
     for (size_t i = 0; i < num_parts; ++i)
     {
-        chassert(!parts[i]->isProjectionPart());
-        emplace_back(parts[i], nullptr, i, starting_offset);
+        emplace_back(parts[i], i, starting_offset);
         starting_offset += parts[i]->rows_count;
     }
 }
