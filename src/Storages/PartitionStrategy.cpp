@@ -142,11 +142,19 @@ namespace
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
+        bool contains_partition_wildcard,
         bool partition_columns_in_data_file)
     {
         if (!partition_by)
         {
             return nullptr;
+        }
+
+        /// Backwards incompatible in the sense that `create table s3_table engine=s3('path_without_wildcard') PARTITION BY ... used to be valid,
+        /// but it is not anymore
+        if (!contains_partition_wildcard)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy wildcard can not be used without a '_partition_id' wildcard");
         }
 
         if (!partition_columns_in_data_file)
@@ -185,6 +193,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
                                                                  bool globbed_path,
+                                                                 bool contains_partition_wildcard,
                                                                  bool partition_columns_in_data_file)
 {
     if (strategy == StrategyType::HIVE)
@@ -200,7 +209,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
 
     if (strategy == StrategyType::WILDCARD)
     {
-        return createWildcardPartitionStrategy(partition_by, sample_block, context, partition_columns_in_data_file);
+        return createWildcardPartitionStrategy(partition_by, sample_block, context, contains_partition_wildcard, partition_columns_in_data_file);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -214,6 +223,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
                                                                  bool globbed_path,
+                                                                 bool contains_partition_wildcard,
                                                                  bool partition_columns_in_data_file)
 {
     Block block;
@@ -222,7 +232,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
         block.insert({partition_column.type, partition_column.name});
     }
 
-    return get(strategy, partition_by, block, context, file_format, globbed_path, partition_columns_in_data_file);
+    return get(strategy, partition_by, block, context, file_format, globbed_path, contains_partition_wildcard, partition_columns_in_data_file);
 }
 
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)

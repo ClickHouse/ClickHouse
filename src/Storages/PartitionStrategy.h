@@ -64,6 +64,7 @@ struct PartitionStrategyFactory
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
+        bool contains_partition_wildcard,
         bool partition_columns_in_data_file);
 
     static std::shared_ptr<PartitionStrategy> get(
@@ -73,6 +74,7 @@ struct PartitionStrategyFactory
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
+        bool contains_partition_wildcard,
         bool partition_columns_in_data_file);
 };
 

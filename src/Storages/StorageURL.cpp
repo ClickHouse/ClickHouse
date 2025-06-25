@@ -1424,6 +1424,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             context,
             format_name,
             urlWithGlobs(uri),
+            has_wildcards,
             true);
 
         return std::make_shared<PartitionedStorageURLSink>(

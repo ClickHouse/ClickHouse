@@ -359,6 +359,7 @@ void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition
         context,
         format,
         getRawPath().withGlobs(),
+        getRawPath().withPartitionWildcard(),
         partition_columns_in_data_file);
 
     if (partition_strategy)

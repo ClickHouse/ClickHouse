@@ -2059,8 +2059,10 @@ SinkToStoragePtr StorageFile::write(
             PartitionStrategyFactory::StrategyType::WILDCARD,
             insert_query->partition_by,
             metadata_snapshot->getSampleBlock(),
-            context, format_name,
+            context,
+            format_name,
             is_path_with_globs,
+            has_wildcards,
             true);
 
         return std::make_shared<PartitionedStorageFileSink>(
