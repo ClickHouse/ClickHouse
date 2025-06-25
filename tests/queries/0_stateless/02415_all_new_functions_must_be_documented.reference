@@ -401,8 +401,6 @@ polygonsDistanceSpherical
 polygonsEqualsCartesian
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
-polygonsIntersectsCartesian
-polygonsIntersectsSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
