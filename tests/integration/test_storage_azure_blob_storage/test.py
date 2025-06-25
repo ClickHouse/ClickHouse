@@ -901,25 +901,57 @@ def test_function_signatures(cluster):
     query_5 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'column1 UInt32')"
     assert azure_query(node, query_5) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
-    query_6 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy \n"
+    query_6 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard')"
     assert azure_query(node, query_6) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
-    query_7 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, structure \n"
+    query_7 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
     assert azure_query(node, query_7) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
-    query_8 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file \n"
+    query_8 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true)"
     assert azure_query(node, query_8) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
-    query_9 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
+    # " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file, structure \n"
+    query_9 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
     assert azure_query(node, query_9) == "1\n2\n3\n"
 
-    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
-    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
     assert azure_query(node, query_10) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+    query_11 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
+    assert azure_query(node, query_11) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+    query_12 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
+    assert azure_query(node, query_12) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+    query_13 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
+    assert azure_query(node, query_13) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
+    query_14 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    assert azure_query(node, query_14) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
+    query_15 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard')"
+    assert azure_query(node, query_15) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, structure\n"
+    query_16 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'column1 UInt32')"
+    assert azure_query(node, query_16) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n"
+    query_17 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true)"
+    assert azure_query(node, query_17) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, structure\n"
+    query_18 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', true, 'column1 UInt32')"
+    assert azure_query(node, query_18) == "1\n2\n3\n"
 
 
 def check_profile_event_for_query(instance, file, profile_event, amount):

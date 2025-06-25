@@ -230,14 +230,23 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
-            if (with_structure)
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy/structure");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
-                format = fourth_arg;
-                compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-                structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            {
+                if (with_structure)
+                {
+                    structure = sixth_arg;
+                }
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", sixth_arg);
+            }
         }
         else
         {
@@ -259,23 +268,110 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
     else if (engine_args.size() == 7)
     {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (!with_structure && is_format_arg(fourth_arg))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-        }
+        const auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
 
-        account_name = fourth_arg;
-        account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-        if (!is_format_arg(sixth_arg))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-        format = sixth_arg;
-        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+        if (is_format_arg(fourth_arg))
+        {
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
+            const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+            if (!partition_strategy_type_opt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+            }
+
+            partition_strategy_type = partition_strategy_type_opt.value();
+
+            /// If it's of type String, then it is not `partition_columns_in_data_file`
+            if (const auto seventh_arg = tryGetLiteralArgument<String>(engine_args[6], "structure/partition_columns_in_data_file"))
+            {
+                if (with_structure)
+                {
+                    structure = seventh_arg.value();
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected `partition_columns_in_data_file` of type boolean, but found: {}", seventh_arg.value());
+                }
+            }
+            else
+            {
+                partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            }
+        }
+        else
+        {
+            if (!with_structure && is_format_arg(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            }
+
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            format = sixth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+        }
     }
-    else if (with_structure && engine_args.size() == 8)
+    else if (engine_args.size() == 8)
     {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "account_name");
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+
+        if (is_format_arg(fourth_arg))
+        {
+            if (!with_structure)
+            {
+                /// If the fourth argument is a format, then it means a connection string is being used.
+                /// When using a connection string, the function only accepts 8 arguments in case `with_structure=true`
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid sequence / combination of arguments");
+            }
+            format = fourth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
+            const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+            if (!partition_strategy_type_opt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+            }
+
+            partition_strategy_type = partition_strategy_type_opt.value();
+            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+        }
+        else
+        {
+            account_name = fourth_arg;
+            account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
+            if (!is_format_arg(sixth_arg))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+            format = sixth_arg;
+            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+
+            auto eighth_arg = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy/structure");
+            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive))
+            {
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+            }
+            else
+            {
+                if (with_structure)
+                {
+                    structure = eighth_arg;
+                }
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", eighth_arg);
+            }
+        }
+    }
+    else if (engine_args.size() == 9)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         account_name = fourth_arg;
         account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
         auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
@@ -283,7 +379,53 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
         format = sixth_arg;
         compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-        structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+        }
+        partition_strategy_type = partition_strategy_type_opt.value();
+        /// If it's of type String, then it is not `partition_columns_in_data_file`
+        if (const auto nineth_arg = tryGetLiteralArgument<String>(engine_args[8], "structure/partition_columns_in_data_file"))
+        {
+            if (with_structure)
+            {
+                structure = nineth_arg.value();
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected `partition_columns_in_data_file` of type boolean, but found: {}", nineth_arg.value());
+            }
+        }
+        else
+        {
+            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        }
+    }
+    else if (engine_args.size() == 10 && with_structure)
+    {
+        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+        account_name = fourth_arg;
+        account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+        auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
+        if (!is_format_arg(sixth_arg))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+        format = sixth_arg;
+        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+
+        const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
+        }
+        partition_strategy_type = partition_strategy_type_opt.value();
+        partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
     blobs_paths = {blob_path};
