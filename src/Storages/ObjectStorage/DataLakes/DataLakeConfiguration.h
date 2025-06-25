@@ -14,6 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include "Storages/ColumnsDescription.h"
+#include "Storages/prepareReadingFromFormat.h"
 
 #include <memory>
 #include <string>
@@ -35,6 +36,7 @@ namespace ErrorCodes
 namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+    extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 }
 
 
@@ -69,6 +71,7 @@ public:
         BaseStorageConfiguration::update(
             object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
 
+        std::cerr << "DataLakeConfiguration " << getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_file_path].value << '\n';
         const bool changed = updateMetadataIfChanged(object_storage, local_context);
         if (!changed)
             return true;
@@ -166,6 +169,7 @@ private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
+    ColumnWithTypeAndName columns;
 
     void assertInitialized() const
     {

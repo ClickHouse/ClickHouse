@@ -7,6 +7,8 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Core/ColumnWithTypeAndName.h"
+#include "Core/NamesAndTypes.h"
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -211,6 +213,9 @@ public:
     virtual const Paths & getPaths() const = 0;
     virtual void setPaths(const Paths & paths) = 0;
 
+    virtual void setInitialColumns(const NamesAndTypesList & columns_) { columns = columns_; }
+    virtual NamesAndTypesList getInitialColumns() { return columns; }
+
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
@@ -296,6 +301,8 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+
+    NamesAndTypesList columns;
 };
 
 }

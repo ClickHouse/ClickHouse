@@ -1,6 +1,11 @@
 #pragma once
 
+#include <unordered_map>
 #include <Poco/UUIDGenerator.h>
+#include "Common/Config/ConfigProcessor.h"
+#include "Disks/ObjectStorages/IObjectStorage.h"
+#include "Functions/IFunction.h"
+#include "IO/WriteBuffer.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -24,6 +29,8 @@
 namespace DB
 {
 
+std::string removeEscapedSlashes(const std::string& jsonStr);
+
 class FileNamesGenerator
 {
 public:
@@ -34,22 +41,32 @@ public:
     String generateManifestListName();
     String generateMetadataName();
 
+    void setVersion(Int32 initial_version_)
+    {
+        initial_version = initial_version_;
+    }
+
 private:
     Poco::UUIDGenerator uuid_generator;
     String data_dir;
     String metadata_dir;
+    Int32 initial_version;
 };
 
 class ManifestFileGenerator
 {
 public:
-    explicit ManifestFileGenerator(Poco::JSON::Object::Ptr metadata);
+    explicit ManifestFileGenerator(Poco::JSON::Object::Ptr metadata_);
 
-    String generateManifestFile(const String & data_file_name, Poco::JSON::Object::Ptr new_snapshot);
+    void generateManifestFile(
+        const String & data_file_name,
+        Poco::JSON::Object::Ptr new_snapshot,
+        WriteBuffer & buf);
 
     static constexpr const char * f_format_version = "format-version";
 private:
     avro::ValidSchema schema;
+    Poco::JSON::Object::Ptr metadata;
 };
 
 class ManifestListGenerator
@@ -57,9 +74,13 @@ class ManifestListGenerator
 public:
     explicit ManifestListGenerator(Poco::JSON::Object::Ptr metadata_);
 
-    String generateManifestList(const String & manifest_entry_name,
+    void generateManifestList(
+        ObjectStoragePtr object_storage,
+        ContextPtr context,
+        const Strings & manifest_entry_names,
         Poco::JSON::Object::Ptr new_snapshot,
-        Int32 manifest_length);
+        Int32 manifest_length,
+        WriteBuffer & buf);
 
     static constexpr const char * f_manifest_path = "manifest_path";
     static constexpr const char * f_manifest_length = "manifest_length";
@@ -121,19 +142,42 @@ private:
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
 };
 
+class ChunkPartitioner
+{
+public:
+    explicit ChunkPartitioner(Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
+
+    using PartitionKey = std::vector<String>;
+    struct PartitionKeyHasher
+    {
+        size_t operator()(const PartitionKey & key) const;
+
+        mutable std::hash<String> hasher;
+    };
+
+    std::unordered_map<PartitionKey, Chunk, PartitionKeyHasher> participateChunk(const Chunk & chunk);
+
+private:
+    Block sample_block;
+
+    std::vector<FunctionOverloadResolverPtr> functions;
+    std::vector<std::optional<size_t>> function_params;
+    std::vector<String> columns_to_apply;
+};
+
 class IcebergStorageSink : public SinkToStorage
 {
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     IcebergStorageSink(
-        ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
+        ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         const Block & sample_block_,
-        ContextPtr context);
+        ContextPtr context_);
 
-    ~IcebergStorageSink() override;
+    ~IcebergStorageSink() override = default;
 
     String getName() const override { return "IcebergStorageSink"; }
 
@@ -143,12 +187,24 @@ public:
 
 private:
     const Block sample_block;
-    std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
+    ObjectStoragePtr object_storage;
+    Poco::JSON::Object::Ptr metadata;
+    ContextPtr context;
+    ConfigurationPtr configuration;
+    std::optional<FormatSettings> format_settings;
+    Int32 total_rows = 0;
+    Int32 total_chunks_size = 0;
 
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    void initializeMetadata();
+
+    FileNamesGenerator filename_generator;
+    std::optional<ChunkPartitioner> partitioner;
 };
 
 }

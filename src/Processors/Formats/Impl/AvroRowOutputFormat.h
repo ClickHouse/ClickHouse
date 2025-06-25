@@ -20,6 +20,23 @@ class WriteBuffer;
 
 class AvroSerializerTraits;
 
+class OutputStreamWriteBufferAdapter : public avro::OutputStream
+{
+public:
+    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+
+    bool next(uint8_t ** data, size_t * len) override;
+
+    void backup(size_t len) override { out.position() -= len; }
+
+    uint64_t byteCount() const override { return out.count(); }
+    void flush() override {}
+
+private:
+    WriteBuffer & out;
+};
+
+
 class AvroSerializer
 {
 public:
