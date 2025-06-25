@@ -8,6 +8,35 @@ import typing
 from integration.helpers.cluster import ClickHouseCluster
 
 
+def generate_xml_safe_string(length: int = 10) -> str:
+    """
+    Generate a random string that is safe to use as XML value content.
+
+    Args:
+        length (int): Desired length of the string (default: 10)
+
+    Returns:
+        str: Random string containing only XML-safe characters
+    """
+    # XML 1.0 valid characters (excluding control chars except tab, LF, CR)
+    xml_safe_chars = (
+        "\t\n\r"  # allowed control chars
+        + string.ascii_letters
+        + string.digits
+        + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
+        + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
+    )
+    # For Python 3, we need to handle the Unicode ranges properly
+    # Create a list of valid characters
+    valid_chars = []
+    # Add basic ASCII characters
+    valid_chars.extend(c for c in xml_safe_chars if ord(c) < 0xD800)
+    # Add higher Unicode characters (avoid surrogates)
+    valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
+    # Generate the random string
+    return "".join(random.choice(valid_chars) for _ in range(length))
+
+
 def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     def gen():
         tmp = random.random()
@@ -240,13 +269,17 @@ distributed_ddl_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "objects_chunk_size_to_delete": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
         "s3_check_objects_after_upload": true_false_lambda,
         "s3_max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_get_burst": threshold_generator(0.2, 0.2, 0, 100),
@@ -257,12 +290,14 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
+        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
     },
     "azure": {
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -271,8 +306,12 @@ object_storages_properties = {
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "min_upload_part_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "objects_chunk_size_to_delete": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
+        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
@@ -315,6 +354,7 @@ cache_storage_properties = {
 
 
 policy_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
     "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -324,7 +364,12 @@ policy_properties = {
 
 
 all_disks_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "perform_ttl_move_on_insert": true_false_lambda,
+    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
+    "skip_access_check": true_false_lambda,
 }
 
 
@@ -366,35 +411,6 @@ def apply_properties_recursively(next_root: ET.Element, next_properties: dict):
             else:
                 new_element.text = str(next_child())
     return is_modified
-
-
-def generate_xml_safe_string(length: int = 10) -> str:
-    """
-    Generate a random string that is safe to use as XML value content.
-
-    Args:
-        length (int): Desired length of the string (default: 10)
-
-    Returns:
-        str: Random string containing only XML-safe characters
-    """
-    # XML 1.0 valid characters (excluding control chars except tab, LF, CR)
-    xml_safe_chars = (
-        "\t\n\r"  # allowed control chars
-        + string.ascii_letters
-        + string.digits
-        + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
-        + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
-    )
-    # For Python 3, we need to handle the Unicode ranges properly
-    # Create a list of valid characters
-    valid_chars = []
-    # Add basic ASCII characters
-    valid_chars.extend(c for c in xml_safe_chars if ord(c) < 0xD800)
-    # Add higher Unicode characters (avoid surrogates)
-    valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
-    # Generate the random string
-    return "".join(random.choice(valid_chars) for _ in range(length))
 
 
 def add_single_cluster(
@@ -864,7 +880,7 @@ def modify_server_settings(
                 "drop_local_thread_pool_size": threads_lambda,
                 "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
                 "drop_zookeeper_thread_pool_size": threads_lambda,
-                #"migration_from_database_replicated": true_false_lambda, not suitable for testing
+                # "migration_from_database_replicated": true_false_lambda, not suitable for testing
                 "state_application_thread_pool_size": threads_lambda,
             }
             if number_clusters > 0 and random.randint(1, 100) <= 75:
