@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-flaky-check
 SELECT code_point, code_point_value FROM system.unicode WHERE code_point = '😂';
 
 SELECT code_point, code_point_value FROM system.unicode WHERE emoji_presentation = 1 ORDER BY code_point_value LIMIT 5;
