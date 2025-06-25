@@ -99,21 +99,14 @@ public:
 
     const CoordinationSettings & getCoordinationSettings() const;
 
-    int64_t getPrecommitSleepMillisecondsForTesting() const
-    {
-        return precommit_sleep_ms_for_testing;
-    }
+    int64_t getPrecommitSleepMillisecondsForTesting() const;
 
-    double getPrecommitSleepProbabilityForTesting() const
-    {
-        chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
-        return precommit_sleep_probability_for_testing;
-    }
+    double getPrecommitSleepProbabilityForTesting() const;
 
-    bool shouldInjectAuth() const
-    {
-        return inject_auth;
-    }
+    bool shouldInjectAuth() const;
+
+    bool shouldBlockACL() const;
+    void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
 private:
@@ -180,6 +173,8 @@ private:
     CoordinationSettingsPtr coordination_settings;
 
     bool inject_auth = false;
+
+    bool block_acl = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

@@ -66,6 +66,7 @@ def started_cluster():
                 "configs/schema_cache.xml",
                 "configs/blob_log.xml",
                 "configs/filesystem_caches.xml",
+                "configs/text_log.xml",
             ],
             user_configs=[
                 "configs/access.xml",
@@ -2580,6 +2581,7 @@ def test_filesystem_cache(started_cluster):
         )
     )
 
+<<<<<<< fix-cluster-functions-with-archives
 
 def test_archive(started_cluster):
     id = uuid.uuid4()
@@ -2646,3 +2648,11 @@ def test_archive(started_cluster):
     assert expected_count == int(
         node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
     )
+=======
+    instance.query("SYSTEM FLUSH LOGS")
+
+    total_count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment:%'"))
+    assert total_count > 0
+    count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment: 0%'"))
+    assert count == total_count
+>>>>>>> master
