@@ -1466,7 +1466,7 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir,extra_parameters=None
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
         file_name = "docker_compose_iceberg_rest_catalog.yml"
