@@ -690,7 +690,7 @@ Packet LocalConnection::receivePacket()
             {
                 /// Send external table name (empty name is the main table)
                 /// (see TCPHandler::sendTableColumns)
-                packet.multistring_message = {"", state->columns_description->toString()};
+                packet.multistring_message = {"", state->columns_description->toString(/* include_comments = */ false)};
             }
 
             if (state->block)

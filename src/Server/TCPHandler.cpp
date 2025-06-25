@@ -2658,7 +2658,7 @@ void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & colum
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
-    writeStringBinary(columns.toString(), *out);
+    writeStringBinary(columns.toString(/* include_comments = */ false), *out);
 
     out->finishChunk();
     out->next();
