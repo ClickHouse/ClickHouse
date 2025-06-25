@@ -19,7 +19,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/text/searchAnyAll.h>
+#include <Functions/searchAnyAll.h>
 #include <Core/Field.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
@@ -263,13 +263,33 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
         {
-            rpn_stack.emplace_back(
-                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::Any), true);
+            chassert(element.set_gin_filters.size() == 1);
+            const GinFilters & gin_filters = element.set_gin_filters.front();
+            bool exists_in_gin_filter = false;
+            for (const GinFilter & gin_filter : gin_filters)
+            {
+                if (granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::Any))
+                {
+                    exists_in_gin_filter = true;
+                    break;
+                }
+            }
+            rpn_stack.emplace_back(exists_in_gin_filter, true);
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
         {
-            rpn_stack.emplace_back(
-                granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store, GinSearchMode::All), true);
+            chassert(element.set_gin_filters.size() == 1);
+            const GinFilters & gin_filters = element.set_gin_filters.front();
+            bool exists_in_gin_filter = true;
+            for (const GinFilter & gin_filter : gin_filters)
+            {
+                if (!granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::All))
+                {
+                    exists_in_gin_filter = false;
+                    break;
+                }
+            }
+            rpn_stack.emplace_back(exists_in_gin_filter, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
@@ -603,12 +623,18 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             }
         }
 
+        GinFilters gin_filters;
+        for (const auto & element : const_value.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                return false;
+            const auto & value = element.safeGet<String>();
+            gin_filters.emplace_back(GinFilter(gin_filter_params));
+            token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
+        }
         out.key_column = key_column_num;
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        const auto & value = const_value.safeGet<String>();
-        std::unique_ptr<ITokenExtractor> default_token_extractor = std::make_unique<DefaultTokenExtractor>();
-        default_token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
