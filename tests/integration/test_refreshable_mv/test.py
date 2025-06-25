@@ -97,7 +97,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         name = "append" if coordinated else "append_uncoordinated"
         refresh_settings = "" if coordinated else " settings all_replicas = 1"
         node2.query(
-            f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand() as x"
+            f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand64() as x"
         )
         # Stop the clocks.
         for node in nodes:
@@ -111,9 +111,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
             node.query(
                 f"system wait view re.{name};\
                 system refresh view re.{name};\
-                system wait view re.{name};\
-                system sync replica re.{name};"
+                system wait view re.{name};"
             )
+        for node in nodes:
+            node.query(f"system sync replica re.{name};")
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
         for node in nodes:
