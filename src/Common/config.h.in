@@ -73,6 +73,7 @@
 #cmakedefine01 USE_FUZZING_MODE
 #cmakedefine01 USE_BUZZHOUSE
 #cmakedefine01 USE_DELTA_KERNEL_RS
+#cmakedefine01 USE_CHDIG
 #cmakedefine01 USE_SHA3IUF
 
 /// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
