@@ -121,13 +121,11 @@ CapnProtoSchemaReader::CapnProtoSchemaReader(const FormatSettings & format_setti
 NamesAndTypesList CapnProtoSchemaReader::readSchema()
 {
     auto schema_info = FormatSchemaInfo(
-        /*format_schema_source=*/format_settings.schema.format_schema_source,
-        /*format_schema=*/format_settings.schema.format_schema,
-        /*format_schema_message_name=*/format_settings.schema.format_schema_message_name,
-        /*format=*/"CapnProto",
-        /*require_message=*/true,
-        /*is_server=*/format_settings.schema.is_server,
-        /*format_schema_path=*/format_settings.schema.format_schema_path);
+        format_settings.schema.format_schema,
+        "CapnProto",
+        true,
+        format_settings.schema.is_server,
+        format_settings.schema.format_schema_path);
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);

@@ -43,7 +43,6 @@
 #    include <Common/Allocator.h>
 #    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
-#    include <Common/memory.h>
 
 #    include "ArrowBufferedStreams.h"
 
@@ -58,26 +57,13 @@ class MemoryPool : public orc::MemoryPool
 public:
     char * malloc(uint64_t size) override
     {
-        void * ptr = ::malloc(size);
-        if (ptr)
-        {
-            AllocationTrace trace;
-            size_t actual_size = Memory::trackMemory(size, trace);
-            trace.onAlloc(ptr, actual_size);
-        }
-
+        auto * ptr = ::malloc(size);
         /// For nullable columns some of the values will not be initialized.
         __msan_unpoison(ptr, size);
         return static_cast<char *>(ptr);
     }
 
-    void free(char * ptr) override
-    {
-        AllocationTrace trace;
-        size_t actual_size = Memory::untrackMemory(ptr, trace);
-        trace.onFree(ptr, actual_size);
-        ::free(ptr);
-    }
+    void free(char * p) override { ::free(p); }
 };
 
 }
@@ -914,7 +900,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
             if (tuple_type)
             {
-                if (tuple_type->hasExplicitNames())
+                if (tuple_type->haveExplicitNames())
                 {
                     std::unordered_map<String, size_t> orc_field_name_to_index;
                     orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
@@ -1893,7 +1879,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
-                    if (tuple_type_hint->hasExplicitNames())
+                    if (tuple_type_hint->haveExplicitNames())
                     {
                         auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
                         if (pos)

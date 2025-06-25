@@ -24,6 +24,8 @@ public:
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
+    String getContentType() const override { return "application/json; charset=UTF-8"; }
+
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
         statistics.applied_limit = true;

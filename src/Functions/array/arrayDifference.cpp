@@ -173,9 +173,9 @@ The type of elements in the result array are determined by the type inference ru
     )";
     FunctionDocumentation::Syntax syntax = "arrayDifference(arr)";
     FunctionDocumentation::Arguments argument = {
-        {"arr", "Array for which to calculate differences between adjacent elements.", {"Array(T)"}},
+        {"arr", "Array for which to calculate differences between adjacent elements. [`Array(T)`](/sql-reference/data-types/array)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of differences between adjacent array elements", {"UInt*"}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of differences between adjacent array elements. [`UInt*`](/sql-reference/data-types/int-uint#integer-ranges), [`Int*`](/sql-reference/data-types/int-uint#integer-ranges), [`Float*`](/sql-reference/data-types/float).";
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayDifference([1, 2, 3, 4]);", "[0,1,1,1]"},
         {"Example of overflow due to result type Int64", "SELECT arrayDifference([0, 10000000000000000000]);", R"(
@@ -188,7 +188,7 @@ The type of elements in the result array are determined by the type inference ru
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayDifference>(documentation);
+    factory.registerFunction<FunctionArrayDifference>();
 }
 
 }

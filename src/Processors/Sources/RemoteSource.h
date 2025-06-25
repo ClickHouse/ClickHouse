@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <QueryPipeline/Pipe.h>
@@ -98,26 +97,9 @@ private:
     RemoteQueryExecutorPtr query_executor;
 };
 
-struct UnmarshallBlocksTransform : ISimpleTransform
-{
-public:
-    explicit UnmarshallBlocksTransform(const Block & header_)
-        : ISimpleTransform(header_, header_, false)
-    {
-    }
-
-    String getName() const override { return "UnmarshallBlocksTransform"; }
-
-    void transform(Chunk & chunk) override;
-};
-
 /// Create pipe with remote sources.
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info,
-    bool add_totals,
-    bool add_extremes,
-    bool async_read,
-    bool async_query_sending,
-    size_t parallel_marshalling_threads);
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending);
+
 }
