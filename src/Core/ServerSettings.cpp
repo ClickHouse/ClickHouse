@@ -1002,7 +1002,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
     DECLARE(UInt64, load_marks_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
-    DECLARE(UInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
+    DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \

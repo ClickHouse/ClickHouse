@@ -298,7 +298,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
-    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
