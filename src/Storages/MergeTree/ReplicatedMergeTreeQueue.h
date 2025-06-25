@@ -220,8 +220,11 @@ private:
       * Called under the state_mutex.
       */
     bool shouldExecuteLogEntry(
-        const LogEntry & entry, String & out_postpone_reason,
-        MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
+        const LogEntry & entry,
+        String & out_postpone_reason,
+        MergeTreeDataMergerMutator & merger_mutator,
+        MergeTreeData & data,
+        const CommittingBlocks & committing_blocks,
         std::unique_lock<std::mutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -271,7 +274,8 @@ private:
         const LogEntry & entry,
         const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
 
-    bool isMergeBlockedByApplyingPatches(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting

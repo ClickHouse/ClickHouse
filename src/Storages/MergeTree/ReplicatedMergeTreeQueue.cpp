@@ -279,9 +279,9 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     return false;
 }
 
-bool ReplicatedMergeTreeQueue::isMergeBlockedByApplyingPatches(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const
+bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const
 {
-    if (!storage.supportsLightweightUpdate())
+    if (entry.type != LogEntry::MERGE_PARTS || !storage.supportsLightweightUpdate())
         return false;
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -304,6 +304,53 @@ bool ReplicatedMergeTreeQueue::isMergeBlockedByApplyingPatches(const LogEntry & 
                 LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, patch_part, merge_entry->new_part_name);
                 return true;
             }
+        }
+    }
+
+    return false;
+}
+
+bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
+    const LogEntry & entry,
+    String & out_reason,
+    const CommittingBlocks & committing_blocks,
+    std::unique_lock<std::mutex> & /*state_mutex_lock*/) const
+{
+    if (entry.type != LogEntry::MUTATE_PART || !storage.supportsLightweightUpdate())
+        return false;
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    auto data_version = new_part_info.getDataVersion();
+
+    auto it = committing_blocks.find(new_part_info.getPartitionId());
+
+    if (it != committing_blocks.end())
+    {
+        for (const auto & block : it->second)
+        {
+            if (block.number > data_version)
+                break;
+
+            if (block.op == CommittingBlock::Op::Update)
+            {
+                constexpr auto fmt_string = "Not executing log entry {} for part {} because lightweight update with data version {} is not committed yet";
+                LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, block.number);
+                return true;
+            }
+        }
+    }
+
+    for (const auto & fetch_entry : queue)
+    {
+        if (fetch_entry->type != LogEntry::GET_PART)
+            continue;
+
+        auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);
+        if (fetch_part_info.isPatch() && fetch_part_info.getDataVersion() < data_version)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for part {} because at least one patch part {} is not fetched yet";
+            LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, fetch_part_info.getPartNameForLogs());
+            return true;
         }
     }
 
@@ -1457,6 +1504,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     String & out_postpone_reason,
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
+    const CommittingBlocks & committing_blocks,
     std::unique_lock<std::mutex> & state_lock) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
@@ -1591,6 +1639,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             }
         }
 
+        if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
+            return false;
+
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsSizeForMerge(data)
                                                                            : CompactionStatistics::getMaxSourcePartSizeForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
@@ -1622,7 +1673,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 }
             }
 
-            if (isMergeBlockedByApplyingPatches(entry, out_postpone_reason, state_lock))
+            if (isMergeOfPatchPartsBlocked(entry, out_postpone_reason, state_lock))
                 return false;
         }
 
@@ -1876,6 +1927,14 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
 {
     LogEntryPtr entry;
+    CommittingBlocks committing_blocks;
+
+    if (storage.supportsLightweightUpdate())
+    {
+        auto zookeeper = storage.getZooKeeper();
+        std::optional<PartitionIdsHint> partition_ids_hint;
+        committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
+    }
 
     std::unique_lock lock(state_mutex);
 
@@ -1884,7 +1943,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, lock))
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
         {
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that

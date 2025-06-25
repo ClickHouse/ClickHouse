@@ -203,16 +203,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    if (storage.supportsLightweightUpdate())
-    {
-        static constexpr size_t backoff_ms = 100;
-        auto sync_timeout = storage.getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
-
-        auto partitions = std::make_shared<PartitionIdToMaxBlock>();
-        partitions->emplace(new_part_info.getPartitionId(), new_part_info.mutation);
-        storage.waitForCommittingOpsToFinish(storage.getZooKeeper(), partitions, {CommittingBlock::Op::Update}, backoff_ms, sync_timeout);
-    }
-
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContextForMutate(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
