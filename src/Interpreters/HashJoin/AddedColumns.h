@@ -17,8 +17,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
-    const ScatteredBlock & block;
-
     Names key_names;
 
     Columns materialized_keys_holder;
@@ -97,8 +95,7 @@ public:
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_)
-        : src_block(left_block_)
-        , left_block(left_block_.getSourceBlock())
+        : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
@@ -177,7 +174,6 @@ public:
 
     static constexpr bool isLazy() { return lazy; }
 
-    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;

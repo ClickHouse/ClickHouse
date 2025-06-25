@@ -10,9 +10,8 @@ namespace ErrorCodes
 }
 
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
-    : block(block_)
-    , key_names(key_names_)
+    const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
     , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))

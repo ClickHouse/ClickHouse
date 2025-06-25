@@ -96,17 +96,15 @@ public:
         }
     }
 
+    static size_t size(const Range & range) { return range.second - range.first; }
+    static size_t size(const Indexes & indexes) { return indexes.size(); }
+
     size_t size() const
     {
         if (std::holds_alternative<Range>(data))
-        {
-            const auto range = std::get<Range>(data);
-            return range.second - range.first;
-        }
+            return size(std::get<Range>(data));
         else
-        {
-            return std::get<IndexesPtr>(data)->size();
-        }
+            return size(*std::get<IndexesPtr>(data));
     }
 
     /// First selector contains first `num_rows` rows, second selector contains the rest

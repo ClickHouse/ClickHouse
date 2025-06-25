@@ -116,6 +116,7 @@ private:
     static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
         AddedColumns & added_columns,
+        const ScatteredBlock::Selector & selector,
         HashJoin::Type type,
         JoinStuff::JoinUsedFlags & used_flags);
 
@@ -124,6 +125,7 @@ private:
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
+        const ScatteredBlock::Selector & selector,
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
@@ -131,6 +133,7 @@ private:
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
+        const ScatteredBlock::Selector & selector,
         JoinStuff::JoinUsedFlags & used_flags);
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
@@ -155,13 +158,13 @@ private:
         AddedColumns & added_columns);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
+    template <typename KeyGetter, typename Map, typename AddedColumns>
     static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
-        const Selector & selector,
+        const ScatteredBlock::Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
 

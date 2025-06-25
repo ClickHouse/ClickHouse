@@ -110,7 +110,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    const size_t num_joined = switchJoinRightColumns(maps_, added_columns, join.data->type, *join.used_flags);
+    const size_t num_joined = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
     auto remaining_block = block.cut(num_joined);
@@ -286,6 +286,7 @@ template <typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     const std::vector<const MapsTemplate *> & mapv,
     AddedColumns & added_columns,
+    const ScatteredBlock::Selector & selector,
     HashJoin::Type type,
     JoinStuff::JoinUsedFlags & used_flags)
 {
@@ -303,7 +304,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
                 std::vector<const MapTypeVal *> a_map_type_vector;
                 a_map_type_vector.emplace_back();
                 return joinRightColumnsSwitchNullability<KeyGetter>(
-                    std::move(key_getter_vector), a_map_type_vector, added_columns, used_flags);
+                    std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags);
             }
             throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys. Type: {}", type);
         }
@@ -320,7 +321,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             key_getter_vector.push_back( \
                 std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes))); \
         } \
-        return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, used_flags); \
+        return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -336,16 +337,17 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
+    const ScatteredBlock::Selector & selector,
     JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
     {
         return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
     }
 
     return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -354,6 +356,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
+    const ScatteredBlock::Selector & selector,
     JoinStuff::JoinUsedFlags & used_flags)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
@@ -367,7 +370,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
                 mapv,
                 added_columns,
                 used_flags,
-                added_columns.src_block.getSelector(),
+                selector,
                 need_filter,
                 mark_per_row_used);
         }
@@ -376,24 +379,23 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     if (added_columns.additional_filter_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Additional filter expression is not supported for this JOIN");
 
-    auto & block = added_columns.src_block;
-    if (block.getSelector().isContinuousRange())
+    if (selector.isContinuousRange())
     {
         if (mapv.size() > 1)
             return joinRightColumns<KeyGetter, Map, need_filter, true>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
         else
             return joinRightColumns<KeyGetter, Map, need_filter, false>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
     }
     else
     {
         if (mapv.size() > 1)
             return joinRightColumns<KeyGetter, Map, need_filter, true>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
         else
             return joinRightColumns<KeyGetter, Map, need_filter, false>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
     }
 }
 
@@ -411,8 +413,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
-    auto & block = added_columns.src_block;
-    size_t rows = block.rows();
+    size_t rows = ScatteredBlock::Selector::size(selector);
+
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(rows, 0);
     if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
@@ -677,18 +679,18 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
+template <typename KeyGetter, typename Map, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
-    const Selector & selector,
+    const ScatteredBlock::Selector & selector,
     bool need_filter [[maybe_unused]],
     bool flag_per_row [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
-    const size_t left_block_rows = added_columns.src_block.rows();
+    const size_t left_block_rows = selector.size();
     if (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
