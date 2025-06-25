@@ -4,6 +4,7 @@
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
 
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -17,10 +18,12 @@ namespace Setting
 void S3Settings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const DB::Settings & settings)
+    const DB::Settings & settings,
+    const std::string & setting_name_prefix,
+    bool validate_settings)
 {
     auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
-    request_settings = S3::S3RequestSettings(config, settings, config_prefix);
+    request_settings = S3::S3RequestSettings(config, settings, config_prefix, setting_name_prefix, validate_settings);
 }
 
 void S3Settings::updateIfChanged(const S3Settings & settings)

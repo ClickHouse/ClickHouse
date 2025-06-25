@@ -27,7 +27,9 @@ struct S3Settings
     void loadFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const DB::Settings & settings);
+        const DB::Settings & settings,
+        const std::string & setting_name_prefix = "",
+        bool validate_settings = true);
 
     void updateIfChanged(const S3Settings & settings);
 };

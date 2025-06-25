@@ -15,33 +15,11 @@
 namespace DB
 {
 
-struct S3ObjectStorageSettings
+namespace S3RequestSetting
 {
-    S3ObjectStorageSettings() = default;
+    extern const S3RequestSettingsBool read_only;
+}
 
-    S3ObjectStorageSettings(
-        const S3::S3RequestSettings & request_settings_,
-        const S3::S3AuthSettings & auth_settings_,
-        uint64_t min_bytes_for_seek_,
-        int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_,
-        bool read_only_)
-        : request_settings(request_settings_)
-        , auth_settings(auth_settings_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
-        , list_object_keys_size(list_object_keys_size_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
-        , read_only(read_only_)
-    {}
-
-    S3::S3RequestSettings request_settings;
-    S3::S3AuthSettings auth_settings;
-
-    uint64_t min_bytes_for_seek;
-    int32_t list_object_keys_size;
-    int32_t objects_chunk_size_to_delete;
-    bool read_only;
-};
 
 class S3ObjectStorage : public IObjectStorage
 {
@@ -49,7 +27,7 @@ private:
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
-        std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
+        std::unique_ptr<S3Settings> && s3_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
@@ -153,13 +131,11 @@ public:
 
     bool areObjectKeysRandom() const override;
 
-    bool isReadOnly() const override { return s3_settings.get()->read_only; }
+    bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 private:
-    void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
-
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
@@ -168,7 +144,7 @@ private:
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
-    MultiVersion<S3ObjectStorageSettings> s3_settings;
+    MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
     ObjectStorageKeysGeneratorPtr key_generator;

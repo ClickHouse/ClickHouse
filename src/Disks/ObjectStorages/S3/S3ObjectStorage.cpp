@@ -6,6 +6,7 @@
 #include <IO/S3Common.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -51,6 +52,13 @@ namespace Setting
 {
     extern const SettingsBool s3_validate_request_settings;
 }
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 list_object_keys_size;
+    extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+}
+
 
 namespace ErrorCodes
 {
@@ -233,7 +241,7 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefi
 {
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
-        max_keys = settings_ptr->list_object_keys_size;
+        max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
     return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
 }
 
@@ -247,7 +255,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
-        request.SetMaxKeys(settings_ptr->list_object_keys_size);
+        request.SetMaxKeys(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]);
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
@@ -321,7 +329,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
     auto settings_ptr = s3_settings.get();
 
     deleteFilesFromS3(client.get(), uri.bucket, keys, if_exists,
-                      s3_capabilities, settings_ptr->objects_chunk_size_to_delete,
+                      s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                       blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                       ProfileEvents::DiskS3DeleteObjects);
 }
@@ -457,11 +465,6 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to_attributes);
 }
 
-void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
-{
-    s3_settings.set(std::move(s3_settings_));
-}
-
 void S3ObjectStorage::shutdown()
 {
     /// This call stops any next retry attempts for ongoing S3 requests.
@@ -483,11 +486,17 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto settings_from_config
-        = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
-    auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
+    std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
+
+    settings_from_config->loadFromConfig(
+        config, config_prefix, context->getSettingsRef(), "s3_", context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
+    auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+
+    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
     {
@@ -512,7 +521,14 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings[Setting::s3_validate_request_settings]);
+    std::unique_ptr<S3Settings> new_s3_settings = std::make_unique<S3Settings>();
+
+    new_s3_settings->loadFromConfig(
+        config, config_prefix, context->getSettingsRef(), "s3_", settings[Setting::s3_validate_request_settings]);
+
+    new_s3_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
+
     auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
 
     auto new_uri{uri};
