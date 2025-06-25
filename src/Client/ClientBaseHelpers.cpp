@@ -231,7 +231,6 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     IParser::Pos highlight_token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
     while (!highlight_token_iterator->isEnd())
     {
-        std::cout << "Token: " << fmt::format("{}", highlight_token_iterator->type) << std::endl;
         if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
         {
             color_stack.push_back(colormap[current_color % colormap.size()]);
