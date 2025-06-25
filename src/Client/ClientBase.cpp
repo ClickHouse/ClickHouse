@@ -70,9 +70,11 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
