@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageMergeTree.h>
 
 namespace DB
@@ -79,6 +80,12 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
     using Base = InDepthQueryTreeVisitorWithContext<OrderByLimitRewriteVisitor>;
     using Base::Base;
 
+    StoragePtr getTableStorageFromTableId(const StorageID & table_id) const
+    {
+        auto ctx = getContext();
+        return DatabaseCatalog::instance().tryGetTable(table_id, ctx);
+    }
+
     StoragePtr checkSimpleOrderByLimitQueryAndReturnStorage(const QueryNode & query_node) const
     {
         if (query_node.hasWith())
@@ -128,7 +135,14 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         if (auto * tb_node = query_node.getJoinTree()->as<TableNode>())
         {
             if (columns.size() >= min_columns_to_use_fetch)
-                return tb_node->getStorage();
+            {
+                const auto & storage = tb_node->getStorage();
+                if (storage->as<StorageDummy>())
+                {
+                    return getTableStorageFromTableId(storage->getStorageID());
+                }
+                return storage;
+            }
         }
 
         return {};
