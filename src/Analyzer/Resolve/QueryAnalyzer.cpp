@@ -2267,8 +2267,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
-          * We are taking the nearest JoinNode to check to which table column belongs,
-          * because for LEFT/RIGHT join, we convert only the corresponding side.
+          * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
+          * If it's on null side, we need to convert column type to Nullable.
           */
         for (const auto & table_expression : scope.registered_table_expression_nodes)
         {
