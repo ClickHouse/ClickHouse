@@ -1421,7 +1421,7 @@ class TestCase:
         self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
-        self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
+        self.tags: Set[str] = suite.all_tags[case]
         self.random_settings_limits = (
             suite.all_random_settings_limits[case]
             if case in suite.all_random_settings_limits
@@ -1549,7 +1549,7 @@ class TestCase:
 
         if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
-        
+
         if tags and ("fasttest-only" in tags) and not args.fast_tests_only:
             return FailureReason.NOT_FAST_ONLY
 
@@ -1874,6 +1874,8 @@ class TestCase:
                 print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
+
+            # FIXME: This is a race condition
             file_pattern = "coverage.*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
@@ -1889,8 +1891,13 @@ class TestCase:
                     )
                 except Exception as e:
                     print("Cannot insert coverage data: ", str(e))
+
                 # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print("FIXME: Race! Cannot remove coverage file: ", str(e))
+            # FIXME: This is a race condition. END
 
             _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
 
@@ -2440,8 +2447,7 @@ class TestSuite:
             ) = load_tags_and_random_settings_limits_from_file(
                 os.path.join(suite_dir, test_name)
             )  # noqa: ignore E203
-            if tags:
-                all_tags[test_name] = tags
+            all_tags[test_name] = tags or set()
             if random_settings_limits:
                 all_random_settings_limits[test_name] = random_settings_limits
         elapsed = (datetime.now() - start_time).total_seconds()
@@ -2497,6 +2503,7 @@ class TestSuite:
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
+
         for test_name, tags in self.all_tags.items():
             if "post-run-check" in tags:
                 # post_run_check_tests are tests that supposed to run after all normal tests finished
@@ -3005,7 +3012,13 @@ def run_tests_process(*args_, **kwargs):
 
 
 def do_run_tests(
-    jobs, test_suite: TestSuite, args, exit_code, restarted_tests, server_died
+    jobs,
+    test_suite: TestSuite,
+    args,
+    exit_code,
+    restarted_tests,
+    server_died,
+    runner_process_killed,
 ):
     print(
         "Found",
@@ -3086,7 +3099,14 @@ def do_run_tests(
 
             for p in processes[:]:
                 if not p.is_alive():
+                    # Check if process was killed with exception
+                    if p.exitcode is not None and p.exitcode != 0:
+                        print(
+                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                        )
+                        runner_process_killed.set()
                     processes.remove(p)
+
     if test_suite.sequential_tests:
         run_tests_array(
             (
@@ -3345,6 +3365,7 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
+    runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
 
@@ -3477,10 +3498,19 @@ def main(args):
         test_suite.private_skip_list = private_skip_list
         test_suite.blacklist_check = blacklist_check
         total_tests_run += do_run_tests(
-            args.jobs, test_suite, args, exit_code, restarted_tests, server_died
+            args.jobs,
+            test_suite,
+            args,
+            exit_code,
+            restarted_tests,
+            server_died,
+            runner_process_killed,
         )
 
     if server_died.is_set():
+        exit_code.value = 1
+
+    if runner_process_killed.is_set():
         exit_code.value = 1
 
     if args.hung_check:

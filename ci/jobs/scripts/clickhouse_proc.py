@@ -770,10 +770,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
-    def check_fatal_messeges_in_logs(self):
+    def check_fatal_messages_in_logs(self):
         results = []
 
         # if command exit code is 1 - it's failed test case, script output will be stored into test case info
+        results.append(
+            Result.from_commands_run(
+                name="Exception in test runner",
+                command=f"! grep -A10 'Traceback (most recent call last)' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+            )
+        )
         results.append(
             Result.from_commands_run(
                 name="Sanitizer assert (in stderr.log)",
