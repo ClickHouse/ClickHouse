@@ -248,6 +248,7 @@ def main():
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
+            CH.set_random_timezone,
         ]
 
         if is_flaky_check:
