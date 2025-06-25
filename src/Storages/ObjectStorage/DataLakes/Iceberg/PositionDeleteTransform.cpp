@@ -1,26 +1,22 @@
-
 #include "config.h"
 
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
-#    include <memory>
-#    include <Core/Settings.h>
-#    include <Formats/FormatFactory.h>
-#    include <Formats/ReadSchemaUtils.h>
-#    include <IO/CompressionMethod.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/ExpressionAnalyzer.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTIdentifier.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Processors/Formats/ISchemaReader.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include "Formats/FormatParserGroup.h"
-#    include "Interpreters/ActionsDAG.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB
 {

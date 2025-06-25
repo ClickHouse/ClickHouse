@@ -1,25 +1,21 @@
 #pragma once
-#include <algorithm>
 #include "config.h"
 
 #if USE_AVRO
-
-#include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Core/Types.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-
-#include <tuple>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {

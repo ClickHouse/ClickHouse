@@ -1,8 +1,7 @@
 #pragma once
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <boost/noncopyable.hpp>
-#include "Interpreters/ActionsDAG.h"
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
