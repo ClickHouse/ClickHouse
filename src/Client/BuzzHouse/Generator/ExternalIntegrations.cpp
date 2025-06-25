@@ -1042,8 +1042,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((stp = dynamic_cast<StringType *>(tp)))
     {
-        std::uniform_int_distribution<uint32_t> strlens(0, 1009);
-        const uint32_t limit = stp->precision.value_or(strlens(rg.generator));
+        const uint32_t limit = stp->precision.value_or(rg.nextStrlen());
 
         if (rg.nextBool())
         {

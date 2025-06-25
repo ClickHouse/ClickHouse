@@ -1273,9 +1273,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
-
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, strlens(rg.generator)));
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
         }
         else
         {
