@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <DataTypes/Serializations/SerializationDetached.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto column = createColumn();
-    if (serialization.getKind() == ISerialization::Kind::SPARSE)
+    if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return ColumnSparse::create(std::move(column));
 
     return column;
@@ -292,6 +293,13 @@ SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
+    if (kind == ISerialization::Kind::DETACHED)
+        return std::make_shared<SerializationDetached>(getDefaultSerialization());
+
+    if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
+        return std::make_shared<SerializationDetached>(
+            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
+
     return getDefaultSerialization();
 }
 
@@ -369,9 +377,12 @@ bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
 bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
 bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
 bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
+bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
 bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
+bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
 bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
+bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \
 \
 bool isString(TYPE data_type) { return WhichDataType(data_type).isString(); } \
 bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedString(); } \
@@ -393,13 +404,13 @@ bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } 
 bool isColumnedAsNumber(TYPE data_type) \
 { \
     WhichDataType which(data_type); \
-    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
+    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
 } \
 \
 bool isColumnedAsDecimal(TYPE data_type) \
 { \
     WhichDataType which(data_type); \
-    return which.isDecimal() || which.isDateTime64(); \
+    return which.isDecimal() || which.isDateTime64() || which.isTime64(); \
 } \
 \
 bool isNotCreatable(TYPE data_type) \

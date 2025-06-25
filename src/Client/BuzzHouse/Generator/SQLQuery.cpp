@@ -227,14 +227,14 @@ void StatementGenerator::setTableRemote(
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (table_engine && (t.isS3Engine() || t.isURLEngine() || t.isAzureEngine()) && rg.nextSmallNumber() < 7)
+    else if (table_engine && (t.isAnyS3Engine() || t.isURLEngine() || t.isAnyAzureEngine()) && rg.nextSmallNumber() < 7)
     {
         String buf;
         bool first = true;
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isS3Engine())
+        if (t.isAnyS3Engine())
         {
             S3Func * sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
@@ -246,7 +246,7 @@ void StatementGenerator::setTableRemote(
             }
             else
             {
-                sfunc->set_fname(S3Func_FName::S3Func_FName_s3);
+                sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
             }
             sfunc->set_resource(
                 "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
@@ -479,7 +479,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
-    const uint32_t url_encoded_table = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+    const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -865,7 +865,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
@@ -913,7 +913,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += "http://" + fc.host + ":" + std::to_string(fc.http_port) + "/?query=SELECT+";
+        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=SELECT+";
         flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
         std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
         for (const auto & entry : this->remote_entries)
@@ -1044,14 +1044,13 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
             if (!intersect.empty())
             {
-                ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
-                const uint32_t nclauses
-                    = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size())) + 1);
+                UsingExpr * uexpr = jc->mutable_using_expr();
+                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size()));
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
+                    ColumnPath * cp = uexpr->add_columns()->mutable_path();
                     const DB::Strings & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
@@ -1274,7 +1273,9 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+            std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
+
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, strlens(rg.generator)));
         }
         else
         {
