@@ -280,6 +280,13 @@ object_storages_properties = {
     "web": {},
 }
 
+metadata_cleanup_properties = {
+    "enabled": lambda: 1 if random.randint(0, 3) < 3 else 0,
+    "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "old_transactions_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "interval_sec": threshold_generator(0.2, 0.2, 0, 60),
+}
+
 
 cache_storage_properties = {
     "allow_dynamic_cache_resize": true_false_lambda,
@@ -533,6 +540,13 @@ def add_single_disk(
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
             add_settings_from_dict(object_storages_properties[dict_entry], next_disk)
+        if (
+            is_private_binary
+            and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
+            and random.randint(1, 100) <= 70
+        ):
+            metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
+            add_settings_from_dict(metadata_cleanup_properties, metadata_xml)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
