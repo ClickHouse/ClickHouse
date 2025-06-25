@@ -281,7 +281,7 @@ object_storages_properties = {
 }
 
 metadata_cleanup_properties = {
-    "enabled": lambda: 1 if random.randint(0, 3) < 3 else 0,
+    "enabled": lambda: 1 if random.randint(0, 9) < 9 else 0,
     "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
     "old_transactions_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
     "interval_sec": threshold_generator(0.2, 0.2, 0, 60),
