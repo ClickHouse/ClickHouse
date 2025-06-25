@@ -322,7 +322,8 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
 
     const String attempt_label = [](S3LatencyType t)
     {
-        switch (t) {
+        switch (t)
+        {
             case S3LatencyType::FirstByteAttempt1: return "1";
             case S3LatencyType::FirstByteAttempt2: return "2";
             case S3LatencyType::FirstByteAttemptN: return "N";
@@ -332,7 +333,8 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
 
     const String http_method_label = [](Aws::Http::HttpMethod m)
     {
-        switch (m) {
+        switch (m)
+        {
             case Aws::Http::HttpMethod::HTTP_GET:    return "GET";
             case Aws::Http::HttpMethod::HTTP_HEAD:   return "HEAD";
             case Aws::Http::HttpMethod::HTTP_POST:   return "POST";
