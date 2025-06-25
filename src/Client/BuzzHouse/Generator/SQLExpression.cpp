@@ -951,8 +951,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const uint32_t window_func_expr = 75
         * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->levels[this->current_level].allow_window_funcs
                                 && !this->levels[this->current_level].inside_aggregate);
-    const uint32_t table_star_expr
-        = 10 * static_cast<uint32_t>(std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
+    const uint32_t table_star_expr = 10
+        * static_cast<uint32_t>(this->allow_not_deterministic
+                                && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
