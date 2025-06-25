@@ -328,6 +328,15 @@ all_disks_properties = {
 }
 
 
+backup_properties = {
+    "allow_concurrent_backups": true_false_lambda,
+    "allow_concurrent_restores": true_false_lambda,
+    "remove_backup_files_after_failure": true_false_lambda,
+    "test_randomize_order": true_false_lambda,
+    "test_inject_sleep": true_false_lambda,
+}
+
+
 Parameter = typing.Callable[[], int | float]
 
 
@@ -704,6 +713,7 @@ def modify_server_settings(
     # Add disk configurations
     if (
         root.find("storage_configuration") is None
+        and root.find("backups") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         modified = True
@@ -782,6 +792,8 @@ def modify_server_settings(
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+        if random.randint(1, 100) <= 70:
+            add_settings_from_dict(backup_properties, backups_element)
 
         if (
             root.find("temporary_data_in_cache") is None
