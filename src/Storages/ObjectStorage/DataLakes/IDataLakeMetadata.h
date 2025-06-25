@@ -14,6 +14,7 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
@@ -40,8 +41,8 @@ public:
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
 
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
@@ -54,8 +55,8 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual std::optional<size_t> totalRows() const { return {}; }
-    virtual std::optional<size_t> totalBytes() const { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
 protected:
     ObjectIterator createKeysIterator(
