@@ -27,19 +27,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
-- `host:port` — MongoDB server address.
-
-- `database` — Remote database name.
-
-- `collection` — Remote collection name.
-
-- `user` — MongoDB user.
-
-- `password` — User password.
-
-- `options` — MongoDB connection string options (optional parameter).
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+| Parameter     | Description                                                                                                                                                                                              |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host:port`   | MongoDB server address.                                                                                                                                                                                  |
+| `database`    | Remote database name.                                                                                                                                                                                    |
+| `collection`  | Remote collection name.                                                                                                                                                                                  |
+| `user`        | MongoDB user.                                                                                                                                                                                            |
+| `password`    | User password.                                                                                                                                                                                           |
+| `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
 
 :::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
@@ -54,12 +50,11 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 **Engine Parameters**
 
-- `uri` — MongoDB server's connection URI.
-
-- `collection` — Remote collection name.
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
-
+| Parameter     | Description                                                                                            |
+|---------------|--------------------------------------------------------------------------------------------------------|
+| `uri`         | MongoDB server's connection URI.                                                                       |
+| `collection`  | Remote collection name.                                                                                |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
 
 ## Types mappings {#types-mappings}
 

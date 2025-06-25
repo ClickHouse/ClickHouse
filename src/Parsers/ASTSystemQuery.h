@@ -130,6 +130,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;

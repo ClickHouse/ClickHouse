@@ -1,6 +1,7 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>

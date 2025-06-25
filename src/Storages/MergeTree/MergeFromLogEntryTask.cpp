@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
