@@ -218,7 +218,7 @@ IStorageURLBase::IStorageURLBase(
         }
     }
 
-    // todo arthur change once argument is properly implemented
+    /// If the `partition_strategy` argument is ever implemented for URL storage, this must be updated
     file_columns = storage_columns.getAllPhysical();
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);

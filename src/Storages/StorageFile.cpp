@@ -1177,7 +1177,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         }
     }
 
-    // todo arthur change once argument is properly implemented
+    /// If the `partition_strategy` argument is ever implemented for File storage, this must be updated
     file_columns = storage_columns.getAllPhysical();
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
