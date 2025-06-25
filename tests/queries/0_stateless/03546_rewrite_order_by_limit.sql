@@ -27,7 +27,7 @@ explain syntax run_query_tree_passes = 1 SELECT * FROM (SELECT * FROM a ORDER BY
 explain syntax run_query_tree_passes = 1 SELECT * FROM (SELECT * FROM a ORDER BY Amount DESC LIMIT 5) AS a LEFT JOIN b ON a.UserID = b.UserID settings query_plan_rewrite_order_by_limit=0;
 
 -- 3. test order by limit in join right table(has rewrite)
-SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 5) AS b ON a.UserID = b.UserID ORDER BY a.UserID settings query_plan_rewrite_order_by_limit=1;
+SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 10) AS b ON a.UserID = b.UserID ORDER BY a.UserID settings query_plan_rewrite_order_by_limit=1;
 explain syntax run_query_tree_passes = 1 SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 5) AS b ON a.UserID = b.UserID settings query_plan_rewrite_order_by_limit=1;
 explain syntax run_query_tree_passes = 1 SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 5) AS b ON a.UserID = b.UserID settings query_plan_rewrite_order_by_limit=0;
 
@@ -42,10 +42,10 @@ explain syntax SELECT * FROM a PREWHERE UserID>1 ORDER BY Amount DESC LIMIT 3 se
 explain syntax SELECT * FROM a PREWHERE UserID>1 ORDER BY Amount DESC LIMIT 3 settings query_plan_rewrite_order_by_limit=0;
 
 -- 6. test distributed table with order by limit
-select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
-select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
-explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
-explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
+select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
+select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
+explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
+explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
 
 
 drop table a;

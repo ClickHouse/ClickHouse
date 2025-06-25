@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"query_plan_rewrite_order_by_limit",false, false, "Added new setting to use rewrite for optimize order by limit"},
             {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "Added new setting to control maximum limit value that allows to use rewrite sql for optimize order by limit. If zero, there is no limit"},
+            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 2, 2, "Control minimum columns that allows to rewrite query plan for optimize order by limit"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

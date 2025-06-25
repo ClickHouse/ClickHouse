@@ -105,16 +105,16 @@ FROM
 ALL LEFT JOIN default.b AS __table3 ON __table1.UserID = __table3.UserID
 SETTINGS query_plan_rewrite_order_by_limit = 0
 -- 3. test order by limit in join right table(has rewrite)
-SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 5) AS b ON a.UserID = b.UserID ORDER BY a.UserID settings query_plan_rewrite_order_by_limit=1;
-1	2023-01-01	100.5	Mobile	0	0		0	1970-01-01 08:00:00
-2	2023-01-02	200.3	Desktop	0	0		0	1970-01-01 08:00:00
+SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 10) AS b ON a.UserID = b.UserID ORDER BY a.UserID settings query_plan_rewrite_order_by_limit=1;
+1	2023-01-01	100.5	Mobile	1001	1	Laptop	2	2023-01-01 10:00:00
+2	2023-01-02	200.3	Desktop	1002	2	Phone	1	2023-01-02 11:00:00
 3	2023-01-03	50.7	Tablet	1003	3	Monitor	3	2023-01-03 12:00:00
 4	2023-01-04	300	Mobile	1004	4	Keyboard	4	2023-01-04 13:00:00
-5	2023-01-05	150.2	Desktop	0	0		0	1970-01-01 08:00:00
-6	2023-02-10	88.9	Mobile	0	0		0	1970-01-01 08:00:00
+5	2023-01-05	150.2	Desktop	1005	5	Mouse	2	2023-01-05 14:00:00
+6	2023-02-10	88.9	Mobile	1006	6	Printer	1	2023-02-10 15:00:00
 7	2023-02-15	420.8	Tablet	1007	7	SSD	5	2023-02-15 16:00:00
 8	2023-03-01	75	Desktop	1008	8	RAM	3	2023-03-01 17:00:00
-9	2023-03-05	999.9	Mobile	0	0		0	1970-01-01 08:00:00
+9	2023-03-05	999.9	Mobile	1009	9	GPU	2	2023-03-05 18:00:00
 10	2023-03-10	240.6	Tablet	1010	10	CPU	4	2023-03-10 19:00:00
 explain syntax run_query_tree_passes = 1 SELECT * FROM a LEFT JOIN (SELECT * FROM b ORDER BY Quantity DESC LIMIT 5) AS b ON a.UserID = b.UserID settings query_plan_rewrite_order_by_limit=1;
 SELECT
@@ -230,19 +230,19 @@ ORDER BY Amount DESC
 LIMIT 3
 SETTINGS query_plan_rewrite_order_by_limit = 0
 -- 6. test distributed table with order by limit
-select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
-2023-01-01 00:00:00	0	0	53.7	Food
-2023-01-01 00:00:00	0	0	53.7	Food
-2023-01-01 00:00:10	1	1	3.5	Electronics
-2023-01-01 00:00:10	1	1	3.5	Electronics
-2023-01-01 00:00:20	2	2	10.8	Books
-select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
-2023-01-01 00:00:00	0	0	53.7	Food
-2023-01-01 00:00:00	0	0	53.7	Food
-2023-01-01 00:00:10	1	1	3.5	Electronics
-2023-01-01 00:00:10	1	1	3.5	Electronics
-2023-01-01 00:00:20	2	2	10.8	Books
-explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
+select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
+2023-01-01 00:00:00	0	0	27.1	Clothing
+2023-01-01 00:00:00	0	0	27.1	Clothing
+2023-01-01 00:00:10	1	1	55.4	Home
+2023-01-01 00:00:10	1	1	55.4	Home
+2023-01-01 00:00:20	2	2	44.5	Electronics
+select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
+2023-01-01 00:00:00	0	0	27.1	Clothing
+2023-01-01 00:00:00	0	0	27.1	Clothing
+2023-01-01 00:00:10	1	1	55.4	Home
+2023-01-01 00:00:10	1	1	55.4	Home
+2023-01-01 00:00:20	2	2	44.5	Electronics
+explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
 Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Merge sorted streams after aggregation stage for ORDER BY)
@@ -257,7 +257,7 @@ Expression (Project names)
             Expression ((Before ORDER BY + Projection))
               Filter ((WHERE + Change column names to column identifiers))
                 ReadFromMergeTree (default.local_sales)
-explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
+explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
 Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Merge sorted streams after aggregation stage for ORDER BY)
