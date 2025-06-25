@@ -82,9 +82,6 @@ public:
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
 
-    /// If the policy allows table partition operations (move, replace) with the other storage policy.
-    bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const override;
-
     /// Check if we have any volume with stopped merges
     bool hasAnyVolumeWithDisabledMerges() const override;
 

@@ -4,9 +4,9 @@
 1
 2
 3
-SELECT t1.*
+SELECT a
 FROM t1_all AS t1
-ALL INNER JOIN t2_all AS t2 ON t1.a = t2.a
+ALL INNER JOIN test_02115.t2_local AS t2 ON a = t2.a
 1
 1
 2
@@ -20,9 +20,9 @@ ALL INNER JOIN t2_all AS t2 ON t1.a = t2.a
 1
 2
 3
-SELECT t1.*
+SELECT a
 FROM t1_all AS t1
-ALL INNER JOIN t2_all AS t2 ON t1.a = t2.a
+GLOBAL ALL INNER JOIN t2_all AS t2 ON a = t2.a
 1
 1
 1

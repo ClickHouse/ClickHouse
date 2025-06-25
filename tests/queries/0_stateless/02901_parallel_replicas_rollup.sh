@@ -12,10 +12,12 @@ function were_parallel_replicas_used ()
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            'Used parallel replicas: ' || (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String
+            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
         FROM system.query_log
     WHERE event_date >= yesterday()
-      AND query_id = '$1' AND type = 'QueryFinish'
+      AND initial_query_id = '$1'
+    GROUP BY initial_query_id
+    ORDER BY min(event_time_microseconds) ASC
     FORMAT TSV"
 }
 

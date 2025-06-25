@@ -13,7 +13,6 @@
 #include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
@@ -23,7 +22,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
-
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
@@ -92,7 +91,7 @@ UUID IAccessStorage::getID(AccessEntityType type, const String & name) const
     auto id = findImpl(type, name);
     if (id)
         return *id;
-    throwNotFound(type, name, storage_name);
+    throwNotFound(type, name);
 }
 
 
@@ -308,7 +307,7 @@ bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bo
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -404,7 +403,7 @@ bool IAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
             return false;
         throwReadonlyCannotRemove(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -500,7 +499,7 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
             return false;
         throwReadonlyCannotUpdate(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -576,7 +575,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     }
 
     if (throw_if_user_not_exists)
-        throwNotFound(AccessEntityType::USER, credentials.getUserName(), storage_name);
+        throwNotFound(AccessEntityType::USER, credentials.getUserName());
     else
         return std::nullopt;
 }
@@ -748,15 +747,17 @@ LoggerPtr IAccessStorage::getLogger() const
     return log;
 }
 
-void IAccessStorage::throwNotFound(const UUID & id, const String & storage_name)
+
+void IAccessStorage::throwNotFound(const UUID & id) const
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), backQuote(storage_name));
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), getStorageName());
 }
 
-void IAccessStorage::throwNotFound(AccessEntityType type, const String & name, const String & storage_name)
+
+void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
 {
     int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
-    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), backQuote(storage_name));
+    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
@@ -766,23 +767,26 @@ void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const 
         formatEntityTypeWithName(type, name), toString(required_type));
 }
 
-void IAccessStorage::throwIDCollisionCannotInsert(
-    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name, const String & storage_name)
+
+void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
-        outputID(id), formatEntityTypeWithName(existing_type, existing_name), backQuote(storage_name));
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: "
+        "cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
+        outputID(id), formatEntityTypeWithName(existing_type, existing_name), getStorageName());
 }
 
-void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name, const String & storage_name)
+
+void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because {} already exists in {}",
-                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), backQuote(storage_name));
+                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), getStorageName());
 }
 
-void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name, const String & storage_name)
+
+void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
-        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), backQuote(storage_name));
+        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), getStorageName());
 }
 
 
@@ -825,11 +829,6 @@ void IAccessStorage::throwBackupNotAllowed() const
 void IAccessStorage::throwRestoreNotAllowed() const
 {
     throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
-}
-
-bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }

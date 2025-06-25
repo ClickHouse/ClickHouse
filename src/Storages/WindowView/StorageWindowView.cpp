@@ -6,7 +6,6 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -48,7 +47,6 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -500,6 +498,8 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
+    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
+
     shutdown_called = false;
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
@@ -809,7 +809,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
     auto inner_query_normalized = inner_query->clone();
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
@@ -1705,6 +1705,8 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
+
+    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

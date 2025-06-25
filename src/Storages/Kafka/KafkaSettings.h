@@ -12,6 +12,7 @@ class ASTStorage;
 struct KafkaSettingsImpl;
 
 const auto KAFKA_RESCHEDULE_MS = 500;
+const auto KAFKA_CLEANUP_TIMEOUT_MS = 3000;
 // once per minute leave do reschedule (we can't lock threads in pool forever)
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min
@@ -42,7 +43,6 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
