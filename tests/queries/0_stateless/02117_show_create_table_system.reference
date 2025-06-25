@@ -185,7 +185,6 @@ CREATE TABLE system.dictionaries
     `lifetime_max` UInt64,
     `loading_start_time` DateTime,
     `last_successful_update_time` DateTime,
-    `error_count` UInt64,
     `loading_duration` Float32,
     `last_exception` String,
     `comment` String
@@ -286,14 +285,7 @@ CREATE TABLE system.formats
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
     `supports_parallel_formatting` UInt8,
-    `is_tty_friendly` UInt8,
-    `content_type` String,
-    `supports_random_access` UInt8,
-    `has_schema_inference` UInt8,
-    `has_external_schema` UInt8,
-    `prefers_large_blocks` UInt8,
-    `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `is_tty_friendly` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -310,7 +302,6 @@ CREATE TABLE system.functions
     `arguments` String,
     `returned_value` String,
     `examples` String,
-    `introduced_in` String,
     `categories` String
 )
 ENGINE = SystemFunctions
@@ -355,7 +346,6 @@ CREATE TABLE system.merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -952,7 +942,6 @@ CREATE TABLE system.replicated_merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -1029,7 +1018,6 @@ CREATE TABLE system.settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `default` String,

@@ -55,35 +55,55 @@ After all checks have been started, it changes status to 'success'.
 
 ## Style Check {#style-check}
 
-Performs various style checks on the code base.
+Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
+If it fails, fix the style errors following the [code style guide](style.md).
 
-Basic checks in the Style Check job:
-
-##### cpp {#cpp}
-Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
-If it fails, fix the style issues according to the [code style guide](style.md).
-
-##### codespell, aspell {#codespell}
-Check for grammatical mistakes and typos.
-
-##### mypy {#mypy}
-Performs static type checking for Python code.
-
-### Running the Style Check job locally {#running-style-check-locally}
-
-The entire _Style Check_ job can be run locally in a Docker container with:
+#### Running style check locally: {#running-style-check-locally}
 
 ```sh
-python -m ci.praktika run "Style check"
-```
+mkdir -p /tmp/test_output
+# running all checks
+python3 tests/ci/style_check.py --no-push
 
-To run a specific check (e.g., _cpp_ check):
-```sh
-python -m ci.praktika run "Style check" --test cpp
-```
+# run specified check script (e.g.: ./check-mypy)
+docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
 
-These commands pull the `clickhouse/style-test` Docker image and run the job in a containerized environment.
-No dependencies other than Python 3 and Docker are required.
+# find all style check scripts under the directory:
+cd ./utils/check-style
+
+# Check duplicate includes
+./check-duplicate-includes.sh
+
+# Check c++ formatting
+./check-style
+
+# Check python formatting with black
+./check-black
+
+# Check python type hinting with mypy
+./check-mypy
+
+# Check python with flake8
+./check-flake8
+
+# Check code with codespell
+./check-typos
+
+# Check docs spelling
+./check-doc-aspell
+
+# Check whitespaces
+./check-whitespaces
+
+# Check github actions workflows
+./check-workflows
+
+# Check submodules
+./check-submodules
+
+# Check shell scripts with shellcheck
+./shellcheck-run.sh
+```
 
 ## Fast Test {#fast-test}
 
@@ -95,11 +115,33 @@ Look at the report to see which tests fail, then reproduce the failure locally a
 #### Running Fast Test locally: {#running-fast-test-locally}
 
 ```sh
-python -m ci.praktika run "Fast test" [--test some_test_name]
+mkdir -p /tmp/test_output
+mkdir -p /tmp/fasttest-workspace
+cd ClickHouse
+# this docker command performs minimal ClickHouse build and run FastTests against it
+docker run --rm --cap-add=SYS_PTRACE -u $(id -u ${USER}):$(id -g ${USER})  --network=host -e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output -e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE -e stage=clone_submodules --volume=/tmp/fasttest-workspace:/fasttest-workspace --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output clickhouse/fasttest
 ```
 
-These commands pull the `clickhouse/fast-test` Docker image and run the job in a containerized environment.
-No dependencies other than Python 3 and Docker are required.
+#### Status Page Files {#status-page-files}
+
+- `runlog.out.log` is the general log that includes all other logs.
+- `test_log.txt`
+- `submodule_log.txt` contains the messages about cloning and checkouting needed submodules.
+- `stderr.log`
+- `stdout.log`
+- `clickhouse-server.log`
+- `clone_log.txt`
+- `install_log.txt`
+- `clickhouse-server.err.log`
+- `build_log.txt`
+- `cmake_log.txt` contains messages about the C/C++ and Linux flags check.
+
+#### Status Page Columns {#status-page-columns}
+
+- *Test name* contains the name of the test (without the path e.g. all types of tests will be stripped to the name).
+- *Test status* -- one of _Skipped_, _Success_, or _Fail_.
+- *Test time, sec.* -- empty on this test.
+
 
 ## Build Check {#build-check}
 
@@ -143,7 +185,7 @@ mkdir build_tidy
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
-Download the binary from [CI build checks page](/install/advanced), or build it locally.
+Download the binary from [CI build checks page](/install#install-a-ci-generated-binary), or build it locally.
 
 ## Functional Stateful Tests {#functional-stateful-tests}
 

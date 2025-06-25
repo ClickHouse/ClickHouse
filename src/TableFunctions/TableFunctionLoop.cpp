@@ -149,8 +149,7 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}},
-                 .category = FunctionDocumentation::Category::TableFunction
+                                                                                              "0"}}
                         }});
     }
 

@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include <Core/SettingsEnums.h>
 
 #include <fmt/ranges.h>
 
@@ -67,78 +66,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.7",
-        {
-            {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
-            {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
-        });
-        addSettingsChanges(settings_changes_history, "25.6",
-        {
-            /// RELEASE CLOSED
-            {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
-            {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
-            {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
-            {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
-            {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
-            {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
-            {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
-            {"use_legacy_to_time", true, true, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
-            {"allow_experimental_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
-            {"enable_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
-            {"optimize_use_projection_filtering", false, true, "New setting"},
-            {"input_format_parquet_enable_json_parsing", false, true, "When reading Parquet files, parse JSON columns as ClickHouse JSON Column."},
-            {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
-            {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
-            {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
-            {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
-            {"count_matches_stop_at_empty_match", true, false, "New setting."},
-            {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
-            /// RELEASE CLOSED
-        });
-        addSettingsChanges(settings_changes_history, "25.5",
-        {
-            /// Release closed. Please use 25.6
-            {"geotoh3_argument_order", "lon_lat", "lat_lon", "A new setting for legacy behaviour to set lon and lat argument order"},
-            {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
-            {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
-            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
-            {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
-            {"formatdatetime_e_with_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
-            {"input_format_max_block_size_bytes", 0, 0, "New setting to limit bytes size if blocks created by input format"},
-            {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
-            {"page_cache_block_size", 1048576, 1048576, "Made this setting adjustable on a per-query level."},
-            {"page_cache_lookahead_blocks", 16, 16, "Made this setting adjustable on a per-query level."},
-            {"output_format_pretty_glue_chunks", "0", "auto", "A new setting to make Pretty formats prettier."},
-            {"distributed_cache_read_only_from_current_az", true, true, "New setting"},
-            {"parallel_hash_join_threshold", 0, 100'000, "New setting"},
-            {"max_limit_for_ann_queries", 1'000, 0, "Obsolete setting"},
-            {"max_limit_for_vector_search_queries", 1'000, 1'000, "New setting"},
-            {"min_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
-            {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "Setting values were changed and backported to 25.4"},
-            {"make_distributed_plan", 0, 0, "New experimental setting."},
-            {"distributed_plan_execute_locally", 0, 0, "New experimental setting."},
-            {"distributed_plan_default_shuffle_join_bucket_count", 8, 8, "New experimental setting."},
-            {"distributed_plan_default_reader_bucket_count", 8, 8, "New experimental setting."},
-            {"distributed_plan_optimize_exchanges", true, true, "New experimental setting."},
-            {"distributed_plan_force_exchange_kind", "", "", "New experimental setting."},
-            {"update_sequential_consistency", true, true, "A new setting"},
-            {"update_parallel_mode", "auto", "auto", "A new setting"},
-            {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
-            {"alter_update_mode", "heavy", "heavy", "A new setting"},
-            {"apply_patch_parts", false, true, "A new setting"},
-            {"allow_experimental_lightweight_update", false, false, "A new setting"},
-            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
-            {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
-            {"vector_search_filter_strategy", "auto", "auto", "New setting"},
-            {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
-            {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
-            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
-            {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
-            {"enable_url_encoding", true, false, "Changed existing setting's default value"},
-            {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
-            /// Release closed. Please use 25.6
-        });
         addSettingsChanges(settings_changes_history, "25.4",
         {
             /// Release closed. Please use 25.5
@@ -164,7 +91,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
-            {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
+            {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
         });
@@ -203,6 +130,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -215,7 +143,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
             {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
-            {"use_iceberg_partition_pruning", false, false, "New setting for Iceberg partition pruning."},
+            {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
@@ -345,7 +273,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_parts_to_move", 0, 1000, "New setting"},
             {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
             {"allow_reorder_prewhere_conditions", true, true, "New setting"},
-            {"input_format_parquet_bloom_filter_push_down", false, false, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
+            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
@@ -782,34 +710,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
-        {
-
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.6",
-        {
-            /// RELEASE CLOSED
-            {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
-            {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
-            /// RELEASE CLOSED
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
         {
-            /// Release closed. Please use 25.6
-            {"shared_merge_tree_enable_coordinated_merges", false, false, "New setting"},
-            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, 100, "New setting"},
-            {"shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms", 10000, 10000, "New setting"},
-            {"shared_merge_tree_merge_coordinator_max_merge_request_size", 20, 20, "New setting"},
-            {"shared_merge_tree_merge_coordinator_election_check_period_ms", 30000, 30000, "New setting"},
-            {"shared_merge_tree_merge_coordinator_min_period_ms", 1, 1, "New setting"},
-            {"shared_merge_tree_merge_coordinator_max_period_ms", 10000, 10000, "New setting"},
-            {"shared_merge_tree_merge_coordinator_factor", 2, 2, "New setting"},
-            {"shared_merge_tree_merge_worker_fast_timeout_ms", 100, 100, "New setting"},
-            {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
-            {"apply_patches_on_merge", true, true, "New setting"},
-            {"remove_unused_patch_parts", true, true, "New setting"},
-            {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
-            /// Release closed. Please use 25.6
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {
@@ -821,7 +723,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"refresh_parts_interval", 0, 0, "A new setting"},
             {"max_merge_delayed_streams_for_parallel_write", 40, 40, "New setting"},
             {"allow_summing_columns_in_partition_or_order_key", true, false, "New setting to allow summing of partition or sorting key columns"},
-            /// Release closed. Please use 25.5
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {

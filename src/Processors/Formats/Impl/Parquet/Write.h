@@ -61,8 +61,6 @@ struct WriteOptions
     ///  * In general, if set to N, bloom filters for written row groups are accumulated in memory
     ///    and flushed to the file when they become bigger than N bytes (to limit memory usage).
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
-
-    bool write_geometadata = true;
 };
 
 struct ColumnChunkIndexes
@@ -81,7 +79,6 @@ struct ColumnChunkWriteState
     parquet::format::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
-    DataTypePtr type;
     CompressionMethod compression; // must match what's inside column_chunk
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
@@ -168,8 +165,7 @@ void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 
 /// Encodes a column chunk, without the footer.
 /// Can be called in parallel for multiple column chunks (with different WriteBuffer-s).
-void writeColumnChunkBody(
-    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out);
+void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out);
 
 /// Unlike most of the column chunk data, the footer (`ColumnMetaData`) needs to know its absolute
 /// offset in the file. So we encode it separately, in one thread, after all previous row groups
@@ -181,10 +177,6 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
-void writeFileFooter(FileWriteState & file,
-    SchemaElements schema,
-    const WriteOptions & options,
-    WriteBuffer & out,
-    const Block & header);
+void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out);
 
 }
