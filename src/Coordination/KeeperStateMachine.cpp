@@ -175,19 +175,17 @@ void assertDigest(
     const KeeperDigest & actual,
     const Coordination::ZooKeeperRequest & request,
     uint64_t log_idx,
-    uint64_t session_id,
     bool committing)
 {
     if (!KeeperStorageBase::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
+            "Digest for nodes is not matching after {} request of type '{}' at log index {}.\nExpected digest - {}, actual digest - {} "
             "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
             log_idx,
-            session_id,
             expected.value,
             actual.value,
             expected.version,
@@ -448,7 +446,6 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & req
             storage->getNodesDigest(false, /*lock_transaction_mutex=*/true),
             *request_for_session.request,
             request_for_session.log_idx,
-            request_for_session.session_id,
             false);
 
     return true;
@@ -610,7 +607,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
                     *request_for_session->request,
                     request_for_session->log_idx,
-                    request_for_session->session_id,
                     true);
         }
 

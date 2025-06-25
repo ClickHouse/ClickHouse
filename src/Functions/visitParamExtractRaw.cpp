@@ -65,9 +65,10 @@ REGISTER_FUNCTION(VisitParamExtractRaw)
         .description = "Returns the value of the field named field_name as a String, including separators.",
         .syntax = "simpleJSONExtractRaw(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
-        .returned_value = {"The value of the field as a String including separators if the field exists, or an empty String otherwise.", {"String"}},
+        = {{"json", "The JSON in which the field is searched for. String."},
+           {"field_name", "The name of the field to search for. String literal."}},
+        .returned_value
+        = "It returns the value of the field as a String including separators if the field exists, or an empty String otherwise.",
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons

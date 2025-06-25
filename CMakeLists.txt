@@ -576,9 +576,6 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
-if (LEXER_STANDALONE_BUILD)
-    add_subdirectory(tests/lexer)
-endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
