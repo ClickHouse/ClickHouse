@@ -1,4 +1,6 @@
+-- Tags: no-parallel, no-stress, no-object-storage, no-parallel-replicas
 -- { echo ON }
+set enable_analyzer = 1;
 drop table if exists a;
 drop table if exists b;
 drop table if exists local_sales;
