@@ -970,11 +970,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> next_dist(0, 76);
+            std::uniform_int_distribution<uint32_t> next_dist(0, 8);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            buf = appendDecimal(rg, false, left, right);
+            buf = appendDecimal(rg, left, right);
         }
         if constexpr (is_document<T>)
         {
@@ -1016,7 +1016,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
-        String buf = appendDecimal(rg, false, left, right);
+        String buf = appendDecimal(rg, left, right);
 
         if (rg.nextBool())
         {
@@ -1042,8 +1042,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((stp = dynamic_cast<StringType *>(tp)))
     {
-        std::uniform_int_distribution<uint32_t> strlens(0, 1009);
-        const uint32_t limit = stp->precision.value_or(strlens(rg.generator));
+        const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
 
         if (rg.nextBool())
         {

@@ -298,7 +298,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
-    extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
@@ -954,11 +954,6 @@ struct ContextSharedPart : boost::noncopyable
         warnings[warning] = message;
     }
 
-    void removeAllWarnings() TSA_REQUIRES(mutex)
-    {
-        warnings.clear();
-    }
-
     void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
     {
         if (warnings.contains(warning))
@@ -1551,12 +1546,6 @@ void Context::removeWarningMessage(WarningType warning) const
 {
     std::lock_guard lock(shared->mutex);
     shared->removeWarningMessage(warning);
-}
-
-void Context::removeAllWarnings() const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->removeAllWarnings();
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -5480,9 +5469,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -6133,7 +6122,7 @@ PartUUIDsPtr Context::getPartUUIDs() const
 }
 
 
-ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const
+ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
@@ -6141,7 +6130,7 @@ ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() co
 }
 
 
-void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback)
+void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
 }

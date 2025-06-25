@@ -22,6 +22,7 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+
 _GH_authenticated = False
 
 
@@ -33,10 +34,9 @@ def _GH_Auth(workflow):
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+    pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+    app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+    GHAuth.auth(app_id=app_id, app_key=pem)
     _GH_authenticated = True
 
 
@@ -242,7 +242,7 @@ class Runner:
                 job.run_in_docker.split("+")[1:],
             )
             from_root = "root" in docker_settings
-            settings = [s for s in docker_settings if s.startswith("-")]
+            settings = [s for s in docker_settings if s.startswith("--")]
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -496,49 +496,31 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            workflow_result = Result.from_fs(workflow.name)
 
-            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-                workflow_storage_usage = StorageUsage.from_dict(
-                    workflow_result.ext.get("storage_usage", {})
+        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
+            workflow_storage_usage = StorageUsage.from_dict(
+                workflow_result.ext.get("storage_usage", {})
+            )
+            workflow_compute_usage = ComputeUsage.from_dict(
+                workflow_result.ext.get("compute_usage", {})
+            )
+            if workflow_storage_usage:
+                print(
+                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
                 )
-                workflow_compute_usage = ComputeUsage.from_dict(
-                    workflow_result.ext.get("compute_usage", {})
+                ci_db.insert_storage_usage(workflow_storage_usage)
+            if workflow_compute_usage:
+                print(
+                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
                 )
-                if workflow_storage_usage:
-                    print(
-                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_storage_usage(workflow_storage_usage)
-                if workflow_compute_usage:
-                    print(
-                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_compute_usage(workflow_compute_usage)
+                ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
-
-        if workflow.enable_gh_summary_comment and (
-            job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ):
-            _GH_Auth(workflow)
-            try:
-                summary_body = GH.ResultSummaryForGH.from_result(
-                    workflow_result
-                ).to_markdown()
-                if not GH.post_updateable_comment(
-                    comment_tags_and_bodies={"summary": summary_body},
-                    only_update=True,
-                ):
-                    print(f"ERROR: failed to post CI summary")
-            except Exception as e:
-                print(f"ERROR: failed to post CI summary, ex: {e}")
-                traceback.print_exc()
 
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()

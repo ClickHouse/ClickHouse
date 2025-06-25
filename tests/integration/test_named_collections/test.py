@@ -4,7 +4,6 @@ import time
 from contextlib import nullcontext as does_not_raise
 
 import pytest
-import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -488,24 +487,7 @@ def test_sql_commands(cluster, with_keeper):
 
     assert "1" == node.query("select count() from system.named_collections").strip()
 
-    query_id = f"query_{uuid.uuid4()}"
-    node.query(
-        "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'",
-        query_id=query_id,
-    )
-
-    node.query("SYSTEM FLUSH LOGS")
-    assert 0 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value2%' and query_id = '{query_id}'"
-        )
-    )
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%CREATE NAMED COLLECTION collection2 AS key1 = \\'[HIDDEN]\\', key2 = \\'[HIDDEN]\\' (stage: Complete)%' and query_id = '{query_id}'"
-        )
-    )
-    assert "key1 = \\'[HIDDEN]\\', key2 = \\'[HIDDEN]\\'" in node.query(f"SELECT query FROM system.query_log WHERE query_id = '{query_id}'")
+    node.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
 
     def check_created():
         assert (
@@ -546,23 +528,7 @@ def test_sql_commands(cluster, with_keeper):
     node.restart_clickhouse()
     check_created()
 
-    query_id = f"query_{uuid.uuid4()}"
-    node.query(
-        "ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'",
-        query_id=query_id,
-    )
-
-    node.query("SYSTEM FLUSH LOGS")
-    assert 0 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value3%' and query_id = '{query_id}'"
-        )
-    )
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%ALTER NAMED COLLECTION collection2 SET key1 = \\'[HIDDEN]\\', key3 = \\'[HIDDEN]\\' (stage: Complete)%' and query_id = '{query_id}'"
-        )
-    )
+    node.query("ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'")
 
     def check_altered():
         assert (
@@ -622,25 +588,10 @@ def test_sql_commands(cluster, with_keeper):
     node.restart_clickhouse()
     check_deleted()
 
-    query_id = f"query_{uuid.uuid4()}"
     node.query(
-        "ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1",
-        query_id=query_id,
+        "ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1"
     )
     time.sleep(2)
-
-    node.query("SYSTEM FLUSH LOGS")
-    assert 0 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%value3%' and query_id = '{query_id}'"
-        )
-    )
-    assert 1 == int(
-        node.query(
-            f"SELECT count() FROM system.text_log WHERE message ILIKE '%ALTER NAMED COLLECTION collection2 SET key3 = \\'[HIDDEN]\\', key4 = \\'[HIDDEN]\\' DELETE key1 (stage: Complete)%' and query_id = '{query_id}'"
-        )
-    )
-    assert "key3 = \\'[HIDDEN]\\', key4 = \\'[HIDDEN]\\'" in node.query(f"SELECT query FROM system.query_log WHERE query_id = '{query_id}'")
 
     def check_altered_and_deleted():
         assert (

@@ -64,10 +64,6 @@
     :default 1000
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
-   [nil "--inject-auth NUM" "Inject authentication for all Keeper sessions"
-    :default 1
-    :parse-fn read-string
-    :validate [#(or (= % 0) (= % 1)) "Must be 0 or 1"]]
    [nil "--reserved-log-items NUM" "Number of log entries to keep after snapshot"
     :default 1000
     :parse-fn read-string

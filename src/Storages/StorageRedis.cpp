@@ -8,10 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
-#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -28,7 +25,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -219,134 +215,53 @@ StorageRedis::StorageRedis(
     setInMemoryMetadata(storage_metadata);
 }
 
-class ReadFromRedis : public SourceStepWithFilter
+Pipe StorageRedis::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context_,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t num_streams)
 {
-public:
-    std::string getName() const override { return "ReadFromRedis"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void describeActions(FormatSettings & format_settings) const override;
-    void describeActions(JSONBuilder::JSONMap & map) const override;
-
-    ReadFromRedis(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        StorageRedis & storage_,
-        size_t max_block_size_,
-        size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
-        , storage(storage_)
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-    {
-    }
-
-private:
-    StorageRedis & storage;
-
-    size_t max_block_size;
-    size_t num_streams;
+    storage_snapshot->check(column_names);
 
     FieldVectorPtr keys;
     bool all_scan = false;
-};
 
-void StorageRedis::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context_,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t max_block_size,
-        size_t num_streams)
-{
-    storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block header = storage_snapshot->metadata->getSampleBlock();
+    auto primary_key_data_type = header.getByName(primary_key).type;
 
-    auto reading = std::make_unique<ReadFromRedis>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
-
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    const auto & sample_block = getOutputHeader();
+    std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info, context_);
 
     if (all_scan)
     {
-        auto source = std::make_shared<RedisDataSource>(storage, sample_block, max_block_size);
-        source->setStorageLimits(query_info.storage_limits);
-        pipeline.init(Pipe(std::move(source)));
+        return Pipe(std::make_shared<RedisDataSource>(*this, header, max_block_size));
     }
-    else
+
+    if (keys->empty())
+        return {};
+
+    Pipes pipes;
+
+    ::sort(keys->begin(), keys->end());
+    keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
+
+    size_t num_keys = keys->size();
+    size_t num_threads = std::min<size_t>(num_streams, keys->size());
+
+    num_threads = std::min<size_t>(num_threads, configuration.pool_size);
+    assert(num_keys <= std::numeric_limits<uint32_t>::max());
+
+    for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
     {
-        if (keys->empty())
-        {
-            pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
-            return;
-        }
+        size_t begin = num_keys * thread_idx / num_threads;
+        size_t end = num_keys * (thread_idx + 1) / num_threads;
 
-        ::sort(keys->begin(), keys->end());
-        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
-
-        Pipes pipes;
-
-        size_t num_keys = keys->size();
-        size_t num_threads = std::min<size_t>(num_streams, keys->size());
-        num_threads = std::min<size_t>(num_threads, storage.configuration.pool_size);
-
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
-
-        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
-        {
-            size_t begin = num_keys * thread_idx / num_threads;
-            size_t end = num_keys * (thread_idx + 1) / num_threads;
-
-            auto source = std::make_shared<RedisDataSource>(
-                    storage, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
-            source->setStorageLimits(query_info.storage_limits);
-            pipes.emplace_back(std::move(source));
-        }
-        pipeline.init(Pipe::unitePipes(std::move(pipes)));
+        pipes.emplace_back(
+            std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
     }
-}
-
-void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
-}
-
-void ReadFromRedis::describeActions(FormatSettings & format_settings) const
-{
-    std::string prefix(format_settings.offset, format_settings.indent_char);
-    if (!all_scan)
-    {
-        format_settings.out << prefix << "ReadType: GetKeys\n";
-        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
-    }
-    else
-        format_settings.out << prefix << "ReadType: FullScan\n";
-}
-
-void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
-{
-    if (!all_scan)
-    {
-        map.add("Read Type", "GetKeys");
-        map.add("Keys", keys->size());
-    }
-    else
-        map.add("Read Type", "FullScan");
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 namespace

@@ -20,7 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
 
 common_ft_job_config = Job.Config(
     name=JobNames.STATELESS,
-    runs_on=[],  # from parametrize
+    runs_on=["..params.."],
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
@@ -29,12 +29,10 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
-            "./ci/jobs/scripts/functional_tests_results.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
-            "./ci/docker/stateless-test",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -42,6 +40,29 @@ common_ft_job_config = Job.Config(
 
 
 class JobConfigs:
+    docker_build_arm = Job.Config(
+        name=JobNames.DOCKER_BUILDS_ARM,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./docker",
+                "./tests/ci/docker_images_check.py",
+            ],
+        ),
+        command="python3 ./tests/ci/docker_images_check.py --suffix aarch64",
+    )
+    docker_build_amd = Job.Config(
+        name=JobNames.DOCKER_BUILDS_AMD,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./docker",
+                "./tests/ci/docker_images_check.py",
+            ],
+        ),
+        command="python3 ./tests/ci/docker_images_check.py --suffix amd64 --multiarch-manifest",
+        requires=[JobNames.DOCKER_BUILDS_ARM],
+    )
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
@@ -75,7 +96,7 @@ class JobConfigs:
     )
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
+        runs_on=["...from params..."],
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         run_in_docker="clickhouse/binary-builder+--network=host",
@@ -105,7 +126,7 @@ class JobConfigs:
     )
     tidy_arm_build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
+        runs_on=["...from params..."],
         requires=["Build (amd_tidy)"],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
@@ -123,7 +144,7 @@ class JobConfigs:
     )
     build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
+        runs_on=["...from params..."],
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
@@ -211,7 +232,7 @@ class JobConfigs:
     )
     special_build_jobs = Job.Config(
         name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
+        runs_on=["...from params..."],
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
@@ -266,7 +287,7 @@ class JobConfigs:
     builds_for_tests = [b.name for b in build_jobs] + [tidy_build_jobs[0]]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
-        runs_on=[],  # from parametrize()
+        runs_on=["..."],
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./tests/ci/install_check.py"],
@@ -404,20 +425,15 @@ class JobConfigs:
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
-            runs_on=[
-                RunnerLabels.FUNC_TESTER_ARM,
-                RunnerLabels.FUNC_TESTER_ARM,
-                RunnerLabels.FUNC_TESTER_ARM,
-            ],
             parameter=[
-                "arm_asan, azure, 1/3",
-                "arm_asan, azure, 2/3",
-                "arm_asan, azure, 3/3",
+                "azure, arm_asan, 1/3",
+                "azure, arm_asan, 2/3",
+                "azure, arm_asan, 3/3",
             ],
             requires=[
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 1
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 2
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 3
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 1
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 2
+                [ArtifactNames.CH_ARM_BIN],  # azure asan 3
             ],
         )
     )
@@ -429,7 +445,7 @@ class JobConfigs:
     )
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
-        runs_on=[],  # from parametrize()
+        runs_on=["..params.."],
         command=f"python3 ./ci/jobs/unit_tests_job.py",
         run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
@@ -457,7 +473,7 @@ class JobConfigs:
     )
     stress_test_jobs = Job.Config(
         name=JobNames.STRESS,
-        runs_on=[],  # from parametrize()
+        runs_on=["..."],
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -467,8 +483,7 @@ class JobConfigs:
                 "./tests/config",
                 "./tests/*.txt",
                 "./tests/docker_scripts/",
-                "./ci/docker/stress-test",
-                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./docker",
             ],
         ),
         allow_merge_on_failure=True,
@@ -497,7 +512,7 @@ class JobConfigs:
     )
     stress_test_azure_master_jobs = Job.Config(
         name=JobNames.STRESS,
-        runs_on=[],  # from parametrize()
+        runs_on=["..."],
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -506,8 +521,7 @@ class JobConfigs:
                 "./tests/config",
                 "./tests/*.txt",
                 "./tests/docker_scripts/",
-                "./ci/docker/stress-test",
-                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./docker",
             ],
         ),
         allow_merge_on_failure=True,
@@ -534,7 +548,7 @@ class JobConfigs:
                 "./tests/ci/upgrade_check.py",
                 "./tests/ci/stress_check.py",
                 "./tests/docker_scripts/",
-                "./ci/docker/stress-test",
+                "./docker",
             ]
         ),
         allow_merge_on_failure=True,
@@ -568,7 +582,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./ci/docker/integration",
+                "./docker",
             ],
         ),
     ).parametrize(
@@ -590,7 +604,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./ci/docker/integration",
+                "./docker",
             ],
         ),
     ).parametrize(
@@ -625,7 +639,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./ci/docker/integration",
+                "./docker",
             ],
         ),
         allow_merge_on_failure=True,
@@ -650,7 +664,7 @@ class JobConfigs:
                 "./tests/ci/integration_test_check.py",
                 "./tests/ci/integration_tests_runner.py",
                 "./tests/integration/",
-                "./ci/docker/integration",
+                "./docker",
             ],
         ),
         requires=["Build (amd_asan)"],
@@ -662,7 +676,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/compatibility_check.py",
-                "./ci/docker/compatibility",
             ],
         ),
     ).parametrize(
@@ -675,14 +688,10 @@ class JobConfigs:
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
-        runs_on=[],  # from parametrize()
+        runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
-                "./ci/docker/fuzzer",
-            ],
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
         ),
         allow_merge_on_failure=True,
     ).parametrize(
@@ -701,23 +710,19 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_DEBUG],
-            [ArtifactNames.CH_ARM_ASAN],
-            [ArtifactNames.CH_AMD_TSAN],
-            [ArtifactNames.CH_AMD_MSAN],
-            [ArtifactNames.CH_AMD_UBSAN],
+            ["Build (amd_debug)"],
+            ["Build (arm_asan)"],
+            ["Build (amd_tsan)"],
+            ["Build (amd_msan)"],
+            ["Build (amd_ubsan)"],
         ],
     )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
-        runs_on=[],  # from parametrize()
+        runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
-                "./ci/docker/fuzzer",
-            ],
+            include_paths=["./docker/test/fuzzer", "./tests/ci/ci_fuzzer_check.py"],
         ),
         allow_merge_on_failure=True,
     ).parametrize(
@@ -736,11 +741,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_DEBUG],
-            [ArtifactNames.CH_ARM_ASAN],
-            [ArtifactNames.CH_AMD_TSAN],
-            [ArtifactNames.CH_AMD_MSAN],
-            [ArtifactNames.CH_AMD_UBSAN],
+            ["Build (amd_debug)"],
+            ["Build (arm_asan)"],
+            ["Build (amd_tsan)"],
+            ["Build (amd_msan)"],
+            ["Build (amd_ubsan)"],
         ],
     )
     performance_comparison_with_prev_release_jobs = Job.Config(
@@ -754,7 +759,6 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
-                "./ci/docker/performance-comparison",
             ],
         ),
         timeout=2 * 3600,
@@ -783,7 +787,6 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
-                "./ci/docker/performance-comparison",
             ],
         ),
         timeout=2 * 3600,
@@ -882,10 +885,10 @@ class JobConfigs:
     )
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
-        runs_on=[],  # from parametrize()
+        runs_on=["..."],
         command="./ci/jobs/sqlancer_job.sh",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/sqlancer_job.sh", "./ci/docker/sqlancer-test"],
+            include_paths=["./ci/jobs/sqlancer_job.sh"],
         ),
         run_in_docker="clickhouse/sqlancer-test",
         timeout=3600,
