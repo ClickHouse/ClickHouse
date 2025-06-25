@@ -68,12 +68,17 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             String path = path_setting->safeGet<String>();
 
             Macros::MacroExpansionInfo info;
-            info.expand_special_macros_only = true;
             info.table_id = args.table_id;
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
+            /// Make sure that {uuid} macro is allowed, if present.
+            args.getContext()->getMacros()->expand(path, info);
+
+            /// Actually expand all the macros except {uuid} macro.
+            info.expand_special_macros_only = true;
             path = args.getContext()->getMacros()->expand(path, info);
+
             args.storage_def->settings->changes.setSetting("keeper_path", Field(path));
         }
     }

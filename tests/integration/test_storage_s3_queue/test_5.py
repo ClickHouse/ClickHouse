@@ -688,3 +688,54 @@ def test_failure_in_the_middle(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+
+
+def test_macros_support(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_macros_{uuid.uuid4().hex[:8]}"
+    files_path = f"{table_name}_data"
+
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS a;
+        DROP DATABASE IF EXISTS r;
+        CREATE DATABASE a ENGINE=Atomic;
+        CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1');
+        """
+    )
+
+    res = create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": "{table}/{uuid}",
+        },
+        database_name="a",
+        expect_error=True,
+    )
+
+    assert "Macro 'uuid' in engine arguments is only supported" in res
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": "{table}/{uuid}",
+        },
+        database_name="r",
+    )
+
+    table_uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = 'r' AND name = '{table_name}'"
+    ).strip()
+    keeper_path = f"/clickhouse/s3queue/{table_name}/{table_uuid}/"
+
+    assert node.query(f"SELECT count() > 0 FROM system.zookeeper WHERE path = '{keeper_path}'") == "1\n"
+    assert node 
