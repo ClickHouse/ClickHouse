@@ -140,7 +140,7 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void shutdown() override;
 
