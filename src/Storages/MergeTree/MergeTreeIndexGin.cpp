@@ -444,6 +444,7 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
         }
         else if (function_name == "equals" ||
                  function_name == "notEquals" ||
+                 function_name == "has" ||
                  function_name == "mapContainsKey" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
@@ -546,6 +547,15 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         return false;
 
     if (map_key_exists && function_name == "mapContainsKey")
+    {
+        out.key_column = key_column_num;
+        out.function = RPNElement::FUNCTION_HAS;
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+        auto & value = const_value.safeGet<String>();
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "has")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
