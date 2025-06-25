@@ -1,5 +1,7 @@
-#ifdef USE_AWS_S3
-#ifdef USE_JEMALLOC
+#include "config.h"
+
+#if USE_AWS_S3
+#if USE_JEMALLOC
 #include <gtest/gtest.h>
 #include <cstdint>
 

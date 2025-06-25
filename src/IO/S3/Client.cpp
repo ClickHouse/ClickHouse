@@ -987,7 +987,7 @@ ClientFactory::ClientFactory()
     /// We don't need to initialize TLS, because we use PocoHTTPClientFactory
     aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
 
-#ifdef USE_JEMALLOC
+#if USE_JEMALLOC
     memory_manager = std::make_unique<AwsNodumpMemoryManager>();
     aws_options.memoryManagementOptions.memoryManager = memory_manager.get();
 #endif

@@ -1,7 +1,9 @@
 #pragma once
 
-#ifdef USE_AWS_S3
-#ifdef USE_JEMALLOC
+#include "config.h"
+
+#if USE_AWS_S3
+#if USE_JEMALLOC
 
 #include <Common/JemallocNodumpAllocatorImpl.h>
 #include <aws/core/utils/memory/MemorySystemInterface.h>

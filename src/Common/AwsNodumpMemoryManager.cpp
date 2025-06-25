@@ -1,7 +1,7 @@
-#ifdef USE_AWS_S3
-#ifdef USE_JEMALLOC
-
 #include <Common/AwsNodumpMemoryManager.h>
+
+#if USE_AWS_S3
+#if USE_JEMALLOC
 
 namespace DB
 {

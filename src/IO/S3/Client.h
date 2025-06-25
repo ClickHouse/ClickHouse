@@ -350,7 +350,7 @@ private:
     Aws::SDKOptions aws_options;
     std::atomic<bool> s3_requests_logging_enabled;
 
-#ifdef USE_JEMALLOC
+#if USE_JEMALLOC
     std::unique_ptr<AwsNodumpMemoryManager> memory_manager;
 #endif
 };

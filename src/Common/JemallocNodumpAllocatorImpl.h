@@ -1,6 +1,8 @@
 #pragma once
 
-#ifdef USE_JEMALLOC
+#include "config.h"
+
+#if USE_JEMALLOC
 #include <jemalloc/jemalloc.h>
 
 namespace DB

@@ -1,4 +1,6 @@
-#ifdef USE_JEMALLOC
+#include "config.h"
+
+#if USE_JEMALLOC
 
 #include <gtest/gtest.h>
 #include <vector>

@@ -1,6 +1,7 @@
-#ifdef USE_JEMALLOC
-#include <Poco/Format.h>
 #include <Common/JemallocNodumpAllocatorImpl.h>
+
+#if USE_JEMALLOC
+#include <Poco/Format.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 #include <sys/mman.h>
