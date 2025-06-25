@@ -110,7 +110,7 @@ ManifestFileGenerator::ManifestFileGenerator(Poco::JSON::Object::Ptr metadata_)
         schema_representation = manifest_entry_v2_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
-    std::istringstream iss(MANIFEST_ICEBERG);
+    std::istringstream iss(schema_representation);
     avro::compileJsonSchema(iss, schema);
 }
 
