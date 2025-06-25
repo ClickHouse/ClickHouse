@@ -1,22 +1,22 @@
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include "config.h"
 
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
-#    include <Core/Settings.h>
-#    include <Formats/FormatFactory.h>
-#    include <Formats/ReadSchemaUtils.h>
-#    include <IO/CompressionMethod.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/ExpressionAnalyzer.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTIdentifier.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Processors/Formats/ISchemaReader.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB
 {
@@ -134,7 +134,6 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
 void IcebergBitmapPositionDeleteTransform::initialize()
 {
-    auto iceberg_data_path = iceberg_object_info->getIcebergDataPath();
     for (auto & delete_source : delete_sources)
     {
         while (auto delete_chunk = delete_source->read())

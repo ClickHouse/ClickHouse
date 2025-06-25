@@ -1,7 +1,8 @@
-#include <compare>
 #include "config.h"
 
 #if USE_AVRO
+
+#include <compare>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
