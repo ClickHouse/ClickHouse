@@ -864,7 +864,7 @@ def modify_server_settings(
                 "drop_local_thread_pool_size": threads_lambda,
                 "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
                 "drop_zookeeper_thread_pool_size": threads_lambda,
-                "migration_from_database_replicated": true_false_lambda,
+                #"migration_from_database_replicated": true_false_lambda, not suitable for testing
                 "state_application_thread_pool_size": threads_lambda,
             }
             if number_clusters > 0 and random.randint(1, 100) <= 75:
