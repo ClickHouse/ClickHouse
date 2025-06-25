@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include "DataTypes/DataTypesBinaryEncoding.h"
 
 
 namespace DB
@@ -90,9 +91,14 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compa
 
     if (compare_options.compare_types)
     {
-        const auto & column_type_name = column.type->getName();
-        hash_state.update(column_type_name.size());
-        hash_state.update(column_type_name);
+        WriteBufferFromOwnString buf;
+        encodeDataType(column.type, buf);
+        buf.finalize();
+        hash_state.update(buf.str().size());
+        hash_state.update(buf.str());
+        // const auto & column_type_name = column.type->getName();
+        // hash_state.update(column_type_name.size());
+        // hash_state.update(column_type_name);
     }
 }
 
