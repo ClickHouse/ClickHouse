@@ -2475,7 +2475,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
     if (!state.logs_block_out)
     {
         WriteBuffer * logs_buf = out.get();
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
         {
             initMaybeCompressedOut(state);
             logs_buf = state.maybe_compressed_out.get();
@@ -2494,7 +2494,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     if (!state.profile_events_block_out)
     {
         WriteBuffer * profile_events_buf = out.get();
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
         {
             initMaybeCompressedOut(state);
             profile_events_buf = state.maybe_compressed_out.get();
@@ -2652,14 +2652,22 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
 }
 
 
-void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & columns)
+void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
 {
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *out);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *out);
+    WriteBuffer * columns_buf = out.get();
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedOut(state);
+        columns_buf = state.maybe_compressed_out.get();
+    }
 
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *columns_buf);
+    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+
+    columns_buf->next();
     out->finishChunk();
     out->next();
 }

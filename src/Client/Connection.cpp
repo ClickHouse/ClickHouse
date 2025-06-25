@@ -1327,7 +1327,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TableColumns:
-                res.multistring_message = receiveMultistringMessage(res.type);
+                res.columns_description = receiveTableColumns();
                 return res;
 
             case Protocol::Server::EndOfStream:
@@ -1449,7 +1449,7 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         ReadBuffer * logs_buf = in.get();
-        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
         {
             initMaybeCompressedInput();
             logs_buf = maybe_compressed_in.get();
@@ -1466,7 +1466,7 @@ void Connection::initBlockProfileEventsInput()
     if (!block_profile_events_in)
     {
         ReadBuffer * profile_events_buf = in.get();
-        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
         {
             initMaybeCompressedInput();
             profile_events_buf = maybe_compressed_in.get();
@@ -1505,13 +1505,21 @@ std::unique_ptr<Exception> Connection::receiveException() const
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+String Connection::receiveTableColumns()
 {
-    size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> strings(num);
-    for (size_t i = 0; i < num; ++i)
-        readStringBinary(strings[i], *in);
-    return strings;
+    ReadBuffer * columns_buf = in.get();
+    if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedInput();
+        columns_buf = maybe_compressed_in.get();
+    }
+
+    String table_name_ignored;
+    readStringBinary(table_name_ignored, *columns_buf);
+
+    String columns;
+    readStringBinary(columns, *columns_buf);
+    return columns;
 }
 
 
