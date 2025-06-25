@@ -11,6 +11,7 @@
 
 #endif
 
+#include <IO/Azure/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
