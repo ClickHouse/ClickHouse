@@ -158,10 +158,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     const auto & config = context->getConfigRef();
 
     s3_settings = std::make_unique<S3Settings>();
-    s3_settings->loadFromConfig(config, "s3", settings, "s3_", settings[Setting::s3_validate_request_settings]);
-
-    s3_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        ProxyConfiguration::protocolFromString(url.uri.getScheme()), "s3", config);
+    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -366,7 +363,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
 
     s3_settings = std::make_unique<S3Settings>();
-    s3_settings->loadFromConfig(config, "s3", context->getSettingsRef(), "s3_", context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {

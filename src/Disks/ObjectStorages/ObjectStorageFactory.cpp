@@ -185,7 +185,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfig(config, config_prefix, context->getSettingsRef(), "s3_", true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri, true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -219,7 +219,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfig(config, config_prefix, context->getSettingsRef(), "s3_", true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri, true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -251,7 +251,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
             auto settings = std::make_unique<S3Settings>();
-            settings->loadFromConfig(config, config_prefix, context->getSettingsRef(), "s3_", true);
+            settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri, true);
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 

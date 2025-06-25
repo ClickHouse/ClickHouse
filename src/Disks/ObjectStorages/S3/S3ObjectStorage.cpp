@@ -488,8 +488,8 @@ void S3ObjectStorage::applyNewSettings(
 {
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
-    settings_from_config->loadFromConfig(
-        config, config_prefix, context->getSettingsRef(), "s3_", context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    settings_from_config->loadFromConfigForObjectStorage(
+        config, config_prefix, context->getSettingsRef(), uri, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
@@ -523,8 +523,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     const auto & settings = context->getSettingsRef();
     std::unique_ptr<S3Settings> new_s3_settings = std::make_unique<S3Settings>();
 
-    new_s3_settings->loadFromConfig(
-        config, config_prefix, context->getSettingsRef(), "s3_", settings[Setting::s3_validate_request_settings]);
+    new_s3_settings->loadFromConfigForObjectStorage(
+        config, config_prefix, context->getSettingsRef(), uri, settings[Setting::s3_validate_request_settings]);
 
     new_s3_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
