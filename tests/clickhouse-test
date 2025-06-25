@@ -2759,7 +2759,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1))
+                signal.alarm(int(args.timeout * 1.1) + 5)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
