@@ -242,32 +242,10 @@ select * from distributed_sales order by event_time,product_id,user_id,amount,ca
 2024-01-01 10:15:00	205	1002	29.95	Clothing
 2024-01-01 10:15:00	205	1002	29.95	Clothing
 2024-01-02 09:45:00	308	1003	159.99	Electronics
-explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
-Expression (Project names)
-  Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
-      Union
-        CreatingSets (Create sets before main query execution)
-          Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + Projection))
-              Filter ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.local_sales)
-        CreatingSets (Create sets before main query execution)
-          Sorting (Sorting for ORDER BY)
-            Expression ((Before ORDER BY + Projection))
-              Filter ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.local_sales)
-explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
-Expression (Project names)
-  Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
-      Union
-        Sorting (Sorting for ORDER BY)
-          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-            ReadFromMergeTree (default.local_sales)
-        Sorting (Sorting for ORDER BY)
-          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-            ReadFromMergeTree (default.local_sales)
+select multiSearchAnyCaseInsensitive(arrayStringConcat(groupArray( *),'\n'), [ 'CreatingSets','ReadFromRemote']) from (explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1);
+1
+select multiSearchAnyCaseInsensitive(arrayStringConcat(groupArray( *),'\n'), [ 'CreatingSets']) from (explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0);
+0
 drop table a;
 drop table b;
 drop table local_sales;

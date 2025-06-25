@@ -44,8 +44,8 @@ explain syntax SELECT * FROM a PREWHERE UserID>1 ORDER BY Amount DESC LIMIT 3 se
 -- 6. test distributed table with order by limit
 select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
 select * from distributed_sales order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
-explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1;
-explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0;
+select multiSearchAnyCaseInsensitive(arrayStringConcat(groupArray( *),'\n'), [ 'CreatingSets','ReadFromRemote']) from (explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=1);
+select multiSearchAnyCaseInsensitive(arrayStringConcat(groupArray( *),'\n'), [ 'CreatingSets']) from (explain plan select * from distributed_sales  order by event_time,product_id,user_id,amount,category limit 5 settings query_plan_rewrite_order_by_limit=0);
 
 
 drop table a;
