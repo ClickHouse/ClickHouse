@@ -372,3 +372,9 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/nlohmann-json"]
+	path = contrib/nlohmann-json
+	url = https://github.com/nlohmann/json.git
+[submodule "contrib/crc32c"]
+	path = contrib/crc32c
+	url = https://github.com/google/crc32c.git

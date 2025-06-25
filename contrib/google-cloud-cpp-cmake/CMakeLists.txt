@@ -18,6 +18,13 @@ if (NOT ENABLE_PROTOBUF)
     message( ${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without protobuf")
 endif()
 
+# To supress the following warning:
+# CMake Warning (dev) at contrib/google-cloud-cpp/cmake/CompileProtos.cmake:354 (install):
+#   Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+#   "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+#   command to set the policy and suppress this warning.
+cmake_policy(SET CMP0177 OLD)
+
 # Gather sources and options.
 set(GOOGLE_CLOUD_CPP_SOURCES)
 set(GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES)
@@ -51,7 +58,7 @@ include(GoogleApis.cmake)
 add_library(gRPC::grpc++ ALIAS _ch_contrib_grpc)
 add_library(gRPC::grpc ALIAS _ch_contrib_grpc)
 
-# google-cloud-cpp-kms.
+# KMS
 google_cloud_cpp_add_library_protos(kms)
 
 include(google_cloud_cpp_common.cmake)
@@ -66,6 +73,21 @@ file(GLOB GOOGLE_CLOUD_CPP_KMS_SRC
 )
 
 list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
+
+# Storage
+google_cloud_cpp_add_library_protos(storage)
+
+# Storage needs rest_internal, and both need nlohmann_json
+
+# Let google_cloud_cpp use our own version of curl and crc32c
+add_library(CURL::libcurl ALIAS _curl)
+add_library(Crc32c::crc32c ALIAS _crc32c)
+add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
+
+include(google_cloud_cpp_rest_internal.cmake)
+include(storage/google_cloud_cpp_storage.cmake)
+
+# Common
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
 
 set(GRPC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
@@ -79,10 +101,16 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_common
     google_cloud_cpp_grpc_utils
     google_cloud_cpp_kms_protos
+    google_cloud_cpp_rest_internal
+    google_cloud_cpp_storage
+    google_cloud_cpp_storage_protos
     google_cloud_cpp_cloud_location_locations_protos
     google_cloud_cpp_iam_v1_iam_policy_protos
     gRPC::grpc++
     absl::optional
+    absl::crc32c
+    ch_contrib::curl
+    ch_contrib::nlohmann_json
 )
 
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_LIBS
