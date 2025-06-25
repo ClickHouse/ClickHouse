@@ -335,9 +335,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    String current_shard = parseFullReplicaName(hosts.front()).first;
+    String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
-    shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const auto & id = host_ids[i];
@@ -349,12 +348,14 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         if (shard != current_shard)
         {
             current_shard = shard;
-            if (!shards.back().empty())
-                shards.emplace_back();
+            shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
+
+    if (shards.empty())
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
     UInt16 default_port;
     if (cluster_auth_info.cluster_secure_connection)

@@ -3358,6 +3358,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
 
+        if (function_name == "lag" || function_name == "lead")
+        {
+            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
+            if (!frame.is_default)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
+                    function_name,
+                    function_node.formatASTForErrorMessage());
+            }
+
+            frame = WindowFrame{
+                .is_default = false,
+                .type = WindowFrame::FrameType::ROWS,
+                .begin_type = WindowFrame::BoundaryType::Unbounded,
+                .begin_preceding = true,
+                .end_type = WindowFrame::BoundaryType::Unbounded,
+                .end_preceding = false,
+            };
+        }
+
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;
         else

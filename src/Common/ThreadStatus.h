@@ -224,7 +224,7 @@ public:
     ThrottlerPtr read_throttler;
     ThrottlerPtr write_throttler;
 
-private:
+protected:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
 
