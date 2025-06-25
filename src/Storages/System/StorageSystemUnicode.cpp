@@ -196,10 +196,10 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
     UErrorCode err_code;
 
     auto prop_names = getPropNames();
-    
+
     // Get filtered code points based on predicate
     ColumnPtr filtered_code_points = getFilteredCodePoints(predicate, context);
-    
+
     for (size_t i = 0; i < filtered_code_points->size(); ++i)
     {
         UChar32 code = filtered_code_points->getInt(i);
