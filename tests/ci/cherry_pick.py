@@ -43,6 +43,7 @@ from ssh import SSHKey
 
 
 class ReleaseBranch:
+    STALE_THRESHOLD = 24 * 3600
     CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
 
 This pull-request is a first step of an automated backporting.
@@ -318,10 +319,10 @@ close it.
         ).timestamp()
         since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
         since_updated_str = (
-            f"{since_updated // 86400}d{since_updated // 3600}"
-            f"h{since_updated // 60 % 60}m{since_updated % 60}s"
+            f"{since_updated // 86400}d{since_updated // 3600 % 24}h"
+            f"{since_updated // 60 % 60}m{since_updated % 60}s"
         )
-        if since_updated < 86400:
+        if since_updated < self.STALE_THRESHOLD:
             logging.info(
                 "The cherry-pick PR was updated %s ago, "
                 "waiting for the next running",
@@ -594,18 +595,20 @@ class BackportPRs:
 
 
 class CherryPickPRs:
-    STALE_THRESHOLD = 30 * 3600  # 30 hours in seconds
+    # If the cherry-pick PR is not updated for more than 30 hours, then
+    # it is considered stale and needs to be pinged.
+    STALE_THRESHOLD = ReleaseBranch.STALE_THRESHOLD + 6 * 3600
 
     def __init__(self, gh: GitHub, repo: str, dry_run: bool):
         self.gh = gh
-        self.repo_name = repo
+        self.repo_name = gh.get_repo(repo)
         self.dry_run = dry_run
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """
         Get all open cherry-pick PRs in the repository.
         """
-        query = f"type:pr repo:{self.repo_name} label:{Labels.PR_CHERRYPICK}"
+        query = f"type:pr repo:{self.repo_name.full_name} label:{Labels.PR_CHERRYPICK}"
         logging.info("Query to find the cherry-pick PRs:\n %s", query)
         return self.gh.get_pulls_from_search(query=query, state="open")
 
