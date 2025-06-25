@@ -73,9 +73,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    size_t max_parsing_threads_,
+    FormatParserGroupPtr parser_group_,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -83,7 +83,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , max_parsing_threads(max_parsing_threads_)
+    , parser_group(std::move(parser_group_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -99,11 +99,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     create_reader_pool->wait();
-}
-
-void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -139,7 +134,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (distributed_processing)
     {
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
-            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+            local_context->getClusterFunctionReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
 
         if (is_archive)
             return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
@@ -322,7 +317,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
+            && !parser_group->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -358,12 +353,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_storage,
         read_from_format_info,
         format_settings,
-        key_condition,
         read_context,
         &schema_cache,
         log,
         max_block_size,
-        max_parsing_threads,
+        parser_group,
         need_only_count);
 }
 
@@ -374,12 +368,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
-    const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    size_t max_parsing_threads,
+    FormatParserGroupPtr parser_group,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -482,16 +475,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
-            std::nullopt,
+            parser_group,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
-
-        if (key_condition_)
-            input_format->setKeyCondition(key_condition_);
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -501,7 +490,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
-        else
+        if (!transformer)
             transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
 
         if (transformer)
@@ -908,7 +897,7 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_, size_t max_threads_count)
+    const ClusterFunctionReadTaskCallback & callback_, size_t max_threads_count)
     : callback(callback_)
 {
     ThreadPool pool(
@@ -916,22 +905,26 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         CurrentMetrics::StorageObjectStorageThreadsActive,
         CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, "ReadTaskIter");
 
-    std::vector<std::future<String>> keys;
-    keys.reserve(max_threads_count);
+    std::vector<std::future<ObjectInfoPtr>> objects;
+    objects.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
-        keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
+        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
+        {
+            auto task = callback();
+            if (!task || task->isEmpty())
+                return nullptr;
+            return task->getObjectInfo();
+        }, Priority{}));
 
     pool.wait();
     buffer.reserve(max_threads_count);
-    for (auto & key_future : keys)
+    for (auto & object_future : objects)
     {
-        auto key = key_future.get();
-        if (key.empty())
-            continue;
-
-        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        auto object = object_future.get();
+        if (object)
+            buffer.push_back(object);
     }
 }
 
@@ -940,11 +933,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
     {
-        auto key = callback();
-        if (key.empty())
+        auto task = callback();
+        if (!task || task->isEmpty())
             return nullptr;
-
-        return std::make_shared<ObjectInfo>(key, std::nullopt);
+        return task->getObjectInfo();
     }
 
     return buffer[current_index];

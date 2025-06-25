@@ -920,9 +920,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
     if (!fc.clusters.empty())
     {
-        hotSettings.insert(
-            {{"enable_parallel_replicas", trueOrFalseSetting},
-             {"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)}});
+        hotSettings.insert({{"enable_parallel_replicas", trueOrFalseSetting}});
         serverSettings.insert(
             {{"cluster_for_parallel_replicas",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.clusters) + "'"; }, {}, false)}});

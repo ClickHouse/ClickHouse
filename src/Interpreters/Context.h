@@ -234,7 +234,9 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
-using ReadTaskCallback = std::function<String()>;
+struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
@@ -351,7 +353,7 @@ protected:
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
-    std::optional<ReadTaskCallback> next_task_callback;
+    std::optional<ClusterFunctionReadTaskCallback> next_task_callback;
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
@@ -1023,7 +1025,7 @@ public:
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1499,8 +1501,8 @@ public:
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
-    ReadTaskCallback getReadTaskCallback() const;
-    void setReadTaskCallback(ReadTaskCallback && callback);
+    ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
+    void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
@@ -1638,6 +1640,7 @@ public:
     ThrottlerPtr getMergesThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
