@@ -85,10 +85,11 @@ static bool isConnectionString(const std::string & candidate)
     return !candidate.starts_with("http");
 }
 
+/// As ManagedIdentityCredential is related to the machine/pod, it's ok to have it as a singleton.
+/// It is beneficial because creating this object can take a lot of time and lead to throttling.
 static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIdentityCredential()
 {
-    static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> credential
-        = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    static auto credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
     return credential;
 }
 
