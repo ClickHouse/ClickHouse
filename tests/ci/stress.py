@@ -387,6 +387,7 @@ def main():
                     # Use system database to avoid CREATE/DROP DATABASE queries
                     "--database=system",
                     "--hung-check",
+                    "--capture-client-stacktrace",
                     "--report-logs-stats",
                     "00001_select_1",
                 ]
