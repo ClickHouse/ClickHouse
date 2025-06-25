@@ -4101,7 +4101,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     }
 
     if (shared->local_read_throttler)
-        shared->local_read_throttler->setMaxSpeed(read_bandwidth);
+        std::static_pointer_cast<Throttler>(shared->local_read_throttler)->setMaxSpeed(read_bandwidth);
 
     if (write_bandwidth)
     {
@@ -4111,7 +4111,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     }
 
     if (shared->local_write_throttler)
-        shared->local_write_throttler->setMaxSpeed(write_bandwidth);
+        std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
 }
 
 bool Context::hasDistributedDDL() const
