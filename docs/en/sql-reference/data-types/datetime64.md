@@ -41,7 +41,7 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from integer interpreted as number of microseconds since 1970-01-01.
 -- - from string,
 INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
