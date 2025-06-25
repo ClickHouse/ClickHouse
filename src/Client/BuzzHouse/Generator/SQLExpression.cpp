@@ -941,7 +941,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const uint32_t cast_expr = 25 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t unary_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t interval_expr = 5 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
-    const uint32_t columns_expr = 10 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->allow_not_deterministic);
+    const uint32_t columns_expr = 10
+        * static_cast<uint32_t>(this->fc.max_depth > this->depth
+                                && (this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate));
     const uint32_t cond_expr = 10 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
     const uint32_t case_expr = 10 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
     const uint32_t subquery_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->allow_subqueries);
@@ -952,7 +954,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->levels[this->current_level].allow_window_funcs
                                 && !this->levels[this->current_level].inside_aggregate);
     const uint32_t table_star_expr = 10
-        * static_cast<uint32_t>(this->allow_not_deterministic
+        * static_cast<uint32_t>((this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr;
