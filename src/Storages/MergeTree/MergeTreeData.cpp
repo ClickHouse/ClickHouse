@@ -8315,9 +8315,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
-    for (const auto & disk : getStoragePolicy()->getDisks())
-        disk->onFreeze(backup_path);
-
     PartitionCommandsResultInfo result;
 
     size_t parts_processed = 0;

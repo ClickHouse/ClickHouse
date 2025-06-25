@@ -938,6 +938,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, global_profiler_real_time_period_ns, 0, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, 0, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
+    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
     Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
@@ -1226,6 +1227,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
+            {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
