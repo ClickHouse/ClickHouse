@@ -491,9 +491,7 @@ void ReadFromRemote::addLazyPipe(
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    std::shared_ptr<const ActionsDAG> pushed_down_filters;
-    if (filter_actions_dag)
-        pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
+    std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
     const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);

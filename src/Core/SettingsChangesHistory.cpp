@@ -69,10 +69,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-            {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -96,6 +95,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            {"format_schema_source", "file", "file", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
