@@ -8,7 +8,6 @@
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
@@ -59,7 +58,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -70,12 +68,9 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
-#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/SelectQueryInfo.h>
-#include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
 #include <iostream>
@@ -108,7 +103,7 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsDialect dialect;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -346,8 +341,6 @@ ClientBase::ClientBase(
     : stdin_fd(in_fd_)
     , stdout_fd(out_fd_)
     , stderr_fd(err_fd_)
-    , cmd_settings(std::make_unique<Settings>())
-    , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
@@ -847,11 +840,10 @@ void ClientBase::initClientContext()
     client_context->setQueryParameters(query_parameters);
 }
 
-bool ClientBase::isFileDescriptorSuitableForInput(int fd)
+bool ClientBase::isRegularFile(int fd)
 {
     struct stat file_stat;
-    return fstat(fd, &file_stat) == 0
-        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+    return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -871,7 +863,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "Vertical";
         is_default_format = false;
     }
-    else if (isFileDescriptorSuitableForInput(stdout_fd))
+    else if (isRegularFile(stdout_fd))
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
@@ -907,7 +899,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "auto";
+            default_input_format = "TSV";
     }
     else
     {
@@ -915,7 +907,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
-            default_input_format = "auto";
+            default_input_format = "TSV";
 
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
@@ -1678,21 +1670,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 {
-    if (!client_context->hasInsertionTable())
+    if (!client_context->hasInsertionTable() && insert_query.table)
     {
-        if  (insert_query.table)
+        String table = insert_query.table->as<ASTIdentifier &>().shortName();
+        if (!table.empty())
         {
-            String table = insert_query.table->as<ASTIdentifier &>().shortName();
-            if (!table.empty())
-            {
-                String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-                client_context->setInsertionTable(StorageID(database, table));
-            }
-        }
-        else if (insert_query.table_function)
-        {
-            String table_function = insert_query.table_function->as<ASTFunction &>().name;
-            client_context->setInsertionTable(StorageID(ITableFunction::getDatabaseName(), table_function));
+            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
+            client_context->setInsertionTable(StorageID(database, table));
         }
     }
 }
@@ -1983,7 +1967,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);
 }
 
-void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -2136,12 +2120,10 @@ void ClientBase::processParsedSingleQuery(
 {
     resetOutput();
     have_error = false;
-    error_code = 0;
     cancelled = false;
     cancelled_printed = false;
     client_exception.reset();
     server_exception.reset();
-    client_context->setInsertionTable(StorageID::createEmpty());
 
     if (is_interactive)
     {
@@ -2465,6 +2447,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2518,19 +2501,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
-                have_error |= buzz_house;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2589,7 +2569,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (query_fuzzer_runs)
                 {
-                    if (!processWithASTFuzzer(full_query))
+                    if (!processWithFuzzing(full_query))
                         return false;
 
                     this_query_begin = this_query_end;
@@ -2741,7 +2721,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     server_exception.reset();
 
                     have_error = false;
-                    error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
@@ -2762,13 +2741,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         all_queries_end,
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
-                }
-
-                if (buzz_house && have_error)
-                {
-                    // Test if error is disallowed by BuzzHouse
-                    const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-                    error_code = exception ? exception->code() : 0;
                 }
 
                 // Report error.
@@ -2792,6 +2764,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
+    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2807,7 +2780,7 @@ bool ClientBase::processQueryText(const String & text)
 
     if (query_fuzzer_runs)
     {
-        processWithASTFuzzer(text);
+        processWithFuzzing(text);
         return true;
     }
 
@@ -2849,7 +2822,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage->engine->name.contains("MergeTree"))
         return false;
 
-    auto all_changed = cmd_merge_tree_settings->changes();
+    auto all_changed = cmd_merge_tree_settings.changes();
     if (all_changed.begin() == all_changed.end())
         return false;
 
@@ -2997,14 +2970,14 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description)
 {
     if (allow_repeated_settings)
-        cmd_settings->addToProgramOptionsAsMultitokens(options_description.main_description.value());
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
     else
-        cmd_settings->addToProgramOptions(options_description.main_description.value());
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
         auto & main_options = options_description.main_description.value();
-        cmd_merge_tree_settings->addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
+        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
     }
 }
 
@@ -3446,7 +3419,7 @@ void ClientBase::runNonInteractive()
         {
             if (query_fuzzer_runs)
             {
-                if (!processWithASTFuzzer(query))
+                if (!processWithFuzzing(query))
                     return;
             }
             else
@@ -3464,7 +3437,7 @@ void ClientBase::runNonInteractive()
         String text;
         readStringUntilEOF(text, in);
         if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
+            processWithFuzzing(text);
         else
             processQueryText(text);
     }

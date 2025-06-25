@@ -132,7 +132,7 @@ def test_replicated(started_cluster):
         )
 
     do_create_table()
-    node1.query_with_retry(f"DROP TABLE r.{table_name} SYNC")
+    node1.query(f"DROP TABLE r.{table_name} SYNC")
     do_create_table()
 
     assert '"processing_threads_num":16' in node1.query(
@@ -164,7 +164,7 @@ def test_replicated(started_cluster):
         time.sleep(1)
     assert expected_rows == get_count()
 
-    node1.query_with_retry(f"DROP DATABASE {db_name}")
+    node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
 
 
 def test_bad_settings(started_cluster):
@@ -657,7 +657,7 @@ def test_registry(started_cluster):
     assert uuid1 in str(registry)
     assert uuid2 in str(registry)
 
-    node1.query_with_retry(f"DROP TABLE {db_name}.{table_name_2} SYNC")
+    node1.query(f"DROP TABLE {db_name}.{table_name_2} SYNC")
 
     assert zk.exists(keeper_path) is not None
     registry, stat = zk.get(f"{keeper_path}/registry/")
@@ -673,10 +673,6 @@ def test_registry(started_cluster):
     for elem in expected:
         assert elem in str(registry)
 
-    # drop the table to assert that the registry is removed from zookeeper
-    node1.query_with_retry(f"DROP TABLE {db_name}.{table_name} SYNC")
+    node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
+
     assert zk.exists(keeper_path) is None
-
-    # finally drop and clean up the database
-    node1.query_with_retry(f"DROP DATABASE {db_name}")
-

@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -53,7 +52,7 @@ public:
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_);
 
-        bool isFinished();
+        bool isFinished() const;
 
         ObjectInfoPtr next(size_t processor) override;
 
@@ -87,7 +86,7 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        Source::ObjectInfos object_infos;
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
@@ -107,16 +106,16 @@ public:
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(mutex);
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(mutex);
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
+        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
 
         struct NextKeyFromBucket
         {
@@ -124,7 +123,7 @@ public:
             FileMetadataPtr file_metadata;
             ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
         };
-        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
+        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -142,6 +141,8 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
+
+        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
@@ -154,7 +155,6 @@ public:
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        FormatParserGroupPtr parser_group_,
         const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
@@ -171,8 +171,6 @@ public:
     String getName() const override;
 
     Chunk generate() override;
-
-    void onFinish() override { parser_group->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -203,7 +201,6 @@ private:
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    FormatParserGroupPtr parser_group;
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;

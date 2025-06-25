@@ -9,7 +9,6 @@
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -130,18 +129,16 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 }
 
-bool ObjectStorageQueueSource::FileIterator::isFinished()
+bool ObjectStorageQueueSource::FileIterator::isFinished() const
 {
-    std::lock_guard lock(mutex);
-    LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
-    return iterator_finished
-        && std::all_of(listed_keys_cache.begin(), listed_keys_cache.end(), [](const auto & v) { return v.second.keys.empty(); })
-        && objects_to_retry.empty();
+     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
+     return iterator_finished
+         && std::all_of(listed_keys_cache.begin(), listed_keys_cache.end(), [](const auto & v) { return v.second.keys.empty(); })
+         && objects_to_retry.empty();
 }
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
-    std::lock_guard lock(next_mutex);
     /// Copied from StorageObjectStorageSource::estimateKeysCount().
     if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
         return std::numeric_limits<size_t>::max();
@@ -459,7 +456,6 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
-    std::lock_guard lock(mutex);
     for (const auto & [processor, holders] : bucket_holders)
     {
         LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
@@ -712,7 +708,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
-    FormatParserGroupPtr parser_group_,
     const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
@@ -733,7 +728,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
@@ -857,11 +851,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_storage,
                 read_from_format_info,
                 format_settings,
+                nullptr,
                 context,
                 nullptr,
                 log,
                 max_block_size,
-                parser_group,
+                context->getSettingsRef()[Setting::max_parsing_threads].value,
                 /* need_only_count */ false);
 
             if (!reader)
@@ -875,17 +870,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             if (commit_settings.max_processed_files_before_commit)
             {
-                auto old_processed_files = progress->processed_files.fetch_add(1);
-                if (old_processed_files >= commit_settings.max_processed_files_before_commit)
+                std::lock_guard lock(progress->processed_files_mutex);
+                if (progress->processed_files.load(std::memory_order_relaxed) >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_TRACE(log, "Number of max processed files before commit reached "
                             "(rows: {}, bytes: {}, files: {}, time: {})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
-                    --progress->processed_files;
                     file_iterator->returnForRetry(reader.getObjectInfo(), file_metadata);
                     break;
+                }
+                else
+                {
+                    progress->processed_files += 1;
                 }
             }
 
@@ -960,14 +958,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .size = reader.getObjectInfo()->metadata->size_bytes
                 }, getContext());
 
             return chunk;

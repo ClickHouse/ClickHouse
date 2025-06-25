@@ -1,53 +1,52 @@
 #include "NativeORCBlockInputFormat.h"
 
 #if USE_ORC
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/DateLUTImpl.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/NestedUtils.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/SharedThreadPools.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/castColumn.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#include <base/MemorySanitizer.h>
-#include <orc/MemoryPool.hh>
-#include <orc/Vector.hh>
-#include <Common/Allocator.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/memory.h>
+#    include <Columns/ColumnDecimal.h>
+#    include <Columns/ColumnFixedString.h>
+#    include <Columns/ColumnMap.h>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnsCommon.h>
+#    include <Columns/ColumnsDateTime.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Common/DateLUTImpl.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeDate32.h>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeFixedString.h>
+#    include <DataTypes/DataTypeIPv4andIPv6.h>
+#    include <DataTypes/DataTypeLowCardinality.h>
+#    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNested.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <DataTypes/NestedUtils.h>
+#    include <Formats/FormatFactory.h>
+#    include <Formats/SchemaInferenceUtils.h>
+#    include <Formats/insertNullAsDefaultIfNeeded.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <IO/SharedThreadPools.h>
+#    include <IO/WriteHelpers.h>
+#    include <IO/copyData.h>
+#    include <Interpreters/Set.h>
+#    include <Interpreters/castColumn.h>
+#    include <Storages/MergeTree/KeyCondition.h>
+#    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#    include <base/MemorySanitizer.h>
+#    include <orc/MemoryPool.hh>
+#    include <orc/Vector.hh>
+#    include <Common/Allocator.h>
+#    include <Common/logger_useful.h>
+#    include <Common/quoteString.h>
 
-#include "ArrowBufferedStreams.h"
+#    include "ArrowBufferedStreams.h"
 
-#include <boost/algorithm/string.hpp>
+#    include <boost/algorithm/string.hpp>
 
 
 namespace
@@ -58,26 +57,13 @@ class MemoryPool : public orc::MemoryPool
 public:
     char * malloc(uint64_t size) override
     {
-        void * ptr = ::malloc(size);
-        if (ptr)
-        {
-            AllocationTrace trace;
-            size_t actual_size = Memory::trackMemory(size, trace);
-            trace.onAlloc(ptr, actual_size);
-        }
-
+        auto * ptr = ::malloc(size);
         /// For nullable columns some of the values will not be initialized.
         __msan_unpoison(ptr, size);
         return static_cast<char *>(ptr);
     }
 
-    void free(char * ptr) override
-    {
-        AllocationTrace trace;
-        size_t actual_size = Memory::untrackMemory(ptr, trace);
-        trace.onFree(ptr, actual_size);
-        ::free(ptr);
-    }
+    void free(char * p) override { ::free(p); }
 };
 
 }
@@ -914,7 +900,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
             if (tuple_type)
             {
-                if (tuple_type->hasExplicitNames())
+                if (tuple_type->haveExplicitNames())
                 {
                     std::unordered_map<String, size_t> orc_field_name_to_index;
                     orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
@@ -958,7 +944,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
-    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_)
+    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_)
     : IInputFormat(std::move(header_), &in_)
     , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
@@ -966,7 +952,6 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     , skip_stripes(format_settings.orc.skip_stripes)
     , use_prefetch(use_prefetch_)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , parser_group(std::move(parser_group_))
 {
 }
 
@@ -975,11 +960,6 @@ void NativeORCBlockInputFormat::prepareFileReader()
     getFileReader(*in, file_reader, *memory_pool, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
     if (is_stopped)
         return;
-
-    std::call_once(parser_group->init_flag, [&]
-        {
-            parser_group->initKeyCondition(getPort().getHeader());
-        });
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1005,8 +985,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
-    if (format_settings.orc.filter_push_down && parser_group->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*parser_group->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+    if (format_settings.orc.filter_push_down && key_condition && !sargs)
+        sargs = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
@@ -1899,7 +1879,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
-                    if (tuple_type_hint->hasExplicitNames())
+                    if (tuple_type_hint->haveExplicitNames())
                     {
                         auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
                         if (pos)
