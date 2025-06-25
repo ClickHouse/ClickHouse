@@ -10,6 +10,7 @@
 #include "Interpreters/Context_fwd.h"
 #include "Storages/ColumnsDescription.h"
 #include <Storages/System/StorageSystemUnicode.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -142,7 +143,15 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     return ColumnsDescription::fromNamesAndTypes(names_and_types);
 }
 
-void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+Block StorageSystemUnicode::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "code_point" },
+        { {}, std::make_shared<DataTypeInt32>(), "code_point_value" },
+    };
+}
+
+static ColumnPtr getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context)
 {
     icu::UnicodeSet all_unicode(0x0000, 0x10FFFF);
     // Remove surrogate pairs
@@ -156,15 +165,44 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
     }
     icu::UnicodeSetIterator iter(all_unicode);
 
+    MutableColumnPtr code_point_column = ColumnString::create();
+    MutableColumnPtr code_point_value_column = ColumnInt32::create();
+
+    while (iter.next())
+    {
+        UChar32 code = iter.getCodepoint();
+        icu::UnicodeString u_value(code);
+        String value;
+        u_value.toUTF8String(value);
+        code_point_column->insert(value);
+        code_point_value_column->insert(code);
+    }
+
+    Block filter_block
+    {
+        ColumnWithTypeAndName(std::move(code_point_column), std::make_shared<DataTypeString>(), "code_point"),
+        ColumnWithTypeAndName(std::move(code_point_value_column), std::make_shared<DataTypeInt32>(), "code_point_value")
+    };
+
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, filter_block, context);
+    return filter_block.getByPosition(1).column; // Return code_point_value column
+}
+
+void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+{
     // Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_name_buffer[100];
     UErrorCode err_code;
 
     auto prop_names = getPropNames();
-    while (iter.next())
+    
+    // Get filtered code points based on predicate
+    ColumnPtr filtered_code_points = getFilteredCodePoints(predicate, context);
+    
+    for (size_t i = 0; i < filtered_code_points->size(); ++i)
     {
-        UChar32 code = iter.getCodepoint();
+        UChar32 code = filtered_code_points->getInt(i);
         int index = 0;
 
         icu::UnicodeString u_value(code);
@@ -334,9 +372,9 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr, co
                 Array arr;
                 if (err_code == U_ZERO_ERROR)
                 {
-                    for (int32_t i = 0; i < num_scripts; ++i)
+                    for (int32_t j = 0; j < num_scripts; ++j)
                     {
-                        arr.push_back(scx_val_array[i]);
+                        arr.push_back(scx_val_array[j]);
                     }
                 }
                 assert_cast<ColumnArray &>(*res_columns[index++]).insert(arr);
