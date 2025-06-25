@@ -457,11 +457,6 @@ void S3ObjectStorage::copyObject( // NOLINT
         object_to_attributes);
 }
 
-void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
-{
-    s3_settings.set(std::move(s3_settings_));
-}
-
 void S3ObjectStorage::shutdown()
 {
     /// This call stops any next retry attempts for ongoing S3 requests.
