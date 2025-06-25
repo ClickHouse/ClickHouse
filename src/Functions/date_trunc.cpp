@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool function_date_trunc_use_datetime64_and_date32_return_type_on_datetime64_and_date32_arguments;
+    extern const SettingsUInt64 function_date_trunc_return_type_behavior;
 }
 
 namespace
@@ -97,7 +97,7 @@ public:
             /// If we have a DateTime64 or Date32 as an input, it can be negative.
             /// In this case, we should provide the corresponding return type, which supports negative values.
             /// For compatibility, we do it under a setting.
-            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && context->getSettingsRef()[Setting::function_date_trunc_use_datetime64_and_date32_return_type_on_datetime64_and_date32_arguments])
+            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior] == 0)
             {
                 if (result_type == ResultType::Date)
                     result_type = Date32;
