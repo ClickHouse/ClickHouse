@@ -514,30 +514,6 @@ void S3ObjectStorage::applyNewSettings(
     s3_settings.set(std::move(modified_settings));
 }
 
-std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    const auto & settings = context->getSettingsRef();
-    std::unique_ptr<S3Settings> new_s3_settings = std::make_unique<S3Settings>();
-
-    new_s3_settings->loadFromConfigForObjectStorage(
-        config, config_prefix, context->getSettingsRef(), uri, settings[Setting::s3_validate_request_settings]);
-
-    new_s3_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
-
-    auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
-
-    auto new_uri{uri};
-    new_uri.bucket = new_namespace;
-
-    return std::make_unique<S3ObjectStorage>(
-        std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
-}
-
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
 {
     if (!key_generator)

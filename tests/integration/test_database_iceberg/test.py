@@ -149,7 +149,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -373,6 +373,24 @@ def test_tables_with_same_location(started_cluster):
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
+
+
+def test_backup_database(started_cluster):
+    node = started_cluster.instances["node1"]
+    create_clickhouse_iceberg_database(started_cluster, node, "backup_database")
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node.query("SHOW DATABASES")
+
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    assert (
+        node.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
+    )
 
 
 def test_non_existing_tables(started_cluster):
