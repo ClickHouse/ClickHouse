@@ -1794,7 +1794,18 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
         if (current_limits.max_elements != main_priority->getElementsLimit(cache_lock))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in elements number");
 
-        modified_size_limit = doDynamicResizeImpl(current_limits, desired_limits, result_limits, cache_lock);
+        try
+        {
+            modified_size_limit = doDynamicResizeImpl(current_limits, desired_limits, result_limits, cache_lock);
+        }
+        catch (...)
+        {
+            LOG_ERROR(
+                log, "Unexpected error during dynamic cache resize: {}",
+                getCurrentExceptionMessage(true));
+
+            throw;
+        }
     }
 
     if (modified_size_limit)
@@ -1859,6 +1870,7 @@ bool FileCache::doDynamicResizeImpl(
     if (status != IFileCachePriority::CollectStatus::SUCCESS)
     {
         result_limits = desired_limits;
+        LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
         return false;
     }
 
@@ -1874,6 +1886,8 @@ bool FileCache::doDynamicResizeImpl(
             cache_lock);
 
         result_limits = desired_limits;
+
+        LOG_INFO(log, "Nothing needs to be evicted for new size limits");
         return true;
     }
 
@@ -1953,52 +1967,40 @@ bool FileCache::doDynamicResizeImpl(
         cache_lock);
 
     /// Add failed candidates back to queue.
-    try
+    for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
     {
-        for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
+        chassert(!key_candidates.empty());
+
+        auto locked_key = key_metadata->tryLock();
+        if (!locked_key)
         {
-            chassert(!key_candidates.empty());
-
-            auto locked_key = key_metadata->tryLock();
-            if (!locked_key)
-            {
-                /// Key cannot be removed,
-                /// because if we failed to remove something from it above,
-                /// then we did not remove it from key metadata,
-                /// so key lock must remain valid.
-                LOG_ERROR(log, "Unexpected state: key {} does not exist", key_metadata->key);
-                chassert(false);
-                continue;
-            }
-
-            for (const auto & candidate : key_candidates)
-            {
-                const auto & file_segment = candidate->file_segment;
-
-                LOG_DEBUG(
-                    log, "Adding back file segment after failed eviction: {}:{}, size: {}",
-                    file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
-
-                auto queue_iterator = main_priority->add(
-                    key_metadata,
-                    file_segment->offset(),
-                    file_segment->getDownloadedSize(),
-                    getCommonUser(),
-                    cache_lock,
-                    false);
-
-                file_segment->setQueueIterator(queue_iterator);
-            }
+            /// Key cannot be removed,
+            /// because if we failed to remove something from it above,
+            /// then we did not remove it from key metadata,
+            /// so key lock must remain valid.
+            LOG_ERROR(log, "Unexpected state: key {} does not exist", key_metadata->key);
+            chassert(false);
+            continue;
         }
-    }
-    catch (...)
-    {
-        LOG_ERROR(
-            log, "Unexpected error during dynamic cache resize. "
-            "This can lead to inconsistent or broken cache state. Error: {}",
-            getCurrentExceptionMessage(true));
 
-        throw;
+        for (const auto & candidate : key_candidates)
+        {
+            const auto & file_segment = candidate->file_segment;
+
+            LOG_DEBUG(
+                log, "Adding back file segment after failed eviction: {}:{}, size: {}",
+                file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
+
+            auto queue_iterator = main_priority->add(
+                key_metadata,
+                file_segment->offset(),
+                file_segment->getDownloadedSize(),
+                getCommonUser(),
+                cache_lock,
+                false);
+
+            file_segment->setQueueIterator(queue_iterator);
+        }
     }
 
     return true;
