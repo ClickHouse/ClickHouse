@@ -315,6 +315,13 @@ private:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
+    /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
+    ///
+    /// If true, we can apply an important performance optimization:
+    /// - The aggregation logic can be inlined, meaning each row is aggregated immediately during hash table probing.
+    /// - There's no need to allocate and maintain full aggregation state.
+    bool is_simple_count = false;
+
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.

@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsBool s3_slow_all_threads_after_network_error;
 }
 
 namespace S3AuthSetting
@@ -49,7 +50,7 @@ namespace S3AuthSetting
 
 namespace S3RequestSetting
 {
-    extern const S3RequestSettingsBoolAuto allow_native_copy;
+    extern const S3RequestSettingsBool allow_native_copy;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 http_max_fields;
     extern const S3RequestSettingsUInt64 http_max_field_name_size;
@@ -88,6 +89,7 @@ namespace
             context->getRemoteHostFilter(),
             static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
             static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
@@ -148,7 +150,7 @@ BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
-    std::optional<bool> allow_s3_native_copy,
+    bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
@@ -166,9 +168,7 @@ BackupReaderS3::BackupReaderS3(
     }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-
-    if (allow_s3_native_copy)
-        s3_settings.request_settings[S3RequestSetting::allow_native_copy] = *allow_s3_native_copy;
+    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
@@ -247,7 +247,7 @@ BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
-    std::optional<bool> allow_s3_native_copy,
+    bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -267,10 +267,7 @@ BackupWriterS3::BackupWriterS3(
     }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-
-    if (allow_s3_native_copy)
-        s3_settings.request_settings[S3RequestSetting::allow_native_copy] = *allow_s3_native_copy;
-
+    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);

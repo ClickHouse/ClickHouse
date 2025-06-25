@@ -121,10 +121,12 @@ private:
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context_,
+    MultiVersion<Macros>::Version macros_,
     const String & config_prefix)
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
     , log(getLogger("ClusterDiscovery"))
+    , macros(macros_)
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -735,7 +737,8 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
 {
     std::lock_guard lock(mutex);
-    auto it = cluster_impls.find(cluster_name);
+    auto expanded_cluster_name = macros->expand(cluster_name);
+    auto it = cluster_impls.find(expanded_cluster_name);
     if (it == cluster_impls.end())
         return nullptr;
     return it->second;

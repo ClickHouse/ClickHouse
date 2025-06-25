@@ -107,6 +107,7 @@ add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
 add_subdirectory (keeper-data-dumper)
+add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
 add_subdirectory (server)
@@ -152,21 +153,41 @@ if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
 endif()
 clickhouse_target_link_split_lib(clickhouse install)
 
+macro(clickhouse_program_alias alias)
+    message(STATUS "Adding alias ${alias}")
+    add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
+    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+endmacro()
+
 set (CLICKHOUSE_BUNDLE)
-macro(clickhouse_program_install name lib_name)
+function(clickhouse_program_install name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     foreach(alias ${ARGN})
-        message(STATUS "Adding alias ${alias} for ${name}")
-        add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_program_alias(${alias})
     endforeach()
-endmacro()
+endfunction()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
+endif ()
+
+if (TARGET ch_rust::chdig)
+    clickhouse_program_alias(clickhouse-chdig)
+    clickhouse_program_alias(chdig)
+else()
+    message(STATUS "Adding dummy chdig targets (for nfpm)")
+    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
+        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+        install(FILES ${chdig_path}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                        GROUP_READ GROUP_EXECUTE
+                        WORLD_READ WORLD_EXECUTE
+        )
+    endforeach()
 endif ()
 
 clickhouse_program_install(clickhouse-benchmark benchmark)
@@ -188,6 +209,7 @@ clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-
 
 if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
+    clickhouse_program_install(clickhouse-keeper-utils keeper-utils)
 endif ()
 
 if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
@@ -198,6 +220,7 @@ if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -224,13 +247,13 @@ endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)
     add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-style/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
+        COMMAND "${CMAKE_SOURCE_DIR}/utils/check-large-objects.sh" "${CMAKE_BINARY_DIR}")
 endif ()
 
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
-    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
+    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 

@@ -173,6 +173,36 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
+/// Radix sort treats all positive NaNs to be greater than all numbers.
+/// And all negative NaNs to be lower that all numbers.
+/// Standard is not specifying which sign NaN should have, so after sort NaNs can
+/// be grouped on any side of the array or on both.
+/// Move all NaNs to the requested part of result.
+template <typename T>
+void moveNanToRequestedSide(
+    typename ColumnVector<T>::Permutation::iterator begin,
+    typename ColumnVector<T>::Permutation::iterator end,
+    const typename ColumnVector<T>::Container & data,
+    size_t data_size,
+    bool reverse,
+    int nan_direction_hint
+)
+{
+    const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
+    size_t nans_to_move = 0;
+
+    for (size_t i = 0; i < data_size; ++i)
+    {
+        if (isNaN(data[begin[is_nulls_last ? i : data_size - 1 - i]]))
+            ++nans_to_move;
+        else
+            break;
+    }
+
+    if (nans_to_move)
+        std::rotate(begin, begin + (is_nulls_last ? nans_to_move : data_size - nans_to_move), end);
+}
+
 #if USE_EMBEDDED_COMPILER
 
 template <typename T>
@@ -282,26 +312,8 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
-
-                /// Radix sort treats all positive NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
-
-                    for (size_t i = 0; i < data_size; ++i)
-                    {
-                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-
-                    if (nans_to_move)
-                    {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
-                    }
-                }
+                if constexpr (is_floating_point<T>)
+                    moveNanToRequestedSide<T>(res.begin(), res.end(), data, data_size, reverse, nan_direction_hint);
 
                 return;
             }
@@ -333,16 +345,16 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
         {
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
             bool use_radix_sort = (sort_is_stable && ascending && !is_floating_point<T>) || !sort_is_stable;
-            size_t size = end - begin;
+            size_t range_size = end - begin;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 bool try_sort = trySort(begin, end, pred);
                 if (try_sort)
                     return;
 
-                PaddedPODArray<ValueWithIndex<T>> pairs(size);
+                PaddedPODArray<ValueWithIndex<T>> pairs(range_size);
                 size_t index = 0;
 
                 for (auto * it = begin; it != end; ++it)
@@ -351,27 +363,9 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
                     ++index;
                 }
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), size, reverse, begin);
-
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
-
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-
-                    if (nans_to_move)
-                    {
-                        std::rotate(begin, begin + (reverse ? nans_to_move : size - nans_to_move), end);
-                    }
-                }
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), range_size, reverse, begin);
+                if constexpr (is_floating_point<T>)
+                    moveNanToRequestedSide<T>(begin, end, data, range_size, reverse, nan_direction_hint);
 
                 return;
             }

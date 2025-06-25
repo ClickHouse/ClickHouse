@@ -52,6 +52,8 @@ do
          ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT") ||
+        (${GREP_CMD} -q -i -F 'MIT License' "$LIB_LICENSE" &&
+         echo "MIT") ||
         (${GREP_CMD} -q -F 'PostgreSQL' "$LIB_LICENSE" &&
          echo "PostgreSQL") ||
         (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software for any purpose' "$LIB_LICENSE" &&
@@ -97,4 +99,4 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs ${GREP_CMD} 'license = ' | (${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
+find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs ${GREP_CMD} 'license = "' | (${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)

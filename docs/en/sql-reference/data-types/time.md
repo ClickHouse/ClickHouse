@@ -58,7 +58,7 @@ SELECT * FROM dt;
 ``` text
    ┌──────time─┬─event_id─┐
 1. │ 100:00:00 │        1 │
-2. │ 003:27:33 │        3 │
+2. │  03:27:33 │        3 │
    └───────────┴──────────┘
 ```
 
@@ -94,7 +94,7 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 
 ``` text
    ┌────column─┬─x────┐
-1. │ 018:55:15 │ Time │
+1. │  18:55:15 │ Time │
    └───────────┴──────┘
 ```
 
