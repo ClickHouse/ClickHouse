@@ -71,10 +71,6 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context) override
-    {
-        setKeyConditionImpl(filter_actions_dag, context, header);
-    }
 private:
     Chunk read() override;
 
