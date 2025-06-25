@@ -1,13 +1,18 @@
 -- { echo ON }
 drop table if exists a;
 drop table if exists b;
+drop table if exists local_sales;
+drop table if exists distributed_sales;
 -- create table
 CREATE TABLE a (UserID UInt32, EventDate Date, Amount Float64, Device String) ENGINE = MergeTree() ORDER BY (UserID, EventDate) PARTITION BY toYYYYMM(EventDate);
 CREATE TABLE b (OrderID UInt64, UserID UInt32, Product String, Quantity UInt16, OrderTime DateTime) ENGINE = MergeTree() ORDER BY (OrderID, UserID) PARTITION BY toYYYYMM(OrderTime);
+CREATE TABLE local_sales ( event_time DateTime, product_id UInt32, user_id UInt64, amount Float32, category String ) ENGINE = MergeTree() ORDER BY (event_time, category);
+CREATE TABLE distributed_sales AS local_sales ENGINE = Distributed( 'test_cluster_two_shards_localhost', currentDatabase(), 'local_sales', rand());
 
 -- prepare data
 INSERT INTO a VALUES (1, '2023-01-01', 100.5, 'Mobile'), (2, '2023-01-02', 200.3, 'Desktop'), (3, '2023-01-03', 50.7, 'Tablet'), (4, '2023-01-04', 300.0, 'Mobile'), (5, '2023-01-05', 150.2, 'Desktop'), (6, '2023-02-10', 88.9, 'Mobile'), (7, '2023-02-15', 420.8, 'Tablet'), (8, '2023-03-01', 75.0, 'Desktop'), (9, '2023-03-05', 999.9, 'Mobile'), (10, '2023-03-10', 240.6, 'Tablet');
 INSERT INTO b VALUES (1001, 1, 'Laptop', 2, '2023-01-01 10:00:00'), (1002, 2, 'Phone', 1, '2023-01-02 11:00:00'), (1003, 3, 'Monitor', 3, '2023-01-03 12:00:00'), (1004, 4, 'Keyboard', 4, '2023-01-04 13:00:00'), (1005, 5, 'Mouse', 2, '2023-01-05 14:00:00'), (1006, 6, 'Printer', 1, '2023-02-10 15:00:00'), (1007, 7, 'SSD', 5, '2023-02-15 16:00:00'), (1008, 8, 'RAM', 3, '2023-03-01 17:00:00'), (1009, 9, 'GPU', 2, '2023-03-05 18:00:00'), (1010, 10, 'CPU', 4, '2023-03-10 19:00:00');
+INSERT INTO distributed_sales WITH toDateTime('2023-01-01 00:00:00') AS base_time, 10000 AS rows_count SELECT base_time + (number * 10) AS event_time, number % 10000 AS product_id, number % 100000 AS user_id, (rand() % 1000) / 10.0 AS amount, ['Electronics', 'Clothing', 'Food', 'Books', 'Home'][rand() % 5 + 1] AS category FROM numbers(rows_count);
 
 -- 1. test simple order by limit(has rewrite)
 SELECT * FROM a ORDER BY UserID DESC LIMIT 3 settings query_plan_rewrite_order_by_limit=1;
@@ -36,5 +41,14 @@ SELECT * FROM a PREWHERE UserID>1 ORDER BY UserID DESC LIMIT 3 settings query_pl
 explain syntax SELECT * FROM a PREWHERE UserID>1 ORDER BY Amount DESC LIMIT 3 settings query_plan_rewrite_order_by_limit=1;
 explain syntax SELECT * FROM a PREWHERE UserID>1 ORDER BY Amount DESC LIMIT 3 settings query_plan_rewrite_order_by_limit=0;
 
+-- 6. test distributed table with order by limit
+select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
+select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
+explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=1;
+explain plan select * from distributed_sales  order by event_time limit 5 settings query_plan_rewrite_order_by_limit=0;
+
+
 drop table a;
 drop table b;
+drop table local_sales;
+drop table distributed_sales;
