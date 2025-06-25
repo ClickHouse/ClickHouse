@@ -1,10 +1,14 @@
 # docker build -t clickhouse/stateless-test .
-ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM ubuntu:22.04
+
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client /usr/share/clickhouse/ && chmod 777 /etc/clickhouse-* /usr/share/clickhouse \
+
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
@@ -19,46 +23,51 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # parallel - for perf tests
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
-# Install additional packages not included in test-base
 RUN apt-get update -y \
-    && apt-get install --yes --no-install-recommends \
-        awscli \
-        brotli \
-        lz4 \
-        expect \
-        bzip2 \
-        golang \
-        lsof \
-        mysql-client=8.0* \
-        ncdu \
-        netcat-openbsd \
-        odbcinst \
-        openjdk-11-jre-headless \
-        openssl \
-        postgresql-client \
-        python3 \
-        python3-pip \
-        qemu-user-static \
-        sqlite3 \
-        tree \
-        unixodbc \
-        rustc \
-        cargo \
-        file \
-        jq \
-        zip \
-        unzip \
-        p7zip-full \
-        xz-utils \
-        gnuplot \
-        imagemagick \
-        parallel \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-install-recommends \
+            git \
+            awscli \
+            brotli \
+            lz4 \
+            expect \
+            moreutils \
+            bzip2 \
+            bsdmainutils \
+            golang \
+            lsof \
+            mysql-client=8.0* \
+            ncdu \
+            netcat-openbsd \
+            nodejs \
+            npm \
+            odbcinst \
+            openjdk-11-jre-headless \
+            openssl \
+            postgresql-client \
+            python3 \
+            python3-pip \
+            qemu-user-static \
+            sqlite3 \
+            sudo \
+            tree \
+            unixodbc \
+            rustc \
+            cargo \
+            zstd \
+            file \
+            jq \
+            pv \
+            zip \
+            unzip \
+            p7zip-full \
+            curl \
+            wget \
+            xz-utils \
+            ripgrep \
+            gnuplot \
+            imagemagick \
+            parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -79,6 +88,9 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
   && sed -i 's"=libclickhouseodbc"=/usr/local/lib64/libclickhouseodbc"' /etc/odbcinst.ini \
   && rm -rf /tmp/clickhouse-odbc-tmp
+
+ENV TZ=Europe/Amsterdam
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
 
@@ -101,25 +113,12 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.34.0 \
-    && npm install -g tslib
+RUN npm install -g azurite@3.30.0 \
+    && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"
-
-#USER clickhouse
+USER clickhouse
 
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
-ENV PATH="/opt/gdb/bin:${PATH}"
-
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
-  /opt/openssl-fips/openssl.cnf \
-  /opt/openssl-fips/fipsmodule.cnf \
-  /opt/openssl-fips/fips.so \
-  \
-  /etc/ssl/
-
-# Make timezone and locale files writable to randomize them in tests
-RUN chmod 666 /etc/timezone /etc/localtime

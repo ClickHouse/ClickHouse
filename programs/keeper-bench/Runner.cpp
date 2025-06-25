@@ -41,7 +41,7 @@ namespace CurrentMetrics
 
 namespace DB::Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -576,7 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            DB::FormatParserGroup::singleThreaded(context->getSettingsRef()),
+            1,
+            std::nullopt,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);

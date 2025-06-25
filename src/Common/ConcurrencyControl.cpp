@@ -85,11 +85,15 @@ ConcurrencyControlRoundRobinScheduler::Allocation::~Allocation()
     return {}; // avoid unnecessary locking
 }
 
-[[nodiscard]] AcquiredSlotPtr ConcurrencyControlRoundRobinScheduler::Allocation::acquire()
+SlotCount ConcurrencyControlRoundRobinScheduler::Allocation::grantedCount() const
 {
-    auto result = tryAcquire();
-    chassert(result);
-    return result;
+    return granted.load();
+}
+
+SlotCount ConcurrencyControlRoundRobinScheduler::Allocation::allocatedCount() const
+{
+    std::unique_lock lock{mutex};
+    return allocated;
 }
 
 // Grant single slot to allocation returns true iff more slot(s) are required
@@ -251,11 +255,15 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
     return {}; // avoid unnecessary locking
 }
 
-[[nodiscard]] AcquiredSlotPtr ConcurrencyControlFairRoundRobinScheduler::Allocation::acquire()
+SlotCount ConcurrencyControlFairRoundRobinScheduler::Allocation::grantedCount() const
 {
-    auto result = tryAcquire();
-    chassert(result);
-    return result;
+    return noncompeting.load() + granted.load();
+}
+
+SlotCount ConcurrencyControlFairRoundRobinScheduler::Allocation::allocatedCount() const
+{
+    std::unique_lock lock{mutex};
+    return min + allocated;
 }
 
 // Grant single slot to allocation returns true iff more slot(s) are required

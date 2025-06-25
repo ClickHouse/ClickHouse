@@ -22,7 +22,13 @@ public:
       */
     CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types, const FormatSettings & format_settings_);
 
-    String getName() const override { return "CSV"; }
+    String getName() const override { return "CSVRowOutputFormat"; }
+
+    /// https://www.iana.org/assignments/media-types/text/csv
+    String getContentType() const override
+    {
+        return String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent");
+    }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

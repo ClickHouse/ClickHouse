@@ -29,7 +29,7 @@ It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -57,7 +57,7 @@ When creating an `AggregatingMergeTree` table, the same [clauses](../../../engin
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -78,7 +78,7 @@ In the results of `SELECT` query, the values of `AggregateFunction` type have im
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
-The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
+The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
 
 ```sql
 CREATE DATABASE test;
@@ -86,7 +86,7 @@ CREATE DATABASE test;
 
 Now create the table `test.visits` that contains the raw data:
 
-```sql
+``` sql
 CREATE TABLE test.visits
  (
     StartDate DateTime64 NOT NULL,
@@ -98,9 +98,9 @@ CREATE TABLE test.visits
 
 Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
 
-```sql
+``` sql
 CREATE TABLE test.agg_visits (
     StartDate DateTime64 NOT NULL,
     CounterID UInt64,
@@ -123,42 +123,23 @@ FROM test.visits
 GROUP BY StartDate, CounterID;
 ```
 
-Note that it is necessary to include the columns which are not being aggregated in the 
-`GROUP BY` statement. Alternatively, we can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) function to avoid having to do this:
-
-```sql
-CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
-AS SELECT
-    StartDate,
-    CounterID,
-    initializeAggregation('sumState', Sign) AS Visits,
-    initializeAggregation('uniqState', UserID) AS Users
-FROM test.visits;
-```
-
-:::note
-When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
-Each source row produces one row in the materialized view and the actual aggregation happens later when the
-`AggregatingMergeTree` merges parts with the same day.
-:::
-
 Insert data into the `test.visits` table:
 
-```sql
+``` sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
  VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
 ```
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
 
-To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.visits_mv`:
+To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
 ```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
     uniqMerge(Users) AS Users
-FROM test.visits_mv
+FROM test.agg_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
@@ -184,8 +165,6 @@ Run the `SELECT` query again, which will return the following output:
 │ 2022-11-26 07:00:31.000 │      5 │     1 │
 └─────────────────────────┴────────┴───────┘
 ```
-
-Note that the result is the same regardless of which method we used for creating the materialized view.
 
 ## Related Content {#related-content}
 
