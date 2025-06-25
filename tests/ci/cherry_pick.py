@@ -603,6 +603,7 @@ class CherryPickPRs:
         self.gh = gh
         self.repo_name = gh.get_repo(repo)
         self.dry_run = dry_run
+        self.error = None  # type: Optional[Exception]
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """
@@ -617,32 +618,49 @@ class CherryPickPRs:
         Ping stale cherry-pick PRs that are not updated for more than 30 hours.
         These PRs are probably stuck and require manual intervention.
         """
-        for pr in self.get_open_cherry_pick_prs():
-            # The `updated_at` is Optional[datetime]
-            cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
-            since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
-            if since_updated < self.STALE_THRESHOLD:
-                logging.info(
-                    "The cherry-pick PR #%s was updated %d seconds ago, "
-                    "waiting for the next running",
-                    pr.number,
-                    since_updated,
+        try:
+            prs = self.get_open_cherry_pick_prs()
+        except Exception as e:
+            logging.error("Error while getting open cherry-pick PRs: %s", e)
+            self.error = e
+            return
+        for pr in prs:
+            try:
+                self._ping_stale_pr(pr)
+            except Exception as e:
+                logging.error(
+                    "Error while pinging stale cherry-pick PR #%s: %s", pr.number, e
                 )
-                continue
-            assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
-            comment_body = (
-                f"Dear {assignees}, the PR is not updated for more than 30 hours. "
-                "Probably, it's stuck. Please, review the state following the "
-                "`Troubleshooting` section in the PR description."
-            )
-            if self.dry_run:
-                logging.info(
-                    "DRY RUN: would comment the cherry-pick PR #%s:\n",
-                    pr.number,
-                )
+                self.error = e
                 continue
 
-            pr.create_issue_comment(comment_body)
+    def _ping_stale_pr(self, pr: PullRequest) -> None:
+        # The `updated_at` is Optional[datetime]
+        cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
+        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
+        if since_updated < self.STALE_THRESHOLD:
+            logging.info(
+                "The cherry-pick PR #%s was updated %d seconds ago, "
+                "waiting for the next running",
+                pr.number,
+                since_updated,
+            )
+            return
+
+        assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
+        comment_body = (
+            f"Dear {assignees}, the PR is not updated for more than 30 hours. "
+            "Probably, it's stuck. Please, review the state following the "
+            "`Troubleshooting` section in the PR description."
+        )
+        if self.dry_run:
+            logging.info(
+                "DRY RUN: would comment the cherry-pick PR #%s:\n",
+                pr.number,
+            )
+            return
+
+        pr.create_issue_comment(comment_body)
 
 
 def parse_args():
@@ -699,17 +717,18 @@ def main():
     bpp.process_backports()
     cpp = CherryPickPRs(gh, args.repo, args.dry_run)
     cpp.ping_stale_cherry_pick_prs()
-    if bpp.error is not None:
+    errors = [e for e in (bpp.error, cpp.error) if e is not None]
+    if any(errors):
         logging.error("Finished successfully, but errors occurred!")
         if IS_CI:
             ci_buddy = CIBuddy()
             ci_buddy.post_job_error(
-                f"The backport process finished with errors: {bpp.error}",
+                f"The backport process finished with errors: {errors[0]}",
                 with_instance_info=True,
                 with_wf_link=True,
                 critical=True,
             )
-        raise bpp.error
+        raise errors[0]
 
 
 if __name__ == "__main__":
