@@ -228,29 +228,43 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     size_t current_color = 0;
     std::vector<Replxx::Color> color_stack;
 
-    for (const auto * it = begin; it != end; it++)
+    IParser::Pos highlight_token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
+    while (!highlight_token_iterator->isEnd())
     {
-        size_t pos2 = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), it - begin);
-
-        if (*it == '(')
+        std::cout << "Token: " << fmt::format("{}", highlight_token_iterator->type) << std::endl;
+        if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
         {
             color_stack.push_back(colormap[current_color % colormap.size()]);
             current_color++;
 
-            colors[pos2] = color_stack.back();
+            auto highlight_pos = highlight_token_iterator->begin - begin;
+
+            colors[highlight_pos] = color_stack.back();
+
+            ++highlight_token_iterator;
             continue;
         }
 
-        if (*it == ')')
+        if (highlight_token_iterator->type == TokenType::ClosingRoundBracket)
         {
             if (color_stack.empty())
+            {
+                ++highlight_token_iterator;
                 continue;
+            }
 
-            colors[pos2] = color_stack.back();
+            auto highlight_pos = highlight_token_iterator->begin - begin;
+            colors[highlight_pos] = color_stack.back();
             color_stack.pop_back();
 
+            ++highlight_token_iterator;
             continue;
         }
+
+        ++highlight_token_iterator;
+
+        while (highlight_token_iterator->type == TokenType::Semicolon)
+            ++highlight_token_iterator;
     }
 
     Token last_token = token_iterator.max();
