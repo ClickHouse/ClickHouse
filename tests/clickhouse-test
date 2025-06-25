@@ -2496,13 +2496,19 @@ class TestSuite:
         self.all_tests = self.apply_test_runs(all_tests)
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
-        for test_name in self.all_tests:
-            if self.is_sequential_test(test_name):
+        post_run_check_tests = []
+        for test_name, tags in self.all_tags.items():
+            if "post-run-check" in tags:
+                # post_run_check_tests are tests that supposed to run after all normal tests finished
+                post_run_check_tests.append(test_name)
+                continue
+            if self.is_sequential_test(test_name, tags):
                 if not args.no_sequential:
                     self.sequential_tests.append(test_name)
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+        self.sequential_tests.extend(post_run_check_tests)
 
     def apply_test_runs(self, all_tests):
         test_runs = self.args.test_runs
@@ -2523,7 +2529,13 @@ class TestSuite:
             return False
         return "long" in self.all_tags[test_name]
 
-    def is_sequential_test(self, test_name):
+    def is_sequential_test(self, test_name, tags=None):
+        if tags is not None:
+            return (
+                ("no-parallel" in tags)
+                or ("sequential" in tags)
+                or ("stateful" in tags)
+            )
         if args.sequential:
             if any(s in test_name for s in args.sequential):
                 return True
