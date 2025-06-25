@@ -26,7 +26,6 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
 #include "base/types.h"
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -127,26 +126,38 @@ void generateManifestFile(
     std::istringstream iss(schema_representation);
     avro::compileJsonSchema(iss, schema);
 
-    Apache::Iceberg::Manifest manifest;
+    const avro::NodePtr &root_schema = schema.root();
 
-    manifest.status = 1;
+    avro::GenericDatum manifest_datum(root_schema);
+    avro::GenericRecord& manifest = manifest_datum.value<avro::GenericRecord>();
 
-    manifest.snapshot_id.set_long(new_snapshot->getValue<int32_t>(MetadataGenerator::f_snapshot_id));
-    manifest.sequence_number.set_long(new_snapshot->getValue<int32_t>(MetadataGenerator::f_sequence_number));
-    manifest.file_sequence_number.set_long(0); // TODO: maybe fix this
+    manifest.field("status") = avro::GenericDatum(1);
 
-    Apache::Iceberg::DataFile & data_file = manifest.data_file;
+    int32_t snapshot_id = new_snapshot->getValue<int32_t>(MetadataGenerator::f_snapshot_id);
+    int32_t sequence_number = new_snapshot->getValue<int32_t>(MetadataGenerator::f_sequence_number);
 
-    data_file.content = 0;
-    data_file.file_path = data_file_name;
-    data_file.file_format = "PARQUET";
+    manifest.field("snapshot_id") = avro::GenericDatum(static_cast<int64_t>(snapshot_id));
+    manifest.field("sequence_number") = avro::GenericDatum(static_cast<int64_t>(sequence_number));
 
-    data_file.partition = Apache::Iceberg::Partition();
+    manifest.field("file_sequence_number") = avro::GenericDatum(static_cast<int64_t>(0));
+
+    avro::GenericRecord& data_file = manifest.field("data_file").value<avro::GenericRecord>();
+
+    data_file.field("content") = avro::GenericDatum(0);
+    data_file.field("file_path") = avro::GenericDatum(data_file_name);  // std::string
+    data_file.field("file_format") = avro::GenericDatum(String("PARQUET"));
+
+    size_t index;
+    data_file.schema()->nameIndex("partition", index);
+    const avro::NodePtr& partition_schema = data_file.schema()->leafAt(static_cast<Int32>(index));
+    data_file.field("partition") = avro::GenericDatum(partition_schema);
 
     auto summary = new_snapshot->getObject(MetadataGenerator::f_summary);
+    int32_t added_records = summary->getValue<int32_t>(MetadataGenerator::f_added_records);
+    int32_t added_files_size = summary->getValue<int32_t>(MetadataGenerator::f_added_files_size);
 
-    data_file.record_count = summary->getValue<int32_t>(MetadataGenerator::f_added_records);
-    data_file.file_size_in_bytes = summary->getValue<int32_t>(MetadataGenerator::f_added_files_size);
+    data_file.field("record_count") = avro::GenericDatum(static_cast<int64_t>(added_records));
+    data_file.field("file_size_in_bytes") = avro::GenericDatum(static_cast<int64_t>(added_files_size));
 
     std::ostringstream oss;
     int current_schema_id = metadata->getValue<Int32>("current-schema-id");
@@ -155,12 +166,12 @@ void generateManifestFile(
     std::string json_representation = removeEscapedSlashes(oss.str());
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
-    avro::DataFileWriter<Apache::Iceberg::Manifest> writer(std::move(adapter), schema);
+    avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata("schema", json_representation);
     writer.setMetadata("partition-spec", "[]");
     writer.setMetadata("partition-spec-id", "0");
     writer.writeHeader();
-    writer.write(manifest);
+    writer.write(manifest_datum);
     writer.close();
 }
 
