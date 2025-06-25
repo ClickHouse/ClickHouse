@@ -1,0 +1,5 @@
+<clickhouse>
+    <zookeeper>
+        <identity>clickhouse:withauth</identity>
+    </zookeeper>
+</clickhouse>
