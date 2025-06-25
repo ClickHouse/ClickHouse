@@ -120,3 +120,6 @@ COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
   /opt/openssl-fips/fips.so \
   \
   /etc/ssl/
+
+# Make timezone and locale files writable to randomize them in tests
+RUN chmod 666 /etc/timezone /etc/localtime
