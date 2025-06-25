@@ -215,14 +215,14 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     // Pride flag colors.
     auto colormap = std::array<Replxx::Color, 8>
     {
-        replxx::color::rgb666(5, 2, 4), // Pink      ≈ #FF87D7
-        replxx::color::rgb666(5, 0, 0), // Red       ≈ #FF0000
-        replxx::color::rgb666(5, 3, 0), // Orange    ≈ #FFAF00
-        replxx::color::rgb666(5, 5, 0), // Yellow    ≈ #FFFF00
-        replxx::color::rgb666(0, 5, 0), // Green     ≈ #00FF00
-        replxx::color::rgb666(0, 5, 4), // Turquoise ≈ #00FFD7
-        replxx::color::rgb666(2, 0, 5), // Indigo    ≈ #8700FF
-        replxx::color::rgb666(5, 0, 5)  // Violet    ≈ #FF00FF
+        replxx::color::rgb666(4, 2, 3), // Soft pink/magenta
+        replxx::color::rgb666(4, 1, 1), // Dark but visible red
+        replxx::color::rgb666(4, 3, 1), // Gold-orange
+        replxx::color::rgb666(4, 4, 1), // Warm yellow
+        replxx::color::rgb666(1, 4, 1), // Fresh green
+        replxx::color::rgb666(1, 4, 4), // Teal-cyan
+        replxx::color::rgb666(2, 1, 4), // Indigo-violet
+        replxx::color::rgb666(4, 1, 4)  // Vivid violet
     };
 
     size_t current_color = 0;
