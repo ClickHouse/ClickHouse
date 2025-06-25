@@ -510,23 +510,23 @@ Example:
 
 ```xml
 <http_options_response>
-     <header>
+        <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
-     </header>
-     <header>
-          <name>Access-Control-Allow-Headers</name>
-          <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
-     </header>
-     <header>
-          <name>Access-Control-Allow-Methods</name>
-          <value>POST, GET, OPTIONS</value>
-     </header>
-     <header>
-          <name>Access-Control-Max-Age</name>
-          <value>86400</value>
-     </header>
-</http_options_response>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Headers</name>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Methods</name>
+            <value>POST, GET, OPTIONS</value>
+        </header>
+        <header>
+            <name>Access-Control-Max-Age</name>
+            <value>86400</value>
+        </header>
+    </http_options_response>
 ```
 
 ## hsts_max_age {#hsts_max_age}
@@ -992,17 +992,24 @@ Log properties can be omitted by commenting out the property. For example, if yo
 
 ## send_crash_reports {#send_crash_reports}
 
-Settings for sending of crash reports to the ClickHouse core developers team.
+Settings for opt-in sending of crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 
 Enabling it, especially in pre-production environments, is highly appreciated.
 
+The server will need access to the public internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to function properly.
+
 Keys:
 
-| Key                   | Description                                                                                                                          |
-|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`             | Boolean flag to enable the feature, `true` by default. Set to `false` to avoid sending crash reports.                                |
-| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions (Default: `true`). |
-| `endpoint`            | You can override the endpoint URL for sending crash reports.                                                                         |
+| Key                   | Description                                                                                                                                                                                            |
+|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`             | Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.                                                                                                  |
+| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (Default: `false`).                                                        |
+| `endpoint`            | You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.                  |
+| `anonymize`           | Avoid attaching the server hostname to the crash report.                                                                                                                                               |
+| `http_proxy`          | Configure HTTP proxy for sending crash reports.                                                                                                                                                        |
+| `debug`               | Sets the Sentry client into debug mode.                                                                                                                                                                |
+| `tmp_path`            | Filesystem path for temporary crash report state.                                                                                                                                                      |
+| `environment`         | An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.|
 
 **Recommended usage**
 
@@ -1740,7 +1747,7 @@ Settings for the [backup_log](../../operations/system-tables/backup_log.md) syst
 </clickhouse>
 ```
 
-## blob_storage_log {#blob_storage_log}
+## blog_storage_log {#blog_storage_log}
 
 Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
 
@@ -1887,7 +1894,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over PostgreSQL protocol.
+- Empty values are used to disable communication with clients over MySQL protocol.
 :::
 
 **Example**

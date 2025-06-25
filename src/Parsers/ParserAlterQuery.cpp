@@ -123,7 +123,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_ttl(Keyword::REMOVE_TTL);
     ParserKeyword s_remove_sample_by(Keyword::REMOVE_SAMPLE_BY);
     ParserKeyword s_apply_deleted_mask(Keyword::APPLY_DELETED_MASK);
-    ParserKeyword s_apply_patches(Keyword::APPLY_PATCHES);
 
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
@@ -952,16 +951,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_apply_deleted_mask.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::APPLY_DELETED_MASK;
-
-                if (s_in_partition.ignore(pos, expected))
-                {
-                    if (!parser_partition.parse(pos, command_partition, expected))
-                        return false;
-                }
-            }
-            else if (s_apply_patches.ignore(pos, expected))
-            {
-                command->type = ASTAlterCommand::APPLY_PATCHES;
 
                 if (s_in_partition.ignore(pos, expected))
                 {

@@ -4,16 +4,11 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/QueryFlags.h>
 
-
-namespace zkutil
-{
-class ZooKeeper;
-}
 
 namespace DB
 {
@@ -23,9 +18,6 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
-
-class ZooKeeperMetadataTransaction;
-using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 struct ReplicaInfo
 {
@@ -39,8 +31,6 @@ class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
-    static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
-    static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
@@ -180,7 +170,7 @@ private:
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
-    ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

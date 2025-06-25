@@ -13,29 +13,14 @@ if [ $# -ge 2 ]; then
 fi
 
 FAST_TEST=0
-EXPORT_S3_STORAGE_POLICIES=1
-USE_AZURE_STORAGE_FOR_MERGE_TREE=${USE_AZURE_STORAGE_FOR_MERGE_TREE:0}
-USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
-BUGFIX_VALIDATE_CHECK=0
+
 NO_AZURE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
-        --analyzer) USE_OLD_ANALYZER=1 ;;
-        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
-        --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
-        --db-replicated) USE_DATABASE_REPLICATED=1 ;;
-        --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
-
-        --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
-        --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
-
-        --azure) USE_AZURE_STORAGE_FOR_MERGE_TREE=1 ;;
+        --fast-test) FAST_TEST=1 ;;
+        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
         --no-azure) NO_AZURE=1 ;;
-
-        --async-insert) USE_ASYNC_INSERT=1 ;;
-        --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -56,20 +41,15 @@ function check_clickhouse_version()
     fi
 }
 
-function is_fast_build()
-{
-    return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
-}
-
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
-# When adding a new config or changing the existing one,
-# you should check clickhouse version so that you won't
-# break validations using previous ClickHouse version (like bugfix validation).
+### WHEN ADDING A NEW CONFIG OR CHANGING THE EXISTING ONE,
+### YOU SHOULD CHECK CLICKHOUSE VERSION SO THAT YOU WON'T
+### BREAK VALIDATIONS USING PREVIOUS CH VERSION (LIKE BUGFIX VALIDATION).
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
@@ -95,8 +75,7 @@ if check_clickhouse_version 25.4; then
 fi
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
-# copy to not update original file later on in the script
-cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
@@ -157,9 +136,6 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
-if [[ $(is_fast_build) == 1 ]]; then
-    ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
-fi
 
 if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -225,9 +201,6 @@ sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</com
 value=$(($RANDOM % 2))
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-value=$(($RANDOM % 2))
-sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
-
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -262,21 +235,12 @@ fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     if [[ "$NO_AZURE" != "1" ]]; then
-        ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    fi
-
-    if check_clickhouse_version 25.5; then
-      ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
-      ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
-    else
-      cat $SRC_PATH/config.d/storage_conf.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf.xml
-      cat $SRC_PATH/config.d/storage_conf_02944.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf_02944.xml
+      ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
@@ -286,69 +250,40 @@ if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
-    ln -sf $SRC_PATH/users.d/enable_async_inserts.xml $DEST_SERVER_PATH/users.d/
-fi
-
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
-    rm $DEST_SERVER_PATH/config.d/zookeeper.xml
-    rm $DEST_SERVER_PATH/config.d/keeper_port.xml
-
-    value=$(($RANDOM % 2))
-    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$value</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+    rm /etc/clickhouse-server/config.d/zookeeper.xml
+    rm /etc/clickhouse-server/config.d/keeper_port.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
-    ch_server_1_path=$DEST_SERVER_PATH/../clickhouse-server1
-    ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
-    mkdir -p $ch_server_1_path
-    mkdir -p $ch_server_2_path
-#    chown clickhouse $ch_server_1_path
-#    chown clickhouse $ch_server_2_path
-#    chgrp clickhouse $ch_server_1_path
-#    chgrp clickhouse $ch_server_2_path
-    cp -r $DEST_SERVER_PATH/* $ch_server_1_path
-    cp -r $DEST_SERVER_PATH/* $ch_server_2_path
+    mkdir -p /etc/clickhouse-server1
+    mkdir -p /etc/clickhouse-server2
+    chown clickhouse /etc/clickhouse-server1
+    chown clickhouse /etc/clickhouse-server2
+    chgrp clickhouse /etc/clickhouse-server1
+    chgrp clickhouse /etc/clickhouse-server2
+    sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server1
+    sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server2
 
-    rm $ch_server_1_path/config.d/macros.xml $ch_server_2_path/config.d/macros.xml
-    cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
-    cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
+    rm /etc/clickhouse-server1/config.d/macros.xml
+    rm /etc/clickhouse-server2/config.d/macros.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server1/config.d/macros.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > /etc/clickhouse-server2/config.d/macros.xml
 
-    rm $ch_server_1_path/config.d/transactions.xml
-    rm $ch_server_2_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
+    rm /etc/clickhouse-server1/config.d/transactions.xml
+    rm /etc/clickhouse-server2/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > /etc/clickhouse-server1/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > /etc/clickhouse-server2/config.d/transactions.xml
 
-#    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
-#    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2
-#    mkdir -p $ch_server_lib_1 $ch_server_lib_2
-#    chown clickhouse $ch_server_lib_1 $ch_server_lib_2
-#    chgrp clickhouse $ch_server_lib_1 $ch_server_lib_2
-    sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
-    sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
-    sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
-    sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
-fi
-
-if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sed -i "/<use_xid_64>1<\/use_xid_64>/d" $DEST_SERVER_PATH/config.d/zookeeper.xml
-
-    function remove_keeper_config()
-    {
-        sed -i "/<$1>$2<\/$1>/d" $DEST_SERVER_PATH/config.d/keeper_port.xml
-    }
-
-    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
-    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
-fi
-
-# Enable remote_database_disk in DEBUG and ASAN build
-build_opts=$(clickhouse-server local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-    echo "Installed remote_database_disk.xml config"
+    sudo mkdir -p /var/lib/clickhouse1
+    sudo mkdir -p /var/lib/clickhouse2
+    sudo chown clickhouse /var/lib/clickhouse1
+    sudo chown clickhouse /var/lib/clickhouse2
+    sudo chgrp clickhouse /var/lib/clickhouse1
+    sudo chgrp clickhouse /var/lib/clickhouse2
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

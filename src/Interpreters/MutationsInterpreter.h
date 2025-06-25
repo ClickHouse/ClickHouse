@@ -16,14 +16,8 @@ class QueryPlan;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
-struct IsStorageTouched
-{
-    bool any_rows_affected = false;
-    bool all_rows_affected = false;
-};
-
 /// Return false if the data isn't going to be changed by mutations.
-IsStorageTouched isStorageTouchedByMutations(
+bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
@@ -225,10 +219,6 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
-
-        /// True if columns in column_to_updated are not changed, but they need
-        /// to be read (for example to materialize projection).
-        bool is_readonly = false;
 
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
