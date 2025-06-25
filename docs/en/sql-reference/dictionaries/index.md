@@ -802,6 +802,8 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 **Example**
 
 Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
@@ -2142,6 +2144,8 @@ For our example, the structure of dictionary can be the following:
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
 
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/FyRsriQp46E?si=Kf8CXoPKEpGQlC-Y" title="Polygon Dictionaries in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 Example of a polygon dictionary configuration:
 
 <CloudDetails />
@@ -2271,6 +2275,8 @@ Result:
 ## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
 Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of [user agent](https://en.wikipedia.org/wiki/User_agent) strings, which can be expressed elegantly with regexp tree dictionaries.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="An intro to ClickHouse regex tree dictionaries" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Open-Source {#use-regular-expression-tree-dictionary-in-clickhouse-open-source}
 
