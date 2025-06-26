@@ -12,4 +12,13 @@
     <query>SELECT accurateCast(x, 'Int64'), accurateCast(x, 'Int128'), accurateCast(x, 'Int256'), accurateCast(x, 'String'), accurateCast(x, 'Decimal64(8)') FROM t FORMAT Null</query>
     <query>SELECT accurateCastOrNull(x, 'Int64'), accurateCastOrNull(x, 'Int128'), accurateCastOrNull(x, 'Int256'), accurateCastOrNull(x, 'String'), accurateCastOrNull(x, 'Decimal64(8)') FROM t FORMAT Null</query>
 
+
+    <query>SELECT x::bool FROM t FORMAT Null</query>
+    <query>SELECT x::UInt8 FROM t FORMAT Null</query>
+    <query>SELECT x::UInt16 FROM t FORMAT Null</query>
+    <query>SELECT x::UInt32 FROM t FORMAT Null</query>
+    <query>SELECT x::UIn64 FROM t FORMAT Null</query>
+    <query>SELECT x::Float32 FROM t FORMAT Null</query>
+    <query>SELECT x::Float64 FROM t FORMAT Null</query>
+
 </test>
