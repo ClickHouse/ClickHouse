@@ -102,6 +102,7 @@ ceil
 char
 cityHash64
 coalesce
+compose
 concat
 concatAssumeInjective
 connectionId

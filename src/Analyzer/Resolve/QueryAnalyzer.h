@@ -215,7 +215,7 @@ private:
         const QueryTreeNodes & lambda_arguments,
         IdentifierResolveScope & scope);
 
-    ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
+    ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope, bool resolve_compose_function = false);
 
     ProjectionNames resolveExpressionNode(
         QueryTreeNodePtr & node,

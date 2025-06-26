@@ -15,7 +15,7 @@ CREATE MATERIALIZED VIEW segfault_mv
 AS SELECT
     id,
     uniqState(uuid) as uniq_uuids,
-    uniqMapState(CAST((tags_ids, arrayMap(_ -> toString(uuid), tags_ids)), 'Map(UInt32, String)')) as uniq_tags_ids
+    uniqMapState(CAST((tags_ids, arrayMap(_p -> toString(uuid), tags_ids)), 'Map(UInt32, String)')) as uniq_tags_ids
 FROM segfault
 GROUP BY id;
 

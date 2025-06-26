@@ -2389,6 +2389,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
+    {"|",             Operator("compose",         8,  2)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
