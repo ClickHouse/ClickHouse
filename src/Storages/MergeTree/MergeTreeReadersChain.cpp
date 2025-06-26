@@ -10,15 +10,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static size_t getTotalBytesInColumns(const Columns & columns)
-{
-    size_t total_bytes = 0;
-    for (const auto & column : columns)
-        if (column)
-            total_bytes += column->byteSize();
-    return total_bytes;
-}
-
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_)
     : range_readers(std::move(range_readers_))
     , is_initialized(true)
@@ -65,7 +56,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     auto & first_reader = range_readers.front();
     auto read_result = first_reader.startReadingChain(max_rows, ranges);
-    read_result.addNumBytesRead(getTotalBytesInColumns(read_result.columns));
 
     LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
@@ -79,9 +69,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     {
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
-        read_result.addNumBytesRead(getTotalBytesInColumns(columns));
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
+        /// It's also needed to properly advancing streams in later steps.
         if (read_result.num_rows == 0)
             continue;
 
@@ -105,7 +95,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     return read_result;
 }
 
-void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
+void MergeTreeReadersChain::executePrewhereActions(
+    MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
 {
     reader.executePrewhereActionsAndFilterColumns(result, previous_header, is_last_reader);
     result.checkInternalConsistency();

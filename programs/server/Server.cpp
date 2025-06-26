@@ -414,6 +414,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int INVALID_SETTING_VALUE;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
@@ -1152,6 +1153,13 @@ try
             "Invalid page cache configuration: page_cache_min_size ({}) is greater than page_cache_max_size ({}).",
             page_cache_min_size,
             page_cache_max_size);
+    }
+
+    size_t update_period_seconds = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
+    size_t heavy_metrics_update_period_seconds = server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s];
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Settings asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
     }
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
