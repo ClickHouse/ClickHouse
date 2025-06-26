@@ -3323,6 +3323,24 @@ namespace
             return true;
         }
 
+        // static bool columnNameStartsWithOneofName(std::string_view column_name, const OneofDescriptor & oneof_descriptor, std::string_view & suffix)
+        // {
+        //     size_t matching_length = 0;
+        //     if (!matching_length && ColumnNameWithProtobufFieldNameComparator::startsWith(column_name, oneof_descriptor.name()))
+        //     {
+        //         matching_length = oneof_descriptor.name().length();
+        //     }
+        //     if (column_name.length() == matching_length)
+        //         return true;
+        //     if ((column_name.length() < matching_length + 2) || !oneof_descriptor.message_type())
+        //         return false;
+        //     char first_char_after_matching = column_name[matching_length];
+        //     if (!ColumnNameWithProtobufFieldNameComparator::equals(first_char_after_matching, '.'))
+        //         return false;
+        //     suffix = column_name.substr(matching_length + 1);
+        //     return true;
+        // }
+
         /// Finds fields in the protobuf message which can be considered as matching
         /// for a specified column's name. The found fields can be nested messages,
         /// for that case suffixes are also returned.
@@ -3372,6 +3390,13 @@ namespace
                 {
                     out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, suffix);
                     LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName adding :{} {} (simple case)", field_descriptor.name(), suffix);
+                    // if (const OneofDescriptor* oneof_descriptor = field_descriptor.containing_oneof(); oneof_descriptor)
+                    // {
+                    //     if (columnNameStartsWithOneofName(column_name, /* field_descriptor */ oneof_descriptor, suffix))
+                    //     {
+                    //         out_field_descriptors_with_suffixes.emplace_back(nullptr, suffix);
+                    //     }
+                    // }
                 }
             }
 
@@ -3768,7 +3793,7 @@ namespace
                             one_of_columns_filler,
                             field_descriptor,
                             used_column_indices_in_nested,
-                            /* columns_are_reordered_outside = */ true,
+                            /* columns_are_reordered_outside = */  /* true */  false ,
                             /* top_level_message = */ false);
                         // if (message_serializer)
                         // {
@@ -3779,6 +3804,9 @@ namespace
                         //     }
                         // }
                         // std::vector<size_t> empty_indexes = used_column_indices_in_nested;
+
+
+                        auto nested_column_indices_size = nested_column_indices.size();
 
                         maybe_add_oneof_wrapper(
                             message_serializer,
@@ -3792,9 +3820,13 @@ namespace
                             data_types,
                             // empty_indexes
                             // used_column_indices_in_nested
-                            used_column_indices
+                            // used_column_indices
+                            nested_column_indices
                         );
-                        // used_column_indices_in_nested.push_back(empty_indexes.front());
+                        if (nested_column_indices_size != nested_column_indices.size())
+                        {
+                            used_column_indices_in_nested.push_back(nested_column_indices.size() - 1);
+                        }
 
 
                         /// not necessarily added !!!!
