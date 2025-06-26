@@ -1881,8 +1881,10 @@ void StatementGenerator::generateSelect(
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
         setq->set_set_op(static_cast<SetQuery_SetOp>(set_range(rg.generator)));
-        setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
-
+        if (rg.nextSmallNumber() < 8)
+        {
+            setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
+        }
         this->depth++;
         this->current_level++;
         if (ncols == 1 && rg.nextMediumNumber() < 6)

@@ -5,6 +5,15 @@ namespace BuzzHouse
 
 static const auto nastyStrings = [](RandomGenerator & rg) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
+static const auto setSetting = CHSetting(
+    [](RandomGenerator & rg)
+    {
+        const DB::Strings & choices = {"''", "'ALL'", "'DISTINCT'"};
+        return rg.pickRandomly(choices);
+    },
+    {},
+    false);
+
 std::unordered_map<String, CHSetting> hotSettings
     = {{"enable_analyzer", trueOrFalseSetting},
        {"join_algorithm",
@@ -348,6 +357,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
     {"exact_rows_before_limit", trueOrFalseSetting},
+    {"except_default_mode", setSetting},
     {"distributed_plan_execute_locally", trueOrFalseSettingNoOracle},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
@@ -513,6 +523,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
     {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
     {"insert_quorum_parallel", trueOrFalseSettingNoOracle},
+    {"intersect_default_mode", setSetting},
     {"interval_output_format", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'kusto'" : "'numeric'"; }, {}, false)},
     /// {"join_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'throw'" : "'break'"; }, {}, false)},
     {"join_use_nulls", trueOrFalseSettingNoOracle},
@@ -849,6 +860,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"trace_profile_events", trueOrFalseSettingNoOracle},
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
+    {"union_default_mode", setSetting},
     {"update_insert_deduplication_token_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     {"update_parallel_mode",
      CHSetting(
