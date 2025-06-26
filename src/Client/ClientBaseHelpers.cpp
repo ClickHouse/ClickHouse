@@ -227,14 +227,14 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     auto bright_colormap = std::unordered_map<Replxx::Color, Replxx::Color>
     {
-        {replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4)}, // Soft pink
-        {replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2)}, // Red
-        {replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2)}, // Gold-orange
-        {replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2)}, // Yellow
-        {replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2)}, // Green
-        {replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5)}, // Teal
-        {replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5)}, // Indigo
-        {replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5)}  // Violet
+        { replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4) }, // Soft pink
+        { replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2) }, // Red
+        { replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2) }, // Gold-orange
+        { replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2) }, // Yellow
+        { replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2) }, // Green
+        { replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5) }, // Teal
+        { replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5) }, // Indigo
+        { replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5) }  // Violet
     };
 
     size_t current_color = 0;
