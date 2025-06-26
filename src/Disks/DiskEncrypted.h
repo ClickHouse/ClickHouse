@@ -298,12 +298,6 @@ public:
         return delegate->checkUniqueId(id);
     }
 
-    void onFreeze(const String & path) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate->onFreeze(wrapped_path);
-    }
-
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     DataSourceDescription getDataSourceDescription() const override
