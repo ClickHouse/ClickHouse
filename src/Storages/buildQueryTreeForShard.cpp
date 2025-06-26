@@ -255,7 +255,7 @@ private:
 };
 
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
-static void addDistinctRecursively(const QueryTreeNodePtr & node)
+void addDistinctRecursively(const QueryTreeNodePtr & node)
 {
     if (auto * query_node = node->as<QueryNode>())
     {
