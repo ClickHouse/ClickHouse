@@ -197,8 +197,6 @@ void ThreadImpl::startImpl(SharedPtr<Runnable> pTarget)
 		}
 	}
 
-	_pData->pRunnableTarget = pTarget;
-	if (pthread_create(&_pData->thread, &attributes, runnableEntry, this))
 	{
 		FastMutex::ScopedLock l(_pData->mutex);
 		_pData->pRunnableTarget = pTarget;

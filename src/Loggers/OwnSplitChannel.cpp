@@ -219,7 +219,6 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
-    closing = false;
     is_open = true;
     if (text_log_max_priority && text_log_thread && !text_log_thread->isRunning())
         text_log_thread->start(*text_log_runnable);
@@ -231,9 +230,9 @@ void OwnAsyncSplitChannel::open()
 
 void OwnAsyncSplitChannel::close()
 {
+    is_open = false;
     try
     {
-        closing = true;
         if (text_log_thread && text_log_thread->isRunning())
         {
             do
@@ -260,7 +259,6 @@ void OwnAsyncSplitChannel::close()
         writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
         writeRetry(STDERR_FILENO, "\n");
     }
-    is_open = false;
 }
 
 class OwnMessageNotification : public Poco::Notification
@@ -354,7 +352,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
-    while (!closing)
+    while (is_open)
     {
         if (!notification)
             continue;
@@ -383,7 +381,7 @@ void OwnAsyncSplitChannel::runTextLog()
     };
 
     Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
-    while (!closing)
+    while (is_open)
     {
         if (flush_text_logs)
         {

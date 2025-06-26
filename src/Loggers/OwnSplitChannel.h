@@ -104,7 +104,6 @@ public:
 
 private:
     std::atomic<bool> is_open = false;
-    std::atomic<bool> closing = false;
 
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
