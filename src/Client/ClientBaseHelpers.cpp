@@ -126,7 +126,7 @@ std::string getChineseZodiac()
 }
 
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position)
 {
     using namespace replxx;
 
@@ -213,20 +213,34 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     // Pride flag colors.
-    auto colormap = std::array<Replxx::Color, 8>
+    auto default_colormap = std::array<Replxx::Color, 8>
     {
-        replxx::color::rgb666(4, 2, 3), // Soft pink/magenta
-        replxx::color::rgb666(4, 1, 1), // Dark but visible red
+        replxx::color::rgb666(4, 2, 3), // Soft pink
+        replxx::color::rgb666(4, 1, 1), // Red
         replxx::color::rgb666(4, 3, 1), // Gold-orange
-        replxx::color::rgb666(4, 4, 1), // Warm yellow
-        replxx::color::rgb666(1, 4, 1), // Fresh green
-        replxx::color::rgb666(1, 4, 4), // Teal-cyan
-        replxx::color::rgb666(2, 1, 4), // Indigo-violet
-        replxx::color::rgb666(4, 1, 4)  // Vivid violet
+        replxx::color::rgb666(4, 4, 1), // Yellow
+        replxx::color::rgb666(1, 4, 1), // Green
+        replxx::color::rgb666(1, 4, 4), // Teal
+        replxx::color::rgb666(2, 1, 4), // Indigo
+        replxx::color::rgb666(4, 1, 4)  // Violet
+    };
+
+    auto bright_colormap = std::unordered_map<Replxx::Color, Replxx::Color>
+    {
+        {replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4)}, // Soft pink
+        {replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2)}, // Red
+        {replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2)}, // Gold-orange
+        {replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2)}, // Yellow
+        {replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2)}, // Green
+        {replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5)}, // Teal
+        {replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5)}, // Indigo
+        {replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5)}  // Violet
     };
 
     size_t current_color = 0;
     std::vector<Replxx::Color> color_stack;
+    std::vector<Token> brace_stack;
+    std::optional<std::tuple<size_t, size_t>> active_matching_brace;
 
     IParser::Pos highlight_token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
     try
@@ -235,7 +249,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {
             if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
-                color_stack.push_back(colormap[current_color % colormap.size()]);
+                color_stack.push_back(default_colormap[current_color % default_colormap.size()]);
+                brace_stack.push_back(*highlight_token_iterator);
                 current_color++;
 
                 auto highlight_pos = highlight_token_iterator->begin - begin;
@@ -256,7 +271,21 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 auto highlight_pos = highlight_token_iterator->begin - begin;
                 colors[highlight_pos] = color_stack.back();
-                color_stack.pop_back();
+
+                auto matching_brace_pos = brace_stack.back().begin - begin;
+                if (cursor_position != highlight_pos && cursor_position != matching_brace_pos)
+                {
+                    ++highlight_token_iterator;
+                    color_stack.pop_back();
+                    continue;
+                }
+
+                auto bright_color = bright_colormap[color_stack.back()];
+                colors[highlight_pos] = bright_color;
+                colors[matching_brace_pos] = bright_color;
+                active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
+
+                brace_stack.pop_back();
 
                 ++highlight_token_iterator;
                 continue;
@@ -291,6 +320,20 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             pos = colors.size() - 1;
 
         colors[pos] = Replxx::Color::BRIGHTRED;
+
+        if (active_matching_brace)
+        {
+            const auto &[highlight_pos, matching_brace_pos] = *active_matching_brace;
+
+            const auto opening_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_pos);
+            const auto closing_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), matching_brace_pos);
+
+            if (pos == closing_brace_pos || pos == opening_brace_pos)
+            {
+                colors[closing_brace_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[opening_brace_pos] = replxx::color::rgb666(5, 0, 1);
+            }
+        }
     }
 
     /// This is a callback for the client/local app to better find query end. Note: this is a kludge, remove it.
