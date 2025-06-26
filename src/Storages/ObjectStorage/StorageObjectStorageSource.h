@@ -2,12 +2,13 @@
 #include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Formats/FormatParserGroup.h>
 
 
 namespace DB
@@ -15,9 +16,7 @@ namespace DB
 
 class SchemaCache;
 
-using ReadTaskCallback = std::function<String()>;
-
-class StorageObjectStorageSource : public SourceWithKeyCondition
+class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
 public:
@@ -39,16 +38,16 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
-        size_t max_parsing_threads_,
+        FormatParserGroupPtr parser_group_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
-
     Chunk generate() override;
+
+    void onFinish() override { parser_group->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         ConfigurationPtr configuration,
@@ -84,7 +83,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    const size_t max_parsing_threads;
+    FormatParserGroupPtr parser_group;
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -135,12 +134,11 @@ protected:
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
-        const std::shared_ptr<const KeyCondition> & key_condition_,
         const ContextPtr & context_,
         SchemaCache * schema_cache,
         const LoggerPtr & log,
         size_t max_block_size,
-        size_t max_parsing_threads,
+        FormatParserGroupPtr parser_group,
         bool need_only_count);
 
     ReaderHolder createReader();
@@ -154,15 +152,16 @@ protected:
 class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
 {
 public:
-    ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
+    ReadTaskIterator(
+        const ClusterFunctionReadTaskCallback & callback_,
+        size_t max_threads_count);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-
-    ReadTaskCallback callback;
+    ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
 };

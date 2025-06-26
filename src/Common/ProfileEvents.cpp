@@ -959,7 +959,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromS3, "How many times we fetch data parts from S3", ValueType::Number) \
     \
-    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number)                                                                                                                                                                                                                       \
+    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
@@ -1051,6 +1051,12 @@ The server successfully detected this situation and will download merged part fr
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
+    \
+    M(RefreshableViewRefreshSuccess, "How many times refreshable materialized views refreshed", ValueType::Number) \
+    M(RefreshableViewRefreshFailed, "How many times refreshable materialized views failed to refresh", ValueType::Number) \
+    M(RefreshableViewSyncReplicaSuccess, "How many times a SELECT from refreshable materialized view did an implicit SYNC REPLICA", ValueType::Number) \
+    M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
+    M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

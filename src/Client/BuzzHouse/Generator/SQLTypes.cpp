@@ -47,7 +47,7 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     }
     else
     {
-        std::uniform_int_distribution<uint32_t> next_dist(0, 9);
+        std::uniform_int_distribution<uint32_t> next_dist(0, 76);
         const uint32_t left = next_dist(rg.generator);
         const uint32_t right = next_dist(rg.generator);
 
@@ -400,12 +400,17 @@ SQLType * DecimalType::typeDeepCopy() const
     return new DecimalType(short_notation, precision, scale);
 }
 
+String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
+{
+    const uint32_t right = dt->scale.value_or(0);
+    const uint32_t left = dt->precision.value_or(10) - right;
+
+    return appendDecimal(rg, use_func, left, right);
+}
+
 String DecimalType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    const uint32_t right = scale.value_or(0);
-    const uint32_t left = precision.value_or(10) - right;
-
-    return appendDecimal(rg, true, left, right);
+    return appendDecimalValue(rg, true, this);
 }
 
 String StringType::typeName(const bool) const
@@ -454,9 +459,11 @@ SQLType * StringType::typeDeepCopy() const
     return new StringType(precision);
 }
 
-String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return rg.nextString("'", true, precision.value_or(rg.nextRandomUInt32() % 1009));
+    std::uniform_int_distribution<uint32_t> strlens(0, gen.fc.max_string_length);
+
+    return rg.nextString("'", true, precision.value_or(strlens(rg.generator)));
 }
 
 String UUIDType::typeName(const bool) const
@@ -1319,6 +1326,69 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     return new DateTimeType(use64, precision, timezone);
 }
 
+SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint32_t allowed_types, BottomTypeName * tp) const
+{
+    Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
+    std::optional<DecimalN_DecimalPrecision> short_notation;
+    std::optional<uint32_t> precision;
+    std::optional<uint32_t> scale;
+
+    if (rg.nextBool())
+    {
+        std::uniform_int_distribution<uint32_t> dec_range(
+            1,
+            static_cast<uint32_t>(
+                (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                       : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
+        short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
+        switch (short_notation.value())
+        {
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                precision = std::optional<uint32_t>(9);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                precision = std::optional<uint32_t>(18);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                precision = std::optional<uint32_t>(38);
+                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                precision = std::optional<uint32_t>(76);
+                break;
+        }
+        scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+        if (dec)
+        {
+            DecimalN * dn = dec->mutable_decimaln();
+
+            dn->set_precision(short_notation.value());
+            dn->set_scale(scale.value());
+        }
+    }
+    else
+    {
+        DecimalSimple * ds = dec ? dec->mutable_decimal_simple() : nullptr;
+
+        if (rg.nextBool())
+        {
+            precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
+            if (dec)
+            {
+                ds->set_precision(precision.value());
+            }
+            if (rg.nextBool())
+            {
+                scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
+                if (dec)
+                {
+                    ds->set_scale(scale.value());
+                }
+            }
+        }
+    }
+    return new DecimalType(short_notation, precision, scale);
+}
+
 SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     SQLType * res = nullptr;
@@ -1392,7 +1462,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : ((rg.nextRandomUInt32() % 1009) + 1));
+            std::uniform_int_distribution<uint32_t> strlens(1, fc.max_string_length);
+
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : strlens(rg.generator));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());
@@ -1402,65 +1474,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
-        Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-        std::optional<DecimalN_DecimalPrecision> short_notation;
-        std::optional<uint32_t> precision;
-        std::optional<uint32_t> scale;
-
-        if (rg.nextBool())
-        {
-            std::uniform_int_distribution<uint32_t> dec_range(
-                1,
-                static_cast<uint32_t>(
-                    (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
-                                                           : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128));
-            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
-            switch (short_notation.value())
-            {
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                    precision = std::optional<uint32_t>(9);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                    precision = std::optional<uint32_t>(18);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                    precision = std::optional<uint32_t>(38);
-                    break;
-                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                    precision = std::optional<uint32_t>(76);
-                    break;
-            }
-            scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
-            if (dec)
-            {
-                DecimalN * dn = dec->mutable_decimaln();
-
-                dn->set_precision(short_notation.value());
-                dn->set_scale(scale.value());
-            }
-        }
-        else
-        {
-            DecimalSimple * ds = dec ? dec->mutable_decimal_simple() : nullptr;
-
-            if (rg.nextBool())
-            {
-                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
-                if (dec)
-                {
-                    ds->set_precision(precision.value());
-                }
-                if (rg.nextBool())
-                {
-                    scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
-                    if (dec)
-                    {
-                        ds->set_scale(scale.value());
-                    }
-                }
-            }
-        }
-        res = new DecimalType(short_notation, precision, scale);
+        res = randomDecimalType(rg, allowed_types, tp);
     }
     else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + 1))
     {
@@ -2067,7 +2081,7 @@ String strBuildJSONElement(RandomGenerator & rg)
         case 9:
         case 10: {
             /// Decimal
-            std::uniform_int_distribution<uint32_t> next_dist(0, 8);
+            std::uniform_int_distribution<uint32_t> next_dist(0, 76);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
@@ -2076,10 +2090,13 @@ String strBuildJSONElement(RandomGenerator & rg)
         break;
         case 11:
         case 12:
-        case 13:
+        case 13: {
             /// String
-            ret = rg.nextString("\"", false, rg.nextRandomUInt32() % 1009);
-            break;
+            std::uniform_int_distribution<uint32_t> strlens(0, 1009);
+
+            ret = rg.nextString("\"", false, strlens(rg.generator));
+        }
+        break;
         case 14:
             /// Date
             ret = '"' + rg.nextDate() + '"';

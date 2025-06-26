@@ -66,7 +66,7 @@ REGISTER_FUNCTION(VisitParamExtractRaw)
         .syntax = "simpleJSONExtractRaw(json, field_name)",
         .arguments
         = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value = {"The value of the field as a String including separators if the field exists, or an empty String otherwise.", {"String"}},
         .examples
         = {{.name = "simple",

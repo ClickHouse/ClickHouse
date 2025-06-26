@@ -3,22 +3,12 @@
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
 ENV LANG=C.UTF-8
-ENV TZ=Europe/Amsterdam
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
-
+# Install additional packages needed for fuzzer that are not in test-base
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             libc6-dbg \
-            moreutils \
             ncdu \
             p7zip-full \
             parallel \
@@ -27,9 +17,8 @@ RUN apt-get update \
             python3-pip \
             rsync \
             tree \
-            tzdata \
             vim \
-            wget \
+            awscli \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
@@ -45,4 +34,3 @@ CMD set -o pipefail \
     && timeout --verbose --signal 9 1h /run-fuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
 # docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/fuzzer
-

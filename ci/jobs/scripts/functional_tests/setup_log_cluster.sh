@@ -79,11 +79,6 @@ function setup_logs_replication
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
-    # disable output
-    __shadow_credentials
-    echo "Checking if the credentials work"
-    check_logs_credentials || return 0
-    __set_connection_args
 
     echo "My hostname is ${HOSTNAME}"
 

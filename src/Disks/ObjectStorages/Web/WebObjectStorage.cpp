@@ -283,12 +283,4 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path *
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
-std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
-    const std::string & /* new_namespace */,
-    const Poco::Util::AbstractConfiguration & /* config */,
-    const std::string & /* config_prefix */, ContextPtr /* context */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for WebObjectStorage");
-}
-
 }

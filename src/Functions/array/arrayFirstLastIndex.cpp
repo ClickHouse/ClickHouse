@@ -150,7 +150,7 @@ Returns the index of the last element in the source array for which `func(x[, y1
 )";
     FunctionDocumentation::Syntax syntax_last = "arrayLastIndex(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };

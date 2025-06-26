@@ -7,9 +7,11 @@
 namespace BuzzHouse
 {
 
-String StatementGenerator::nextComment(RandomGenerator & rg)
+String StatementGenerator::nextComment(RandomGenerator & rg) const
 {
-    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
+    std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
+
+    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, strlens(rg.generator));
 }
 
 void collectColumnPaths(
@@ -217,20 +219,20 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const size_t ncols)
 {
     SQLRelation rel(rel_name);
 
-    for (const auto & entry : v.cols)
+    for (size_t i = 0; i < ncols; i++)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
     }
     return rel;
 }
 
 void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
 {
-    const SQLRelation rel = createViewRelation(rel_name, v);
+    const SQLRelation rel = createViewRelation(rel_name, v.cols.size());
 
     if (rel_name.empty())
     {
@@ -1199,7 +1201,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_num(rg.nextRandomUInt64());
         if (rg.nextBool())
         {
-            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             te->add_params()->set_num(string_length_dist(rg.generator));
@@ -2051,7 +2053,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     /// Range requires 2 cols for min and max
     const uint32_t dictionary_ncols = std::max((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
-    DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
@@ -2085,20 +2086,24 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
     const auto & dictionary_view_lambda
         = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
+    const auto & dictionary_dictionary_lambda
+        = [&next](const SQLDictionary & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool has_table = collectionHas<SQLTable>(dictionary_table_lambda);
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
+    const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
+    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
     const uint32_t null_src = 2;
-    const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
+    const uint32_t prob_space = dict_table + dict_system_table + dict_view + dict_dict + null_src;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
     if (dict_table && nopt < (dict_table + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
         if (t.isPostgreSQLEngine() && rg.nextSmallNumber() < 8)
@@ -2164,7 +2169,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         ExprSchemaTable * est = dsd->mutable_est();
 
         est->mutable_database()->set_database("system");
@@ -2173,15 +2178,23 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
     {
-        DictionarySourceDetails * dsd = source->mutable_source();
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
 
         v.setName(dsd->mutable_est(), false);
         dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
     }
-    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
+    else if (dict_dict && nopt < (dict_table + dict_system_table + dict_view + dict_dict + 1))
     {
-        source->set_null_src(true);
+        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(dictionary_dictionary_lambda));
+
+        d.setName(dsd->mutable_est(), false);
+        dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
+    }
+    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + dict_dict + null_src + 1))
+    {
+        cd->mutable_source()->set_null_src(true);
     }
     else
     {

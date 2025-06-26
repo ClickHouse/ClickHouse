@@ -89,7 +89,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
     )";
     FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
-        {"func", "Optional. Function to apply to each element of the array(s).", {"Lambda"}},
+        {"func", "Optional. Function to apply to each element of the array(s).", {"Lambda function"}},
         {"arr1, ..., arrN", "N arrays.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt32"}};

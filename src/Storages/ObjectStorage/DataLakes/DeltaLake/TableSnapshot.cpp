@@ -33,7 +33,6 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents
@@ -102,28 +101,28 @@ public:
         })
     {
         if (filter_dag_)
-            pruner.emplace(*filter_dag_, table_schema_, partition_columns_, DB::Context::getGlobalContextInstance());
+        {
+            pruner.emplace(
+                *filter_dag_,
+                table_schema_,
+                partition_columns_,
+                physical_names_map_,
+                DB::Context::getGlobalContextInstance());
+
+            LOG_TEST(log, "Using filter expression");
+        }
+        else
+        {
+            LOG_TEST(log, "No filter expression passed");
+        }
 
         if (!physical_names_map_.empty())
         {
-            auto get_physical_name = [&](const std::string & name)
-            {
-                auto it = physical_names_map_.find(name);
-                if (it == physical_names_map_.end())
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find column {} in physical names map (size: {})",
-                        name, physical_names_map_.size());
-                }
-                return it->second;
-            };
-
             for (auto & [name, value] : expression_schema)
-                name = get_physical_name(name);
+                name = getPhysicalName(name, physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = get_physical_name(name);
+                name = getPhysicalName(name, physical_names_map_);
         }
     }
 
@@ -276,28 +275,24 @@ public:
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-
-        /// Collect partition values info.
-        /// DeltaLake does not store partition values in the actual data files,
-        /// but instead in data files paths directory names.
-        /// So we extract these values here and put into `partitions_info`.
-        std::unique_ptr<ParsedExpression> expression;
-        if (transform && !context->partition_columns.empty())
-            expression = visitExpression(transform, context->expression_schema);
-
         auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
-        if (expression)
-        {
-            object->data_lake_metadata.emplace();
-            object->data_lake_metadata->transform = expression->getTransform();
-            object->data_lake_metadata->partition_values = expression->getConstValues(context->partition_columns);
-        }
 
-        LOG_TEST(
-            context->log,
-            "Scanned file: {}, size: {}, num records: {}, transform: {}",
-            full_path, size, stats ? DB::toString(stats->num_records) : "Unknown",
-            expression ? expression->getTransform()->dumpNames() : "None");
+        if (transform && !context->partition_columns.empty())
+        {
+            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema);
+            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+
+            LOG_TEST(
+                context->log,
+                "Scanned file: {}, size: {}, num records: {}, transform: {}",
+                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
+                parsed_transform->dumpNames());
+        }
+        else
+            LOG_TEST(
+                context->log,
+                "Scanned file: {}, size: {}, num records: {}",
+                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
 
         {
             std::lock_guard lock(context->next_mutex);

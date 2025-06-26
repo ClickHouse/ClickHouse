@@ -119,6 +119,22 @@ def started_cluster():
             },
             with_remote_database_disk=False,
         )
+        cluster.add_instance(
+            "node_old",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/remote_servers.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="25.3.3.42",
+            with_minio=True,
+            with_azurite=True,
+            stay_alive=True,
+            with_zookeeper=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -824,8 +840,11 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_partition_columns(started_cluster, use_delta_kernel):
+@pytest.mark.parametrize(
+    "use_delta_kernel, cluster",
+    [("1", False), ("1", True), ("0", False)],
+)
+def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -897,7 +916,10 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    if cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
 
     result = instance.query(f"describe table {table_function}").strip()
     assert (
@@ -1065,7 +1087,8 @@ test9	2000-01-09	9"""
 16	test16	2000-01-16	16	{now}	true	17.6	false
 17	test17	2000-01-17	17	2012-01-17 12:34:56.789123	false	18.7	true
 18	test18	2000-01-18	18	{now}	true	19.8	false"""
-        == instance.query(f"SELECT * FROM {table_function} ORDER BY c").strip())
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY c").strip()
+    )
     assert (
         int(
             instance.query(
@@ -1387,7 +1410,8 @@ def test_session_token(started_cluster):
     )
 
 
-def test_partition_columns_2(started_cluster):
+@pytest.mark.parametrize("cluster", [False, True])
+def test_partition_columns_2(started_cluster, cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_partition_columns_2")
 
@@ -1422,13 +1446,22 @@ def test_partition_columns_2(started_cluster):
         path, table, storage_options=storage_options, partition_by=["c", "d"]
     )
 
-    delta_function = f"""
-deltaLake(
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}',
-    SETTINGS allow_experimental_delta_kernel_rs=0)
-    """
+    if cluster:
+        delta_function = f"""
+    deltaLakeCluster(
+             cluster,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+    else:
+        delta_function = f"""
+    deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
+        """
 
     num_files = int(
         node.query(
@@ -1484,6 +1517,11 @@ deltaLake(
         ).strip()
     )
 
+    ac = node.query(
+        f"explain actions=1 SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
+        settings={"allow_experimental_delta_kernel_rs": 1},
+    ).strip()
+    print("KSSENII ACTIONS: ", ac)
     assert (
         "1"
         in node.query(
@@ -1973,6 +2011,7 @@ deltaLake(
 @pytest.mark.parametrize("new_analyzer", ["1", "0"])
 def test_cluster_function(started_cluster, new_analyzer):
     instance = started_cluster.instances["node1"]
+    instance_old = started_cluster.instances["node_old"]
     table_name = randomize_table_name("test_cluster_function")
 
     schema = pa.schema([("a", pa.int32()), ("b", pa.string())])
@@ -1990,7 +2029,7 @@ def test_cluster_function(started_cluster, new_analyzer):
     }
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
-    write_deltalake(path, table, storage_options=storage_options)
+    write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
 
     table_function = f"""
 deltaLakeCluster(cluster,
@@ -2007,6 +2046,44 @@ deltaLakeCluster(cluster,
             f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
         )
     )
+    assert "1\taa\n"
+    "2\tbb\n"
+    "3\tcc\n"
+    "4\taa\n"
+    "5\tbb\n" == instance.query(
+        f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+    )
+
+    table_function_old = f"""
+deltaLakeCluster(cluster_old,
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=1)
+    """
+
+    assert 5 == int(
+        instance_old.query(
+            f"SELECT count() FROM {table_function_old} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+    )
+
+    # Incorrect result on old instance
+    assert "1\n2\n3\n4\n5\n" == instance_old.query(
+        f"SELECT * FROM {table_function_old} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+    )
+
+    assert 5 == int(
+        instance.query(
+            f"SELECT count() FROM {table_function_old} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+    )
+
+    # Incorrect result on old instance
+    assert "1\t\\N\n2\t\\N\n3\t\\N\n4\t\\N\n5\t\\N\n" == instance.query(
+        f"SELECT * FROM {table_function_old} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+    )
+
 
 
 def test_partition_columns_3(started_cluster):
@@ -2018,20 +2095,19 @@ def test_partition_columns_3(started_cluster):
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
 
-    schema = StructType([
-        StructField("id", IntegerType(), nullable=False),
-        StructField("name", StringType(), nullable=False),
-        StructField("age", IntegerType(), nullable=False),
-        StructField("country", StringType(), nullable=False),
-        StructField("year", StringType(), nullable=False),
-    ])
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("age", IntegerType(), nullable=False),
+            StructField("country", StringType(), nullable=False),
+            StructField("year", StringType(), nullable=False),
+        ]
+    )
 
-    num_rows=10
+    num_rows = 10
     now = datetime.now()
-    data = [
-        (i, f"name_{i}", 32, "US", "2025")
-        for i in range(num_rows)
-    ]
+    data = [(i, f"name_{i}", 32, "US", "2025") for i in range(num_rows)]
     df = spark.createDataFrame(data=data, schema=schema)
     df.printSchema()
     df.write.mode("append").format("delta").partitionBy(partition_columns).save(

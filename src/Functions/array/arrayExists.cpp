@@ -69,7 +69,7 @@ Returns `1` if there is at least one element in a source array for which `func(x
 )";
     FunctionDocumentation::Syntax syntax = "arrayExists(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };

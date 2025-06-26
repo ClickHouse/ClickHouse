@@ -78,7 +78,7 @@ In the results of `SELECT` query, the values of `AggregateFunction` type have im
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
-The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
+The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
 
 ```sql
 CREATE DATABASE test;
@@ -98,7 +98,7 @@ CREATE TABLE test.visits
 
 Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
 
 ```sql
 CREATE TABLE test.agg_visits (
@@ -122,6 +122,25 @@ AS SELECT
 FROM test.visits
 GROUP BY StartDate, CounterID;
 ```
+
+Note that it is necessary to include the columns which are not being aggregated in the 
+`GROUP BY` statement. Alternatively, we can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) function to avoid having to do this:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+:::note
+When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
+Each source row produces one row in the materialized view and the actual aggregation happens later when the
+`AggregatingMergeTree` merges parts with the same day.
+:::
 
 Insert data into the `test.visits` table:
 
@@ -165,6 +184,8 @@ Run the `SELECT` query again, which will return the following output:
 │ 2022-11-26 07:00:31.000 │      5 │     1 │
 └─────────────────────────┴────────┴───────┘
 ```
+
+Note that the result is the same regardless of which method we used for creating the materialized view.
 
 ## Related Content {#related-content}
 

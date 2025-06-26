@@ -33,7 +33,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_OPENTELEMETRY = 54442;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING = 54452;
 
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = 1;
+static constexpr auto DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION = 1;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA = 2;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = 2;
 
 static constexpr auto DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD = 4;
@@ -108,6 +110,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION = 54477;
 
 static constexpr auto DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING = 54478;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL = 54479;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -115,5 +119,5 @@ static constexpr auto DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING = 54478;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54478;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54479;
 }

@@ -1,7 +1,6 @@
 #include "WithFileSize.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBufferWrapper.h>
-#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/PeekableReadBuffer.h>
 

@@ -13,12 +13,12 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-    using RawBlockPtr = const Block *;
-    using UsedFlagsForBlock = std::vector<std::atomic_bool>;
+    using RawColumnsPtr = const Columns *;
+    using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
     /// For multiple dijuncts each empty in hashmap stores flags for particular block
     /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
-    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
+    std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> flags;
 
     bool need_flags;
 
@@ -44,13 +44,13 @@ public:
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Block * block_ptr)
+    void reinit(const Columns * columns)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(flags[block_ptr].size() <= block_ptr->rows());
+            assert(flags[columns].size() <= columns->at(0)->size());
             need_flags = true;
-            flags[block_ptr] = std::vector<std::atomic_bool>(block_ptr->rows());
+            flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
         }
     }
 
@@ -58,9 +58,9 @@ public:
     {
         return getUsedSafe(nullptr, i);
     }
-    bool getUsedSafe(const Block * block_ptr, size_t row_idx) const
+    bool getUsedSafe(const Columns * columns, size_t row_idx) const
     {
-        if (auto it = flags.find(block_ptr); it != flags.end())
+        if (auto it = flags.find(columns); it != flags.end())
             return it->second[row_idx].load();
         return !need_flags;
     }
@@ -78,10 +78,10 @@ public:
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
                 for (auto it = mapped.begin(); it.ok(); ++it)
-                    flags[it->block][it->row_num].store(true, std::memory_order_relaxed);
+                    flags[it->columns][it->row_num].store(true, std::memory_order_relaxed);
             }
             else
-                flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
+                flags[mapped.columns][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
@@ -90,7 +90,7 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row>
-    void setUsed(const Block * block, size_t row_num, size_t offset)
+    void setUsed(const Columns * columns, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return;
@@ -98,7 +98,7 @@ public:
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
-            flags[block][row_num].store(true, std::memory_order_relaxed);
+            flags[columns][row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
@@ -115,7 +115,7 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            return flags[mapped.block][mapped.row_num].load();
+            return flags[mapped.columns][mapped.row_num].load();
         }
         else
         {
@@ -135,11 +135,11 @@ public:
             auto & mapped = f.getMapped();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[mapped.block][mapped.row_num].load(std::memory_order_relaxed))
+            if (flags[mapped.columns][mapped.row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flags[mapped.block][mapped.row_num].compare_exchange_strong(expected, true);
+            return flags[mapped.columns][mapped.row_num].compare_exchange_strong(expected, true);
         }
         else
         {
@@ -155,7 +155,7 @@ public:
 
     }
     template <bool use_flags, bool flag_per_row>
-    bool setUsedOnce(const Block * block, size_t row_num, size_t offset)
+    bool setUsedOnce(const Columns * columns, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return true;
@@ -163,11 +163,11 @@ public:
         if constexpr (flag_per_row)
         {
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[block][row_num].load(std::memory_order_relaxed))
+            if (flags[columns][row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flags[block][row_num].compare_exchange_strong(expected, true);
+            return flags[columns][row_num].compare_exchange_strong(expected, true);
         }
         else
         {

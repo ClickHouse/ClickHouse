@@ -230,7 +230,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     )";
     FunctionDocumentation::Syntax syntax_orNull = "arrayFirstOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_orNull = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };

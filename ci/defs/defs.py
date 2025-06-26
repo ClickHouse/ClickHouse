@@ -98,7 +98,7 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
@@ -107,16 +107,10 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-util",
-        path="./ci/docker/test-util",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
+        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -138,13 +132,13 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
-        path="./ci/docker/keeper-jepsen",
+        path="./ci/docker/keeper-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/server-jepsen-test",
-        path="./ci/docker/server-jepsen",
+        path="./ci/docker/server-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
@@ -154,12 +148,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/integration-test",
-    #     path="./ci/docker/integration/integration-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
@@ -355,16 +343,6 @@ class ArtifactNames:
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
-    LEXER_AMD_DEBUG = "LEXER_AMD_DEBUG"
-    LEXER_AMD_ASAN = "LEXER_AMD_ASAN"
-    LEXER_AMD_TSAN = "LEXER_AMD_TSAN"
-    LEXER_AMD_MSAN = "LEXER_AMD_MSAN"
-    LEXER_AMD_UBSAN = "LEXER_AMD_UBSAN"
-    LEXER_AMD_BINARY = "LEXER_AMD_BINARY"
-    LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
-    LEXER_ARM_BIN = "LEXER_ARM_BIN"
-    LEXER_COV_BIN = "LEXER_COV_BIN"
-
     FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
@@ -432,23 +410,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
-        ]
-    )
-    lexer_test = Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/lexer_test",
-    ).parametrize(
-        names=[
-            ArtifactNames.LEXER_AMD_DEBUG,
-            ArtifactNames.LEXER_AMD_ASAN,
-            ArtifactNames.LEXER_AMD_TSAN,
-            ArtifactNames.LEXER_AMD_MSAN,
-            ArtifactNames.LEXER_AMD_UBSAN,
-            ArtifactNames.LEXER_AMD_BINARY,
-            ArtifactNames.LEXER_ARM_ASAN,
-            ArtifactNames.LEXER_ARM_BIN,
-            ArtifactNames.LEXER_COV_BIN,
         ]
     )
     clickhouse_debians = Artifact.Config(

@@ -81,6 +81,10 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
+    LOG_TEST(
+        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
+        settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
+        use_external_buffer, allow_seeks_after_first_read);
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(

@@ -206,23 +206,23 @@ void unflattenDynamicColumn(FlattenedDynamicColumn && flattened_column, ColumnDy
 {
     /// Iterate over types and try to add them as new variants into Dynamic column until the limit is reached.
     size_t first_index_for_shared_variant = flattened_column.types.size();
-    /// Map (index -> discriminator) for types that were successfully added as variants.
-    std::unordered_map<size_t, ColumnVariant::Discriminator> index_to_discriminator;
     for (size_t i = 0; i != flattened_column.types.size(); ++i)
     {
         auto type_name = flattened_column.types[i]->getName();
-        if (dynamic_column.addNewVariant(flattened_column.types[i], type_name))
-        {
-            index_to_discriminator[i] = dynamic_column.getVariantInfo().variant_name_to_discriminator.at(type_name);
-        }
         /// If a type cannot be added as a new variant, it means that the limit is reached
         /// and all remaining variants should be inserted into shared variant.
-        else
+        if (!dynamic_column.addNewVariant(flattened_column.types[i], type_name))
         {
             first_index_for_shared_variant = i;
             break;
         }
     }
+
+    /// Map (index -> discriminator) for types that were successfully added as variants.
+    std::unordered_map<size_t, ColumnVariant::Discriminator> index_to_discriminator;
+    for (size_t i = 0; i != first_index_for_shared_variant; ++i)
+        index_to_discriminator[i] = dynamic_column.getVariantInfo().variant_name_to_discriminator.at(flattened_column.types[i]->getName());
+
 
     switch (flattened_column.indexes_type->getTypeId())
     {

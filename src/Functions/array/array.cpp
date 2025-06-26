@@ -301,7 +301,7 @@ Use the `[ ]` operator for the same functionality.
         {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
         {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array, where 'T' is the smallest common type out of the passed arguments.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Valid usage", R"(
 SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
     )",

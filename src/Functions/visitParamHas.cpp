@@ -26,7 +26,7 @@ REGISTER_FUNCTION(VisitParamHas)
         .syntax = "simpleJSONHas(json, field_name)",
         .arguments
         = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value = {"It returns 1 if the field exists, 0 otherwise."},
         .examples
         = {{.name = "simple",

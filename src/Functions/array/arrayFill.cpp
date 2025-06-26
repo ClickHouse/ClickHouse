@@ -138,8 +138,8 @@ regardless of any condition.
 )";
     FunctionDocumentation::Syntax syntax = "arrayFill(func(x [, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x [, y1, ..., yN])", "A lambda function `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
-        {"source_arr", "The source array to process.", {"Lambda"}},
+        {"func(x [, y1, ..., yN])", "A lambda function `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Lambda function"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array", {"Array(T)"}};    FunctionDocumentation::Examples examples = {
@@ -162,7 +162,7 @@ regardless of any condition.
     )";
     FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_reverse = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
     };

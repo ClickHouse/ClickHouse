@@ -865,7 +865,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
@@ -1044,14 +1044,13 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
             if (!intersect.empty())
             {
-                ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
-                const uint32_t nclauses
-                    = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size())) + 1);
+                UsingExpr * uexpr = jc->mutable_using_expr();
+                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size()));
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
+                    ColumnPath * cp = uexpr->add_columns()->mutable_path();
                     const DB::Strings & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
@@ -1274,7 +1273,9 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+            std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
+
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, strlens(rg.generator)));
         }
         else
         {

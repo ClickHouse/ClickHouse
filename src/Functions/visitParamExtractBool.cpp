@@ -26,7 +26,7 @@ REGISTER_FUNCTION(VisitParamExtractBool)
         .syntax = "simpleJSONExtractBool(json, field_name)",
         .arguments
         = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value
         = {R"(It returns 1 if the value of the field is true, 0 otherwise. This means this function will return 0 including (and not only) in the following cases:
  - If the field doesn't exists.

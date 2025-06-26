@@ -201,6 +201,9 @@ target_link_libraries(_orc PRIVATE
 target_include_directories(_orc SYSTEM BEFORE PUBLIC
     ${ORC_INCLUDE_DIR}
     "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
+target_compile_options(_orc PRIVATE
+    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+)
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}

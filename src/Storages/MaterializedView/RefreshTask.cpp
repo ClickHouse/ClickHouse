@@ -31,6 +31,15 @@ namespace CurrentMetrics
     extern const Metric RefreshingViews;
 }
 
+namespace ProfileEvents
+{
+    extern const Event RefreshableViewRefreshSuccess;
+    extern const Event RefreshableViewRefreshFailed;
+    extern const Event RefreshableViewSyncReplicaSuccess;
+    extern const Event RefreshableViewSyncReplicaRetry;
+    extern const Event RefreshableViewLockTableRetry;
+}
+
 namespace DB
 {
 namespace Setting
@@ -63,6 +72,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
+    extern const int ABORTED;
 }
 
 RefreshTask::RefreshTask(
@@ -737,6 +747,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshFailed);
+
         bool cancelled = execution.interrupt_execution.load();
 
         if (table_to_drop.has_value())
@@ -763,6 +775,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         return std::nullopt;
     }
+
+    ProfileEvents::increment(ProfileEvents::RefreshableViewRefreshSuccess);
 
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
@@ -1008,41 +1022,98 @@ void RefreshTask::interruptExecution()
 
 std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)
 {
-    StoragePtr storage;
-    TableLockHolder storage_lock;
+    ///  1. Get table by name.
+    ///  2. Check that it's not dropped locally.
+    ///     (After that, it can't be dropped during the query because we're holding StoragePtr and
+    ///      TableLockHolder.)
+    ///     If this fails, retry and expect to see a different table by the same name.
+    ///  3. Do SYSTEM SYNC REPLICA. May fail if the table is being dropped.
+    ///     If this fails, retry until we see a different table by the same name.
+
+    StoragePtr prev_storage;
+    bool prev_table_dropped_locally = false;
+    std::exception_ptr exception;
+
     for (int attempt = 0; attempt < 10; ++attempt)
     {
-        StoragePtr prev_storage = std::move(storage);
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        if (attempt > 0)
+        {
+            if (prev_table_dropped_locally)
+            {
+                ProfileEvents::increment(ProfileEvents::RefreshableViewLockTableRetry);
+            }
+            else
+            {
+                /// We're waiting for DatabaseReplicated to catch up and see the new table.
+                ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaRetry);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+
+        StoragePtr storage = DatabaseCatalog::instance().getTable(storage_id, context);
+
         if (storage == prev_storage)
         {
-            // Table was dropped but is still accessible in DatabaseCatalog.
-            // Either ABA problem or something's broken. Don't retry, just in case.
-            break;
+            if (prev_table_dropped_locally)
+                // Table was dropped but is still accessible in DatabaseCatalog.
+                // Either ABA problem or something's broken. Don't retry.
+                break;
+            continue;
         }
-        storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-        if (storage_lock)
-            break;
-    }
-    if (!storage_lock)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
+        prev_storage = storage;
 
-    if (coordination.coordinated)
-    {
-        UUID uuid = storage->getStorageID().uuid;
-
-        std::lock_guard lock(replica_sync_mutex);
-        if (uuid != last_synced_inner_uuid)
+        TableLockHolder storage_lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (!storage_lock)
         {
-            InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
-
-            /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
-            ///  anything, just causes an unnecessary sync. Should be rare.)
-            last_synced_inner_uuid = uuid;
+            prev_table_dropped_locally = true;
+            continue;
         }
+
+        if (coordination.coordinated)
+        {
+            std::lock_guard lock(replica_sync_mutex);
+            UUID uuid = storage->getStorageID().uuid;
+            if (uuid != last_synced_inner_uuid)
+            {
+                try
+                {
+                    InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
+                    ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
+                }
+                catch (Exception & e)
+                {
+                    if (e.code() != ErrorCodes::ABORTED)
+                        throw;
+
+                    /// Work around this race condition:
+                    ///  1. Another replica does a refresh: create table X, insert, rename.
+                    ///  2. This replica sees table X, but not its data yet.
+                    ///  3. Another replica does another refresh: create table Y, insert, rename,
+                    ///     drop table X.
+                    ///  4. This replica's DatabaseReplicated shuts down table X, and the
+                    ///     trySyncReplica fails with "Shutdown is called for table" exception.
+                    ///     X may still not have all data. ReplicatedMergeTree shutdown stops
+                    ///     data part exchange, so there's no hope of getting all data out of X.
+                    /// In this case we retry table lookup in hopes of seeing the new table Y.
+                    LOG_DEBUG(log, "Retrying after exception when syncing replica: {}", e.message());
+                    exception = std::current_exception();
+                    prev_table_dropped_locally = false;
+                    continue;
+                }
+
+                /// (Race condition: this may revert from a newer uuid to an older one. This doesn't
+                ///  break anything, just causes an unnecessary sync. Should be rare.)
+                last_synced_inner_uuid = uuid;
+            }
+        }
+
+        return {storage, storage_lock};
     }
 
-    return {storage, storage_lock};
+    if (prev_table_dropped_locally)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
+    else
+        std::rethrow_exception(exception);
 }
 
 std::chrono::system_clock::time_point RefreshTask::currentTime() const
@@ -1060,7 +1131,7 @@ void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution(Int64(-1e-9), Int64(1e9))(thread_local_rng);
+    randomness = std::uniform_int_distribution(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
 String RefreshTask::CoordinationZnode::toString() const

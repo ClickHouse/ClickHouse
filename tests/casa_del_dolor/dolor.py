@@ -220,8 +220,21 @@ parser.add_argument(
 )
 parser.add_argument(
     "--add-keeper-map-prefix",
-    action="store_true",
+    action="store_false",
+    dest="add_keeper_map_prefix",
     help="Add 'keeper_map_path_prefix' server setting",
+)
+parser.add_argument(
+    "--add-transactions",
+    action="store_false",
+    dest="add_transactions",
+    help="Add 'allow_experimental_transactions' server setting",
+)
+parser.add_argument(
+    "--add-distributed-ddl",
+    action="store_false",
+    dest="add_distributed_ddl",
+    help="Add 'add_distributed_ddl' settings",
 )
 args = parser.parse_args()
 
@@ -363,9 +376,15 @@ client = generator.run_generator(servers[0])
 def dolor_cleanup():
     if client.process.poll() is None:
         client.process.kill()
+    cluster.shutdown()
     if modified_server_settings:
         try:
             os.unlink(server_settings)
+        except FileNotFoundError:
+            pass
+    if modified_user_settings:
+        try:
+            os.unlink(user_settings)
         except FileNotFoundError:
             pass
     try:
@@ -494,5 +513,3 @@ while all_running:
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
-
-cluster.shutdown()

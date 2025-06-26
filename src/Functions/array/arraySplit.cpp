@@ -133,8 +133,8 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Description description_split = "Split a source array into multiple arrays. When `func(x[, y1, ..., yN])` returns something other than zero, the array will be split to the right of the element. The array will not be split after the last element.";
     FunctionDocumentation::Syntax syntax_split = "arrayReverseSplit(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_split = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
-        {"source_arr", "The source array to process.", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Lambda function"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_split = {"Returns an array of arrays.", {"Array(Array(T))"}};

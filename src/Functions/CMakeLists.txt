@@ -18,6 +18,7 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
+    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
     FunctionsConversion_impl0.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
@@ -144,9 +145,6 @@ add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
 add_subdirectory(keyvaluepair)
-
-add_subdirectory(text)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_text>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

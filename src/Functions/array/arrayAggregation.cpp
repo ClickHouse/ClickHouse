@@ -453,7 +453,7 @@ If a lambda function `func` is specified, returns the minimum element of the lam
     )";
     FunctionDocumentation::Syntax syntax_min = "arrayMin([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_min = {
-        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
@@ -475,11 +475,11 @@ If a lambda function `func` is specified, returns the maximum element of the lam
     )";
     FunctionDocumentation::Syntax syntax_max = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_max = {
-        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_max = {"The maximum element in the source array, or the maximum element of the lambda results if provided."};
+    FunctionDocumentation::ReturnedValue returned_value_max = {"Returns the maximum element in the source array, or the maximum element of the lambda results if provided."};
     FunctionDocumentation::Examples examples_max = {
         {"Basic example", "SELECT arrayMax([5, 3, 2, 7]);", "7"},
         {"Usage with lambda function", "SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "12"},
@@ -497,7 +497,7 @@ If a lambda function `func` is specified, returns the sum of elements of the lam
     )";
     FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_sum = {
-        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {", cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
@@ -519,7 +519,7 @@ If a lambda function `func` is specified, returns the average of elements of the
     )";
     FunctionDocumentation::Syntax syntax_avg = "arrayAvg([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_avg = {
-        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
@@ -541,11 +541,11 @@ If a lambda function `func` is specified, returns the product of elements of the
     )";
     FunctionDocumentation::Syntax syntax_prod = "arrayProduct([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_prod = {
-        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda"}},
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_prod = {"The product of elements in the source array, or the product of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_prod = {"Returns the product of elements in the source array, or the product of elements of the lambda results if provided.", {"Float64"}};
     FunctionDocumentation::Examples examples_prod = {
         {"Basic example", "SELECT arrayProduct([1, 2, 3, 4]);", "24"},
         {"Usage with lambda function", "SELECT arrayProduct(x, y -> x+y, [2, 2], [2, 2]) AS res;", "16"},

@@ -9,7 +9,7 @@ from typing import List, Sequence, Tuple
 
 from ci_config import CI
 from env_helper import TEMP_PATH
-from functional_test_check import NO_CHANGES_MSG
+from integration_tests_runner import NO_CHANGES_MSG
 from pr_info import PRInfo
 from report import (
     ERROR,
