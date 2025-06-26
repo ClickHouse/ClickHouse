@@ -1,6 +1,7 @@
 #include <condition_variable>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -33,10 +34,20 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TaskTrackerThreads;
+    extern const Metric TaskTrackerThreadsActive;
+    extern const Metric TaskTrackerThreadsScheduled;
+}
 
 
 namespace DB
@@ -681,7 +692,7 @@ class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExec
 public:
     DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
-        , running_tasks(context, is_cancelled, logger)
+        , running_tasks(8, context, is_cancelled, logger)
     {
         QueryStatusPtr query_status = context->getProcessListElement();
 
@@ -751,58 +762,79 @@ protected:
         String task_id;
     };
 
-    /// Tracks the statuses of running tasks, collects progress counters
+    /// Tracks the statuses of running tasks in parallel, collects progress counters.
     class TaskTracker
     {
     public:
-        TaskTracker(ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_, LoggerPtr logger_)
+        TaskTracker(Int64 max_in_flight_requests_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_, LoggerPtr logger_)
             : context(std::move(context_))
             , query_status(context->getProcessListElement())
+            , max_in_flight_requests(max_in_flight_requests_)
             , is_cancelled(std::move(is_cancelled_))
+            , thread_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
+                max_in_flight_requests, max_in_flight_requests, 2 * max_in_flight_requests)
             , logger(std::move(logger_))
         {}
 
+        ~TaskTracker()
+        {
+            thread_pool.wait();
+        }
+
+        /// Add started task to be tracked
         void addTask(const String & stage_name, RunningTaskInfo task_info)
         {
-            stage_tasks[stage_name].push_back(std::move(task_info));
-        }
+            auto task_name = task_info.task_id;
 
-        void waitForStage(const String & stage_name)
-        {
-            auto & started_tasks = stage_tasks[stage_name];
-
-            String error_message;
-            while (!started_tasks.empty())
             {
-                checkCancelled();
+                std::lock_guard g(lock);
+                stage_tasks[stage_name][task_name] = std::move(task_info);
 
-                auto & task = started_tasks.front();
-                auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
-
-                auto progress_callback = context->getProgressCallback();
-                if (progress_callback)
-                    progress_callback(task_status.progress);
-
-                if (task_status.status == "Running")
-                    continue;
-
-                if (task_status.status != "Finished")
-                    error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
-
-                started_tasks.pop_front();
+                /// Create stage info if this stage was not known before
+                if (!all_stages.contains(stage_name))
+                    all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
+                all_stages[stage_name]->started_tasks++;
             }
 
-            if (!error_message.empty())
-                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
+            addTaskToCheckQueue(stage_name, task_name);
+            enqueueGetStatus();
         }
 
+        /// Wait for all tasks of the stage to finish
+        void waitForStage(const String & stage_name)
+        {
+            LOG_DEBUG(logger, "Waiting for stage {} to finish", stage_name);
+
+            std::shared_future<void> finished;
+            {
+                std::lock_guard g(lock);
+
+                auto & stage = all_stages.at(stage_name);
+
+                /// Is already finished?
+                if (stage->started_tasks == stage->finished_tasks)
+                    return;
+
+                /// Create a future that will be signaled by the last finishing task of this stage
+                if (!stage_results.contains(stage_name))
+                    stage_results[stage_name] = stage->promise.get_future();
+
+                finished = stage_results.at(stage_name);
+            }
+
+            while (finished.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                checkCancelled();
+        }
+
+        /// Cancel all unfinished tasks
         void cancel()
         {
+            std::lock_guard g(lock);
             for (auto & [stage_name, started_tasks] : stage_tasks)
             {
                 while (!started_tasks.empty())
                 {
-                    auto & task = started_tasks.front();
+                    auto & task = started_tasks.begin()->second;
                     LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
                     try
                     {
@@ -812,7 +844,7 @@ protected:
                     {
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                     }
-                    started_tasks.pop_front();
+                    started_tasks.erase(started_tasks.begin());
                 }
             }
         }
@@ -827,10 +859,144 @@ protected:
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
         }
 
+        /// Thead function to check one task. If the task is not finished, adds the task back to the queue for checking.
+        void checkStatusFunc(const String & stage_name, const RunningTaskInfo & task)
+        {
+            checkCancelled();
+
+            UInt32 wait_milliseconds = 300;
+
+            auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
+
+            auto progress_callback = context->getProgressCallback();
+            if (progress_callback)
+                progress_callback(task_status.progress);
+
+            if (task_status.status == "Running")
+            {
+                /// Add the task back to the end of the queue
+                addTaskToCheckQueue(stage_name, task.task_id);
+            }
+            else
+            {
+                String error_message;
+                if (task_status.status != "Finished")
+                    error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
+
+                if (!error_message.empty())
+                    throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
+
+                /// Update task state
+                setTaskFinished(stage_name, task.task_id);
+            }
+
+            /// Try to enqueue next check
+            enqueueGetStatus();
+        }
+
+        void addTaskToCheckQueue(const String & stage_name, const String & task_name)
+        {
+            std::lock_guard g(lock);
+            StageInfoPtr stage;
+            stage = all_stages[stage_name];
+            stage->tasks_to_check.push_back(task_name);
+
+            /// If this stage didn't have any tasks to check before we added this task then the stage is not it the queue for checking,
+            /// so we add it to the queue.
+            if (stage->tasks_to_check.size() == 1)
+                stages_to_check.push_back(stage);
+        }
+
+        void setTaskFinished(const String & stage_name, const String & task_name)
+        {
+            std::lock_guard g(lock);
+            auto & stage = all_stages[stage_name];
+            stage->finished_tasks++;
+
+            /// Is somebody already waiting for the result?
+            if (stage->finished_tasks == stage->started_tasks && stage_results.contains(stage_name))
+                stage->promise.set_value();
+
+            stage_tasks[stage_name].erase(task_name); // TODO: really need to erase?
+        }
+
+        /// Picks the next task from the queue.
+        /// The queue contains stages and within each stage there is a queue of unfinished tasks.
+        /// This allows to pick tasks from all stages and thus track progress of all stages in parallel.
+        std::optional<std::pair<String, String>> getNextTaskToCheck() TSA_REQUIRES(lock)
+        {
+            if (stages_to_check.empty())
+                return {};
+
+            auto stage = stages_to_check.front();
+            stages_to_check.pop_front();
+
+            if (stage->tasks_to_check.empty())    /// TODO: should not happen, but let's be safe
+                return {};
+
+            auto task = stage->tasks_to_check.front();
+            stage->tasks_to_check.pop_front();
+
+            /// If there are more tasks to check in the stage then put the stage back to the end of the queue
+            if (!stage->tasks_to_check.empty())
+                stages_to_check.push_back(stage);
+
+            return std::make_pair(stage->name, task);
+        }
+
+        void enqueueGetStatus()
+        {
+            std::lock_guard g(lock);
+
+            if (in_flight_request_count >= max_in_flight_requests)
+                return;
+
+            /// Choose next task to check
+            auto task = getNextTaskToCheck();
+            if (!task)
+                return;
+
+            auto task_info = stage_tasks[task->first][task->second];
+
+            thread_pool.scheduleOrThrow([this, task, task_info]()
+                {
+                    try
+                    {
+                        checkStatusFunc(task->first, task_info);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                    --in_flight_request_count;
+                });
+            ++in_flight_request_count;
+        }
+
+        struct StageInfo
+        {
+            const String name;
+            std::deque<String> tasks_to_check;  /// Queue of the tasks from this stage that are not finished and are not being checked at the moment
+            Int64 started_tasks = 0;
+            Int64 finished_tasks = 0;
+            std::promise<void> promise;
+        };
+
+        using StageInfoPtr = std::shared_ptr<StageInfo>;
+
         ContextPtr context;
         QueryStatusPtr query_status;
+
+        const Int64 max_in_flight_requests;
+
+        std::mutex lock;
+        std::unordered_map<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
+        std::unordered_map<String, std::map<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
+        std::atomic<Int64> in_flight_request_count = 0;
+        std::deque<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);  /// Queue of stages that have unfinished tasks to be checked
+        std::unordered_map<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
         std::shared_ptr<std::atomic<bool>> is_cancelled;
-        std::unordered_map<String, std::deque<RunningTaskInfo>> stage_tasks;
+        ThreadPool thread_pool;
         LoggerPtr logger;
     };
 
