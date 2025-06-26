@@ -5628,7 +5628,7 @@ Max wait time when trying to read data for remote disk
 Max attempts to read with backoff
 )", 0) \
     DECLARE(Bool, cluster_function_with_archives_send_over_whole_archive, false, R"(
-A setting for compatibility and to avoid errors during upgrade. Set it to `true`, when doing upgrade to 25.7 and using cluster functions with archives.
+A setting for compatibility and to avoid errors during upgrade. Set it to `true`, if all nodes in cluster are upgraded to 25.7+ and using cluster functions with archives.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
