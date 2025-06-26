@@ -275,10 +275,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     colors[highlight_pos] = color_stack.back();
 
                 auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
+                auto mapped_cursor_position = static_cast<uint64_t>(cursor_position);
 
-                if ( cursor_position < 0 ||
-                    (cursor_position != static_cast<int64_t>(highlight_pos) && cursor_position != static_cast<int64_t>(matching_brace_pos))
-                )
+                if (cursor_position < 0 || (highlight_pos != mapped_cursor_position && matching_brace_pos != mapped_cursor_position))
                 {
                     ++highlight_token_iterator;
                     color_stack.pop_back();
