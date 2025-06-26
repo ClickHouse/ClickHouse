@@ -3,12 +3,12 @@
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
   MergingAggregated
     Union
-      Expression
+      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
         Aggregating
-          Expression
+          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -24,13 +24,13 @@ select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), 
 42	84
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
   MergingAggregated
     Union
-      Expression
+      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
         Aggregating
-          Expression (( + (Before GROUP BY + Change column names to column identifiers)))
-            Expression
+          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
+            Expression (((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))[split])
               ReadFromMergeTree (default.tab)
               Indexes:
                 PrimaryKey
@@ -64,12 +64,12 @@ set group_by_use_nulls=1;
 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by x) where x = 42;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
   MergingAggregated
     Union
-      Expression
+      Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
         Aggregating
-          Expression
+          Expression ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names) + (Before GROUP BY + Change column names to column identifiers)))
             ReadFromMergeTree (default.tab)
             Indexes:
               PrimaryKey
@@ -85,10 +85,10 @@ select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), 
 42	84
 42	84
 explain indexes=1 select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab) group by grouping sets ((x, z + 1), (x, z + 2))) where x = 42;
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
   MergingAggregated
     Union
-      Filter (( + Change remote column names to local column names))
+      Filter (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change remote column names to local column names))
         Aggregating
           Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (default.tab)
