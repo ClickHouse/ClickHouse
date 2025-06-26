@@ -55,6 +55,8 @@ private:
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
+    const std::vector<String> & partition_columns,
+    const std::vector<String> & partition_values,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     WriteBuffer & buf);
@@ -125,6 +127,10 @@ public:
 
     std::unordered_map<PartitionKey, Chunk, PartitionKeyHasher> participateChunk(const Chunk & chunk);
 
+    const std::vector<String> & getColumns() const
+    {
+        return columns_to_apply;
+    }
 private:
     Block sample_block;
 

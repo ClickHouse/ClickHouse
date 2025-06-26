@@ -27,6 +27,7 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
+    root_node->printJson(std::cerr, 4);
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
 
     MutableColumns columns;
