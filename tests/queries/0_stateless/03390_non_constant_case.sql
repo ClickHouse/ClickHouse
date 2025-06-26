@@ -49,3 +49,14 @@ SELECT   caseWithExpression(
     NULL,
     NULL
 );
+
+SELECT caseWithExpression(
+    materialize(
+        assumeNotNull(
+            materialize(NULL)
+        )
+    ),
+    materialize(NULL),
+    NULL,
+    NULL
+); -- { serverError ILLEGAL_COLUMN }
