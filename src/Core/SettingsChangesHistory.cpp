@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"use_skip_indexes_on_data_read", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -97,7 +98,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
-            {"use_skip_indexes_on_data_read", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
