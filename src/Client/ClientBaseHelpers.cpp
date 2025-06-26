@@ -260,12 +260,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {
             if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
+                /// On opening round bracket, remember the color we use for it.
                 color_stack.push_back(default_colormap[current_color % default_colormap.size()]);
                 brace_stack.push_back(*highlight_token_iterator);
                 current_color++;
 
+                /// Highlight the opening round bracket and advance.
                 auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
-
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
@@ -275,16 +276,20 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
             if (highlight_token_iterator->type == TokenType::ClosingRoundBracket)
             {
+                /// Closing round bracket should match the last opening round bracket.
+                /// If there is no opening round bracket, advance.
                 if (color_stack.empty())
                 {
                     ++highlight_token_iterator;
                     continue;
                 }
 
+                /// Highlight the closing round bracket.
                 auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
+                /// If there is no opening round bracket, advance.
                 auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
                 auto mapped_cursor_position = static_cast<uint64_t>(cursor_position);
 
@@ -295,13 +300,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     continue;
                 }
 
+                /// If the cursor is on one of round bracket,
+                /// highlight both the opening and closing round brackets with a brighter color.
                 auto bright_color = bright_colormap[color_stack.back()];
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
 
+                /// Remove the last opening round bracket from the stack and advance.
                 brace_stack.pop_back();
-
                 ++highlight_token_iterator;
                 continue;
             }
@@ -343,6 +350,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             const auto opening_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_pos);
             const auto closing_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), matching_brace_pos);
 
+            /// If the cursor is on one of the round brackets marked as an error,
+            /// highlight both with a brighter color.
             if (pos == closing_brace_pos || pos == opening_brace_pos)
             {
                 colors[closing_brace_pos] = replxx::color::rgb666(5, 0, 1);
