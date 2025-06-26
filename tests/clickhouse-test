@@ -928,6 +928,7 @@ class FailureReason(enum.Enum):
     NO_ZOOKEEPER = "no zookeeper"
     NO_SHARD = "no shard"
     FAST_ONLY = "running fast tests only"
+    NOT_FAST_ONLY = "running not only fast tests"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
@@ -946,6 +947,7 @@ class FailureReason(enum.Enum):
     NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
+    NO_OPENSSL_FIPS = "no-openssl-fips"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1548,6 +1550,9 @@ class TestCase:
 
         if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
+        
+        if tags and ("fasttest-only" in tags) and not args.fast_tests_only:
+            return FailureReason.NOT_FAST_ONLY
 
         if (
             tags
@@ -1608,6 +1613,8 @@ class TestCase:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
             return FailureReason.NO_STATELESS
+        if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
+            return FailureReason.NO_OPENSSL_FIPS
 
         if tags:
             for build_flag in args.build_flags:
@@ -3943,6 +3950,12 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
         help="Replace *Log and Memory engines with MergeTree",
+    )
+    parser.add_argument(
+        "--openssl-fips",
+        action="store_true",
+        default=False,
+        help="Do not include tests that fail in OpenSSL FIPS mode",
     )
 
     parser.add_argument(

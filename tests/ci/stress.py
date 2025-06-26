@@ -260,23 +260,18 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
             )
 
     # Wait for last queries to finish if any, not longer than 300 seconds
-    call(
-        make_query_command(
-            """
-    SELECT sleepEachRow((
-        SELECT maxOrDefault(300 - elapsed) + 1
-        FROM system.processes
-        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
-    ) / 300)
-    FROM numbers(300)
-    FORMAT Null
-    SETTINGS function_sleep_max_microseconds_per_block = 0
-    """
-        ),
-        shell=True,
-        stderr=STDOUT,
-        timeout=330,
-    )
+    cutoff_time = time.time() + 300
+    while time.time() < cutoff_time:
+        queries = int(
+            check_output(
+                make_query_command("SELECT count() FROM system.processes WHERE query NOT LIKE '%FROM system.processes%'"), shell=True, stderr=STDOUT, timeout=30
+            )
+            .decode("utf-8")
+            .strip()
+        )
+        if queries == 0:
+            break
+        time.sleep(1)
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
