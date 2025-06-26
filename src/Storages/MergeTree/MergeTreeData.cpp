@@ -606,6 +606,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
+    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part");
     desc.addEphemeral("_part_data_version", std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
 
@@ -8314,9 +8315,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
-
-    for (const auto & disk : getStoragePolicy()->getDisks())
-        disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
 

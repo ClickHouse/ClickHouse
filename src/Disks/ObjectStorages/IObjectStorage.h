@@ -246,13 +246,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
-    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
-    /// in different namespace.
-    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix, ContextPtr context) = 0;
-
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
