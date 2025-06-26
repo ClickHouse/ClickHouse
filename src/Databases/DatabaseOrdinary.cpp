@@ -71,6 +71,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -643,6 +644,10 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         0,
         local_context->getSettingsRef()[Setting::max_parser_depth],
         local_context->getSettingsRef()[Setting::max_parser_backtracks]);
+
+    auto & create_query = ast->as<ASTCreateQuery &>();
+    if (table_id.uuid != UUIDHelpers::Nil && create_query.uuid != table_id.uuid)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter table {}: metadata file {} has different UUID", table_id.getNameForLogs(), table_metadata_path);
 
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
