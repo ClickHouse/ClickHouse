@@ -16,7 +16,8 @@ namespace ErrorCodes
 
 Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
 {
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out){
+    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
         return extractAtomFromTree(node_, out);
     }).extractRPN();
 
@@ -24,7 +25,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     std::stack<RPNElement *> rpn_stack;
     for (auto & element : rpn)
     {
-        switch(element.function)
+        switch (element.function)
         {
             case RPNElement::FUNCTION_AND:
             case RPNElement::FUNCTION_OR:
@@ -250,7 +251,8 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    auto canMergeWith = [&](const RPNElement & e) {
+    auto canMergeWith = [&](const RPNElement & e)
+    {
         return (e.function == FUNCTION_IN_RANGE
                 || e.function == FUNCTION_NOT_IN_RANGE
                 || e.function == function
