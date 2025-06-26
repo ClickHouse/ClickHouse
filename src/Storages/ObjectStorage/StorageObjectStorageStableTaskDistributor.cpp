@@ -110,7 +110,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         {
             file_path = object_info->getPathOrPathToArchiveIfArchive();
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                     "This will be suboptimal, consider turning on "
+                     "This will be suboptimal, consider turning off "
                      "cluster_function_with_archives_send_over_whole_archive setting", file_path);
         }
         else

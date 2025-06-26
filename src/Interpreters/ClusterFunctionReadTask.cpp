@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 namespace Setting
 {
-    extern const SettingsBool cluster_function_with_archives_send_over_whole_archive;
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
@@ -29,7 +29,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
-    const bool send_over_whole_archive = context->getSettingsRef()[Setting::cluster_function_with_archives_send_over_whole_archive];
+    const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
 }
 
