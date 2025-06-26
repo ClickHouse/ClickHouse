@@ -859,11 +859,10 @@ def modify_server_settings(
         path_xml.text = "/clickhouse/task_queue/ddl"
         replicas_path_xml = ET.SubElement(distributed_xml, "replicas_path")
         replicas_path_xml.text = "/clickhouse/task_queue/replicas"
-        if random.randint(1, 100) <= 70:
-            modified = (
-                apply_properties_recursively(distributed_xml, distributed_properties)
-                or modified
-            )
+        modified = (
+            apply_properties_recursively(distributed_xml, distributed_properties, 0)
+            or modified
+        )
 
     if (
         args.add_shared_catalog
