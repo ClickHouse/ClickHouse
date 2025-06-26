@@ -5,7 +5,6 @@
 #include <IO/ReadBuffer.h>
 #include <base/demangle.h>
 #include <Common/JSONBuilder.h>
-#include <Common/logger_useful.h>
 
 /// Include this last — see the reason inside
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
