@@ -2098,14 +2098,16 @@ message WindowDefn {
 enum WindowFuncs {
     WINdense_rank = 1;
     WINfirst_value = 2;
-    WINlagInFrame = 3;
-    WINlast_value = 4;
-    WINleadInFrame = 5;
-    WINnth_value = 6;
-    WINntile = 7;
-    WINpercent_rank = 8;
-    WINrank = 9;
-    WINrow_number = 10;
+    WINlag = 3;
+    WINlagInFrame = 4;
+    WINlast_value = 5;
+    WINleadInFrame = 6;
+    WINlead = 7;
+    WINnth_value = 8;
+    WINntile = 9;
+    WINpercent_rank = 10;
+    WINrank = 11;
+    WINrow_number = 12;
 }
 
 message SQLWindowCall {
@@ -2171,6 +2173,7 @@ message ComplicatedExpr {
         string columns = 18;
         ExprList array = 19;
         ExprList tuple = 20;
+        Table table = 21;
     }
 }
 
@@ -2192,18 +2195,12 @@ message ResultColumn {
     oneof result_col_oneof {
         ExprSchemaTableColumn etc = 1;
         ExprColAlias eca = 2;
-        Table table_star = 3;
     }
 }
 
 message ExprSchemaTable {
     optional Database database = 1;
     required Table table = 2;
-}
-
-message ExprColumnList {
-    required ExprColumn col = 1;
-    repeated ExprColumn extra_cols = 2;
 }
 
 enum InFormat {
@@ -2386,7 +2383,7 @@ enum InOutFormat {
 }
 
 message UsingExpr {
-    required ExprColumnList col_list = 1;
+    repeated ExprColumn columns = 1;
 }
 
 message JoinConstraint {
@@ -2599,7 +2596,7 @@ message MergeTreeIndexFunc {
 message GenerateRandomFunc {
     required Expr structure = 1;
     optional uint64 random_seed = 2;
-    optional uint64 max_string_length = 3;
+    optional uint32 max_string_length = 3;
     optional uint64 max_array_length = 4;
 }
 
@@ -3632,7 +3629,7 @@ message CreateDictionary {
     required DictionaryColumn col = 5;
     repeated DictionaryColumn other_cols = 6;
     required TableKey primary_key = 7;
-    required DictionarySource source = 8;
+    optional DictionarySource source = 8;
     required DictionaryLayout layout = 9;
     optional DictionaryRange range = 10;
     optional DictionaryLifetime lifetime = 11;
@@ -3873,7 +3870,11 @@ message BackupRestore {
     required BackupOutput out = 5;
     repeated string out_params = 6;
     optional SettingValues setting_values = 7;
-    optional bool async = 8;
+    enum SyncOrAsync {
+        SYNC = 1;
+        ASYNC = 2;
+    }
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
         InFormat informat = 9;
         OutFormat outformat = 10;
@@ -3888,6 +3889,27 @@ message Rename {
     required SQLObjectName new_object = 3;
     optional Cluster cluster = 4;
     optional SettingValues setting_values = 5;
+}
+
+message Kill {
+    enum KillEnum {
+        QUERY = 1;
+        MUTATION = 2;
+    }
+    required KillEnum command = 1;
+    optional Cluster cluster = 2;
+    required WhereStatement where = 3;
+    enum KillOption {
+        SYNC = 1;
+        ASYNC = 2;
+        TEST = 3;
+    }
+    optional KillOption option = 4;
+    oneof kill_format_oneof {
+        InFormat informat = 5;
+        OutFormat outformat = 6;
+    }
+    optional SettingValues setting_values = 7;
 }
 
 message SQLQueryInner {
@@ -3914,6 +3936,7 @@ message SQLQueryInner {
         BackupRestore backup_restore = 20;
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
+        Kill kill = 23;
     }
 }
 

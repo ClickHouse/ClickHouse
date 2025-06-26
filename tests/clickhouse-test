@@ -928,6 +928,7 @@ class FailureReason(enum.Enum):
     NO_ZOOKEEPER = "no zookeeper"
     NO_SHARD = "no shard"
     FAST_ONLY = "running fast tests only"
+    NOT_FAST_ONLY = "running not only fast tests"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
@@ -1548,6 +1549,9 @@ class TestCase:
 
         if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
+        
+        if tags and ("fasttest-only" in tags) and not args.fast_tests_only:
+            return FailureReason.NOT_FAST_ONLY
 
         if (
             tags
