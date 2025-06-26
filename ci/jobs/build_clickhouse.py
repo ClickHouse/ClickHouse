@@ -123,6 +123,9 @@ def main():
     res = True
     results = []
 
+    if os.getuid() == 0:
+        res = res and Shell.check(f"git config --global --add safe.directory {current_directory}")
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"mkdir -p {build_dir}")
         results.append(

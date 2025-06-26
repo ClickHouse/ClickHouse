@@ -154,6 +154,9 @@ def main():
     attach_files = []
     job_info = ""
 
+    if os.getuid() == 0:
+        res = res and Shell.check(f"git config --global --add safe.directory {current_directory}")
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
