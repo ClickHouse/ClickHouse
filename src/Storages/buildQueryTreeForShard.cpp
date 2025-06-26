@@ -440,10 +440,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         subquery_to_execute,
                         planner_context->getQueryContext());
 
-                // If DISTINCT optimization is enabled, add DISTINCT before executeSubqueryNode
+                // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
                 if (planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries])
                     addDistinctRecursively(subquery_to_execute);
-    
+
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
