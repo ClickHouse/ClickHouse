@@ -3,6 +3,7 @@
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -58,7 +59,9 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    session->makeSessionContext();
+    ContextMutablePtr session_context = session->makeSessionContext();
+    /// Re-apply settings from the command line arguments
+    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
 }
 
 LocalConnection::LocalConnection(

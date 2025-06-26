@@ -589,6 +589,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");
     factory.markOutputFormatNotTTYFriendly("ORC");
+    factory.setContentType("ORC", "application/octet-stream");
 }
 
 }

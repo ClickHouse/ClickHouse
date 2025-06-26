@@ -12,6 +12,8 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
+            <named_collection_control>1</named_collection_control>
+            <use_named_collections>1</use_named_collections>
         </default>
     </users>
 

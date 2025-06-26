@@ -1,5 +1,5 @@
-#include "WebUIRequestHandler.h"
-#include "IServer.h"
+#include <Server/WebUIRequestHandler.h>
+#include <Server/IServer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
@@ -91,8 +91,6 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
     }
-
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
 }
 
 }

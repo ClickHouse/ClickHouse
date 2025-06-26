@@ -28,5 +28,6 @@ endif()
 set_source_files_properties(FastMemcpy.cpp PROPERTIES COMPILE_FLAGS "-Wno-old-style-cast")
 set_source_files_properties(FastMemcpy_Avx.cpp PROPERTIES COMPILE_FLAGS "-mavx -Wno-old-style-cast -Wno-cast-qual -Wno-cast-align")
 
+target_include_directories(memcpy-bench PRIVATE .)
 target_link_libraries(memcpy-bench PRIVATE dbms clickhouse_functions boost::program_options)
 
