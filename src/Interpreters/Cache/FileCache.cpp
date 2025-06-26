@@ -1744,7 +1744,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         const bool max_elements_changed = desired_limits.max_elements != current_limits.max_elements;
         const bool slru_ratio_changed = desired_limits.slru_size_ratio != current_limits.slru_size_ratio;
 
-        const bool do_dynamic_resize = max_size_changed && max_elements_changed && !slru_ratio_changed;
+        const bool do_dynamic_resize = (max_size_changed || max_elements_changed) && !slru_ratio_changed;
 
         if (allow_dynamic_cache_resize && do_dynamic_resize)
         {
