@@ -55,7 +55,7 @@ namespace Setting
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
-    extern const SettingsBool cluster_function_with_archives_send_over_whole_archive;
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
 namespace ErrorCodes
@@ -135,7 +135,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        const bool expect_whole_archive = local_context->getSettingsRef()[Setting::cluster_function_with_archives_send_over_whole_archive];
+        const bool expect_whole_archive = local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
