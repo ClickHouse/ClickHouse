@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>

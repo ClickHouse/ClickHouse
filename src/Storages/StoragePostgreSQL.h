@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 
 namespace Poco

@@ -2,11 +2,9 @@
 
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Processors/SourceWithKeyCondition.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Core/BlockMissingValues.h>
+#include <Processors/ISource.h>
 
 
 namespace DB
@@ -18,10 +16,14 @@ using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public SourceWithKeyCondition
+class IInputFormat : public ISource
 {
 protected:
 
+    /// Note: implementations should prefer to drain this ReadBuffer to the end if it's not seekable
+    /// (unless it would cause too much extra IO). That's because `in` may be reading HTTP POST data
+    /// from the socket, and if not all data is read then the connection can't be reused for later
+    /// HTTP requests (keepalive).
     ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:

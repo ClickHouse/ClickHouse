@@ -140,7 +140,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
 
     node.http_query(
         "SELECT randomPrintableASCII(1024) FROM numbers(8 * 1024) FORMAT TSV",
-        params={"buffer_size": 0, "wait_end_of_query": 1},
+        params={"buffer_size": 0, "http_wait_end_of_query": 1},
     )
 
     assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
@@ -149,7 +149,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     with pytest.raises(Exception) as exc:
         node.http_query(
             "SELECT randomPrintableASCII(1024) FROM numbers(32 * 1024) FORMAT TSV",
-            params={"buffer_size": 0, "wait_end_of_query": 1},
+            params={"buffer_size": 0, "http_wait_end_of_query": 1},
         )
     assert fnmatch.fnmatch(
         str(exc.value), "*Failed to reserve * for temporary file*"

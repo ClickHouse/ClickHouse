@@ -6,6 +6,8 @@
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Core/Settings.h>
+
 #include <Common/logger_useful.h>
 
 
@@ -16,6 +18,11 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CHECKSUM_DOESNT_MATCH;
+}
+
+DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
+    : insert_settings(std::make_unique<Settings>())
+{
 }
 
 DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
@@ -53,7 +60,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         }
 
         readStringBinary(distributed_header.insert_query, header_buf);
-        distributed_header.insert_settings.read(header_buf);
+        distributed_header.insert_settings->read(header_buf);
 
         if (header_buf.hasPendingData())
             distributed_header.client_info.read(header_buf, distributed_header.revision);
@@ -95,7 +102,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
     {
-        distributed_header.insert_settings.read(in, SettingsWriteFormat::BINARY);
+        distributed_header.insert_settings->read(in, SettingsWriteFormat::BINARY);
         readStringBinary(distributed_header.insert_query, in);
         return distributed_header;
     }

@@ -5,22 +5,20 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -29,6 +27,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -111,12 +110,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
-/// Headers in config file will have structure "headers.header.name" and "headers.header.value".
-/// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
-};
 
 bool urlWithGlobs(const String & uri)
 {
@@ -318,12 +311,12 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    size_t max_parsing_threads,
+    FormatParserGroupPtr parser_group_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -334,6 +327,7 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
+    , parser_group(std::move(parser_group_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
 {
@@ -399,16 +393,12 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
-                /*max_download_threads*/ std::nullopt,
+                parser_group,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -491,7 +481,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            !parser_group->hasFilter())
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -631,7 +622,7 @@ void StorageURLSink::initBuffers()
     if (write_buf)
         return;
 
-    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+    std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
     auto poco_uri = Poco::URI(uri);
@@ -1205,12 +1196,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
             {
-                String next_uri = callback();
-                if (next_uri.empty())
+                auto task = callback();
+                if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(next_uri, max_addresses);
+                return getFailoverOptions(task->path, max_addresses);
             });
     }
     else if (is_url_with_globs)
@@ -1262,7 +1253,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const size_t max_parsing_threads = num_streams >= settings[Setting::max_parsing_threads] ? 1 : (settings[Setting::max_parsing_threads] / num_streams);
+    auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1278,13 +1269,12 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            max_parsing_threads,
+            parser_group,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
             need_only_count);
 
-        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1569,6 +1559,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
 {
+    /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
+    /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
+    static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys
+    {
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
+    };
+
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys, optional_regex_keys);
 
     configuration.url = collection.get<String>("url");

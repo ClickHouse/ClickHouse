@@ -2210,7 +2210,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     )
     instance.query("DETACH TABLE test.cs")
 
-    with rabbitmq_cluster.pause_container("rabbitmq1"):
+    with rabbitmq_cluster.pause_rabbitmq():
         instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000

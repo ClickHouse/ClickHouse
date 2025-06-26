@@ -147,6 +147,8 @@ struct IdentifierResolveScope
     /// Table column name to column node. Valid only during table ALIAS columns resolve.
     ColumnNameToColumnNodeMap column_name_to_column_node;
 
+    std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
+
     /// CTE name to query node
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 

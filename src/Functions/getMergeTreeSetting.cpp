@@ -86,9 +86,9 @@ Returns the current value of merge tree setting.
 )",
         .syntax = "getMergeTreeSetting('custom_setting')",
         .arguments = {
-            {"custom_setting", "The setting name. Type: String."}
+            {"custom_setting", "The setting name.", {"String"}}
         },
-        .returned_value = "The setting's current value.",
+        .returned_value = {"The setting's current value."},
         .examples = {
             {"getMergeTreeSetting", "SELECT getMergeTreeSetting('index_granularity');", "8192"},
         },

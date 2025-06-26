@@ -4,7 +4,7 @@
 <configuration>
     <property>
         <name>fs.defaultFS</name>
-        <value>s3a://warehouse/data</value>
+        <value>s3a://warehouse-hms/data</value>
     </property>
     <property>
         <name>fs.s3a.impl</name>
@@ -20,7 +20,7 @@
     </property>
     <property>
         <name>fs.s3a.secret.key</name>
-        <value>minio123</value>
+        <value>ClickHouse_Minio_P@ssw0rd</value>
     </property>
     <property>
         <name>fs.s3a.endpoint</name>

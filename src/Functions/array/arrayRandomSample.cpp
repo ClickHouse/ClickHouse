@@ -100,7 +100,22 @@ public:
 
 REGISTER_FUNCTION(ArrayRandomSample)
 {
-    factory.registerFunction<FunctionArrayRandomSample>();
+    FunctionDocumentation::Description description = "Returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.";
+    FunctionDocumentation::Syntax syntax = "arrayRandomSample(arr, samples)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "The input array or multidimensional array from which to sample elements.", {"Array(T)"}},
+        {"samples", "The number of elements to include in the random sample.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"An array containing a random sample of elements from the input array", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;", "['cherry','apple']"},
+        {"Using a multidimensional array", "SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;", "[[3,4],[5,6]]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayRandomSample>(documentation);
 }
 
 }

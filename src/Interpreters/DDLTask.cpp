@@ -3,9 +3,11 @@
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>

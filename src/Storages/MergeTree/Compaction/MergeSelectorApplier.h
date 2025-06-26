@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/MergeType.h>
 
 #include <Storages/StorageInMemoryMetadata.h>

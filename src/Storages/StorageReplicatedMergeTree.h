@@ -239,7 +239,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -320,7 +320,7 @@ public:
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
@@ -680,7 +680,7 @@ private:
 
     /// Lookup the part for the entry in the detached/ folder.
     /// returns nullptr if the part is corrupt or missing.
-    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry) const;
+    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
 
     void executeDropRange(const LogEntry & entry);
 

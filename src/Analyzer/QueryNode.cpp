@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -8,6 +9,7 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -34,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -133,6 +136,39 @@ void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
             return;
     }
     correlated_columns.push_back(correlated_column);
+}
+
+DataTypePtr QueryNode::getResultType() const
+{
+    if (isCorrelated())
+    {
+        if (projection_columns.size() == 1)
+        {
+            /// Scalar correlated subquery must return nullable result,
+            /// because it must return NULL value if subquery produces an empty result set.
+            ///
+            /// Example:
+            ///
+            /// SELECT
+            ///     *
+            /// FROM partsupp as ps
+            /// WHERE ps.ps_availqty > (
+            ///         SELECT 0.5 * sum(l.l_quantity)
+            ///         FROM lineitem as l
+            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
+            ///     )
+            ///
+            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
+            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
+            /// To avoid this, we return Null value here and the condition will evaluate to false.
+            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
+        }
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+                projection_columns.size());
+    }
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -303,12 +339,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -318,18 +354,26 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
-        cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
 
-    state.update(cte_name.size());
-    state.update(cte_name);
+    if (options.ignore_cte)
+    {
+        state.update(false);
+        state.update(size_t(0));
+        state.update(std::string());
+    }
+    else
+    {
+        state.update(is_cte);
+        state.update(cte_name.size());
+        state.update(cte_name);
+    }
 
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)
@@ -526,7 +570,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (is_subquery)
     {
         auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        subquery->cte_name = cte_name;
+        if (options.set_subquery_cte_name)
+            subquery->cte_name = cte_name;
         return subquery;
     }
 

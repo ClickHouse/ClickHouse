@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>

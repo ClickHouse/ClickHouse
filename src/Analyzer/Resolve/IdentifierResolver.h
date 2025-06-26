@@ -48,6 +48,10 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    static bool tryBindIdentifierToJoinUsingColumn(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
     static bool tryBindIdentifierToTableExpression(
         const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,

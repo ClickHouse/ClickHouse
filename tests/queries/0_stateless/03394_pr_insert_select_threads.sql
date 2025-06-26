@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long, no-parallel, no-object-storage
 
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select=2;
@@ -23,7 +23,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     if(is_initial_query, 'inital', 'secondary'),
     if(toUInt64OrZero(Settings['parallel_replicas_insert_select_local_pipeline']) == 0 and is_initial_query, 1, 8) threads_limit,
-    if(peak_threads_usage > threads_limit, threads_limit, peak_threads_usage),
+    least(peak_threads_usage, threads_limit),
     format('local_pipeline={}', Settings['parallel_replicas_insert_select_local_pipeline'])
 FROM system.query_log
 WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND Settings['allow_experimental_parallel_reading_from_replicas']='1' AND query_kind = 'Insert' AND has(tables, currentDatabase() || '.t_mt_target')

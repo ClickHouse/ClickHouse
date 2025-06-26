@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-async-insert
+# no-async-insert: flaky
 
 set -e
 

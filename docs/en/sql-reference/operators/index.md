@@ -27,7 +27,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
 
 `a / b` – The `divide(a, b)` function.
 

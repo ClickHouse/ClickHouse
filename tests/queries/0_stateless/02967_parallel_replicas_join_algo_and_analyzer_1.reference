@@ -22,11 +22,9 @@ simple (global) join with analyzer and parallel replicas
 4200042	4200042	4200042	-1400014
 4200048	4200048	4200048	-1400016
 4200054	4200054	4200054	-1400018
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value` FROM `default`.`num_2` AS `__table1` (stage: WithMergeableState)
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value` FROM `default`.`num_2` AS `__table1` (stage: WithMergeableState)
+(SELECT __table1.key AS key, __table1.value AS value FROM default.num_2 AS __table1), stage WithMergeableState
 <Trace> DefaultCoordinator: Coordination done
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` GLOBAL ALL INNER JOIN `_data_` AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` GLOBAL ALL INNER JOIN `_data_` AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
+(SELECT __table1.key AS key, __table1.value AS value, __table3.key AS `r.key`, __table3.value AS `r.value` FROM (SELECT __table2.key AS key, __table2.value AS value FROM default.num_1 AS __table2) AS __table1 GLOBAL ALL INNER JOIN _data_ AS __table3 ON __table1.key = __table3.key ORDER BY __table1.key ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64')), stage WithMergeableState
 <Trace> DefaultCoordinator: Coordination done
 
 simple (global) join with analyzer and parallel replicas with local plan
@@ -40,7 +38,7 @@ simple (global) join with analyzer and parallel replicas with local plan
 4200042	4200042	4200042	-1400014
 4200048	4200048	4200048	-1400016
 4200054	4200054	4200054	-1400018
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value` FROM `default`.`num_2` AS `__table1` (stage: WithMergeableState)
+(SELECT __table1.key AS key, __table1.value AS value FROM default.num_2 AS __table1), stage WithMergeableState
 <Trace> DefaultCoordinator: Coordination done
-SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` GLOBAL ALL INNER JOIN `_data_` AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
+(SELECT __table1.key AS key, __table1.value AS value, __table3.key AS `r.key`, __table3.value AS `r.value` FROM (SELECT __table2.key AS key, __table2.value AS value FROM default.num_1 AS __table2) AS __table1 GLOBAL ALL INNER JOIN _data_ AS __table3 ON __table1.key = __table3.key ORDER BY __table1.key ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64')), stage WithMergeableState
 <Trace> DefaultCoordinator: Coordination done

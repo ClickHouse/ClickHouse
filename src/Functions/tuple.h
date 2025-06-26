@@ -5,7 +5,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/isUnquotedIdentifier.h>
 
 namespace DB

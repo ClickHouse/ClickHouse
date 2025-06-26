@@ -58,8 +58,14 @@ void NativeWriter::flush()
     ostr.next();
 }
 
-
-void NativeWriter::writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision)
+/*static*/ void NativeWriter::writeData(
+    const ISerialization & serialization,
+    const ColumnPtr & column,
+    WriteBuffer & ostr,
+    const std::optional<FormatSettings> & format_settings,
+    UInt64 offset,
+    UInt64 limit,
+    UInt64 client_revision)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -87,6 +93,16 @@ void NativeWriter::writeData(const ISerialization & serialization, const ColumnP
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
+/*static*/ SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column)
+{
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+    {
+        auto info = column.type->getSerializationInfo(*column.column);
+        if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            return column.type->getSerialization(*info);
+    }
+    return column.type->getDefaultSerialization();
+}
 
 size_t NativeWriter::write(const Block & block)
 {
@@ -217,5 +233,4 @@ size_t NativeWriter::write(const Block & block)
     size_t written_size = written_after - written_before;
     return written_size;
 }
-
 }

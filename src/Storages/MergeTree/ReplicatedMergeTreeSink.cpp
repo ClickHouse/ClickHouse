@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1023,6 +1024,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// transaction: renameTempPartAndAdd
             transaction.rollbackPartsToTemporaryState();
             part->is_temp = true;
+            part->setName(initial_part_name);
             part->renameTo(temporary_part_relative_path, false);
             /// Throw an exception to set the proper keeper error and force a retry (if possible)
             zkutil::KeeperMultiException::check(multi_code, ops, responses);

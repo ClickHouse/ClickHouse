@@ -12,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <Core/Settings.h>
@@ -64,14 +65,6 @@ void StorageAzureConfiguration::check(ContextPtr context) const
     Configuration::check(context);
 }
 
-StorageAzureConfiguration::StorageAzureConfiguration(const StorageAzureConfiguration & other)
-    : Configuration(other)
-{
-    blob_path = other.blob_path;
-    blobs_paths = other.blobs_paths;
-    connection_params = other.connection_params;
-}
-
 StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
@@ -96,6 +89,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
+        connection_params.auth_method,
         std::move(client),
         std::move(settings),
         connection_params.getContainer(),

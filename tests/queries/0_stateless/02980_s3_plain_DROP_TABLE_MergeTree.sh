@@ -21,7 +21,7 @@ CLICKHOUSE_DATABASE="$new_database"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by key;
+    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1;
     insert into data values (1);
     select 'data after INSERT', count() from data;
 "
@@ -34,6 +34,7 @@ $CLICKHOUSE_CLIENT -m -q "
     attach table data (key Int) engine=MergeTree() order by key
     settings
         max_suspicious_broken_parts=0,
+        write_marks_for_substreams_in_compact_parts=1,
         disk=disk(type=s3_plain,
             endpoint='http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE',
             access_key_id='test',

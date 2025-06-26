@@ -290,9 +290,12 @@ def main():
                 command=do,
             )
         )
-        results[-1].set_files("report.html")
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results,
+        stopwatch=stop_watch,
+        files=["report.html"] if results[-1].is_ok() else [],
+    ).complete_job()
 
 
 if __name__ == "__main__":

@@ -92,6 +92,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         },
         query_id=query_id
     )
+    node1.query(f"SYSTEM SYNC REPLICA {target_table} LIGHTWEIGHT")
     assert (
         node1.query(
             f"select count() from {target_table}"

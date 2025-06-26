@@ -2702,7 +2702,21 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 name, argument_types, parameters);
         }, properties});
 
+    factory.registerFunction("lag", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
+                name, argument_types, parameters);
+        }, properties});
+
     factory.registerFunction("leadInFrame", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+                name, argument_types, parameters);
+        }, properties});
+
+    factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(

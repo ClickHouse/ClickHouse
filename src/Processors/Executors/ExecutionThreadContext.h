@@ -12,10 +12,6 @@ class ReadProgressCallback;
 class ExecutionThreadContext
 {
 private:
-    /// A queue of async tasks. Task is added to queue when waited.
-    std::queue<ExecutingGraph::Node *> async_tasks;
-    std::atomic_bool has_async_tasks = false;
-
     /// This objects are used to wait for next available task.
     std::condition_variable condvar;
     std::mutex mutex;
@@ -59,11 +55,6 @@ public:
     void setTask(ExecutingGraph::Node * task) { node = task; }
     bool executeTask();
     uint64_t getProcessorID() const { return node->processors_id; }
-
-    /// Methods to manage async tasks.
-    ExecutingGraph::Node * tryPopAsyncTask();
-    void pushAsyncTask(ExecutingGraph::Node * async_task);
-    bool hasAsyncTasks() const { return has_async_tasks; }
 
     std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 

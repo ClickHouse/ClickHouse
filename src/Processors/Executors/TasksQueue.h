@@ -10,18 +10,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// A set of task queues for multithreaded processing.
+/// Every threads has its dedicated queue and uses it preferably.
+/// When there are no tasks left in dedicated queue it steals tasks from other threads
 template <typename Task>
 class TaskQueue
 {
 public:
     void init(size_t num_threads) { queues.resize(num_threads); }
 
+    /// Push a task into thread's dedicated queue
     void push(Task * task, size_t thread_num)
     {
         queues[thread_num].push(task);
         ++num_tasks;
     }
 
+    /// Returns thread number to pop task from.
+    /// First it check dedicated queue, and only if it is empty, it steal from other threads
     size_t getAnyThreadWithTasks(size_t from_thread = 0)
     {
         if (num_tasks == 0)
@@ -40,6 +46,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TaskQueue is empty");
     }
 
+    /// Pop a task from the specified queue or steal from others
     Task * pop(size_t thread_num)
     {
         auto thread_with_tasks = getAnyThreadWithTasks(thread_num);

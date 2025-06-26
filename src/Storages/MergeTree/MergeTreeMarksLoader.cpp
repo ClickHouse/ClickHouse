@@ -9,6 +9,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/Context.h>
 
 #include <utility>
 

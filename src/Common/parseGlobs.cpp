@@ -15,12 +15,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const re2::RE2 range_regex(R"({([\d]+\.\.[\d]+)})"); /// regexp for {M..N}, where M and N - non-negative integers
-static const re2::RE2 enum_regex(R"({([^{}*,]+[^{}*]*[^{}*,])})"); /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+namespace
+{
+struct Regexps
+{
+    static const Regexps & instance()
+    {
+        static Regexps regexps;
+        return regexps;
+    }
+
+    /// regexp for {M..N}, where M and N - non-negative integers
+    re2::RE2 range_regex{R"({([\d]+\.\.[\d]+)})"};
+
+    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+    re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
+};
+}
 
 bool containsRangeGlob(const std::string & input)
 {
-    return RE2::PartialMatch(input, range_regex);
+    return RE2::PartialMatch(input, Regexps::instance().range_regex);
 }
 
 bool containsOnlyEnumGlobs(const std::string & input)
@@ -67,8 +82,8 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         std::string_view matched_range;
         std::string_view matched_enum;
 
-        auto did_match_range = RE2::PartialMatch(input, range_regex, &matched_range);
-        auto did_match_enum = RE2::PartialMatch(input, enum_regex, &matched_enum);
+        auto did_match_range = RE2::PartialMatch(input, Regexps::instance().range_regex, &matched_range);
+        auto did_match_enum = RE2::PartialMatch(input, Regexps::instance().enum_regex, &matched_enum);
 
         /// Enum regex matches ranges, so if they both match and point to the same data,
         /// it is a range.
@@ -78,7 +93,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         /// We matched a range, and range comes earlier than enum
         if (did_match_range && (!did_match_enum || matched_range.data() < matched_enum.data()))
         {
-            RE2::FindAndConsume(&input, range_regex, &matched);
+            RE2::FindAndConsume(&input, Regexps::instance().range_regex, &matched);
             std::string buffer(matched);
             oss_for_replacing << escaped_with_globs.substr(current_index, matched_range.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
@@ -122,7 +137,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         /// We matched enum, and it comes earlier than range.
         else if (did_match_enum && (!did_match_range || matched_enum.data() < matched_range.data()))
         {
-            RE2::FindAndConsume(&input, enum_regex, &matched);
+            RE2::FindAndConsume(&input, Regexps::instance().enum_regex, &matched);
             std::string buffer(matched);
 
             oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
@@ -165,15 +180,32 @@ namespace
 {
 void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
 {
-    /// regexp for {expr1,expr2,....} (a selector glob);
-    /// expr1, expr2,... cannot contain any of these: '{', '}', ','
-    static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
-
     std::string_view path_view(path);
     std::string_view matched;
 
+    /// enum_regexp does not match elements of one char, e.g. {a}.tsv
+    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos;
+    if (!definitely_no_selector_globs)
+    {
+        auto left_bracket_pos = path.find_first_of('{');
+        auto right_bracket_pos = path.find_first_of('}');
+
+        auto is_this_enum_of_one_char =
+            left_bracket_pos != std::string::npos
+            && right_bracket_pos != std::string::npos
+            && (right_bracket_pos - left_bracket_pos) == 2;
+
+        definitely_no_selector_globs = !is_this_enum_of_one_char;
+    }
+
+    auto is_this_range_glob = RE2::PartialMatch(path_view, Regexps::instance().range_regex, &matched);
+    auto is_this_enum_glob = RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched);
+
     /// No (more) selector globs found, quit
-    if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
+    ///
+    /// range_glob regex is stricter than enum_glob, so we need to check
+    /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
+    if ((!is_this_enum_glob || (is_this_range_glob && is_this_enum_glob)) && definitely_no_selector_globs)
     {
         for_match_paths_expanded.push_back(path);
         return;

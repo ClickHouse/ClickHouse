@@ -32,7 +32,7 @@ public:
     {
         const auto & type = arguments[0];
         const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get());
-        if (!type_tuple || !type_tuple->haveExplicitNames())
+        if (!type_tuple || !type_tuple->hasExplicitNames())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument for function '{}' must be Named Tuple. Got '{}'",
                 getName(), type->getName());

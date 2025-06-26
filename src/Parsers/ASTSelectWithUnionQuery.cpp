@@ -17,7 +17,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->children.push_back(res->list_of_selects);
 
     res->union_mode = union_mode;
-
+    res->is_normalized = is_normalized;
     res->list_of_modes = list_of_modes;
     res->set_of_modes = set_of_modes;
 
@@ -30,7 +30,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    auto mode_to_str = [&](auto mode)
+    auto mode_to_str = [&](SelectUnionMode mode)
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
             return "UNION";
@@ -53,26 +53,55 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         return "";
     };
 
+    auto is_except = [](SelectUnionMode mode)
+    {
+        return mode == SelectUnionMode::EXCEPT_DEFAULT
+            || mode == SelectUnionMode::EXCEPT_ALL
+            || mode == SelectUnionMode::EXCEPT_DISTINCT;
+    };
+
+    auto get_mode = [&](ASTs::const_iterator it)
+    {
+        return is_normalized
+            ? union_mode
+            : list_of_modes[it - list_of_selects->children.begin() - 1];
+    };
+
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
-                          << (settings.hilite ? hilite_none : "");
-
-        if (auto * /*node*/ _ = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            if (it != list_of_selects->children.begin())
-                ostr << settings.nl_or_ws;
+            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+                << mode_to_str(get_mode(it))
+                << (settings.hilite ? hilite_none : "")
+                << settings.nl_or_ws;
+        }
 
+        bool need_parens = false;
+
+        /// EXCEPT can be confused with the asterisk modifier:
+        /// SELECT * EXCEPT SELECT 1 -- two queries
+        /// SELECT * EXCEPT col      -- a modifier for asterisk
+        /// For this reason, add parentheses when formatting any side of EXCEPT.
+        ASTs::const_iterator next = it;
+        ++next;
+        if ((it != list_of_selects->children.begin() && is_except(get_mode(it)))
+            || (next != list_of_selects->children.end() && is_except(get_mode(next))))
+            need_parens = true;
+
+        /// If this is a subtree with another chain of selects, we also need parens.
+        auto * union_node = (*it)->as<ASTSelectWithUnionQuery>();
+        if (union_node)
+            need_parens = true;
+
+        if (need_parens)
+        {
             ostr << indent_str;
-            auto sub_query = std::make_shared<ASTSubquery>(*it);
-            sub_query->format(ostr, settings, state, frame);
+            auto subquery = std::make_shared<ASTSubquery>(*it);
+            subquery->format(ostr, settings, state, frame);
         }
         else
         {
-            if (it != list_of_selects->children.begin())
-                ostr << settings.nl_or_ws;
             (*it)->format(ostr, settings, state, frame);
         }
     }

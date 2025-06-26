@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
+#include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 

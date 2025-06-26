@@ -204,54 +204,6 @@ ASTPtr ASTFunction::toLiteral() const
 }
 
 
-/** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
-  *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
-  * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
-  * With highlighting we make it clearly obvious.
-  *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
-  */
-static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, WriteBuffer & ostr, const char * metacharacters)
-{
-    if (const auto * literal = node->as<ASTLiteral>())
-    {
-        if (literal->value.getType() == Field::Types::String)
-        {
-            auto string = applyVisitor(FieldVisitorToString(), literal->value);
-
-            unsigned escaping = 0;
-            for (auto c : string)
-            {
-                if (c == '\\')
-                {
-                    ostr << c;
-                    if (escaping == 2)
-                        escaping = 0;
-                    ++escaping;
-                }
-                else if (nullptr != strchr(metacharacters, c))
-                {
-                    if (escaping == 2)      /// Properly escaped metacharacter
-                        ostr << c;
-                    else                    /// Unescaped metacharacter
-                        ostr << "\033[1;35m" << c << "\033[0m";
-                    escaping = 0;
-                }
-                else
-                {
-                    ostr << c;
-                    escaping = 0;
-                }
-            }
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-
 ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 {
     if (arguments && arguments->children.size() == 1)

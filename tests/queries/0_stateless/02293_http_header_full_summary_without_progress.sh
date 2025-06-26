@@ -16,7 +16,7 @@ for _ in {1..10}; do
 done
 
 CURL_OUTPUT=$(echo 'SELECT 1 + sleepEachRow(0.00002) FROM numbers(100000)' | \
-  ${CLICKHOUSE_CURL_COMMAND} --max-time 10 -vsS "${CLICKHOUSE_URL}&wait_end_of_query=1&send_progress_in_http_headers=0&max_execution_time=1" --data-binary @- 2>&1)
+  ${CLICKHOUSE_CURL_COMMAND} --max-time 10 -vsS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&send_progress_in_http_headers=0&max_execution_time=1" --data-binary @- 2>&1)
 
 READ_ROWS=$(echo "${CURL_OUTPUT}" | \
   grep 'X-ClickHouse-Summary' | grep -v 'Access-Control-Expose-Headers' | \

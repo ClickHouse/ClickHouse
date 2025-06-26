@@ -141,6 +141,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
+    std::optional<std::string> table_to_write = std::nullopt;
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
         ColumnsDescription{},
@@ -148,6 +149,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
+        table_to_write,
+        false,
         context);
 
     res->startup();
@@ -158,7 +161,16 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMerge>();
+    factory.registerFunction<TableFunctionMerge>(
+        {
+            .documentation = {
+                .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
+                .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
+            .allow_readonly = true,
+        }
+    );
 }
 
 }

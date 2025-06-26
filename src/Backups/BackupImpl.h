@@ -33,12 +33,14 @@ public:
         size_t max_volume_size = 0;
     };
 
+    using SnapshotReaderCreator = std::function<std::shared_ptr<IBackupReader>(const String &, const String &)>;
+
     /// RESTORE
     BackupImpl(
         BackupFactory::CreateParams params_,
         const ArchiveParams & archive_params_,
         std::shared_ptr<IBackupReader> reader_,
-        std::shared_ptr<IBackupReader> lightweight_snapshot_reader_ = nullptr);
+        SnapshotReaderCreator lightweight_snapshot_reader_creator_ = {});
 
     /// BACKUP
     BackupImpl(
@@ -118,6 +120,7 @@ private:
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
     std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
+        SnapshotReaderCreator lightweight_snapshot_reader_creator;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;

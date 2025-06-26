@@ -238,7 +238,8 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
@@ -278,7 +279,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & /* dict_struct */,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & /* dict_struct */,
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,

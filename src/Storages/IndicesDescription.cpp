@@ -28,6 +28,45 @@ namespace ErrorCodes
 namespace
 {
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+
+Tuple parseGinIndexArgumentFromAST(const ASTPtr & arguments)
+{
+    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
+    if (identifier == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
+
+    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
+    if (literal == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
+
+    Tuple key_value_pair{};
+    key_value_pair.emplace_back(identifier->name());
+    key_value_pair.emplace_back(literal->value);
+    return key_value_pair;
+}
+
+bool parseGinIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
+{
+    parsed_arguments.reserve(arguments->children.size());
+
+    for (const auto & argument : arguments->children)
+    {
+        if (const auto * ast_function = argument->template as<ASTFunction>();
+            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
+        {
+            parsed_arguments.emplace_back(parseGinIndexArgumentFromAST(ast_function->arguments));
+        }
+        else
+        {
+            if (!parsed_arguments.empty())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as GIN index arguments");
+            return false;
+        }
+    }
+
+    return true;
+}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -129,6 +168,11 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
+        bool is_text_index = index_type->name == "text";
+        bool is_legacy_text_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
+        if ((is_text_index || is_legacy_text_index) && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
+            return result;
+
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
             const auto & child = index_type->arguments->children[i];

@@ -582,6 +582,9 @@ Cluster::Cluster(
 
     for (const auto & shard : names)
     {
+        if (shard.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
+
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(

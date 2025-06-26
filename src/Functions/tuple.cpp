@@ -1,5 +1,5 @@
 #include <Functions/tuple.h>
-
+#include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
 namespace DB

@@ -218,6 +218,9 @@ public:
 
         Function function = FUNCTION_UNKNOWN;
 
+        /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
+        bool relaxed = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
         size_t key_column = 0;
@@ -481,6 +484,6 @@ private:
     bool relaxed = false;
 };
 
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }

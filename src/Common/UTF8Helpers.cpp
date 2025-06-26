@@ -1,5 +1,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <widechar_width.h>
 #include <bit>
@@ -218,6 +219,30 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     return computeWidthImpl<BytesBeforeLimit>(data, size, prefix, limit);
+}
+
+
+size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length)
+{
+    static const Poco::UTF8Encoding utf8;
+    int res = utf8.convert(
+        code_point,
+        reinterpret_cast<uint8_t *>(out_bytes),
+        static_cast<int>(out_length));
+    assert(res >= 0);
+    return res;
+}
+
+std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length)
+{
+    static const Poco::UTF8Encoding utf8;
+    int res = utf8.queryConvert(
+        reinterpret_cast<const uint8_t *>(in_bytes),
+        static_cast<int>(in_length));
+
+    if (res >= 0)
+        return res;
+    return {};
 }
 
 }

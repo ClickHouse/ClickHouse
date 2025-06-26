@@ -77,7 +77,6 @@ if __name__ == "__main__":
         Result.from_commands_run(
             name=testname,
             command=[
-                "yarn build-api-doc",
                 "yarn build-swagger",
                 "export DOCUSAURUS_IGNORE_SSG_WARNINGS=true && yarn build-docs",
             ],

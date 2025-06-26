@@ -5,6 +5,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>

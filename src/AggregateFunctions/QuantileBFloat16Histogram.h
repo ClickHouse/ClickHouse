@@ -115,13 +115,13 @@ private:
     using Pair = PairNoInit<Float32, Weight>;
 
     template <typename T>
-    static inline T safeCast(Float32 x)
+    static T safeCast(Float32 x)
     {
         if constexpr (!std::is_floating_point_v<T>)
         {
-            if (unlikely(x > std::numeric_limits<T>::max()))
+            if (x >= std::numeric_limits<T>::max()) [[unlikely]]
                 return std::numeric_limits<T>::max();
-            if (unlikely(x < std::numeric_limits<T>::min()))
+            if (x <= std::numeric_limits<T>::min()) [[unlikely]]
                 return std::numeric_limits<T>::min();
         }
         return static_cast<T>(x);

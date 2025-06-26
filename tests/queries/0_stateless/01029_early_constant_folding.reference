@@ -1,11 +1,21 @@
 SELECT 1
-WHERE 0
+FROM system.one
+WHERE 1 = 0
 SELECT 1
+FROM system.one
+WHERE 1 IN (0, 1, 2)
 SELECT 1
-WHERE (1 IN (0, 2)) AND (2 = (__scalarSubqueryResult(_CAST(2, \'Nullable(UInt8)\')) AS subquery))
+FROM system.one
+WHERE (1 IN (0, 2)) AND (2 = ((
+    SELECT 2
+    FROM system.one
+) AS subquery))
 SELECT 1
+FROM system.one
 WHERE 1 IN ((
-    SELECT arrayJoin([1, 2, 3])
+    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\'))
+    FROM system.one
 ) AS subquery)
 SELECT 1
+FROM system.one
 WHERE NOT ignore()

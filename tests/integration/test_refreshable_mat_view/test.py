@@ -351,7 +351,7 @@ def get_rmv_info(
             check_callback=(
                 (lambda r: r.iloc[0]["status"] == wait_status)
                 if wait_status
-                else (lambda x: True)
+                else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
             parse=True,
         ).to_dict("records")[0]

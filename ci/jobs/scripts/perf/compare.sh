@@ -613,65 +613,6 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     order by test, query_index, metric_name
     ;
 " 2> >(tee -a analyze/errors.log 1>&2)
-
-# Fetch historical query variability thresholds from the CI database
-if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
-then
-    set +x # Don't show password in the log
-    client=(clickhouse-client
-        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
-        # Poco URI parser to support this in the client, but it's broken and can't
-        # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-        --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
-        --config "right/config/client_config.xml"
-        --date_time_input_format=best_effort)
-
-
-# Precision is going to be 1.5 times worse for PRs, because we run the queries
-# less times. How do I know it? I ran this:
-# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
-# FROM
-# (
-#     SELECT
-#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
-#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
-#     FROM query_metrics_v2
-#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
-#     GROUP BY
-#         test,
-#         query_index,
-#         query_display_name
-#     HAVING count(*) > 100
-# )
-#
-# The file can be empty if the server is inaccessible, so we can't use
-# TSVWithNamesAndTypes.
-#
-    "${client[@]}" --query "
-            select test, query_index,
-                quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-                query_display_name
-            from query_metrics_v2
-            -- We use results at least one week in the past, so that the current
-            -- changes do not immediately influence the statistics, and we have
-            -- some time to notice that something is wrong.
-            where event_date between now() - interval 1 month - interval 1 week
-                    and now() - interval 1 week
-                and metric = 'client_time'
-                and pr_number = 0
-            group by test, query_index, query_display_name
-            having count(*) > 100
-            " > analyze/historical-thresholds.tsv
-    set -x
-else
-    touch analyze/historical-thresholds.tsv
-fi
-
 }
 
 # Analyze results
@@ -723,7 +664,7 @@ create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresho
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
-    left join file('analyze/historical-thresholds.tsv', TSV,
+    left join file('./historical-thresholds.tsv', TSV,
         'test text, query_index int, max_diff float, max_stat_threshold float,
             query_display_name text') historical_thresholds
     on query_display_names.test = historical_thresholds.test
@@ -1266,72 +1207,6 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     )
 ;
     "
-
-#    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
-#    then
-#        echo Database for test results is not specified, will not upload them.
-#        return 0
-#    fi
-
-#    set +x # Don't show password in the log
-#    client=(clickhouse-client
-#        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-#        # so I have to extract host and port with clickhouse-local. I tried to use
-#        # Poco URI parser to support this in the client, but it's broken and can't
-#        # parse host:port.
-#        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-#        --secure
-#        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-#        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
-#        --config "right/config/client_config.xml"
-#        --date_time_input_format=best_effort)
-
-    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
-    #     `event_date` Date,
-    #     `event_time` DateTime,
-    #     `pr_number` UInt32,
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `test` LowCardinality(String),
-    #     `query_index` UInt32,
-    #     `query_display_name` String,
-    #     `metric` LowCardinality(String),
-    #     `old_value` Float64,
-    #     `new_value` Float64,
-    #     `diff` Float64,
-    #     `stat_threshold` Float64
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY event_date
-
-    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `metric` LowCardinality(String),
-    #     `metric_value` String
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY (old_sha, new_sha)
-
-#    "${client[@]}" --query "
-#            insert into query_metrics_v2
-#            select
-#                toDate(event_time) event_date,
-#                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
-#                $PR_TO_TEST pr_number,
-#                '$REF_SHA' old_sha,
-#                '$SHA_TO_TEST' new_sha,
-#                test,
-#                query_index,
-#                query_display_name,
-#                metric_name as metric,
-#                old_value,
-#                new_value,
-#                diff,
-#                stat_threshold
-#            from input('metric_name text, old_value float, new_value float, diff float,
-#                    ratio_display_text text, stat_threshold float,
-#                    test text, query_index int, query_display_name text')
-#            format TSV
-#" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.

@@ -1,0 +1,56 @@
+-- { echo On }
+-- We should use just a single thread to merge the state of trivial count
+EXPLAIN PIPELINE SELECT count() FROM trivial_count;
+(Expression)
+ExpressionTransform
+  (MergingAggregated)
+  MergingAggregatedTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromPreparedSource)
+      SourceFromSingleChunk 0 → 1
+-- But not if we are filtering or doing other operations (no trivial count)
+EXPLAIN PIPELINE SELECT count() FROM trivial_count WHERE number % 3 = 2;
+(Expression)
+ExpressionTransform × 4
+  (Aggregating)
+  Resize 1 → 4
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (Filter)
+        FilterTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+EXPLAIN PIPELINE SELECT count() FROM trivial_count GROUP BY number % 10;
+(Expression)
+ExpressionTransform × 4
+  (Aggregating)
+  Resize 1 → 4
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+-- Other aggregations should still use as many threads as necessary
+EXPLAIN PIPELINE SELECT sum(number) FROM trivial_count;
+(Expression)
+ExpressionTransform × 4
+  (Aggregating)
+  Resize 1 → 4
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+EXPLAIN PIPELINE SELECT count(), sum(number) FROM trivial_count;
+(Expression)
+ExpressionTransform × 4
+  (Aggregating)
+  Resize 1 → 4
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+DROP TABLE IF EXISTS trivial_count;

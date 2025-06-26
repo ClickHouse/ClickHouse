@@ -71,8 +71,8 @@ struct HudiClusterDefinition
 * On worker node it asks initiator about next task to process, processes it.
 * This is repeated until the tasks are finished.
 */
-template <typename Definition, typename Configuration>
-class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration>>
+template <typename Definition, typename Configuration, bool is_data_lake = false>
+class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunctionObjectStorage<Definition, Configuration, is_data_lake>>
 {
 public:
     static constexpr auto name = Definition::name;
@@ -80,7 +80,7 @@ public:
     String getName() const override { return name; }
 
 protected:
-    using Base = TableFunctionObjectStorage<Definition, Configuration>;
+    using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -111,23 +111,23 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 #endif
 
 #if USE_AVRO && USE_AWS_S3
-using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration>;
+using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration>;
+using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<IcebergAzureClusterDefinition, StorageAzureIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_HDFS
-using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
+using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
 #endif
 
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
-using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
+using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
 #if USE_AWS_S3
-using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration>;
+using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
 #endif
 
 }

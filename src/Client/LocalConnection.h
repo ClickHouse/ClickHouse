@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Connection.h"
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>

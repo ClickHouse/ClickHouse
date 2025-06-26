@@ -26,8 +26,8 @@ $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_read;
     drop table if exists data_write;
 
-    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key;
-    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key;
+    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key settings write_marks_for_substreams_in_compact_parts=1;
+    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key settings write_marks_for_substreams_in_compact_parts=1;
 
     insert into data_write values (1);
     system sync replica data_read;
@@ -42,6 +42,7 @@ $CLICKHOUSE_CLIENT -m -q "
     attach table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key
     settings
         max_suspicious_broken_parts=0,
+        write_marks_for_substreams_in_compact_parts=1,
         disk=disk(type=s3_plain,
             endpoint='http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE',
             access_key_id='test',

@@ -249,6 +249,7 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
+        bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
         std::string create_engine_name;
@@ -310,6 +311,7 @@ public:
         Select,
         Insert,
         Delete,
+        Update,
         Create,
         Drop,
         Undrop,
@@ -338,6 +340,7 @@ public:
         AsyncInsertFlush,
         ParallelWithQuery,
     };
+
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 

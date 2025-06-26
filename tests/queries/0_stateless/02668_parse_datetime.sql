@@ -192,6 +192,16 @@ set session_timezone = 'UTC'; -- don't randomize the session timezone
 select parseDateTime('2021-01-04 23:12:34') = toDateTime('2021-01-04 23:12:34');
 select parseDateTime(''); -- { serverError NOT_ENOUGH_SPACE }
 
+-- Test setting 'parsedatetime_e_requires_space_padding'
+--     In the default behavior, leading spaces for %e are optional
+select parseDateTime('  1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 0;
+select parseDateTime(' 1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 0;
+select parseDateTime('1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 0;
+--     If we enable the legacy behavior, leading spaces for %e are mandatory
+select parseDateTime('  1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 1; -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime(' 1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 1;
+select parseDateTime('1/12/2024', '%e/%m/%Y') settings parsedatetime_e_requires_space_padding = 1; -- { serverError CANNOT_PARSE_DATETIME }
+
 -- -------------------------------------------------------------------------------------------------------------------------
 -- Tests for parseDateTime64, these are not systematic
 

@@ -81,7 +81,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     let total_hash = compiler.cache_key();
     let compiler_version = compiler.version();
 
-    let mut did_load_from_cache = false;
+    let mut did_load_from_local_cache = false;
     let mut did_load_from_clickhouse = false;
 
     let compiled_bytes: Vec<u8> = match local_disk.read(&total_hash).await {
@@ -90,8 +90,8 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
 
             compiler
                 .apply_cache(&bytes)
-                .expect("Unable to apply local cache");
-            did_load_from_cache = true;
+                .expect(&("Unable to apply local cache for hash ".to_owned() + &total_hash));
+            did_load_from_local_cache = true;
 
             bytes
         }
@@ -107,7 +107,6 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
                         .apply_cache(&bytes)
                         .expect("Unable to apply cache from ClickHouse");
 
-                    did_load_from_cache = true;
                     did_load_from_clickhouse = true;
 
                     bytes
@@ -122,7 +121,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         }
     };
 
-    if !did_load_from_clickhouse {
+    if !did_load_from_local_cache {
         local_disk
             .write(&total_hash, &compiled_bytes)
             .await
@@ -132,7 +131,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     let should_upload = {
         let default_config = Config::default();
 
-        !did_load_from_cache && config.user != default_config.user
+        !did_load_from_local_cache && !did_load_from_clickhouse && config.user != default_config.user
     };
 
     if should_upload {

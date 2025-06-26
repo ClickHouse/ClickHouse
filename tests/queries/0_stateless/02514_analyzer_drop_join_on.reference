@@ -29,20 +29,20 @@ Header: count() UInt64
                   Expression (Change column names to column identifiers)
                   Header: __table1.a1 UInt64
                           __table1.a2 String
-                    ReadFromMemoryStorage
+                    ReadFromMergeTree (default.a)
                     Header: a1 UInt64
                             a2 String
                   Expression (Change column names to column identifiers)
                   Header: __table2.b1 UInt64
-                    ReadFromMemoryStorage
+                    ReadFromMergeTree (default.b)
                     Header: b1 UInt64
               Expression (Change column names to column identifiers)
               Header: __table3.c1 UInt64
-                ReadFromMemoryStorage
+                ReadFromMergeTree (default.c)
                 Header: c1 UInt64
           Expression (Change column names to column identifiers)
           Header: __table4.d1 UInt64
-            ReadFromMemoryStorage
+            ReadFromMergeTree (default.d)
             Header: d1 UInt64
 EXPLAIN PLAN header = 1
 SELECT a.a2, d.d2 FROM a JOIN b USING (k) JOIN c USING (k) JOIN d USING (k)
@@ -71,21 +71,21 @@ Header: a2 String
               Expression (Change column names to column identifiers)
               Header: __table1.a2 String
                       __table1.k UInt64
-                ReadFromMemoryStorage
+                ReadFromMergeTree (default.a)
                 Header: a2 String
                         k UInt64
               Expression (Change column names to column identifiers)
               Header: __table2.k UInt64
-                ReadFromMemoryStorage
+                ReadFromMergeTree (default.b)
                 Header: k UInt64
           Expression (Change column names to column identifiers)
           Header: __table3.k UInt64
-            ReadFromMemoryStorage
+            ReadFromMergeTree (default.c)
             Header: k UInt64
       Expression (Change column names to column identifiers)
       Header: __table4.d2 String
               __table4.k UInt64
-        ReadFromMemoryStorage
+        ReadFromMergeTree (default.d)
         Header: d2 String
                 k UInt64
 EXPLAIN PLAN header = 1
@@ -137,21 +137,21 @@ Header: bx String
                     Expression (Change column names to column identifiers)
                     Header: __table1.a1 UInt64
                             __table1.a2 String
-                      ReadFromMemoryStorage
+                      ReadFromMergeTree (default.a)
                       Header: a1 UInt64
                               a2 String
                     Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
                     Header: __table2.b1 UInt64
                             __table2.bx String
-                      ReadFromMemoryStorage
+                      ReadFromMergeTree (default.b)
                       Header: b1 UInt64
                               b2 String
-                Filter (( + Change column names to column identifiers))
+                Expression
                 Header: __table4.c1 UInt64
                         __table4.c2 String
-                  ReadFromMemoryStorage
-                  Header: c1 UInt64
-                          c2 String
+                  ReadFromMergeTree (default.c)
+                  Header: c2 String
+                          c1 UInt64
           Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
           Header: __table5.d1 UInt64
             ReadFromSystemNumbers

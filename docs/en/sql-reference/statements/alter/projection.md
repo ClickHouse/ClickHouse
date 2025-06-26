@@ -173,11 +173,12 @@ The `_part_offset` field preserves its value through merges and mutations, makin
 SELECT
     count()
 FROM events
-WHERE (_part, _part_offset) IN (
-    SELECT _part, _part_offset
+WHERE _part_starting_offset + _part_offset IN (
+    SELECT _part_starting_offset + _part_offset
     FROM events
     WHERE user_id = 42
 )
+SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
 # Manipulating Projections

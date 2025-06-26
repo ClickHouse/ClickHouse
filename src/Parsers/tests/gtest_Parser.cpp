@@ -174,12 +174,30 @@ INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
             {
                 // Empty comment value
                 "MODIFY COMMENT ''",
-                "MODIFY COMMENT ''",
+                "(MODIFY COMMENT '')",
             },
             {
                 // Non-empty comment value
                 "MODIFY COMMENT 'some comment value'",
-                "MODIFY COMMENT 'some comment value'",
+                "(MODIFY COMMENT 'some comment value')",
+            }
+        }
+)));
+
+INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT_WITH_PARENS, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterCommand>(true)),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
+        {
+            {
+                // Empty comment value
+                "(MODIFY COMMENT '')",
+                "(MODIFY COMMENT '')",
+            },
+            {
+                // Non-empty comment value
+                "(MODIFY COMMENT 'some comment value')",
+                "(MODIFY COMMENT 'some comment value')",
             }
         }
 )));

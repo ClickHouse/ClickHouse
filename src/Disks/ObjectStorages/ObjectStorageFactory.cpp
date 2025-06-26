@@ -206,14 +206,6 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        /// send_metadata changes the filenames (includes revision), while
-        /// s3_plain do not care about this, and expect that the file name
-        /// will not be changed.
-        ///
-        /// And besides, send_metadata does not make sense for s3_plain.
-        if (config.getBool(config_prefix + ".send_metadata", false))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
-
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -240,11 +232,6 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* skip_access_check */) -> ObjectStoragePtr
         {
-            /// send_metadata changes the filenames (includes revision), while
-            /// s3_plain_rewritable does not support file renaming.
-            if (config.getBool(config_prefix + ".send_metadata", false))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
-
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
@@ -296,7 +283,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
         AzureBlobStorage::ConnectionParams params
         {
@@ -307,7 +294,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint());
     };

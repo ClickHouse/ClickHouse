@@ -13,6 +13,7 @@ SELECT count() FROM system.numbers; -- { serverError TOO_SLOW }
 SET min_execution_speed_bytes = 0;
 SELECT 'Ok (2)';
 
+SET max_execution_time = 600;
 SET max_execution_speed = 1000000;
 SET max_block_size = 100;
 

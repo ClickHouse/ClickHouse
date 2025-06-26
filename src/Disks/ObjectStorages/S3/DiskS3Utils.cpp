@@ -17,13 +17,6 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
     const String & config_prefix)
 {
     bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
-    bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
-
-    if (send_metadata && storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports feature 'send_metadata' with feature 'storage_metadata_write_full_object_key'.",
-                        config_prefix);
 
     String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
     String object_key_template = config.getString(config_prefix + ".key_template", String());
@@ -38,12 +31,6 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
 
         return createObjectStorageKeysGeneratorByPrefix(uri.key);
     }
-
-    if (send_metadata)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports send_metadata with setting 'key_template'.",
-                        config_prefix);
 
     if (!storage_metadata_write_full_object_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

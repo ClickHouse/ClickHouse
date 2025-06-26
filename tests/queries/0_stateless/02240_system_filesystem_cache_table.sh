@@ -6,10 +6,12 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=./cache.lib
+. "$CUR_DIR"/cache.lib
 
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FILESYSTEM CACHE"
+    drop_filesystem_cache
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.filesystem_cache"
 
@@ -30,7 +32,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     ${CLICKHOUSE_CLIENT} --query "SELECT state, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_begin, file_segment_range_end, size"
     ${CLICKHOUSE_CLIENT} --query "SELECT uniqExact(key) FROM system.filesystem_cache";
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FILESYSTEM CACHE"
+    drop_filesystem_cache
     echo 'Expect no cache'
     ${CLICKHOUSE_CLIENT} --query "SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache"
 
@@ -40,7 +42,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     ${CLICKHOUSE_CLIENT} --query "SELECT state, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_begin, file_segment_range_end, size"
     ${CLICKHOUSE_CLIENT} --query "SELECT uniqExact(key) FROM system.filesystem_cache";
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FILESYSTEM CACHE"
+    drop_filesystem_cache
     echo 'Expect no cache'
     ${CLICKHOUSE_CLIENT} --query "SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache"
 

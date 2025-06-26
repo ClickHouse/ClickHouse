@@ -4,6 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&http_wait_end_of_query=1"
+
 RETRIES=5
 
 result=""

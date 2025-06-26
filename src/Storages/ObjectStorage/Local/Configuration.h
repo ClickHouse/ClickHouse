@@ -55,8 +55,6 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
-
     ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
     {
         return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("/", readonly));

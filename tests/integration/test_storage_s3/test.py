@@ -58,6 +58,7 @@ def started_cluster():
                 "configs/schema_cache.xml",
                 "configs/blob_log.xml",
                 "configs/filesystem_caches.xml",
+                "configs/text_log.xml",
             ],
             user_configs=[
                 "configs/access.xml",
@@ -693,12 +694,13 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     jobs = []
 
     glob1 = [2, 3, 4, 5]
-    glob2 = [32, 48, 97, 11]
+    glob2 = [1, 32, 48, 97, 11]
     nights = [x * 100 + y for x in glob1 for y in glob2]
 
     for night in nights:
         path = f"shard_{night // 100}/night_{night % 100}/tale.csv"
-        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+        print(path)
+        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
             started_cluster.minio_ip,
             MINIO_INTERNAL_PORT,
             bucket,
@@ -711,6 +713,7 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     for job in jobs:
         job.join()
 
+    # Enum of multiple elements
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
@@ -719,6 +722,26 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == ["4\t4\t4\t4"]
+
+    # Enum of one element
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32}}/tale.csv', 'CSV', '{}')".format(
+        started_cluster.minio_redirect_host,
+        started_cluster.minio_redirect_port,
+        bucket,
+        table_format,
+    )
+    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
+    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
+
+    # Enum of one element of one char
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{1}}/tale.csv', 'CSV', '{}')".format(
+        started_cluster.minio_redirect_host,
+        started_cluster.minio_redirect_port,
+        bucket,
+        table_format,
+    )
+    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
+    assert run_query(instance, query, query_id=query_id).splitlines() == ["1\t1\t1\t1"]
 
     instance.query("SYSTEM FLUSH LOGS")
     list_request_count = instance.query(
@@ -2498,3 +2521,10 @@ def test_filesystem_cache(started_cluster):
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    total_count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment:%'"))
+    assert total_count > 0
+    count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment: 0%'"))
+    assert count == total_count

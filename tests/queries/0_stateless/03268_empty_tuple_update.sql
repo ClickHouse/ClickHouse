@@ -4,7 +4,7 @@ CREATE TABLE t0 (c0 Tuple(), c1 int) ENGINE = Memory();
 
 INSERT INTO t0 VALUES ((), 1);
 
-ALTER TABLE t0 UPDATE c0 = (), c1 = 2 WHERE EXISTS (SELECT 1);
+ALTER TABLE t0 UPDATE c0 = (), c1 = 2 WHERE EXISTS (SELECT 1) SETTINGS mutations_sync=2;
 
 SELECT * FROM t0;
 

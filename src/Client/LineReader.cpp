@@ -79,18 +79,20 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
     std::pair<Words::const_iterator, Words::const_iterator> range;
 
-    std::lock_guard lock(mutex);
-
     Words to_search;
     bool no_case = false;
-    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+
     {
-        to_search = words_no_case;
-        no_case = true;
+        std::lock_guard lock(mutex);
+        /// Only perform case sensitive completion when the prefix string contains any uppercase characters
+        if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+        {
+            to_search = words_no_case;
+            no_case = true;
+        }
+        else
+            to_search = words;
     }
-    else
-        to_search = words;
 
     if (custom_completions_callback)
     {

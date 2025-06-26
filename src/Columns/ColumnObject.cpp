@@ -387,6 +387,19 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     return it_ptr->second;
 }
 
+void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr column)
+{
+    if (dynamic_paths.size() == max_dynamic_paths)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
+
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific column for dynamic path is allowed only for empty object column");
+
+    auto it = dynamic_paths.emplace(path, std::move(column)).first;
+    dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+    sorted_dynamic_paths.insert(it->first);
+}
+
 void ColumnObject::addNewDynamicPath(std::string_view path)
 {
     if (!tryToAddNewDynamicPath(path))
@@ -1192,11 +1205,50 @@ MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & s
     return result_columns;
 }
 
-void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
+struct ColumnObject::ComparatorBase
 {
-    /// Values in ColumnObject are not comparable.
-    res.resize(size());
-    iota(res.data(), res.size(), size_t(0));
+    const ColumnObject & parent;
+    int nan_direction_hint;
+
+    ComparatorBase(const ColumnObject & parent_, int nan_direction_hint_)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+
+        return res;
+    }
+};
+
+void ColumnObject::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                  size_t limit, int nan_direction_hint, Permutation & res) const
+{
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+}
+
+void ColumnObject::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
+{
+    auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnObject::reserve(size_t n)

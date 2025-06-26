@@ -44,6 +44,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64)

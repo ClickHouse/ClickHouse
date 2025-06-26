@@ -11,21 +11,21 @@ title: 'null'
 
 Creates a temporary table of the specified structure with the [Null](../../engines/table-engines/special/null.md) table engine. According to the `Null`-engine properties, the table data is ignored and the table itself is immediately dropped right after the query execution. The function is used for the convenience of test writing and demonstrations.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 null('structure')
 ```
 
-**Parameter**
+## Argument {#argument}
 
 - `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
-**Returned value**
+## Returned value {#returned_value}
 
 A temporary `Null`-engine table with the specified structure.
 
-**Example**
+## Example {#example}
 
 Query with the `null` function:
 
@@ -40,6 +40,6 @@ INSERT INTO t SELECT * FROM numbers_mt(1000000000);
 DROP TABLE IF EXISTS t;
 ```
 
-See also:
+## Related {#related}
 
 - [Null table engine](../../engines/table-engines/special/null.md)

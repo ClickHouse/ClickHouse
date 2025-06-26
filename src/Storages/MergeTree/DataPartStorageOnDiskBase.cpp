@@ -270,16 +270,6 @@ bool DataPartStorageOnDiskBase::isReadonly() const
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
 }
 
-void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
-{
-    volume->getDisk()->syncRevision(revision);
-}
-
-UInt64 DataPartStorageOnDiskBase::getRevision() const
-{
-    return volume->getDisk()->getRevision();
-}
-
 std::string DataPartStorageOnDiskBase::getDiskPath() const
 {
     return volume->getDisk()->getPath();

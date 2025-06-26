@@ -534,8 +534,13 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
 
     String escaped_name = escapeForFileName(name);
-    String mrk_path = escaped_name + marks_file_extension;
-    String bin_path = escaped_name + DATA_FILE_EXTENSION;
+    String stream_name;
+    if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && escaped_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+        stream_name = sipHash128String(escaped_name);
+    else
+        stream_name = escaped_name;
+    String mrk_path = stream_name + marks_file_extension;
+    String bin_path = stream_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
     if (!getDataPartStorage().existsFile(mrk_path))

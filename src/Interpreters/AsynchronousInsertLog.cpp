@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Parsers/ASTInsertQuery.h>
 
 
 namespace DB

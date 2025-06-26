@@ -66,4 +66,25 @@ void applyHTTPResponseHeaders(Poco::Net::HTTPResponse & response, const std::uno
         response.set(header_name, header_value);
 }
 
+std::unordered_map<String, String> parseHTTPResponseHeadersWithCommons(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & default_content_type,
+    const std::unordered_map<String, String> & common_headers)
+{
+    auto headers = parseHTTPResponseHeaders(config, config_prefix, default_content_type);
+    headers.insert(common_headers.begin(), common_headers.end());
+    return headers;
+}
+
+std::unordered_map<String, String> parseHTTPResponseHeadersWithCommons(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::unordered_map<String, String> & common_headers)
+{
+    auto headers = parseHTTPResponseHeaders(config, config_prefix).value_or(std::unordered_map<String, String>{});
+    headers.insert(common_headers.begin(), common_headers.end());
+    return headers;
+}
+
 }

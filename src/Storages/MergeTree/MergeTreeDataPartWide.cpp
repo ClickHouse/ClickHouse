@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

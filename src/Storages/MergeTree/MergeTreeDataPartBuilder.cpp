@@ -165,7 +165,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
     if (!storage || !mark_type)
     {
         /// Didn't find any data or mark file, suppose that part is empty.
-        return withBytesAndRowsOnDisk(0, 0);
+        return withBytesAndRows(0, 0);
     }
 
     part_storage = std::move(storage);
@@ -181,7 +181,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
     if (!mark_type)
     {
         /// Didn't find any mark file, suppose that part is empty.
-        return withBytesAndRowsOnDisk(0, 0);
+        return withBytesAndRows(0, 0);
     }
 
     part_type = mark_type->part_type;
@@ -191,11 +191,6 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count)
 {
     return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count));
-}
-
-MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRowsOnDisk(size_t bytes_uncompressed, size_t rows_count)
-{
-    return withPartFormat(data.choosePartFormatOnDisk(bytes_uncompressed, rows_count));
 }
 
 }
