@@ -1,0 +1,256 @@
+<test>
+<create_query>CREATE TABLE tmp
+(
+a Nullable(Int64),
+b Nullable(Int32),
+c Nullable(Int64),
+d Tuple(
+x1 Nullable(Int32),
+x2 Nullable(Bool),
+x3 Nullable(Bool),
+x4 Nullable(Bool),
+x5 Nullable(Bool),
+x6 Nullable(Bool),
+x7 Nullable(Bool),
+x8 Nullable(Bool)),
+e Tuple(
+y1 Nullable(Int64),
+y2 Nullable(Int64),
+y3 Nullable(Int32),
+y4 Nullable(Int32),
+y5 Nullable(Int32),
+y6 Nullable(Int64),
+y7 Nullable(String),
+y8 Nullable(Int32),
+y9 Array(Tuple(
+z1 Nullable(Int32),
+z2 Nullable(Float64),
+z3 Nullable(Bool))),
+y10 Nullable(Int64),
+y11 Nullable(Bool),
+y12 Nullable(Bool),
+y13 Nullable(Int32),
+y14 Nullable(String),
+y15 Nullable(Int32),
+y16 Nullable(String),
+y17 Nullable(Int32)),
+f Tuple(
+w1 Nullable(Int32),
+w2 Nullable(Int32),
+w3 Nullable(Int32),
+w4 Nullable(Int32),
+w5 Nullable(Int32),
+w6 Nullable(Int32),
+w7 Nullable(Int32),
+w8 Nullable(String),
+w9 Array(String),
+w10 Array(String),
+w11 Nullable(Int32),
+w12 Nullable(Int32),
+w13 Nullable(Int32),
+w14 Nullable(Int32),
+w15 Nullable(String),
+w16 Nullable(String),
+w17 Nullable(Int32),
+w18 Nullable(String),
+w19 Nullable(Int32),
+w20 Nullable(Int32),
+w21 Nullable(Int32),
+w22 Nullable(Int32),
+w23 Array(Int32),
+w24 Nullable(Int32),
+w25 Nullable(Int32),
+w26 Nullable(Bool),
+w27 Nullable(Bool),
+w28 Nullable(Int32),
+w29 Nullable(Int32),
+w30 Nullable(String),
+w31 Nullable(String),
+w32 Nullable(String),
+w33 Nullable(String),
+w34 Nullable(String),
+w35 Nullable(Int32),
+w36 Nullable(Int32),
+w37 Nullable(Int32),
+w38 Nullable(String),
+w39 Nullable(String),
+w40 Nullable(String),
+w41 Nullable(String),
+w42 Nullable(String),
+w43 Array(String),
+w44 Nullable(String),
+w45 Nullable(String),
+w46 Nullable(String),
+w47 Nullable(Int32),
+w48 Nullable(String),
+w49 Nullable(String),
+w50 Nullable(Int32),
+w51 Nullable(String),
+w52 Tuple(
+v1 Nullable(Int32),
+v2 Nullable(Int32),
+v3 Nullable(Int32),
+v4 Nullable(Bool),
+v5 Nullable(Int32),
+v6 Nullable(Bool),
+v7 Nullable(Bool)),
+w53 Tuple(
+u1 Nullable(Int32),
+u2 Nullable(Int32),
+u3 Nullable(Bool),
+u4 Nullable(Int32),
+u5 Tuple(
+t1 Nullable(Int32),
+t2 Nullable(Int64),
+t3 Nullable(Int64),
+t4 Nullable(Int32),
+t5 Nullable(Int32),
+t6 Nullable(Int32),
+t7 Nullable(String),
+t8 Nullable(Int32),
+t9 Array(Int32),
+t10 Nullable(Bool)),
+u6 Nullable(String),
+u7 Nullable(Bool)),
+w54 Array(Tuple(
+s1 Nullable(Int32),
+s2 Nullable(Int32),
+s3 Nullable(Int32),
+s4 Nullable(Int32),
+s5 Nullable(Float64),
+s6 Nullable(Bool),
+s7 Nullable(Bool),
+s8 Nullable(Int32),
+s9 Nullable(Bool),
+s10 Nullable(Int32))),
+w55 Array(Tuple(
+r1 Nullable(Int32),
+r2 Nullable(Int32),
+r3 Nullable(Int32),
+r4 Nullable(Bool),
+r5 Nullable(Bool),
+r6 Nullable(Bool))),
+w56 Nullable(Int32),
+w57 Nullable(Int32),
+w58 Nullable(Int32),
+w59 Nullable(Int32),
+w60 Nullable(Int32),
+w61 Nullable(Bool),
+w62 Tuple(
+q1 Nullable(Bool),
+q2 Nullable(Bool),
+q3 Nullable(Bool),
+q4 Nullable(Int32),
+q5 Nullable(Bool)),
+w63 Nullable(Int32),
+w64 Nullable(Bool),
+w65 Nullable(Bool),
+w66 Nullable(Int32),
+w67 Nullable(String),
+w68 Nullable(Float64),
+w69 Nullable(Float64),
+w70 Nullable(Float64),
+w71 Nullable(Bool),
+w72 Nullable(Bool),
+w73 Nullable(String),
+w74 Nullable(Int32),
+w75 Nullable(String),
+w76 Nullable(Int32),
+w77 Array(Int32),
+w78 Nullable(Int32),
+w79 Nullable(Bool),
+w80 Nullable(Bool),
+w81 Nullable(Int32),
+w82 Nullable(String),
+w83 Nullable(Bool),
+w84 Nullable(Int32),
+w85 Nullable(Int32)),
+g Tuple(
+p1 Nullable(Int64),
+p2 Nullable(Int32),
+p3 Nullable(Int32),
+p4 Nullable(Int32),
+p5 Nullable(Int32)),
+h Tuple(
+o1 Nullable(Int64),
+o2 Nullable(String),
+o3 Nullable(Int32),
+o4 Nullable(Int32),
+o5 Nullable(String)),
+i Tuple(
+n1 Nullable(Int32),
+n2 Nullable(Int32),
+n3 Nullable(String),
+n4 Nullable(String),
+n5 Nullable(Int32)),
+j Tuple(
+m1 Nullable(String),
+m2 Nullable(Int64)),
+k Tuple(
+l1 Nullable(Bool),
+l2 Nullable(Bool),
+l3 Array(Int32),
+l4 Tuple(
+k1 Nullable(Int32),
+k2 Nullable(Int32),
+k3 Nullable(Bool),
+k4 Nullable(Int32),
+k5 Tuple(
+j1 Nullable(Int32),
+j2 Nullable(Int64),
+j3 Nullable(Int64),
+j4 Nullable(Int32),
+j5 Nullable(Int32),
+j6 Nullable(Int32),
+j7 Nullable(String),
+j8 Nullable(Int32),
+j9 Array(Int32),
+j10 Nullable(Bool)),
+k6 Nullable(String),
+k7 Nullable(Bool))),
+sw Int32 DEFAULT 1,
+id DateTime('UTC') MATERIALIZED now()
+)
+ENGINE = MergeTree order by tuple();</create_query>
+
+<create_query>create table null as tmp ENGINE = Null;</create_query>
+
+
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv1 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv2 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv3 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv4 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv5 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv6 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv7 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv8 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv9 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv10 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv11 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv12 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv13 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv14 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+<create_query><![CDATA[CREATE MATERIALIZED VIEW mv15 ( hr DateTime('UTC'),  fin UInt8,  pub UInt16,  seg Int32,  usr UInt8,  cnt UInt16,  env UInt8,  fmt UInt8,  dev UInt16,  del Int32,  tmp Int32,  rtb Bool,  imp Decimal(38, 3),  auc Decimal(38, 3) ) ENGINE = Memory AS  WITH cte AS ( SELECT  toTimeZone(fromUnixTimestamp(toUInt64(coalesce(a, 0) / (1000 * 1000))), 'UTC') AS dt, coalesce(b, 0) AS nid, coalesce(tupleElement(e, 'y1', 0), 0) AS cid, coalesce(tupleElement(e, 'y3', 0), 0) AS lt, coalesce(tupleElement(e, 'y5', 0), 0) AS lc, coalesce(tupleElement(e, 'y4', 0), 0) AS flt, coalesce(tupleElement(e, 'y8', 0), 0) AS dcid, coalesce(tupleElement(e, 'y10', 0), 0) AS bid, coalesce(tupleElement(e, 'y13', 0), 0) AS att, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v1', 0), 0) AS cmpid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v2', 0), 0) AS sid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v3', 0), 0) AS aid, coalesce(tupleElement(f, 'w1', 0), 0) AS iid, coalesce(tupleElement(f, 'w2', 0), 0) AS pid, coalesce(tupleElement(f, 'w3', 0), 0) AS imid, coalesce(tupleElement(f, 'w5', 0), 0) AS qcid, coalesce(tupleElement(f, 'w15', ''), '') AS ref, coalesce(tupleElement(f, 'w25', 0), 0) AS sr, coalesce(tupleElement(f, 'w29', 0), 0) AS plt, coalesce(tupleElement(f, 'w76', 0), 0) AS fsr, coalesce(tupleElement(f, 'w81', 0), 0) AS cd, arrayMap(x -> coalesce(x, 0), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's1', emptyArrayInt32()), emptyArrayInt32())) AS asid, arrayMap(x -> toUInt8(coalesce(x, 0)), coalesce(tupleElement(tupleElement(f, 'w54', tuple()), 's6', emptyArrayInt32()), emptyArrayInt32())) AS asus, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v7', 0), 0) AS ipx, coalesce(tupleElement(f, 'w70', 0), 0) AS ic, coalesce(tupleElement(f, 'w85', 0), 0) AS scid, coalesce(tupleElement(tupleElement(f, 'w52', tuple()), 'v6', false), false) AS irtb, coalesce(tupleElement(f, 'w4', 0), 0) AS fid, coalesce(tupleElement(f, 'w59', 0), 0) AS et, coalesce(tupleElement(f, 'w60', 0), 0) AS it, coalesce(tupleElement(f, 'w46', ''), '') AS hbp, sw, id FROM tmp ) SELECT  hr, 1 AS fin, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb, ((imp - hbi) - pix) - dpix AS imp, auc FROM ( SELECT  toStartOfHour(dt) AS hr, toUInt16(nid) AS pub, s_asid AS seg, s_asus AS usr, toUInt16(qcid) AS cnt, toUInt8(et) AS env, toUInt8(it) AS fmt, toUInt16(plt) AS dev, toInt32(0) AS del, scid AS tmp, irtb AS rtb, toDecimal128(sumIf(if(s_asid = 0, fsr, 1), (fid != 0) OR (iid != 0)), 3) AS imp, toDecimal128(0, 3) AS auc, sumIf(if(s_asid = 0, fsr, 1), notEmpty(hbp) AND (iid = 0) AND (fid != 0)) AS hbi, sumIf(if(s_asid = 0, fsr, 1), ipx) AS pix, sumIf(if(s_asid = 0, fsr, 1), empty(hbp) AND (iid = 0) AND (fid != 0)) AS dpix FROM cte ARRAY JOIN asid AS s_asid, asus AS s_asus WHERE (lc = 1) AND ((flt = 0) OR ((flt >= 70) AND (flt < 90))) AND (irtb = 0) GROUP BY hr, pub, seg, usr, cnt, env, fmt, dev, del, tmp, rtb );]]></create_query>
+
+<fill_query>insert into tmp SELECT * FROM generateRandom(1, 1, 1) LIMIT 1000000;</fill_query>
+
+<query>INSERT INTO null SELECT * FROM tmp SETTINGS max_insert_threads = 1, insert_deduplicate = 0, optimize_on_insert = 0</query>
+
+<drop_query>drop table if exists mv1;</drop_query>
+<drop_query>drop table if exists mv2;</drop_query>
+<drop_query>drop table if exists mv3;</drop_query>
+<drop_query>drop table if exists mv4;</drop_query>
+<drop_query>drop table if exists mv5;</drop_query>
+<drop_query>drop table if exists mv6;</drop_query>
+<drop_query>drop table if exists mv7;</drop_query>
+<drop_query>drop table if exists mv8;</drop_query>
+<drop_query>drop table if exists mv9;</drop_query>
+<drop_query>drop table if exists mv10;</drop_query>
+<drop_query>drop table if exists mv11;</drop_query>
+<drop_query>drop table if exists mv12;</drop_query>
+<drop_query>drop table if exists mv13;</drop_query>
+<drop_query>drop table if exists mv14;</drop_query>
+<drop_query>drop table if exists mv15;</drop_query>
+<drop_query>drop table if exists null;</drop_query>
+<drop_query>DROP TABLE IF EXISTS tmp;</drop_query>
+</test>
