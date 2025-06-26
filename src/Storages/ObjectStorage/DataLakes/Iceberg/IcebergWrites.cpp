@@ -111,7 +111,7 @@ std::string removeEscapedSlashes(const std::string& jsonStr) {
 void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
-    const std::vector<String> & /*partition_values*/)
+    const std::vector<Field> & partition_values)
 {
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
@@ -119,11 +119,13 @@ void extendSchemaForPartitions(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set("field-id", 1000 + i);
         field->set("name", partition_columns[i]);
-        Poco::JSON::Array::Ptr types = new Poco::JSON::Array;
-        types->add("null");
-        types->add("string");
-        field->set("type", types);
-        field->set("default", Poco::Dynamic::Var());
+        if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
+            field->set("type", "long");
+        else if (partition_values[i].getType() == Field::Types::String)
+            field->set("type", "string");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for partition {}", partition_values[i].getType());
+
         partition_fields->add(field);
     }
 
@@ -141,8 +143,8 @@ void extendSchemaForPartitions(
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
-    const std::vector<String> & /*partition_columns*/,
-    const std::vector<String> & /*partition_values*/,
+    const std::vector<String> & partition_columns,
+    const std::vector<Field> & partition_values,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     WriteBuffer & buf)
@@ -157,7 +159,7 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
-    //extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
+    extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
     std::cerr << "format version " << version << '\n';
     std::istringstream iss(schema_representation);
     avro::compileJsonSchema(iss, schema);
@@ -168,20 +170,42 @@ void generateManifestFile(
     avro::GenericRecord& manifest = manifest_datum.value<avro::GenericRecord>();
 
     manifest.field("status") = avro::GenericDatum(1);
+    int64_t snapshot_id = new_snapshot->getValue<int64_t>(MetadataGenerator::f_snapshot_id);
 
-    int32_t snapshot_id = new_snapshot->getValue<int32_t>(MetadataGenerator::f_snapshot_id);
-    manifest.field("snapshot_id") = avro::GenericDatum(static_cast<int64_t>(snapshot_id));
+    auto set_versioned_field = [&] (const auto & value, const String & field_name) {
+        if (version > 1)
+        {
+            std::cerr << "set_versioned_field " << field_name << '\n';
+            size_t field_index;
+            if (!schema.root()->nameIndex(field_name, field_index))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
+
+            const avro::NodePtr& union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
+
+            avro::GenericUnion field(union_schema);
+            field.selectBranch(1);
+            field.datum() = avro::GenericDatum(value);
+            manifest.field(field_name) = avro::GenericDatum(union_schema, field);
+            std::cerr << "set_versioned_field OK " << field_name << '\n';
+        }
+        else
+        {
+            manifest.field(field_name) = avro::GenericDatum(value);
+        }
+    };
+    set_versioned_field(snapshot_id, "snapshot_id");
+
     if (version > 1)
     {
-        int32_t sequence_number = new_snapshot->getValue<int32_t>(MetadataGenerator::f_sequence_number);
+        int64_t sequence_number = new_snapshot->getValue<int64_t>(MetadataGenerator::f_sequence_number);
 
-        manifest.field("sequence_number") = avro::GenericDatum(static_cast<int64_t>(sequence_number));
-        manifest.field("file_sequence_number") = avro::GenericDatum(static_cast<int64_t>(sequence_number));
+        set_versioned_field(sequence_number, Iceberg::f_sequence_number);
+        set_versioned_field(sequence_number, "file_sequence_number");
     }
     avro::GenericRecord& data_file = manifest.field("data_file").value<avro::GenericRecord>();
 
     if (version > 1)
-        data_file.field("content") = avro::GenericDatum(0);
+        data_file.field("content") = avro::GenericDatum(static_cast<int32_t>(0));
     data_file.field("file_path") = avro::GenericDatum(data_file_name);
     data_file.field("file_format") = avro::GenericDatum(String("PARQUET"));
 
@@ -192,14 +216,15 @@ void generateManifestFile(
     data_file.field("record_count") = avro::GenericDatum(static_cast<int64_t>(added_records));
     data_file.field("file_size_in_bytes") = avro::GenericDatum(static_cast<int64_t>(added_files_size));
 
-    //avro::GenericRecord& partition_record = data_file.field("partition").value<avro::GenericRecord>();
-    //partition_record.schema()->printJson(std::cerr, 4);
-    /*for (size_t i = 0; i < partition_columns.size(); ++i)
+    avro::GenericRecord& partition_record = data_file.field("partition").value<avro::GenericRecord>();
+    partition_record.schema()->printJson(std::cerr, 4);
+    for (size_t i = 0; i < partition_columns.size(); ++i)
     {
-        if (!partition_record.hasField(partition_columns[i]))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such column");
-        //partition_record.field(partition_columns[i]) = avro::GenericDatum(avro::GenericDatum::string(partition_values[i]));
-    }*/
+        if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
+            partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<Int64>());
+        else if (partition_values[i].getType() == Field::Types::String)
+            partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
+    }
     std::ostringstream oss;
     int current_schema_id = metadata->getValue<Int32>("current-schema-id");
     Poco::JSON::Stringifier::stringify(metadata->getArray("schemas")->getObject(current_schema_id), oss, 4);
@@ -499,7 +524,7 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 {
     size_t result = 0;
     for (const auto & part_key : key)
-        result ^= hasher(part_key);
+        result ^= hasher(part_key.dump());
     return result;
 }
 
@@ -713,6 +738,7 @@ void IcebergStorageSink::initializeMetadata()
         auto manifest_entry_name = filename_generator.generateManifestEntryName();
         manifest_entries.push_back(manifest_entry_name);
 
+        std::cerr << "manifest_entry_name " << manifest_entry_name << ' ' << data_filename << '\n';
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, *buffer_manifest_entry);
@@ -720,6 +746,7 @@ void IcebergStorageSink::initializeMetadata()
     }
 
     {
+        std::cerr << "manifest_list_name " << manifest_list_name << '\n';
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());                    
 

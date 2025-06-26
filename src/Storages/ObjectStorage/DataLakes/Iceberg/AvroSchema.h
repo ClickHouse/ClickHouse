@@ -190,7 +190,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                         "type": {
                             "type": "record",
                             "name": "r102",
-                            "fields": [ ]
+                            "fields": #
                         },
                         "field-id": 102
                     },
@@ -369,7 +369,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                         "type": {
                             "type": "record",
                             "name": "r102",
-                            "fields": [ ]
+                            "fields": #
                         },
                         "field-id": 102
                     },

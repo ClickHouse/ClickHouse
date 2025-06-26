@@ -1,3 +1,4 @@
+#include <Poco/JSON/Stringifier.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -563,6 +564,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory() const
 
 ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 inherited_sequence_number) const
 {
+    std::cerr << "read manifest " << filename << '\n';
     auto configuration_ptr = configuration.lock();
 
     auto create_fn = [&]()
@@ -587,6 +589,10 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     if (manifest_cache)
     {
         auto manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
+        std::ostringstream oss;
+        Poco::JSON::Stringifier::stringify(manifest_file->getSchemaObject(), oss, 4);
+        std::cerr << "GET SCHEMA FROM OBJ " << oss.str() << '\n';
+
         schema_processor.addIcebergTableSchema(manifest_file->getSchemaObject());
         return manifest_file;
     }

@@ -3156,7 +3156,7 @@ def test_writes(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n456\n'
 
 
-@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_writes_from_zero(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]

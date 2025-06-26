@@ -56,7 +56,7 @@ private:
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
-    const std::vector<String> & partition_values,
+    const std::vector<Field> & partition_values,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     WriteBuffer & buf);
@@ -117,7 +117,7 @@ class ChunkPartitioner
 public:
     explicit ChunkPartitioner(Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
 
-    using PartitionKey = std::vector<String>;
+    using PartitionKey = std::vector<Field>;
     struct PartitionKeyHasher
     {
         size_t operator()(const PartitionKey & key) const;
