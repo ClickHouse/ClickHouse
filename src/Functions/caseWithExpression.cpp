@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -103,7 +102,7 @@ public:
             ->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
-        if (equals_result->getDataType() == TypeIndex::Nullable)
+        if (isColumnNullable(*equals_result))
         {
             auto if_null_func = FunctionFactory::instance().get("ifNull", context);
             auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
