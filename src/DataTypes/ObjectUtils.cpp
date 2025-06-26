@@ -174,7 +174,7 @@ static auto extractVector(const std::vector<Tuple> & vec)
 
 static DataTypePtr recreateTupleWithElements(const DataTypeTuple & type_tuple, const DataTypes & elements)
 {
-    return type_tuple.hasExplicitNames()
+    return type_tuple.haveExplicitNames()
         ? std::make_shared<DataTypeTuple>(elements, type_tuple.getElementNames())
         : std::make_shared<DataTypeTuple>(elements);
 }

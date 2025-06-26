@@ -97,7 +97,7 @@ def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
+    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
         --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -123,7 +123,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
-    "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
 }
 
 
@@ -212,7 +211,6 @@ def main():
 
     res = True
     results = []
-    debug_files = []
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
@@ -248,7 +246,6 @@ def main():
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
-            CH.set_random_timezone,
         ]
 
         if is_flaky_check:
@@ -288,6 +285,13 @@ def main():
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
+            time.sleep(7)
+            Shell.check("ps -ef | grep minio", verbose=True)
+            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
+            # res = res and Shell.check(
+            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
+            #     verbose=True,
+            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
@@ -347,9 +351,7 @@ def main():
 
         if not info.is_local_run:
             CH.stop_log_exports()
-        ft_res_processor = FTResultsProcessor(wd=temp_dir)
-        results.append(ft_res_processor.run())
-        debug_files += ft_res_processor.debug_files
+        results.append(FTResultsProcessor(wd=temp_dir).run())
         test_result = results[-1]
 
         # invert result status for bugfix validation
@@ -404,14 +406,10 @@ def main():
                 command=collect_logs,
             )
         )
-        if test_result and CH.extra_tests_results:
-            test_result.extend_sub_results(CH.extra_tests_results)
+        results[-1].results = CH.extra_tests_results
 
     Result.create_from(
-        results=results,
-        stopwatch=stop_watch,
-        files=CH.logs + debug_files,
-        info=job_info,
+        results=results, stopwatch=stop_watch, files=CH.logs, info=job_info
     ).complete_job()
 
 

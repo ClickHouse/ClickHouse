@@ -430,7 +430,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 #### Special-purpose {#special-purpose}
 
 - An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
-- An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
+- An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
 
@@ -438,31 +438,31 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | text |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                          | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                                    | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                        | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                     | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                         | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                      | ✗           | ✗      | ✔          | ✗          | ✗            | ✔    |
-| [in](/sql-reference/functions/in-functions)                                                                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
-| [notIn](/sql-reference/functions/in-functions)                                                             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                      | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [empty](/sql-reference/functions/array-functions/#empty)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
-| [has](/sql-reference/functions/array-functions#has)                                                        | ✗           | ✗      | ✔          | ✔          | ✔            | ✔    |
-| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                  | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
-| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                  | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
-| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
-| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
-| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
-| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
+| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | full_text |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|-----------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                                  | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                            | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                                | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
+| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
+| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔         |
+| [in](/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
+| [notIn](/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
+| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [empty](/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [has](/sql-reference/functions/array-functions#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
+| [hasAny](/sql-reference/functions/array-functions#hasAny)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
+| [hasAll](/sql-reference/functions/array-functions#hasAll)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
+| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
+| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
+| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
+| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
@@ -968,7 +968,6 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_part_index` — Sequential index of the part in the query result.
 - `_part_starting_offset` — Cumulative starting row of the part in the query result.
 - `_part_offset` — Number of row in the part.
-- `_part_granule_offset` — Number of granule in the part.
 - `_partition_id` — Name of a partition.
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 - `_part_data_version` — Data version of part (either min block number or mutation version).

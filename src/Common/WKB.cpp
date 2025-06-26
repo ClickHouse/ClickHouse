@@ -1,11 +1,6 @@
-#include <bit>
-#include <memory>
 #include <variant>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
-#include "IO/WriteBuffer.h"
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 #include <Functions/geometryConverters.h>
 #include <base/types.h>
@@ -161,126 +156,6 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer)
             return readMultiPolygonWKB(in_buffer, endian_to_read);
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type {}", geom_type);
-}
-
-static constexpr std::endian endian_for_dumping = std::endian::little;
-
-void WKBPointTransform::dumpPointImpl(const Field & geo_object, WriteBuffer & buf)
-{
-    const auto & point = geo_object.safeGet<Tuple>();
-    Float64 x = point[0].safeGet<Float64>();
-    Float64 y = point[1].safeGet<Float64>();
-
-    writeBinaryEndian<endian_for_dumping>(x, buf);
-    writeBinaryEndian<endian_for_dumping>(y, buf);
-}
-
-String WKBPointTransform::dumpObject(const Field & geo_object)
-{
-    String result;
-    WriteBufferFromString out_buffer(result);
-
-    out_buffer.write(static_cast<UInt8>(endian_for_dumping == std::endian::little));
-    UInt32 geom_type = static_cast<UInt32>(geometry_type);
-    writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
-
-    dumpPointImpl(geo_object, out_buffer);
-    return result;
-}
-
-String WKBLineStringTransform::dumpObject(const Field & geo_object)
-{
-    const auto & linestring = geo_object.safeGet<Array>();
-
-    String result;
-    WriteBufferFromString out_buffer(result);
-
-    out_buffer.write(static_cast<UInt8>(endian_for_dumping == std::endian::little));
-    UInt32 geom_type = static_cast<UInt32>(geometry_type);
-    writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
-
-    UInt32 num_points = static_cast<UInt32>(linestring.size());
-    writeBinaryEndian<endian_for_dumping>(num_points, out_buffer);
-
-    for (const auto & field_point : linestring)
-    {
-        WKBPointTransform::dumpPointImpl(field_point, out_buffer);
-    }
-
-    return result;
-}
-
-String WKBPolygonTransform::dumpObject(const Field & geo_object)
-{
-    const auto & polygon = geo_object.safeGet<Array>();
-
-    String result;
-    WriteBufferFromString out_buffer(result);
-
-    out_buffer.write(static_cast<UInt8>(endian_for_dumping == std::endian::little));
-    UInt32 geom_type = static_cast<UInt32>(geometry_type);
-    writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
-
-    UInt32 num_rings = static_cast<UInt32>(polygon.size());
-    writeBinaryEndian<endian_for_dumping>(num_rings, out_buffer);
-
-    for (const auto & field_ring : polygon)
-    {
-        const auto & ring = field_ring.safeGet<Array>();
-
-        UInt32 num_points = static_cast<UInt32>(ring.size());
-        writeBinaryEndian<endian_for_dumping>(num_points, out_buffer);
-
-        for (const auto & field_point : ring)
-        {
-            WKBPointTransform::dumpPointImpl(field_point, out_buffer);
-        }
-    }
-
-    return result;
-}
-
-static void dumpMultipleObjectImpl(
-    const Field & geo_object,
-    WKBGeometry geometry_type,
-    WriteBuffer & out_buffer,
-    std::shared_ptr<IWKBTransform> transform)
-{
-    const auto & multiobject = geo_object.safeGet<Array>();
-
-    out_buffer.write(static_cast<UInt8>(endian_for_dumping == std::endian::little));
-    UInt32 geom_type = static_cast<UInt32>(geometry_type);
-    writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
-
-    UInt32 num_linestrings = static_cast<UInt32>(multiobject.size());
-    writeBinaryEndian<endian_for_dumping>(num_linestrings, out_buffer);
-
-    for (const auto & object : multiobject)
-    {
-        auto transformed_object = transform->dumpObject(object);
-        for (auto byte : transformed_object)
-            out_buffer.write(byte);
-    }
-}
-
-String WKBMultiLineStringTransform::dumpObject(const Field & geo_object)
-{
-    String result;
-    WriteBufferFromString out_buffer(result);
-    auto transform = std::make_shared<WKBLineStringTransform>();
-
-    dumpMultipleObjectImpl(geo_object, geometry_type, out_buffer, transform);
-    return result;
-}
-
-String WKBMultiPolygonTransform::dumpObject(const Field & geo_object)
-{
-    String result;
-    WriteBufferFromString out_buffer(result);
-    auto transform = std::make_shared<WKBPolygonTransform>();
-
-    dumpMultipleObjectImpl(geo_object, geometry_type, out_buffer, transform);
-    return result;
 }
 
 }

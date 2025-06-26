@@ -48,7 +48,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     };
     common_path = trim_backward_slash(common_path);
     table_location = trim_backward_slash(table_location);
-
     if (data_path.starts_with(table_location) && table_location.ends_with(common_path))
     {
         return std::filesystem::path{common_path} / trim_forward_slash(data_path.substr(table_location.size()));
@@ -56,14 +55,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
 
 
     auto pos = data_path.find(common_path);
-    /// Valid situation when data and metadata files are stored in different directories.
-    if (pos == std::string::npos)
-    {
-        /// connection://bucket
-        auto prefix = table_location.substr(0, table_location.size() - common_path.size());
-        return std::string{data_path.substr(prefix.size())};
-    }
-
     size_t good_pos = std::string::npos;
     while (pos != std::string::npos)
     {
