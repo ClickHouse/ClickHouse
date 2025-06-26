@@ -259,7 +259,7 @@ possible_properties = {
     },
 }
 
-distributed_ddl_properties = {
+distributed_properties = {
     "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
     "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
     "pool_size": no_zero_threads_lambda,
@@ -390,24 +390,19 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
     return dict(items)
 
 
-def add_settings_from_dict(d: dict[str, Parameter], xml_element: ET.Element):
-    selected_props = sample_from_dict(d, random.randint(1, len(d)))
-    for setting, generator in selected_props.items():
-        new_element = ET.SubElement(xml_element, setting)
-        new_element.text = str(generator())
-
-
-def apply_properties_recursively(next_root: ET.Element, next_properties: dict):
+def apply_properties_recursively(
+    next_root: ET.Element, next_properties: dict[str, Parameter], min_values: int = 1
+):
     is_modified = False
     selected_props = sample_from_dict(
-        next_properties, random.randint(1, len(next_properties))
+        next_properties, random.randint(min_values, len(next_properties))
     )
     for setting, next_child in selected_props.items():
         if next_root.find(setting) is None:
             is_modified = True
             new_element = ET.SubElement(next_root, setting)
             if isinstance(next_child, dict):
-                apply_properties_recursively(new_element, next_child)
+                apply_properties_recursively(new_element, next_child, min_values)
             else:
                 new_element.text = str(next_child())
     return is_modified
@@ -564,14 +559,16 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            add_settings_from_dict(object_storages_properties[dict_entry], next_disk)
+            apply_properties_recursively(
+                next_disk, object_storages_properties[dict_entry]
+            )
         if (
             is_private_binary
             and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
             and random.randint(1, 100) <= 70
         ):
             metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
-            add_settings_from_dict(metadata_cleanup_properties, metadata_xml)
+            apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
@@ -587,7 +584,7 @@ def add_single_disk(
 
             # Add random settings
             if random.randint(1, 100) <= 70:
-                add_settings_from_dict(cache_storage_properties, next_disk)
+                apply_properties_recursively(next_disk, cache_storage_properties)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -606,7 +603,7 @@ def add_single_disk(
                 )
 
     if random.randint(1, 100) <= 50:
-        add_settings_from_dict(all_disks_properties, next_disk)
+        apply_properties_recursively(next_disk, all_disks_properties)
     return (prev_disk, final_type)
 
 
@@ -618,7 +615,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
 
     # Add random settings
     if random.randint(1, 100) <= 70:
-        add_settings_from_dict(cache_storage_properties, next_cache)
+        apply_properties_recursively(next_cache, cache_storage_properties)
 
 
 def add_ssl_settings(next_ssl: ET.Element):
@@ -794,22 +791,22 @@ def modify_server_settings(
                 for i in range(0, number_elements):
                     if main_xml is None or random.randint(1, 3) == 1:
                         if main_xml is not None and random.randint(1, 100) <= 70:
-                            add_settings_from_dict(policy_properties, main_xml)
+                            apply_properties_recursively(main_xml, policy_properties)
                         main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
                         volume_counter += 1
                     disk_xml = ET.SubElement(main_xml, "disk")
                     disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
-                    add_settings_from_dict(policy_properties, main_xml)
+                    apply_properties_recursively(main_xml, policy_properties)
                 if random.randint(1, 100) <= 70:
-                    add_settings_from_dict(policy_properties, next_policy_xml)
+                    apply_properties_recursively(next_policy_xml, policy_properties)
 
         allowed_path_xml1 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
         if random.randint(1, 100) <= 70:
-            add_settings_from_dict(backup_properties, backups_element)
+            apply_properties_recursively(backups_element, backup_properties)
 
         if (
             root.find("temporary_data_in_cache") is None
@@ -857,42 +854,47 @@ def modify_server_settings(
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         modified = True
-        distributed_ddl_xml = ET.SubElement(root, "distributed_ddl")
-        path_xml = ET.SubElement(distributed_ddl_xml, "path")
+        distributed_xml = ET.SubElement(root, "distributed_ddl")
+        path_xml = ET.SubElement(distributed_xml, "path")
         path_xml.text = "/clickhouse/task_queue/ddl"
-        replicas_path_xml = ET.SubElement(distributed_ddl_xml, "replicas_path")
+        replicas_path_xml = ET.SubElement(distributed_xml, "replicas_path")
         replicas_path_xml.text = "/clickhouse/task_queue/replicas"
         if random.randint(1, 100) <= 70:
             modified = (
-                apply_properties_recursively(root, distributed_ddl_properties)
+                apply_properties_recursively(distributed_xml, distributed_properties)
                 or modified
             )
 
+    if (
+        args.add_shared_catalog
+        and is_private_binary
+        and root.find("shared_database_catalog") is None
+    ):
+        # Add shared_database_catalog settings, required for shared catalog to work
+        modified = True
+        shared_xml = ET.SubElement(root, "shared_database_catalog")
+        shared_settings = {
+            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_local_thread_pool_size": threads_lambda,
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_zookeeper_thread_pool_size": threads_lambda,
+            # "migration_from_database_replicated": true_false_lambda, not suitable for testing
+            "state_application_thread_pool_size": threads_lambda,
+        }
+        if number_clusters > 0 and random.randint(1, 100) <= 75:
+            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
+            if not removed_default_cluster:
+                cluster_name_choices.append("default")
+            shared_settings["cluster_name"] = lambda: random.choice(
+                cluster_name_choices
+            )
+        modified = (
+            apply_properties_recursively(shared_xml, shared_settings, 0) or modified
+        )
+
     # Select random properties to the XML
     if random.randint(1, 100) <= args.server_settings_prob:
-        if is_private_binary and "shared_database_catalog" not in possible_properties:
-            # Add shared_database_catalog settings
-            shared_settings = {
-                "delay_before_drop_intention_seconds": threshold_generator(
-                    0.2, 0.2, 0, 60
-                ),
-                "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
-                "drop_local_thread_pool_size": threads_lambda,
-                "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
-                "drop_zookeeper_thread_pool_size": threads_lambda,
-                # "migration_from_database_replicated": true_false_lambda, not suitable for testing
-                "state_application_thread_pool_size": threads_lambda,
-            }
-            if number_clusters > 0 and random.randint(1, 100) <= 75:
-                cluster_name_choices = [
-                    f"cluster{i}" for i in range(0, number_clusters)
-                ]
-                if not removed_default_cluster:
-                    cluster_name_choices.append("default")
-                shared_settings["cluster_name"] = lambda: random.choice(
-                    cluster_name_choices
-                )
-            possible_properties["shared_database_catalog"] = shared_settings
         modified = apply_properties_recursively(root, possible_properties) or modified
         if modified:
             # Make sure `path` in distributed_ddl is set

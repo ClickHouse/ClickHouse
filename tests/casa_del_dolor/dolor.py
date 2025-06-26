@@ -236,6 +236,12 @@ parser.add_argument(
     dest="add_distributed_ddl",
     help="Add 'add_distributed_ddl' settings",
 )
+parser.add_argument(
+    "--add-shared-catalog",
+    action="store_false",
+    dest="add_shared_catalog",
+    help="Add 'shared_database_catalog' settings",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
