@@ -54,7 +54,7 @@ namespace Setting
 {
 
 extern const SettingsBool join_use_nulls;
-extern const SettingsBool query_plan_correlated_subqueries_use_substitution;
+extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
 
 }
 
@@ -185,7 +185,7 @@ QueryPlan decorrelateQueryPlan(
 
         auto decorrelated_plan_header = node->step->getOutputHeader();
 
-        if (settings[Setting::query_plan_correlated_subqueries_use_substitution])
+        if (settings[Setting::correlated_subqueries_substitute_equivalent_expressions])
         {
             ActionsDAG dag(decorrelated_plan_header.getNamesAndTypesList());
             auto & outputs = dag.getOutputs();
@@ -222,7 +222,7 @@ QueryPlan decorrelateQueryPlan(
 
                 auto result_plan = context.correlated_query_plan.extractSubplan(node);
                 auto renaming_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag));
-                renaming_step->setStepDescription("Renaming correlated columns to evuivalent expressions in subquery");
+                renaming_step->setStepDescription("Renaming correlated columns to equivalent expressions in subquery");
                 result_plan.addStep(std::move(renaming_step));
                 return result_plan;
             }
@@ -333,6 +333,21 @@ QueryPlan decorrelateQueryPlan(
     }
     if (auto * union_step = typeid_cast<UnionStep *>(node->step.get()))
     {
+        /// Subplans must be decorrelated separately, because every subquery in the UNION step
+        /// can have its own equivalence classes. The equivalence classes in one subquery
+        /// should not be visible by another subquery. Example:
+        ///
+        /// SELECT *
+        /// FROM t
+        /// WHERE EXISTS (
+        ///     SELECT *
+        ///     FROM t1
+        ///     WHERE t.x = t1.x
+        ///     UNION ALL
+        ///     SELECT *
+        ///     FROM t2
+        ///     WHERE t.x = t2.y
+        /// )
         auto process_isolated_subplan = [](
             DecorrelationContext & current_context,
             QueryPlan::Node * subplan_root

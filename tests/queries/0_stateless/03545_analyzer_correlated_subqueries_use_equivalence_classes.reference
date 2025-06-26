@@ -35,7 +35,7 @@ Positions: 2
           Actions: INPUT :: 0 -> __table3.number UInt64 : 0
                    INPUT :: 1 -> __table2.number UInt64 : 1
           Positions: 1 0
-            Filter ((WHERE + (Renaming correlated columns to evuivalent expressions in subquery + Change column names to column identifiers)))
+            Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
             Filter column: equals(__table2.number, __table3.number) (removed)
             Actions: INPUT : 0 -> number UInt64 : 0
                      ALIAS number : 0 -> __table2.number UInt64 : 1
