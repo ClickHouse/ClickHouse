@@ -14,10 +14,11 @@ fi
 
 FAST_TEST=0
 EXPORT_S3_STORAGE_POLICIES=1
-USE_AZURE_STORAGE_FOR_MERGE_TREE=0
-USE_ASYNC_INSERT=0
+USE_AZURE_STORAGE_FOR_MERGE_TREE=${USE_AZURE_STORAGE_FOR_MERGE_TREE:0}
+USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
+KEEPER_INJECT_AUTH=1
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -36,6 +37,8 @@ while [[ "$#" -gt 0 ]]; do
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
+
+        --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -213,17 +216,28 @@ else
 fi
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
-value=$(($RANDOM % 2))
+value=$((RANDOM % 2))
+echo "Replacing create_snapshot_on_exit with $value"
 sed --follow-symlinks -i "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-value=$((($RANDOM + 100) * 2048))
+value=$(((RANDOM + 100) * 2048))
+echo "Replacing latest_logs_cache_size_threshold with $value"
 sed --follow-symlinks -i "s|<latest_logs_cache_size_threshold>[[:digit:]]\+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value</latest_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-value=$((($RANDOM + 100) * 2048))
+value=$(((RANDOM + 100) * 2048))
+echo "Replacing commit_logs_cache_size_threshold with $value"
 sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value</commit_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-value=$(($RANDOM % 2))
+value=$((RANDOM % 2))
+echo "Replacing digest_enabled_on_commit with $value"
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+inject_auth=$((RANDOM % 2))
+if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
+    inject_auth=0
+fi
+echo "Replacing inject_auth with $inject_auth"
+sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
@@ -290,9 +304,11 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+    echo "Replacing inject_auth with $inject_auth (for Replicated database)"
+    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
@@ -337,6 +353,13 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
 
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
+fi
+
+# Enable remote_database_disk in DEBUG and ASAN build
+build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+    echo "Installed remote_database_disk.xml config"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

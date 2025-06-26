@@ -151,7 +151,7 @@ public:
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,
              http_port = 8123, http_secure_port = 8443, use_dump_table_oracle = 2, max_reconnection_attempts = 3,
-             time_to_sleep_between_reconnects = 3000;
+             time_to_sleep_between_reconnects = 3000, max_string_length = 1009;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
@@ -179,9 +179,13 @@ public:
 
     void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
+    bool hasMutations();
+
+    String getRandomMutation(uint64_t rand_val);
+
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
+    String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };
