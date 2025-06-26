@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -236,10 +237,23 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 bool MergeTreeReadersChain::needApplyPatch(const Block & block, const IMergeTreeDataPartInfoForReader & patch) const
 {
-    return std::ranges::any_of(patch.getColumnsDescription(), [&](const auto & column)
+    const auto & patch_columns = patch.getColumnsDescription();
+    const auto & alter_conversions = patch.getAlterConversions();
+
+    for (const auto & column : block)
     {
-        return block.has(column.name);
-    });
+        if (isPatchPartSystemColumn(column.name))
+            continue;
+
+        String column_name = column.name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name))
+            column_name = alter_conversions->getColumnOldName(column_name);
+
+        if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            return true;
+    }
+
+    return false;
 }
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
