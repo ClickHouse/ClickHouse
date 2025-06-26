@@ -1,4 +1,4 @@
-#include "PocoHTTPClient.h"
+#include <IO/Azure/PocoHTTPClient.h>
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/LatencyBuckets.h>
@@ -92,36 +92,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
-// PocoHTTPClient implementation
-PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
-    : per_request_configuration(client_configuration.per_request_configuration)
-    , error_report(client_configuration.error_report)
-    , timeouts()
-    , remote_host_filter(client_configuration.remote_host_filter)
-    , max_redirects(client_configuration.max_redirects)
-    , use_adaptive_timeouts(client_configuration.use_adaptive_timeouts)
-    , http_max_fields(client_configuration.http_max_fields)
-    , http_max_field_name_size(client_configuration.http_max_field_name_size)
-    , http_max_field_value_size(client_configuration.http_max_field_value_size)
-    , enable_requests_logging(client_configuration.enable_requests_logging)
-    , for_disk_azure(client_configuration.for_disk_azure)
-    , get_request_throttler(client_configuration.get_request_throttler)
-    , put_request_throttler(client_configuration.put_request_throttler)
-    , extra_headers(client_configuration.extra_headers)
-    , max_retry_attempts(client_configuration.max_retry_attempts)
-    , initial_backoff_ms(client_configuration.initial_backoff_ms)
-    , max_backoff_ms(client_configuration.max_backoff_ms)
-{
-}
-
-std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::Send(
+std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
 {
     return makeRequestInternal(request, context);
 }
 
-void PocoHTTPClient::addMetric(MetricType type, ProfileEvents::Count amount) const
+void PocoAzureHTTPClient::addMetric(MetricType type, ProfileEvents::Count amount) const
 {
     if (for_disk_azure)
     {
@@ -171,7 +149,7 @@ void PocoHTTPClient::addMetric(MetricType type, ProfileEvents::Count amount) con
     }
 }
 
-PocoHTTPClient::MetricKind PocoHTTPClient::getMetricKind(const Azure::Core::Http::Request & request) const
+PocoAzureHTTPClient::MetricKind PocoAzureHTTPClient::getMetricKind(const Azure::Core::Http::Request & request) const
 {
     const auto & method = request.GetMethod().ToString();
     if (method == "GET" || method == "HEAD" || method == "POST")
@@ -179,7 +157,7 @@ PocoHTTPClient::MetricKind PocoHTTPClient::getMetricKind(const Azure::Core::Http
     return MetricKind::Write;
 }
 
-void PocoHTTPClient::addLatency(const Azure::Core::Http::Request & request, LatencyType type, LatencyBuckets::Count amount) const
+void PocoAzureHTTPClient::addLatency(const Azure::Core::Http::Request & request, LatencyType type, LatencyBuckets::Count amount) const
 {
     if (amount == 0)
         return;
@@ -205,7 +183,7 @@ void PocoHTTPClient::addLatency(const Azure::Core::Http::Request & request, Late
         LatencyBuckets::increment(disk_azure_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-ConnectionTimeouts PocoHTTPClient::getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const
+ConnectionTimeouts PocoAzureHTTPClient::getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const
 {
     if (!use_adaptive_timeouts)
         return timeouts;
@@ -213,7 +191,7 @@ ConnectionTimeouts PocoHTTPClient::getTimeouts(const std::string & method, bool 
     return timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
 }
 
-PocoHTTPClient::LatencyType PocoHTTPClient::getFirstByteLatencyType(const std::string & attempt) const
+PocoAzureHTTPClient::LatencyType PocoAzureHTTPClient::getFirstByteLatencyType(const std::string & attempt) const
 {
     if (attempt == "1")
         return LatencyType::FirstByteAttempt1;
@@ -223,7 +201,7 @@ PocoHTTPClient::LatencyType PocoHTTPClient::getFirstByteLatencyType(const std::s
         return LatencyType::FirstByteAttemptN;
 }
 
-std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInternal(
+std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequestInternal(
     Azure::Core::Http::Request & request,
     const Azure::Core::Context & context)
 {
@@ -234,7 +212,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
     return makeRequestInternalImpl(request, context);
 }
 
-std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInternalImpl(
+std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequestInternalImpl(
     Azure::Core::Http::Request & request,
     const Azure::Core::Context & context)
 {
@@ -242,62 +220,60 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
     Stopwatch watch;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AzureRequests};
 
-    auto response = std::make_unique<Azure::Core::Http::RawResponse>(
-        1, 1, // HTTP/1.1
-        Azure::Core::Http::HttpStatusCode::Ok,
-        "OK");
-
     UInt64 connect_time = 0;
     UInt64 first_byte_time = 0;
 
     try
     {
-        // Get proxy configuration
-        ProxyConfiguration proxy_configuration = this->proxy_configuration;
-        if (per_request_configuration)
-            proxy_configuration = per_request_configuration();
 
         // Get request details
         const auto & headers = request.GetHeaders();
         const auto & method = request.GetMethod().ToString();
         const auto url = request.GetUrl();
+        LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Making request to URL: {}", url.GetAbsoluteUrl());
+
+        // Extract attempt information for latency tracking
+        std::string attempt_str = "1";
+        if (auto client_request_id = request.GetHeader("x-ms-client-request-id"); client_request_id.HasValue()) {
+            // Parse attempt from client request ID or other headers
+            // For Azure, we'll use a simple counter or default to "1" for first attempt
+            attempt_str = "1"; // Could be enhanced to parse actual attempt numbers
+        }
+        
+        bool first_attempt = (attempt_str == "1");
+        LatencyType first_byte_latency_type = getFirstByteLatencyType(attempt_str);
 
         // Create POCO request
-        Poco::Net::HTTPRequest poco_request(
-            "/",  // Will be overridden by setURI below
-            Poco::Net::HTTPRequest::HTTP_1_1);
+        Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
         // Set method
         poco_request.setMethod(method);
 
-        // Set host header if not already set
-        if (!headers.contains("Host"))
-            poco_request.set("Host", url.GetHost());
-
+        std::string path_and_query;
         // Set request URI with path
-        std::string path = url.GetPath();
-        if (path.empty())
-            path = "/";
-            
+        const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
+        Poco::URI::encode(url.GetPath(), reserved, path_and_query);
+
         // Add query parameters if any
         auto query_params = url.GetQueryParameters();
-        if (!query_params.empty()) {
-            path += "?";
+        if (!query_params.empty())
+        {
+            path_and_query += "?";
             bool first = true;
-            for (const auto& param : query_params) {
-                if (!first) path += "&";
-                path += param.first + "=" + param.second;
+            for (const auto& param : query_params)
+            {
+                if (!first)
+                    path_and_query += "&";
+                path_and_query += param.first + "=" + param.second;
                 first = false;
             }
         }
-        poco_request.setURI(path);
 
-        // Determine if this is a retry attempt by checking x-ms-client-request-id header
-        bool first_attempt = true;
-        if (auto client_request_id = request.GetHeader("x-ms-client-request-id"); client_request_id.HasValue()) {
-            // If the header exists, it's not the first attempt
-            first_attempt = false;
-        }
+        if (path_and_query.empty())
+            path_and_query = "/";
+
+        poco_request.setURI(path_and_query);
+
 
         // Set headers from the Azure request
         for (const auto & [name, value] : headers)
@@ -310,19 +286,12 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
         for (const auto & header : extra_headers)
         {
             if (!header.value.empty())  // Skip empty headers
-                poco_request.set(header.name, header.value);
-        }
-
-        // Handle request body
-        std::vector<uint8_t> body_buffer;
-        size_t content_length = 0;
-
-        if (auto * body_stream = request.GetBodyStream())
-        {
-            // Read the body stream into a buffer
-            body_buffer = body_stream->ReadToEnd(context);
-            content_length = body_buffer.size();
-            poco_request.setContentLength(static_cast<std::streamsize>(content_length));
+            {
+                if (!header.name.starts_with("x-ms-"))
+                    poco_request.set(Poco::toLower(header.name), header.value);
+                else
+                    poco_request.set(header.name, header.value);
+            }
         }
 
         // Apply throttling
@@ -360,30 +329,51 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
         }
 
         // Create session using the common makeHTTPSession with adaptive timeouts
-        Poco::URI uri(url.GetScheme() + "://" + url.GetHost() + (url.GetPort() ? ":" + std::to_string(url.GetPort()) : ""));
+        Poco::URI uri;
+        uri.setScheme(url.GetScheme());
+        uri.setHost(url.GetHost());
+        uri.setPort(url.GetPort());
+        uri.setPath("/");
 
         auto http_method = request.GetMethod().ToString();
         auto adaptive_timeouts = getTimeouts(http_method, first_attempt, true);
 
         connect_time = first_byte_time = 0;
 
+        std::ostringstream dump;
+        poco_request.write(dump);
+        LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Making request to {}", dump.str());
+        LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Making request to URI: {}", uri.toString());
+
+        auto group = HTTPConnectionGroupType::STORAGE;
         auto session = makeHTTPSession(
-            connection_group,
+            group,
             uri,
             adaptive_timeouts,
-            proxy_configuration,
+            ProxyConfiguration{},
             &connect_time
         );
 
         // Send request
-        std::ostream & request_stream = session->sendRequest(poco_request);
+        std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
 
-        // Write request body if present
-        if (!body_buffer.empty())
+        addLatency(request, LatencyType::Connect, connect_time);
+        addLatency(request, first_byte_latency_type, first_byte_time);
+
+        // Handle request body
+        if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
         {
-            // Set timeouts for request body writing
-            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte=*/false));
-            request_stream.write(reinterpret_cast<const char *>(body_buffer.data()), body_buffer.size());
+            LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Request has body stream {}", body_stream->Length());
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+            std::vector<uint8_t> buffer(8192); // 8KB buffer
+            while (auto read = body_stream->Read(buffer.data(), 8192))
+            {
+                if (read > 0)
+                    request_stream.write(reinterpret_cast<const char *>(buffer.data()), read);
+                else
+                    break; // End of stream
+            }
         }
 
         // Set timeouts for receiving response
@@ -397,30 +387,53 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
 
         std::istream & response_stream = session->receiveResponse(poco_response);
 
+        // Record first byte time
+        first_byte_time = watch.elapsedMicroseconds();
+
+            // Read the entire response into a buffer
+        std::ostringstream oss;
+        Poco::StreamCopier::copyStream(response_stream, oss);
+        std::string response_body = oss.str();
+        std::vector<uint8_t> response_body_bytes(response_body.begin(), response_body.end());
+
+        LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Response body size: {} body {}", response_body_bytes.size(), response_body_bytes.empty() ? "empty" : "not empty");
+
+        int status = static_cast<int>(poco_response.getStatus());
+
+        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, // HTTP/1.1
+            static_cast<Azure::Core::Http::HttpStatusCode>(status),
+            poco_response.getReason());
+
+        for (const auto & [header_name, header_value] : poco_response)
+            response->SetHeader(header_name, header_value);
+
         // Handle response
         // For streaming responses, we need to keep the session alive
-        //if (poco_response.getChunkedTransferEncoding() ||
-        //    poco_response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
-        //{
-        //    response->SetBodyStream(response_stream_ptr);
-        //}
-        //else
-        //{
-            // Read the entire response into a buffer
-            std::ostringstream oss;
-            Poco::StreamCopier::copyStream(response_stream, oss);
-            std::string response_body = oss.str();
-            response->SetBody(std::vector<uint8_t>(response_body.begin(), response_body.end()));
-        //}
-
+        if (poco_response.getChunkedTransferEncoding() ||
+            poco_response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
+        {
+            response->SetBodyStream(std::make_unique<Azure::Core::IO::MemoryBodyStream>(response_body_bytes));
+        }
+        else
+        {
+            response->SetBody(response_body_bytes);
+        }
 
         // Track metrics
         auto latency = watch.elapsedMicroseconds();
         addMetric(MetricType::Microseconds, latency);
         addMetric(MetricType::Count);
 
+        // Track first byte latency
+        if (first_byte_time > 0)
+        {
+            addLatency(request, first_byte_latency_type, first_byte_time);
+        }
+
         // Handle redirects
-        int status = static_cast<int>(poco_response.getStatus());
+
+        LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Response status: {} {}", status, poco_response.getReason());
         if (status >= 300 && status < 400)
         {
             addMetric(MetricType::Redirects);
@@ -440,7 +453,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
                 }
             }
 
-            throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUri().GetURIString());
+            throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUrl().GetAbsoluteUrl());
         }
         else if (status >= 300)
         {
@@ -454,7 +467,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoHTTPClient::makeRequestInter
                 addMetric(MetricType::Errors);
                 // Optionally report errors for 5xx status codes
                 if (status >= 500 && error_report)
-                    error_report(proxy_configuration);
+                    error_report();
             }
 
             // Expose stream for error responses, allowing the client to read the error details

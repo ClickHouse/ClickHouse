@@ -128,6 +128,25 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
+    /* Azure profile events */ \
+    M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
+    M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
+    M(DiskAzureReadRequestsErrors, "Number of Azure disk read request errors.", ValueType::Number) \
+    M(DiskAzureReadRequestsThrottling, "Number of Azure disk read requests throttled.", ValueType::Number) \
+    M(DiskAzureReadRequestsRedirects, "Number of Azure disk read request redirects.", ValueType::Number) \
+    M(AzureReadMicroseconds, "Total time spent waiting for Azure read requests.", ValueType::Microseconds) \
+    M(AzureReadRequestsCount, "Number of Azure read requests.", ValueType::Number) \
+    M(AzureReadRequestsErrors, "Number of Azure read request errors.", ValueType::Number) \
+    M(AzureReadRequestsThrottling, "Number of Azure read requests throttled.", ValueType::Number) \
+    M(AzureReadRequestsRedirects, "Number of Azure read request redirects.", ValueType::Number) \
+    M(AzureGetRequestThrottlerCount, "Number of Azure GET requests passed through throttler.", ValueType::Number) \
+    M(AzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure GET request throttling.", ValueType::Microseconds) \
+    M(DiskAzureGetRequestThrottlerCount, "Number of Azure disk GET requests passed through throttler.", ValueType::Number) \
+    M(DiskAzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk GET request throttling.", ValueType::Microseconds) \
+    M(AzurePutRequestThrottlerCount, "Number of Azure PUT requests passed through throttler.", ValueType::Number) \
+    M(AzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure PUT request throttling.", ValueType::Microseconds) \
+    M(DiskAzurePutRequestThrottlerCount, "Number of Azure disk PUT requests passed through throttler.", ValueType::Number) \
+    M(DiskAzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk PUT request throttling.", ValueType::Microseconds) \
     M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \

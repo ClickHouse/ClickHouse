@@ -11,6 +11,7 @@
 
 #endif
 
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/Azure/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -51,6 +52,8 @@ namespace Setting
     extern const SettingsUInt64 azure_sdk_retry_initial_backoff_ms;
     extern const SettingsUInt64 azure_sdk_retry_max_backoff_ms;
     extern const SettingsBool azure_check_objects_after_upload;
+    extern const SettingsBool azure_use_adaptive_timeouts;
+    extern const SettingsUInt64 azure_max_redirects;
 }
 
 namespace ErrorCodes
@@ -405,9 +408,25 @@ BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_di
     curl_options.NoSignal = true;
     curl_options.IPResolve = settings.curl_ip_resolve;
 
+    auto context = Context::getGlobalContextInstance();
+    PocoAzureHTTPClientConfiguration conf{.remote_host_filter = context->getRemoteHostFilter(),
+                                     .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
+                                     .for_disk_azure = for_disk,
+                                     .get_request_throttler = nullptr,
+                                     .put_request_throttler = nullptr,
+                                     .extra_headers = HTTPHeaderEntries{},
+                                     .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
+                                     .http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT,
+                                     .http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST,
+                                     .http_max_fields = 1000000,
+                                     .http_max_field_name_size = 128 * 1024,
+                                     .http_max_field_value_size = 128 * 1024,
+                                     .error_report = []() { /* No-op */ }};
+
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
-    client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
+    client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
+    //client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
 
     return client_options;

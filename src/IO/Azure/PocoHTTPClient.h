@@ -25,14 +25,11 @@ namespace DB
 
 class Context;
 
-class PocoHTTPClient;
-
-struct PocoHTTPClientConfiguration
+struct PocoAzureHTTPClientConfiguration
 {
-    std::function<ProxyConfiguration()> per_request_configuration;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int max_redirects;
-    bool enable_requests_logging;
+    UInt64 max_redirects;
+    bool enable_requests_logging = false;
     bool for_disk_azure;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
@@ -43,18 +40,28 @@ struct PocoHTTPClientConfiguration
     UInt64 http_max_fields = 1000000;
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
-    unsigned int max_retry_attempts;
-    unsigned int initial_backoff_ms;
-    unsigned int max_backoff_ms;
-    std::function<void(const ProxyConfiguration &)> error_report;
+    std::function<void()> error_report;
 };
 
 
-class PocoHTTPClient : public Azure::Core::Http::HttpTransport
+class PocoAzureHTTPClient : public Azure::Core::Http::HttpTransport
 {
 public:
-    explicit PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration);
-    ~PocoHTTPClient() override = default;
+    explicit PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration & client_configuration)
+        : error_report(client_configuration.error_report)
+        , remote_host_filter(client_configuration.remote_host_filter)
+        , max_redirects(client_configuration.max_redirects)
+        , use_adaptive_timeouts(client_configuration.use_adaptive_timeouts)
+        , http_max_fields(client_configuration.http_max_fields)
+        , http_max_field_name_size(client_configuration.http_max_field_name_size)
+        , http_max_field_value_size(client_configuration.http_max_field_value_size)
+        , for_disk_azure(client_configuration.for_disk_azure)
+        , get_request_throttler(client_configuration.get_request_throttler)
+        , put_request_throttler(client_configuration.put_request_throttler)
+        , extra_headers(client_configuration.extra_headers)
+    {}
+
+    ~PocoAzureHTTPClient() override = default;
 
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request,
@@ -102,8 +109,7 @@ private:
     void addMetric(MetricType type, ProfileEvents::Count amount = 1) const;
     void addLatency(const Azure::Core::Http::Request & request, LatencyType type, LatencyBuckets::Count amount = 1) const;
 
-    std::function<ProxyConfiguration()> per_request_configuration;
-    std::function<void(const ProxyConfiguration &)> error_report;
+    std::function<void()> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int max_redirects = 0;
@@ -111,17 +117,10 @@ private:
     const UInt64 http_max_fields;
     const UInt64 http_max_field_name_size;
     const UInt64 http_max_field_value_size;
-    bool enable_requests_logging = false;
     bool for_disk_azure = false;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
     const HTTPHeaderEntries extra_headers;
-
-    HTTPConnectionGroupType connection_group{HTTPConnectionGroupType::HTTP};
-    ProxyConfiguration proxy_configuration;
-    unsigned int max_retry_attempts;
-    unsigned int initial_backoff_ms;
-    unsigned int max_backoff_ms;
 
 };
 

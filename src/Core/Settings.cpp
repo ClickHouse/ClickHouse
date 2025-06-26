@@ -411,6 +411,9 @@ The maximum number of retries in case of unexpected errors during S3 write.
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of S3 redirects hops allowed.
 )", 0) \
+    DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
+Max number of S3 redirects hops allowed.
+)", 0) \
     DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
 The maximum number of connections per server.
 )", 0) \
@@ -430,6 +433,10 @@ Max number of requests that can be issued simultaneously before hitting request 
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
+When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+)", 0) \
+    DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
