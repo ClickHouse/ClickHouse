@@ -2580,8 +2580,13 @@ def test_filesystem_cache(started_cluster):
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
+    instance.query("SYSTEM FLUSH LOGS")
 
-<<<<<<< fix-cluster-functions-with-archives
+    total_count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment:%'"))
+    assert total_count > 0
+    count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment: 0%'"))
+    assert count == total_count
+
 
 def test_archive(started_cluster):
     id = uuid.uuid4()
@@ -2648,11 +2653,3 @@ def test_archive(started_cluster):
     assert expected_count == int(
         node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
     )
-=======
-    instance.query("SYSTEM FLUSH LOGS")
-
-    total_count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment:%'"))
-    assert total_count > 0
-    count = int(instance.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ilike '%Boundary alignment: 0%'"))
-    assert count == total_count
->>>>>>> master
