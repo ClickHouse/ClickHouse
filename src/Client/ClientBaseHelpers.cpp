@@ -302,7 +302,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 /// If the cursor is on one of round bracket,
                 /// highlight both the opening and closing round brackets with a brighter color.
-                auto bright_color = bright_colormap[color_stack.back()];
+                auto bright_color = bright_colormap.at(color_stack.back());
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
