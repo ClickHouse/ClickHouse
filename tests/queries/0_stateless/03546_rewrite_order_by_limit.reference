@@ -1,5 +1,5 @@
 -- { echo ON } 
--- Tags: no-parallel, no-stress, no-object-storage, no-parallel-replicas
+-- Tags: no-stress, no-object-storage, no-parallel-replicas
 set enable_analyzer = 1;
 drop table if exists a;
 drop table if exists b;
