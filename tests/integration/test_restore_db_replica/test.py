@@ -596,3 +596,74 @@ def test_failed_restore_db_replica_on_normal_replica(
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+
+
+def test_restore_db_replica_on_cluster(
+    start_cluster,
+    exclusive_database_name,
+):
+    prepare_db(exclusive_database_name)
+
+    test_table_1 = "test_table_1"
+    test_table_2 = "test_table_2"
+
+    zk = cluster.get_kazoo_client("zoo1")
+
+    count_test_table = 100
+
+    create_table(node_1, f"{exclusive_database_name}.{test_table_1}")
+    fill_table(node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table)
+
+    check_contains_table(
+        node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table
+    )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{test_table_1}", count_test_table
+    )
+
+    zk_rmr_with_retries(zk, f"/clickhouse/{exclusive_database_name}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
+
+    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
+    # node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
+    assert node_1.wait_for_log_line(
+        f"{exclusive_database_name}): All tables are created successfully",
+        look_behind_lines=1000,
+    )
+
+    assert ["1"] == node_1.query(
+        f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}'"
+    ).split()
+
+    assert ["1"] == node_1.query(
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
+    ).split()
+
+    # assert [f"{count_test_table}"] == node_1.query(
+    #     f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
+    # ).split()
+
+    check_contains_table(
+        node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table
+    )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{test_table_1}", count_test_table
+    )
+
+    create_table(node_1, f"{exclusive_database_name}.{test_table_2}")
+    fill_table(node_1, f"{exclusive_database_name}.{test_table_2}", count_test_table)
+
+    check_contains_table(
+        node_1, f"{exclusive_database_name}.{test_table_2}", count_test_table
+    )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table
+    )
+
+    # expected_count = ["0"]
+    # assert (
+    #     expected_count
+    #     == node_1.query(
+    #         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
+    #     ).split()
+    # )

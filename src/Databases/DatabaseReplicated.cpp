@@ -1770,7 +1770,20 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
     waitDatabaseStarted();
 
     tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
-    restoreTablesMetadataInKeeper();
+
+    try
+    {
+        restoreTablesMetadataInKeeper();
+    }
+    catch (const zkutil::KeeperMultiException & e)
+    {
+        if (Coordination::Error::ZNODEEXISTS != e.code)
+        {
+            throw;
+        }
+        LOG_DEBUG(log, "It seems that the metadata was restored previously: {}.", e.what());
+    }
+
     reinitializeDDLWorker();
 }
 
