@@ -345,3 +345,87 @@ def test_hide_sensitive_info(started_cluster):
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+
+def test_select_after_rename(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        with table.update_schema() as update:
+            update.rename_column("bid", "new_bid")
+
+        print(node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+
+def test_non_existing_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_non_existing_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`fake_namespace.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)

@@ -58,7 +58,6 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -66,6 +65,10 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
+                "configs/disable_streaming.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
             ],
             stay_alive=True,
         )
@@ -688,3 +691,81 @@ def test_failure_in_the_middle(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+
+
+def test_disable_streaming(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_disable_streaming_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    assert (
+        "false"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/disable_streaming.xml",
+        "0",
+        "1",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert (
+        "true"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "processing_threads_num": 1,
+            "keeper_path": keeper_path,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
+    )
+    assert 0 == get_count()
+
+    assert (
+        "true"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/disable_streaming.xml",
+        "1",
+        "0",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert (
+        "false"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()

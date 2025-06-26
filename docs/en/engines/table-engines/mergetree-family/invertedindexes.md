@@ -1,22 +1,22 @@
 ---
 description: 'Quickly find search terms in text.'
 keywords: ['full-text search', 'text search', 'index', 'indices']
-sidebar_label: 'Full-text Indexes'
+sidebar_label: 'text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
-title: 'Full-text Search using Full-text Indexes'
+title: 'Full-text Search using Text Indexes'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Full-text Search using Full-text Indexes
+# Full-text Search using text Indexes.
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Full-text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
+Text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
 capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md)
-columns. The main idea of a full-text index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
+columns. The main idea of a text index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
 tokenized cells of the string column. For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will",
 "be", "a", "little" and "late". Another kind of tokenizer is n-grams. For example, the result of 3-gram tokenization will be 21 terms "I w",
 " wi", "wil", "ill", "ll ", "l b", " be" etc. The more fine-granular the input strings are tokenized, the bigger but also the more
@@ -35,26 +35,26 @@ useful the resulting full-text index will be.
 </div>
 
 :::note
-Full-text indexes are experimental and should not be used in production environments yet. They may change in the future in backward-incompatible
+Text indexes are experimental and should not be used in production environments yet. They may change in the future in backward-incompatible
 ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
 :::
 
 ## Usage {#usage}
 
-To use full-text indexes, first enable them in the configuration:
+To use text indexes, first enable them in the configuration:
 
 ```sql
 SET allow_experimental_full_text_index = true;
 ```
 
-An full-text index can be defined on a string column using the following syntax
+An text index can be defined on a string column using the following syntax
 
 ```sql
 CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) GRANULARITY 1
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -76,6 +76,10 @@ The separators can be specified via the `separators` parameter. This is an optio
 
 - `separators = []`: A list of strings, e.g. `separators = [', ', '; ', '\n', '\\']`.
 - If not specified: Use a default separator which is a space (`[' ']`).
+
+When GRANULARITY is not specified, the default value for text index is 64. The default value has been decided empirically after some
+benchmarks to provide "good enough" performance in average cases. Depending of your data and frequent search criteria a different value
+could improve performance.
 
 :::note
 In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
@@ -229,10 +233,9 @@ WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
 ```
 
 :::note
-Unlike other secondary indices, full-text indexes (for now) map to row numbers (row ids) instead of granule ids. The reason for this design
+Unlike other secondary indices, text indexes (for now) map to row numbers (row ids) instead of granule ids. The reason for this design
 is performance. In practice, users often search for multiple terms at once. For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE
-'%big%'` can be evaluated directly using an full-text index by forming the union of the row id lists for terms "little" and "big". This also
-means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
+'%big%'` can be evaluated directly using a text index by forming the union of the row id lists for terms "little" and "big".
 :::
 
 ## Related Content {#related-content}

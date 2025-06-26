@@ -153,43 +153,41 @@ if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
 endif()
 clickhouse_target_link_split_lib(clickhouse install)
 
+macro(clickhouse_program_alias alias)
+    message(STATUS "Adding alias ${alias}")
+    add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
+    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+endmacro()
+
 set (CLICKHOUSE_BUNDLE)
-macro(clickhouse_program_install name lib_name)
+function(clickhouse_program_install name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     foreach(alias ${ARGN})
-        message(STATUS "Adding alias ${alias} for ${name}")
-        add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_program_alias(${alias})
     endforeach()
-endmacro()
+endfunction()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-if (ENABLE_LEXER_TEST)
-    list(APPEND CLICKHOUSE_BUNDLE lexer_test)
-endif ()
-
-if (ENABLE_CHDIG)
-    message(STATUS "Adding chdig to clickhouse-bundle")
-    list(APPEND CLICKHOUSE_BUNDLE chdig)
-    # NOTE: we need to do this here, since contrib has EXCLUDE_FROM_ALL
-    corrosion_install(TARGETS chdig RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-else ()
-    # Dummy target mostly for sanitizers build to avoid breaking packages
-    # (nfpm do not have options to ignore non existing files)
-    set(CHDIG_PATH ${CMAKE_BINARY_DIR}/chdig)
-    file(GENERATE OUTPUT ${CHDIG_PATH} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
-    install(FILES ${CHDIG_PATH}
-        DESTINATION ${CMAKE_INSTALL_BINDIR}
-        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                    GROUP_READ GROUP_EXECUTE
-                    WORLD_READ WORLD_EXECUTE
-    )
+if (TARGET ch_rust::chdig)
+    clickhouse_program_alias(clickhouse-chdig)
+    clickhouse_program_alias(chdig)
+else()
+    message(STATUS "Adding dummy chdig targets (for nfpm)")
+    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
+        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+        install(FILES ${chdig_path}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                        GROUP_READ GROUP_EXECUTE
+                        WORLD_READ WORLD_EXECUTE
+        )
+    endforeach()
 endif ()
 
 clickhouse_program_install(clickhouse-benchmark benchmark)
