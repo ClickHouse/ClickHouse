@@ -227,14 +227,14 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     auto bright_colormap = std::unordered_map<Replxx::Color, Replxx::Color>
     {
-        { replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4) }, // Soft pink
-        { replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2) }, // Red
-        { replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2) }, // Gold-orange
-        { replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2) }, // Yellow
-        { replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2) }, // Green
-        { replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5) }, // Teal
-        { replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5) }, // Indigo
-        { replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5) }  // Violet
+        {replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4)}, // Soft pink
+        {replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2)}, // Red
+        {replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2)}, // Gold-orange
+        {replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2)}, // Yellow
+        {replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2)}, // Green
+        {replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5)}, // Teal
+        {replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5)}, // Indigo
+        {replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5)}  // Violet
     };
 
     size_t current_color = 0;
@@ -253,9 +253,10 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 brace_stack.push_back(*highlight_token_iterator);
                 current_color++;
 
-                auto highlight_pos = highlight_token_iterator->begin - begin;
+                auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
 
-                colors[highlight_pos] = color_stack.back();
+                if (highlight_pos < colors.size())
+                    colors[highlight_pos] = color_stack.back();
 
                 ++highlight_token_iterator;
                 continue;
@@ -269,11 +270,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     continue;
                 }
 
-                auto highlight_pos = highlight_token_iterator->begin - begin;
-                colors[highlight_pos] = color_stack.back();
+                auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
+                if (highlight_pos < colors.size())
+                    colors[highlight_pos] = color_stack.back();
 
-                auto matching_brace_pos = brace_stack.back().begin - begin;
-                if (cursor_position != highlight_pos && cursor_position != matching_brace_pos)
+                auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
+
+                if ( cursor_position < 0 ||
+                    (cursor_position != static_cast<int64_t>(highlight_pos) && cursor_position != static_cast<int64_t>(matching_brace_pos))
+                )
                 {
                     ++highlight_token_iterator;
                     color_stack.pop_back();
