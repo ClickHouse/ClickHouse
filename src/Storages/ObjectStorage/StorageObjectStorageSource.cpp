@@ -140,7 +140,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],
-            is_archive && !expect_whole_archive,
+            /*is_archive_=*/is_archive && !expect_whole_archive,
             object_storage,
             local_context);
 
