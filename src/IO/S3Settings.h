@@ -33,7 +33,7 @@ struct S3Settings
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const DB::Settings & settings,
-        const S3::URI & uri,
+        const std::string & scheme,
         bool validate_settings);
 
     void updateIfChanged(const S3Settings & settings);

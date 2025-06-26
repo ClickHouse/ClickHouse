@@ -489,7 +489,7 @@ void S3ObjectStorage::applyNewSettings(
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
     settings_from_config->loadFromConfigForObjectStorage(
-        config, config_prefix, context->getSettingsRef(), uri, context->getSettingsRef()[Setting::s3_validate_request_settings]);
+        config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
