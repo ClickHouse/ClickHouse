@@ -223,14 +223,13 @@ public:
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
+
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
     // Path used for reading, it is usually a globbed path like `'table_root/**.parquet'
     Path getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
-
-    void setPathForRead(const Path & path) { path_for_read = path; }
 
     virtual void setRawPath(const Path & path) = 0;
 
@@ -330,7 +329,6 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
-    Path path_for_read;
 };
 
 }

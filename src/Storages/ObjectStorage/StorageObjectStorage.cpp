@@ -352,6 +352,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
 void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -361,11 +362,6 @@ void StorageObjectStorage::Configuration::initPartitionStrategy(ASTPtr partition
         getRawPath().withGlobs(),
         getRawPath().withPartitionWildcard(),
         partition_columns_in_data_file);
-
-    if (partition_strategy)
-    {
-        setPathForRead(partition_strategy->getPathForRead(getRawPath().path));
-    }
 }
 
 ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
@@ -659,9 +655,6 @@ void StorageObjectStorage::Configuration::initialize(
 
     const auto raw_path = configuration_to_initialize.getRawPath();
 
-    /// Default to the path provided by the user. It may be changed later upon configuration_to_initialize.initPartitionStrategy()
-    configuration_to_initialize.setPathForRead(raw_path);
-
     if (configuration_to_initialize.isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
@@ -693,7 +686,14 @@ void StorageObjectStorage::Configuration::check(ContextPtr) const
 
 StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getPathForRead() const
 {
-    return path_for_read;
+    auto raw_path = getRawPath();
+
+    if (!partition_strategy)
+    {
+        return raw_path;
+    }
+
+    return Path {partition_strategy->getPathForRead(raw_path.path)};
 }
 
 StorageObjectStorage::Configuration::Path StorageObjectStorage::Configuration::getPathForWrite(const std::string & partition_id) const
