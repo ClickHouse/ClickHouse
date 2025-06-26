@@ -69,12 +69,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-<<<<<<< add_distinct_to_in_clause
             {"enable_add_distinct_to_in_subqueries", false, true, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
-=======
->>>>>>> master
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
         });
