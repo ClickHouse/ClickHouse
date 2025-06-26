@@ -22,6 +22,9 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
+class ParquetReader;
+class SubRowGroupRangeReader;
+class ReadBufferFromMemory;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -250,6 +253,7 @@ private:
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::unique_ptr<RowGroupPrefetchIterator> prefetch_iterator;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
+        std::unique_ptr<SubRowGroupRangeReader> row_group_chunk_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
 
@@ -361,6 +365,10 @@ private:
     bool is_initialized = false;
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
     std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
+    std::shared_ptr<ParquetReader> new_native_reader = nullptr;
+
+    // For native reader read from stdin
+    std::shared_ptr<ReadBufferFromMemory> memory_buffer_reader = nullptr;
 };
 
 class ArrowParquetSchemaReader : public ISchemaReader

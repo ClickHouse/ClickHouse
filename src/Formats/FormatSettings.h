@@ -304,6 +304,7 @@ struct FormatSettings
         bool page_filter_push_down = true;
         bool use_offset_index = true;
         bool use_native_reader_v3 = false;
+        bool use_native_reader_with_filter_push_down = false;
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;

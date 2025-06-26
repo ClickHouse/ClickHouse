@@ -245,6 +245,7 @@ else ()
 endif ()
 
 add_contrib (xxHash-cmake xxHash)
+add_contrib (xsimd-cmake xsimd)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 

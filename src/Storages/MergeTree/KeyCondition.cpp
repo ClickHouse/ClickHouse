@@ -906,6 +906,8 @@ KeyCondition::KeyCondition(
     }
 
     has_filter = true;
+    assert(filter_dag.dag.has_value());
+    filter_expr = std::make_shared<ActionsDAG>(filter_dag.dag->clone());
 
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {

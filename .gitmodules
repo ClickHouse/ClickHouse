@@ -13,6 +13,9 @@
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd.git
 [submodule "contrib/libmaxminddb"]
 	path = contrib/libmaxminddb
 	url = https://github.com/maxmind/libmaxminddb.git	
