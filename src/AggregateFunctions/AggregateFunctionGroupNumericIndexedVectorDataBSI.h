@@ -75,7 +75,7 @@ public:
 
     static constexpr auto type = "BSI";
 
-    /** For Floar ValueType:
+    /** For Float ValueType:
      * - Use 40-bit fixed-point representation for integer part.
      *   Which means supported value range is [-2^39, 2^39 - 1] in the signed scenario.
      * - Use 24-bit represent decimal part, provides about 10^-7~10^-8(2^-24) resolution.
@@ -106,6 +106,20 @@ private:
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
     std::vector<std::shared_ptr<Roaring>> data_array;
+
+    /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
+    /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
+    constexpr inline static void checkValidValue(const ValueType & value)
+    {
+        if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            if (isnan(value))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NumericIndexedVector does not support NaN");
+            if (isinf(value))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NumericIndexedVector does not support Inf");
+        }
+    }
+
 
 public:
     BSINumericIndexedVector()
@@ -257,6 +271,7 @@ public:
      */
     void initializeFromVectorAndValue(const BSINumericIndexedVector & rhs, ValueType value)
     {
+        checkValidValue(value);
         initialize(rhs.integer_bit_num, rhs.fraction_bit_num);
 
         auto all_index = rhs.getAllIndex();
@@ -1096,6 +1111,7 @@ public:
             res.zero_indexes->rb_or(*lhs.getAllIndex());
             return;
         }
+        checkValidValue(rhs);
 
         auto lhs_non_zero_indexes = lhs.getAllNonZeroIndex();
 
@@ -1247,6 +1263,7 @@ public:
             res_bm->rb_or(*lhs.zero_indexes);
             return res_bm;
         }
+        checkValidValue(rhs);
 
         res_bm = lhs.getAllNonZeroIndex();
 
@@ -1296,6 +1313,7 @@ public:
 
     static void pointwiseEqual(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
+        checkValidValue(rhs);
         res.initialize(2, 0);
         res.getDataArrayAt(res.fraction_bit_num)->rb_or(*pointwiseEqual(lhs, rhs));
     }
@@ -1330,6 +1348,7 @@ public:
      */
     static void pointwiseNotEqual(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
+        /// Do not need checkValidValue(rhs) as this is checked within pointwiseEqual
         pointwiseEqual(lhs, rhs, res);
         auto & res_bm = res.getDataArrayAt(res.fraction_bit_num);
 
@@ -1506,6 +1525,7 @@ public:
      */
     static void pointwiseLessEqual(const BSINumericIndexedVector & lhs, const ValueType & rhs, BSINumericIndexedVector & res)
     {
+        /// Do not need checkValidValue(rhs) as this is checked within pointwiseLess
         auto lt_bm = pointwiseLess(lhs, rhs);
         auto eq_bm = pointwiseEqual(lhs, rhs);
 
@@ -1577,6 +1597,8 @@ public:
     /// original_vector(this)[index] += value.
     void addValue(IndexType index, ValueType value)
     {
+        checkValidValue(value);
+
         if (sizeof(IndexType) > 4)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
