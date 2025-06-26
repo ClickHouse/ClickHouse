@@ -596,7 +596,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProc
     if (file_info == file_map.end())
     {
         const auto zk_client = getZooKeeper();
-        file_map[node_path.string()] = {zk_client->exists(node_path), node_metadata.file_path};
+        file_map.emplace(node_path.string(), HiveLastProcessedFileInfo({zk_client->exists(node_path), node_metadata.file_path}));
     }
     else if (node_metadata.file_path > file_info->second.file_path)
         file_info->second.file_path = node_metadata.file_path;

@@ -1164,12 +1164,12 @@ void ObjectStorageQueueSource::prepareHiveProcessedRequests(
     Coordination::Requests & requests,
     const HiveLastProcessedFileInfoMap & file_map)
 {
-    for (const auto & file_info : file_map)
+    for (const auto & [node_path, file_info] : file_map)
     {
-        if (file_info.second.exists)
-            requests.push_back(zkutil::makeSetRequest(file_info.first, file_info.second.file_path, -1));
+        if (file_info.exists)
+            requests.push_back(zkutil::makeSetRequest(node_path, file_info.file_path, -1));
         else
-            requests.push_back(zkutil::makeCreateRequest(file_info.first, file_info.second.file_path, zkutil::CreateMode::Persistent));
+            requests.push_back(zkutil::makeCreateRequest(node_path, file_info.file_path, zkutil::CreateMode::Persistent));
     }
 }
 

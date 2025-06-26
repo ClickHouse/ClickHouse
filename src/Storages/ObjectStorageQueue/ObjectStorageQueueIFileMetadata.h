@@ -60,6 +60,9 @@ public:
     struct LastProcessedFileInfo
     {
         std::string file_path;
+        /// Position of record in `requests` list with keeper commands.
+        /// Used to avoid double creation Keeper node with same path.
+        /// Instead more actual record overrides old one in `requests` list.
         size_t index;
     };
 
@@ -98,6 +101,9 @@ public:
     void resetProcessing();
 
     /// Prepare keeper requests, required to set file as Processed.
+    /// `created_nodes` is a helper index for hive partitioning case,
+    /// keeps values and indexes of already inserted commands
+    /// to avoid double creation with the same path.
     void prepareProcessedRequests(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
     /// Prepare keeper requests, required to set file as Failed.
@@ -106,7 +112,7 @@ public:
         const std::string & exception_message,
         bool reduce_retry_count);
 
-    /// Prepare keeper requests to save hive last processed files
+    /// Prepare keeper requests to save hive last processed files.
     virtual void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & /* file_map */) {}
 
     struct SetProcessingResponseIndexes

@@ -70,7 +70,7 @@ private:
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
 
-    bool is_path_with_hive_partitioning = false;
+    const bool is_path_with_hive_partitioning = false;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
