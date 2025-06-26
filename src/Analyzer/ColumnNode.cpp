@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include "DataTypes/DataTypesBinaryEncoding.h"
 
 
 namespace DB
