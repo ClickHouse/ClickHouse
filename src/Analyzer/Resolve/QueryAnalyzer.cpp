@@ -199,6 +199,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             if (table_expression)
             {
                 scope.expression_join_tree_node = table_expression;
+                scope.registered_table_expression_nodes.insert(table_expression);
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
             }
@@ -244,6 +245,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     if (table_expression)
     {
         scope.expression_join_tree_node = table_expression;
+        scope.registered_table_expression_nodes.insert(table_expression);
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
     }
