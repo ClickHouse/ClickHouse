@@ -2,6 +2,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/logger_useful.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
@@ -9,9 +10,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ColumnsDescription.h>
+#include "ExpressionVisitor.h"
+#include "KernelUtils.h"
 
 
 namespace DB::ErrorCodes
@@ -62,7 +64,9 @@ PartitionPruner::PartitionPruner(
     const DB::ActionsDAG & filter_dag,
     const DB::NamesAndTypesList & table_schema_,
     const DB::Names & partition_columns_,
+    const DB::NameToNameMap & physical_names_map_,
     DB::ContextPtr context)
+    : physical_partition_columns(partition_columns_)
 {
     if (!partition_columns_.empty())
     {
@@ -78,6 +82,11 @@ PartitionPruner::PartitionPruner(
         key_condition.emplace(
             inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
     }
+    if (!physical_names_map_.empty())
+    {
+        for (auto & name : physical_partition_columns)
+            name = getPhysicalName(name, physical_names_map_);
+    }
 }
 
 bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
@@ -85,11 +94,18 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
     if (!key_condition.has_value())
         return false;
 
-    if (!object_info.data_lake_metadata)
+    if (!object_info.data_lake_metadata.has_value())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not set");
+    if (!object_info.data_lake_metadata->transform)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
+
+    const auto partition_values = DeltaLake::getConstValuesFromExpression(
+        physical_partition_columns,
+        *object_info.data_lake_metadata->transform);
+
+    LOG_TEST(getLogger("DeltaLakePartitionPruner"), "Partition values: {}", partition_values.size());
 
     DB::Row partition_key_values;
-    const auto partition_values = object_info.data_lake_metadata->partition_values;
     partition_key_values.reserve(partition_values.size());
 
     for (const auto & value : partition_values)
