@@ -1751,3 +1751,23 @@ def test_sas_token(cluster):
         node, f"SELECT * FROM azureBlobStorage('{sas_token}', '', 'test-sas-token.csv')"
     )
     assert content.splitlines() == ["foo"]
+
+
+def test_hive_partition_strategy(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"create table test_hive_partition_strategy (year UInt16, country String, counter UInt8)"
+        f"engine=AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f"'cont', 'test_hive_partition_strategy',"
+        f"'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',"
+        f"'Parquet', 'auto', 'hive') PARTITION BY (year, country)",
+    )
+
+    azure_query(node, f"insert into table test_hive_partition_strategy values (2020, 'Brazil', 1), (2021, 'Russia', 2), (2021, 'Russia', 3);")
+
+    res = azure_query(node, "select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from test_hive_partition_strategy order by counter;")
+
+    assert "cont/test_hive_partition_strategy/year=2020/country=Brazil/<snowflakeid>.parquet\t1\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t2\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t3\n" == res

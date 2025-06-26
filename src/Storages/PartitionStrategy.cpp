@@ -299,8 +299,15 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
 
     if (!prefix.empty())
     {
-        path += prefix + "/";
+        path += prefix;
+        if (path.back() != '/')
+        {
+            path += '/';
+        }
     }
+
+    /// Not adding '/' because buildExpressionHive() always adds a trailing '/'
+    path += partition_key;
 
     /*
      * File extension is toLower(format)
@@ -309,7 +316,9 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
      *
      * Or perhaps implement something like `IInputFormat::getFileExtension()`
      */
-    return path + partition_key + "/" + std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
+    path += std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
+
+    return path;
 }
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
