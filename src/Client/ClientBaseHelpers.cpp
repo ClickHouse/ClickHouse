@@ -22,6 +22,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool implicit_select;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 /// Should we celebrate a bit?
@@ -157,7 +159,11 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     const char * begin = query.data();
     const char * end = begin + query.size();
     Tokens tokens(begin, end, 10000, true);
-    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
+    IParser::Pos token_iterator(
+        tokens,
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_depth]),
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks])
+    );
     Expected expected;
     expected.enable_highlighting = true;
 
@@ -213,7 +219,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     // Pride flag colors.
-    auto default_colormap = std::array<Replxx::Color, 8>
+    static const std::array<Replxx::Color, 8> default_colormap =
     {
         replxx::color::rgb666(4, 2, 3), // Soft pink
         replxx::color::rgb666(4, 1, 1), // Red
@@ -225,7 +231,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         replxx::color::rgb666(4, 1, 4)  // Violet
     };
 
-    auto bright_colormap = std::unordered_map<Replxx::Color, Replxx::Color>
+    static const std::unordered_map<Replxx::Color, Replxx::Color> bright_colormap =
     {
         {replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4)}, // Soft pink
         {replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2)}, // Red
@@ -242,7 +248,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     std::vector<Token> brace_stack;
     std::optional<std::tuple<size_t, size_t>> active_matching_brace;
 
-    IParser::Pos highlight_token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
+    IParser::Pos highlight_token_iterator(
+        tokens,
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_depth]),
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks])
+    );
+
     try
     {
         while (!highlight_token_iterator->isEnd())
