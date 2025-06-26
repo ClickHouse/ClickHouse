@@ -46,6 +46,7 @@ target_compile_options (_poco_xml
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
         -Wno-covered-switch-default
+        -Wno-unreachable-code-break
 )
 target_include_directories (_poco_xml SYSTEM PUBLIC "include")
 target_link_libraries (_poco_xml PUBLIC Poco::Foundation Poco::XML::Expat)
