@@ -32,10 +32,17 @@ void * JemallocNodumpAllocatorImpl::alloc(
     void * result = original_alloc_(extent, new_addr, size, alignment, zero, commit, arena_ind);
     if (result != nullptr)
     {
+#if defined(MADV_DONTDUMP)
         if (auto ret = madvise(result, size, MADV_DONTDUMP))
         {
             throw std::runtime_error(Poco::format("Failed to run madvise: %s", errnoToString(ret)));
         }
+#elif defined(MADV_NOCORE)
+        if (auto ret = madvise(result, size, MADV_NOCORE))
+        {
+            throw std::runtime_error(Poco::format("Failed to run madvise: %s", errnoToString(ret)));
+        }
+#endif
     }
     return result;
 }
