@@ -3124,7 +3124,7 @@ def test_cluster_table_function_with_partition_pruning(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -3157,7 +3157,7 @@ def test_writes(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes_from_zero(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -3181,8 +3181,8 @@ def test_writes_from_zero(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
 
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes_with_partitioned_table(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session

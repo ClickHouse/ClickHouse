@@ -160,7 +160,6 @@ void generateManifestFile(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
-    std::cerr << "format version " << version << '\n';
     std::istringstream iss(schema_representation);
     avro::compileJsonSchema(iss, schema);
 
@@ -175,7 +174,6 @@ void generateManifestFile(
     auto set_versioned_field = [&] (const auto & value, const String & field_name) {
         if (version > 1)
         {
-            std::cerr << "set_versioned_field " << field_name << '\n';
             size_t field_index;
             if (!schema.root()->nameIndex(field_name, field_index))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
@@ -186,7 +184,6 @@ void generateManifestFile(
             field.selectBranch(1);
             field.datum() = avro::GenericDatum(value);
             manifest.field(field_name) = avro::GenericDatum(union_schema, field);
-            std::cerr << "set_versioned_field OK " << field_name << '\n';
         }
         else
         {
@@ -217,7 +214,6 @@ void generateManifestFile(
     data_file.field("file_size_in_bytes") = avro::GenericDatum(static_cast<int64_t>(added_files_size));
 
     avro::GenericRecord& partition_record = data_file.field("partition").value<avro::GenericRecord>();
-    partition_record.schema()->printJson(std::cerr, 4);
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
         if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
@@ -738,7 +734,6 @@ void IcebergStorageSink::initializeMetadata()
         auto manifest_entry_name = filename_generator.generateManifestEntryName();
         manifest_entries.push_back(manifest_entry_name);
 
-        std::cerr << "manifest_entry_name " << manifest_entry_name << ' ' << data_filename << '\n';
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, *buffer_manifest_entry);
@@ -746,7 +741,6 @@ void IcebergStorageSink::initializeMetadata()
     }
 
     {
-        std::cerr << "manifest_list_name " << manifest_list_name << '\n';
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());                    
 
