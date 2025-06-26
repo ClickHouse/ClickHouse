@@ -2,78 +2,72 @@
 Expression ((Project names + Projection))
 Actions: INPUT :: 0 -> count() UInt64 : 0
 Positions: 0
-  MergingAggregated (merge)
+  Aggregating
   Keys:
   Aggregates:
       count()
         Function: count() → UInt64
         Arguments: none
+  Skip merging: 0
     GatherExchange
-      Aggregating (partial)
-      Keys:
-      Aggregates:
-          count()
-            Function: count() → UInt64
-            Arguments: none
-      Skip merging: 0
-        Expression ((Before GROUP BY + ))
+      Expression ((Before GROUP BY + ))
+      Actions: INPUT :: 0 -> __table1.lang String : 0
+               INPUT :: 1 -> __table2.lang String : 1
+      Positions:
+        JoinLogical
+        Type: INNER
+        Strictness: ALL
+        Locality: UNSPECIFIED
+        Expression: ON [Predcates: (__table1.path = __table2.path)]
+        Required Output: [__table2.lang, __table1.lang]
+        Algorithm: HashJoin
+        Post Expression:
         Actions: INPUT :: 0 -> __table1.lang String : 0
                  INPUT :: 1 -> __table2.lang String : 1
-        Positions:
-          JoinLogical
-          Type: INNER
-          Strictness: ALL
-          Locality: UNSPECIFIED
-          Expression: ON [Predcates: (__table1.path = __table2.path)]
-          Required Output: [__table2.lang, __table1.lang]
-          Algorithm: HashJoin
-          Post Expression:
-          Actions: INPUT :: 0 -> __table1.lang String : 0
-                   INPUT :: 1 -> __table2.lang String : 1
-          Positions: 0 1
-          Left Expression:
-          Actions: INPUT :: 0 -> __table1.path String : 0
-                   INPUT :: 1 -> __table1.lang String : 1
-          Positions: 0 1
-          Right Expression:
-          Actions: INPUT :: 0 -> __table2.path String : 0
-                   INPUT :: 1 -> __table2.lang String : 1
-          Positions: 0 1
-            ShuffleExchange (by hash([__table1.path]))
-              Expression ((WHERE + Change column names to column identifiers))
-              Actions: INPUT : 0 -> path String : 0
-                       INPUT : 1 -> lang String : 1
-                       ALIAS path :: 0 -> __table1.path String : 2
-                       ALIAS lang :: 1 -> __table1.lang String : 0
-              Positions: 2 0
-                ReadFromMergeTree (default.test)
-                ReadType: Default
-                Parts: 4
-                Granules: 4
-                Prewhere info
-                Need filter: 1
-                  Prewhere filter
-                  Prewhere filter column: equals(__table1.lang, \'en\'_String) (removed)
-                  Actions: INPUT : 0 -> lang String : 0
-                           COLUMN Const(String) -> \'en\'_String String : 1
-                           FUNCTION equals(lang : 0, \'en\'_String :: 1) -> equals(__table1.lang, \'en\'_String) UInt8 : 2
-                  Positions: 0 2
-            ShuffleExchange (by hash([__table2.path]))
-              Expression ((WHERE + Change column names to column identifiers))
-              Actions: INPUT : 0 -> path String : 0
-                       INPUT : 1 -> lang String : 1
-                       ALIAS path :: 0 -> __table2.path String : 2
-                       ALIAS lang :: 1 -> __table2.lang String : 0
-              Positions: 2 0
-                ReadFromMergeTree (default.test)
-                ReadType: Default
-                Parts: 4
-                Granules: 4
-                Prewhere info
-                Need filter: 1
-                  Prewhere filter
-                  Prewhere filter column: equals(__table2.lang, \'de\'_String) (removed)
-                  Actions: INPUT : 0 -> lang String : 0
-                           COLUMN Const(String) -> \'de\'_String String : 1
-                           FUNCTION equals(lang : 0, \'de\'_String :: 1) -> equals(__table2.lang, \'de\'_String) UInt8 : 2
-                  Positions: 0 2
+        Positions: 0 1
+        Left Expression:
+        Actions: INPUT :: 0 -> __table1.path String : 0
+                 INPUT :: 1 -> __table1.lang String : 1
+        Positions: 0 1
+        Right Expression:
+        Actions: INPUT :: 0 -> __table2.path String : 0
+                 INPUT :: 1 -> __table2.lang String : 1
+        Positions: 0 1
+          ShuffleExchange (by hash([__table1.path]))
+            Expression ((WHERE + Change column names to column identifiers))
+            Actions: INPUT : 0 -> path String : 0
+                     INPUT : 1 -> lang String : 1
+                     ALIAS path :: 0 -> __table1.path String : 2
+                     ALIAS lang :: 1 -> __table1.lang String : 0
+            Positions: 2 0
+              ReadFromMergeTree (default.test)
+              ReadType: Default
+              Parts: 4
+              Granules: 4
+              Prewhere info
+              Need filter: 1
+                Prewhere filter
+                Prewhere filter column: equals(__table1.lang, \'en\'_String) (removed)
+                Actions: INPUT : 0 -> lang String : 0
+                         COLUMN Const(String) -> \'en\'_String String : 1
+                         FUNCTION equals(lang : 0, \'en\'_String :: 1) -> equals(__table1.lang, \'en\'_String) UInt8 : 2
+                Positions: 0 2
+          ShuffleExchange (by hash([__table2.path]))
+            Expression ((WHERE + Change column names to column identifiers))
+            Actions: INPUT : 0 -> path String : 0
+                     INPUT : 1 -> lang String : 1
+                     ALIAS path :: 0 -> __table2.path String : 2
+                     ALIAS lang :: 1 -> __table2.lang String : 0
+            Positions: 2 0
+              ReadFromMergeTree (default.test)
+              ReadType: Default
+              Parts: 4
+              Granules: 4
+              Prewhere info
+              Need filter: 1
+                Prewhere filter
+                Prewhere filter column: equals(__table2.lang, \'de\'_String) (removed)
+                Actions: INPUT : 0 -> lang String : 0
+                         COLUMN Const(String) -> \'de\'_String String : 1
+                         FUNCTION equals(lang : 0, \'de\'_String :: 1) -> equals(__table2.lang, \'de\'_String) UInt8 : 2
+                Positions: 0 2
