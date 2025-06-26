@@ -41,7 +41,11 @@ namespace ErrorCodes
     DECLARE(String, storage_class_name, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
-    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0)
+    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
+    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", 0) \
+    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", 0) \
+    DECLARE(Bool, slow_all_threads_after_network_error, true, "", 0) \
+    DECLARE(Bool, enable_request_logging, false, "", 0)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \
