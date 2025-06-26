@@ -1355,9 +1355,6 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     time64 = Time64(0);
     time_t whole = 0;
 
-    // save initial buffer position for error recovery
-    char * initial_position = buf.position();
-
     // check if buffer is empty
     if (buf.eof())
     {
@@ -1392,8 +1389,6 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
             // Check if we can continue with fractional part parsing
             if (buf.eof() || *buf.position() != '.')
             {
-                // Reset buffer position to initial state before throwing
-                buf.position() = initial_position;
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time64: {}", e.message());
             }
             // If there's a dot, we'll try to parse as decimal below
@@ -1405,11 +1400,7 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
         auto ok = readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
         parse_success = ok;
         if (!ok && (buf.eof() || *buf.position() != '.'))
-        {
-            // reset buffer position to initial state
-            buf.position() = initial_position;
             return ReturnType(false);
-        }
     }
 
     int negative_fraction_multiplier = 1;
