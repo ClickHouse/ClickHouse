@@ -24,6 +24,7 @@ target_include_directories (_poco_xml_expat PRIVATE "../Foundation/include")
 file (GLOB SRCS src/*.cpp)
 add_library (_poco_xml ${SRCS})
 add_library (Poco::XML ALIAS _poco_xml)
+add_compile_definitions (_poco_xml PRIVATE XML_GE=0)
 
 # TODO: remove these warning exclusions
 target_compile_options (_poco_xml
@@ -44,6 +45,7 @@ target_compile_options (_poco_xml
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
+        -Wno-covered-switch-default
 )
 target_include_directories (_poco_xml SYSTEM PUBLIC "include")
 target_link_libraries (_poco_xml PUBLIC Poco::Foundation Poco::XML::Expat)
