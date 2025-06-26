@@ -1409,7 +1409,9 @@ private:
         else
             return;
 
-        const FunctionNode * child_function = is_lhs_const ? rhs->as<FunctionNode>() : lhs->as<FunctionNode>();
+        const auto & replacement_function = is_lhs_const ? rhs : lhs;
+
+        const FunctionNode * child_function = replacement_function->as<FunctionNode>();
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
 
@@ -1420,12 +1422,21 @@ private:
             const auto not_node = std::make_shared<FunctionNode>("not");
             auto & arguments = not_node->getArguments().getNodes();
             arguments.reserve(1);
-            arguments.push_back(is_lhs_const ? rhs : lhs);
+            arguments.push_back(replacement_function);
             not_node->resolveAsFunction(not_resolver->build(not_node->getArgumentColumns()));
             node = not_node;
         }
         else
-            node = is_lhs_const ? rhs : lhs;
+            node = replacement_function;
+
+        if (!function_node.getResultType()->equals(*node->getResultType()))
+        {
+            /// Result of replacement_function can be low cardinality, while redundant equal
+            /// returns UInt8, and this equal can be an argument of external function -
+            /// so we want to convert replacement_function to the expected UInt8
+            chassert(function_node.getResultType()->equals(*removeLowCardinality(node->getResultType())));
+            node = createCastFunction(node, function_node.getResultType(), getContext());
+        }
     }
 };
 
