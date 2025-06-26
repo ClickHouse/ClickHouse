@@ -23,6 +23,7 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Analyzer/UnionNode.h>
 
 
 namespace DB
@@ -94,48 +95,6 @@ public:
 
 private:
     std::unordered_map<QueryTreeNodePtr, Columns> column_source_to_columns;
-};
-
-/** Visitor that checks if a query contains distributed tables */
-class ContainsDistributedTableVisitor : public InDepthQueryTreeVisitor<ContainsDistributedTableVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitor<ContainsDistributedTableVisitor>;
-    using Base::Base;
-
-    bool containsDistributedTable() const { return found_distributed_table; }
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * table_node = node->as<TableNode>())
-        {
-            const auto * distributed_storage = typeid_cast<const StorageDistributed *>(table_node->getStorage().get());
-            if (distributed_storage)
-                found_distributed_table = true;
-        }
-    }
-
-private:
-    bool found_distributed_table = false;
-};
-
-/** Visitor that adds DISTINCT to query nodes */
-class AddDistinctToQueryVisitor : public InDepthQueryTreeVisitor<AddDistinctToQueryVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitor<AddDistinctToQueryVisitor>;
-    using Base::Base;
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * query_node = node->as<QueryNode>())
-        {
-            if (!query_node->isDistinct())
-            {
-                query_node->setIsDistinct(true);
-            }
-        }
-    }
 };
 
 /** Visitor that rewrites IN and JOINs in query and all subqueries according to distributed_product_mode and
@@ -295,13 +254,27 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+// Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
+static void addDistinctRecursively(const QueryTreeNodePtr & node)
+{
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        if (!query_node->isDistinct())
+            query_node->setIsDistinct(true);
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        for (auto & child : union_node->getQueries().getNodes())
+            addDistinctRecursively(child);
+    }
+}
+
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
 TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
-    size_t subquery_depth,
-    bool is_in_subquery = false)
+    size_t subquery_depth)
 {
     const auto subquery_hash = subquery_node->getTreeHash();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
@@ -318,25 +291,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
-
-    // Check if the optimization should be applied (only for IN subqueries)
-    // Note: We don't apply DISTINCT optimization to JOIN subqueries because:
-    // 1. JOINs often need to preserve duplicates for correct results (one-to-many relationships)
-    // 2. The optimization was specifically designed for IN clauses to reduce network transfer
-    bool should_add_distinct = is_in_subquery && mutable_context->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
-    if (should_add_distinct)
-    {
-        // Check if the subquery contains distributed tables
-        ContainsDistributedTableVisitor contains_distributed_visitor;
-        contains_distributed_visitor.visit(const_cast<QueryTreeNodePtr &>(subquery_node));
-
-        if (contains_distributed_visitor.containsDistributedTable())
-        {
-            // Add DISTINCT to the subquery to reduce data transfer
-            AddDistinctToQueryVisitor add_distinct_visitor;
-            add_distinct_visitor.visit(const_cast<QueryTreeNodePtr &>(subquery_node));
-        }
-    }
 
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
@@ -462,8 +416,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth,
-                false);
+                global_in_or_join_node.subquery_depth);
             temporary_table_expression_node->setAlias(join_table_expression->getAlias());
 
             replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
@@ -487,12 +440,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         subquery_to_execute,
                         planner_context->getQueryContext());
 
+                // If DISTINCT optimization is enabled, add DISTINCT before executeSubqueryNode
+                if (planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries])
+                    addDistinctRecursively(subquery_to_execute);
+    
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
-                    global_in_or_join_node.subquery_depth,
-                    true);
-                    replacement_table_expression = temporary_table_expression_node;
+                    global_in_or_join_node.subquery_depth);
+                replacement_table_expression = temporary_table_expression_node;
             }
             else
             {
