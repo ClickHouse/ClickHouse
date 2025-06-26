@@ -345,7 +345,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
         if (active_matching_brace)
         {
-            const auto &[highlight_pos, matching_brace_pos] = *active_matching_brace;
+            const auto & [highlight_pos, matching_brace_pos] = *active_matching_brace;
 
             const auto opening_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_pos);
             const auto closing_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), matching_brace_pos);
