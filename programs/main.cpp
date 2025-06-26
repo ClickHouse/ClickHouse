@@ -85,6 +85,10 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
+#if USE_CHDIG
+    {"chdig", mainEntryClickHouseChdig},
+    {"dig", mainEntryClickHouseChdig},
+#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
