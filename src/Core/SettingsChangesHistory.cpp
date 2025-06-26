@@ -764,6 +764,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        {
+            {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
+            {"object_serialization_version_for_zero_level_parts", "v2", "v2", "Add a setting to control JSON serialization versions  for zero level parts"},
+            {"object_shared_data_buckets", 1, 1, "Add a setting to control number of buckets for shared data in JSON serialization"},
+            {"object_dynamic_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},

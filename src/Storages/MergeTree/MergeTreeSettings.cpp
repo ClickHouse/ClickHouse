@@ -252,6 +252,18 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    TBD
+    )", 0) \
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version_for_zero_level_parts, "v2", R"(
+    TBD
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets, 1, R"(
+    TBD
+    )", 0) \
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    TBD
+    )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.

@@ -296,7 +296,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 {
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column = getColumnFromSubstreamsCache(cache, settings.path))
     {
         column = cached_column;
         return;
@@ -332,7 +332,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
     column = std::move(mutable_column);
-    addToSubstreamsCache(cache, settings.path, column);
+    addColumnToSubstreamsCache(cache, settings.path, column);
 }
 
 /// All methods below just wrap nested serialization.

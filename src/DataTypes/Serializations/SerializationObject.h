@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <list>
 
 namespace DB
@@ -33,6 +34,14 @@ public:
             V1 = 0,
             /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
             V2 = 2,
+            /// V2_WITH_BUCKETS serialization: the same as V2 but shared data is splitted into buckets.
+            /// Number of buckets is serialized in ObjectStructure stream after sorted list of dynamic paths.
+            V2_WITH_BUCKETS = 4,
+            /// V3 serialization: TBD
+            V3 = 5,
+            /// V4 serialization: TBD
+            V4 = 6,
+            /// Serializations used only in Native format:
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
             STRING = 1,
@@ -50,13 +59,43 @@ public:
 
         static void checkVersion(UInt64 version);
 
+        bool supportsSharedDataBuckets() const
+        {
+            switch (value)
+            {
+                case V2_WITH_BUCKETS: [[fallthrough]];
+                case V3: [[fallthrough]];
+                case V4:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool supportsEmptyStatistics() const
+        {
+            switch (value)
+            {
+                case V2_WITH_BUCKETS: [[fallthrough]];
+                case V3: [[fallthrough]];
+                case V4:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         explicit ObjectSerializationVersion(UInt64 version);
+        explicit ObjectSerializationVersion(MergeTreeObjectSerializationVersion version);
+
+        ObjectSerializationVersion(Value value_) : value(value_) {}
     };
 
     SerializationObject(
         std::unordered_map<String, SerializationPtr> typed_path_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_regexps_to_skip_);
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -101,6 +140,8 @@ public:
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
+    static SerializationObjectSharedData::Mode chooseSharedDataMode(ObjectSerializationVersion version);
+
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
@@ -111,6 +152,7 @@ private:
         ObjectSerializationVersion serialization_version;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
+        size_t shared_data_buckets = 1;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
 
@@ -147,11 +189,11 @@ protected:
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
+    DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
 
 private:
     std::vector<String> sorted_typed_paths;
-    SerializationPtr shared_data_serialization;
 };
 
 }

@@ -217,6 +217,9 @@ public:
     UInt128 getPartBlockIDHash() const;
     String getNewPartBlockID(std::string_view token) const;
 
+    /// Returns true if it's a zero level part.
+    bool isZeroLevel() const { return info.min_block == info.max_block; }
+
     void setName(const String & new_name);
 
     const MergeTreeData & storage;

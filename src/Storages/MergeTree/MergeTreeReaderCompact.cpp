@@ -164,7 +164,7 @@ void MergeTreeReaderCompact::readData(
     size_t rows_offset,
     size_t from_mark,
     MergeTreeReaderStream & stream,
-    ISerialization::SubstreamsCache & columns_cache,
+    std::unordered_map<String, ColumnPtr> & columns_cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns)
 {
     const auto & name_and_type = columns_to_read[column_idx];
@@ -193,7 +193,22 @@ void MergeTreeReaderCompact::readData(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-        deserialize_settings.use_specialized_prefixes_substreams = true;
+        deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+        deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        if (have_substream_marks)
+        {
+            deserialize_settings.seek_stream_to_mark_callback = [&](const ISerialization::SubstreamPath &, const MarkInCompressedFile & mark)
+            {
+                stream.seekToMark(mark);
+            };
+
+            deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
+                stream.seekToMarkAndColumn(from_mark, substream_position);
+            };
+        }
 
         auto it = columns_cache.find(name);
         if (it != columns_cache.end() && it->second != nullptr)
@@ -311,7 +326,8 @@ void MergeTreeReaderCompact::readPrefix(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
-        deserialize_settings.use_specialized_prefixes_substreams = true;
+        deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+        deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, cache);
     }

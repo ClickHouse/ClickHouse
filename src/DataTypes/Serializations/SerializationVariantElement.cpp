@@ -46,7 +46,7 @@ void SerializationVariantElement::enumerateStreams(
     const DB::ISerialization::SubstreamData & data) const
 {
     /// We will need stream for discriminators during deserialization.
-    if (settings.use_specialized_prefixes_substreams)
+    if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {
         settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
         callback(settings.path);
@@ -117,7 +117,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStateVariantElement * variant_element_state = nullptr;
     std::optional<size_t> variant_rows_offset;
     std::optional<size_t> variant_limit;
-    if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
+    if (auto cached_discriminators = getColumnFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
         variant_element_state->discriminators = cached_discriminators;
@@ -157,9 +157,9 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         }
 
         if (rows_offset)
-            addToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
+            addColumnToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
         else
-            addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
+            addColumnToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
     }
     else
     {

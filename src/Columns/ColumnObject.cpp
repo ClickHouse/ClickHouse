@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -416,8 +417,16 @@ void ColumnObject::setMaxDynamicPaths(size_t max_dynamic_paths_)
 
 void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
 {
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific max_dynamic_paths parameter is allowed only for empty object column");
+
     if (paths.size() > max_dynamic_paths)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set dynamic paths to Object column, the number of paths ({}) exceeds the limit ({})", paths.size(), max_dynamic_paths);
+
+    /// Clear current dynamic structure if any.
+    dynamic_paths_ptrs.clear();
+    dynamic_paths.clear();
+    sorted_dynamic_paths.clear();
 
     size_t size = this->size();
     for (const auto & path : paths)
@@ -686,7 +695,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
             {
                 /// Paths in src_dynamic_paths_for_shared_data are already sorted.
                 for (const auto path : src_dynamic_paths_for_shared_data)
-                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *src_object_column.dynamic_paths.find(path)->second, i);
+                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *src_object_column.dynamic_paths_ptrs.find(path)->second, i);
                 shared_data_offsets.push_back(shared_data_paths->size());
             }
         }
@@ -729,7 +738,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                        && src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index] < path)
                 {
                     const auto dynamic_path = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
-                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths.find(dynamic_path)->second, row);
+                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths_ptrs.find(dynamic_path)->second, row);
                     ++src_dynamic_paths_for_shared_data_index;
                 }
 
@@ -743,7 +752,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         for (; src_dynamic_paths_for_shared_data_index != src_dynamic_paths_for_shared_data.size(); ++src_dynamic_paths_for_shared_data_index)
         {
             const auto dynamic_path = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
-            serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths.find(dynamic_path)->second, row);
+            serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths_ptrs.find(dynamic_path)->second, row);
         }
 
         shared_data_offsets.push_back(shared_data_paths->size());
@@ -757,7 +766,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
     }
 }
 
-void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n)
+void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n)
 {
     /// Don't store Null values in shared data. We consider Null value equivalent to the absence
     /// of this path in the row because we cannot distinguish these 2 cases for dynamic paths.
@@ -1520,7 +1529,9 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
             if (!dynamic_paths.contains(path))
                 paths_with_sizes.emplace_back(size, path);
         }
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), std::greater());
+
+        /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
+        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tie(left.first, right.second) < std::tie(right.first, left.second); });
 
         /// Fill dynamic_paths with first paths in sorted list until we reach the limit.
         size_t paths_to_add = max_dynamic_paths - dynamic_paths.size();
@@ -1682,7 +1693,9 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         paths_with_sizes.reserve(path_to_total_number_of_non_null_values.size());
         for (const auto & [path, size] : path_to_total_number_of_non_null_values)
             paths_with_sizes.emplace_back(size, path);
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), std::greater());
+
+        /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
+        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tuple(right.first, left.second) < std::tuple(left.first, right.second); });
 
         /// Fill dynamic_paths with first max_dynamic_paths paths in sorted list.
         for (const auto & [size, path] : paths_with_sizes)

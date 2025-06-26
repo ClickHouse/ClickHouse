@@ -44,7 +44,8 @@ const FormatSettings & getFormatSettings()
 /// To solve it, we use String type with custom name for shared variant.
 DataTypePtr ColumnDynamic::getSharedVariantDataType()
 {
-    return DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
+    static DataTypePtr type = DataTypeFactory::instance().getCustom("String", std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(getSharedVariantTypeName())));
+    return type;
 }
 
 ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_), global_max_dynamic_types(max_dynamic_types)

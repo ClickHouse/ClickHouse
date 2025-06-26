@@ -123,6 +123,14 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     }
 }
 
+ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumerateSettings() const
+{
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.object_serialization_version = settings.object_serialization_version;
+    enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    return enumerate_settings;
+}
+
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
     const ColumnPtr & column,
@@ -199,8 +207,10 @@ void MergeTreeDataPartWriterWide::addStreams(
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
-    ISerialization::SubstreamPath path;
-    getSerialization(name_and_type.name)->enumerateStreams(callback, name_and_type.type, column);
+    auto serialization = getSerialization(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column);
+    auto enumerate_settings = getEnumerateSettings();
+    serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
 const String & MergeTreeDataPartWriterWide::getStreamName(
@@ -208,7 +218,11 @@ const String & MergeTreeDataPartWriterWide::getStreamName(
     const ISerialization::SubstreamPath & substream_path) const
 {
     auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
-    return full_name_to_stream_name.at(full_stream_name);
+    auto it = full_name_to_stream_name.find(full_stream_name);
+    if (it == full_name_to_stream_name.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} not found", full_stream_name);
+
+    return it->second;
 }
 
 ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
@@ -392,10 +406,11 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
             min_compress_block_size = value->safeGet<UInt64>();
     if (!min_compress_block_size)
         min_compress_block_size = settings.min_compress_block_size;
-    getSerialization(name_and_type.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
+
+    auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-       /// Skip ephemeral subcolumns that don't store any real data.
-       if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+        /// Skip ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
            return;
 
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
@@ -417,8 +432,12 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing.offset();
 
         result.push_back(stream_with_mark);
-    }, name_and_type.type, column_sample);
+    };
 
+    auto serialization = getSerialization(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column_sample);
+    auto enumerate_settings = getEnumerateSettings();
+    serialization->enumerateStreams(enumerate_settings, callback, data);
     return result;
 }
 
@@ -434,7 +453,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-    serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
+    auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         /// Skip ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
@@ -448,7 +467,11 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
             return;
 
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
-    }, name_and_type.type, column.getPtr());
+    };
+
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column.getPtr());
+    auto enumerate_settings = getEnumerateSettings();
+    serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
 /// Column must not be empty. (column.size() !== 0)
@@ -470,7 +493,9 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
-        serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
+        serialize_settings.dynamic_serialization_version = settings.dynamic_serialization_version;
+        serialize_settings.object_serialization_version = settings.object_serialization_version;
+        serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
@@ -480,6 +505,12 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+    serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
+    {
+        auto stream_name = getStreamName(name_and_type, substream_path);
+        auto & stream = column_streams.at(stream_name);
+        return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+    };
 
     for (const auto & granule : granules)
     {
@@ -516,12 +547,16 @@ void MergeTreeDataPartWriterWide::writeColumn(
         }
     }
 
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets)
             offset_columns.insert(getStreamName(name_and_type, substream_path));
-    }, name_and_type.type, column.getPtr());
+    };
+
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column.getPtr());
+    auto enumerate_settings = getEnumerateSettings();
+    serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
 
@@ -785,12 +820,17 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 {
     writeSingleMark(name_and_type, offset_columns, 0);
     /// Memoize information about offsets
-    getSerialization(name_and_type.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
+    auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets)
             offset_columns.insert(getStreamName(name_and_type, substream_path));
-    }, name_and_type.type, block_sample.getByName(name_and_type.name).column);
+    };
+
+    auto serialization = getSerialization(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto enumerate_settings = getEnumerateSettings();
+    serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
 static void fillIndexGranularityImpl(

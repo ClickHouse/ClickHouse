@@ -141,6 +141,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
                     std::move(typed_path_serializations),
                     paths_to_skip,
                     path_regexps_to_skip,
+                    getDynamicType(),
                     buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
 #endif
 
@@ -149,12 +150,14 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
                 std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
+                getDynamicType(),
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
             return std::make_shared<SerializationJSON<DummyJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
+                getDynamicType(),
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
@@ -436,7 +439,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     if (typed_paths.contains(path))
         res->serialization = std::make_shared<SerializationObjectTypedPath>(res->serialization, path);
     else
-        res->serialization = std::make_shared<SerializationObjectDynamicPath>(res->serialization, path, path_subcolumn, max_dynamic_types);
+        res->serialization = std::make_shared<SerializationObjectDynamicPath>(res->serialization, path, path_subcolumn, getDynamicType());
 
     return res;
 }
@@ -522,6 +525,11 @@ const DataTypePtr & DataTypeObject::getTypeOfSharedData()
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 {
     return std::make_shared<DataTypeObject>(schema_format, max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR);
+}
+
+DataTypePtr DataTypeObject::getDynamicType() const
+{
+    return std::make_shared<DataTypeDynamic>(max_dynamic_types);
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

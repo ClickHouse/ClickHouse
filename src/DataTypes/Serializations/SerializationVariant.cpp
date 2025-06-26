@@ -69,7 +69,7 @@ void SerializationVariant::enumerateStreams(
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
 
-    if (settings.use_specialized_prefixes_substreams)
+    if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {
         settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
         callback(settings.path);
@@ -137,7 +137,7 @@ void SerializationVariant::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
     auto * discriminators_stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -211,7 +211,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     DeserializeBinaryBulkSettings & settings,
     SubstreamsDeserializeStatesCache * cache)
 {
-    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -474,7 +474,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     std::vector<size_t> variant_rows_offsets;
     std::vector<size_t> variant_limits;
 
-    if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
+    if (auto cached_discriminators = getColumnFromSubstreamsCache(cache, settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         col.getLocalDiscriminatorsPtr() = cached_discriminators;
@@ -504,9 +504,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         }
 
         if (rows_offset)
-            addToSubstreamsCache(cache, settings.path, IColumn::mutate(col.getLocalDiscriminatorsPtr()));
+            addColumnToSubstreamsCache(cache, settings.path, IColumn::mutate(col.getLocalDiscriminatorsPtr()));
         else
-            addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
+            addColumnToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
     /// It may happen that there is no such stream, in this case just do nothing.
     else
@@ -587,7 +587,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     /// we know for sure that they contain these values, so we can use valiant limits and their
     /// new sizes to calculate correct offsets.
     settings.path.push_back(Substream::VariantOffsets);
-    if (auto cached_offsets = getFromSubstreamsCache(cache, settings.path))
+    if (auto cached_offsets = getColumnFromSubstreamsCache(cache, settings.path))
     {
         col.getOffsetsPtr() = cached_offsets;
     }
@@ -638,7 +638,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             }
         }
 
-        addToSubstreamsCache(cache, settings.path, col.getOffsetsPtr());
+        addColumnToSubstreamsCache(cache, settings.path, col.getOffsetsPtr());
     }
     settings.path.pop_back();
 

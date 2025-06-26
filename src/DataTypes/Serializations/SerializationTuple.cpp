@@ -774,7 +774,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 {
     if (elems.empty())
     {
-        auto cached_column = getFromSubstreamsCache(cache, settings.path);
+        auto cached_column = getColumnFromSubstreamsCache(cache, settings.path);
         if (cached_column)
         {
             column = cached_column;
@@ -786,7 +786,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
             typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
             column = std::move(mutable_column);
-            addToSubstreamsCache(cache, settings.path, column);
+            addColumnToSubstreamsCache(cache, settings.path, column);
         }
 
         return;
