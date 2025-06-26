@@ -19,8 +19,8 @@ HAVING
     0
     OR (
         (
-            materialize(toLowCardinality(0)) = any(0)
-        ) = toLowCardinality(1)
+            materialize(toLowCardinality(0)) = 0
+        ) = anyLast(1)
     );
 
 SELECT
@@ -32,8 +32,8 @@ HAVING
     0
     OR (
         (
-            materialize(toLowCardinality(0)) = any(0)
-        ) = toLowCardinality(0)
+            materialize(toLowCardinality(0)) = 0
+        ) = anyLast(0)
     );
 
 DROP TABLE IF EXISTS test;
