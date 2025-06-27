@@ -1,4 +1,5 @@
 #include "StorageObjectStorageSource.h"
+
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>
@@ -73,9 +74,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    size_t max_parsing_threads_,
+    FormatParserGroupPtr parser_group_,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -83,7 +84,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , max_parsing_threads(max_parsing_threads_)
+    , parser_group(std::move(parser_group_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -99,11 +100,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     create_reader_pool->wait();
-}
-
-void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -322,7 +318,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
+            && !parser_group->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -358,12 +354,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_storage,
         read_from_format_info,
         format_settings,
-        key_condition,
         read_context,
         &schema_cache,
         log,
         max_block_size,
-        max_parsing_threads,
+        parser_group,
         need_only_count);
 }
 
@@ -374,12 +369,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
-    const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    size_t max_parsing_threads,
+    FormatParserGroupPtr parser_group,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -482,21 +476,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
-            std::nullopt,
+            parser_group,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
-        if (key_condition_)
-            input_format->setKeyCondition(key_condition_);
-
         if (need_only_count)
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (configuration->hasPositionDeleteTransformer(object_info))
+        {
+            builder.addSimpleTransform(
+                [&](const Block & header)
+                { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
+        }
+
 
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
@@ -573,6 +571,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
+    modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -583,7 +582,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_prefetch;
 
     bool use_async_buffer = false;
-    ReadSettings nested_buffer_read_settings;
+    ReadSettings nested_buffer_read_settings = modified_read_settings;
     if (use_prefetch || use_cache)
     {
         nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
@@ -615,15 +614,13 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
 
-            modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
-
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_info.getPath(),
                 cache_key,
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                use_async_buffer ? nested_buffer_read_settings : effective_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
