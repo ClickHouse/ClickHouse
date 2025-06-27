@@ -49,7 +49,7 @@ public:
 
         void commit();
     private:
-        bool needs_update_offset{true};
+        bool needs_rollback{true};
         KeeperHandlingConsumer * consumer;
         int64_t new_offset;
     };
@@ -87,6 +87,8 @@ public:
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
+    using TopicPartitionOffset = KafkaConsumer2::TopicPartitionOffset;
+    using TopicPartitionOffsets = KafkaConsumer2::TopicPartitionOffsets;
 
     struct LockedTopicPartitionInfo
     {
@@ -95,14 +97,11 @@ private:
         std::optional<int64_t> intent_size;
     };
 
-    using TopicPartitionLocks = std::unordered_map<
-        TopicPartition,
-        LockedTopicPartitionInfo,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
+    using TopicPartitionLocks = std::
+        unordered_map<TopicPartition, LockedTopicPartitionInfo, KafkaConsumer2::TopicPartitionHash, KafkaConsumer2::TopicPartitionEquality>;
 
-    using TopicPartitionSet = std::
-        unordered_set<TopicPartition, KafkaConsumer2::OnlyTopicNameAndPartitionIdHash, KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
+    using TopicPartitionSet
+        = std::unordered_set<TopicPartition, KafkaConsumer2::TopicPartitionHash, KafkaConsumer2::TopicPartitionEquality>;
 
     struct ActiveReplicasInfo
     {
@@ -117,8 +116,7 @@ private:
     KafkaConsumer2Ptr kafka_consumer;
     zkutil::ZooKeeperPtr keeper;
     size_t topic_partition_index_to_consume_from{0};
-    // TODO(antaljanosbenjamin): maybe only store the offset in one place, either committed_topic_partition_offsets or in the locks
-    TopicPartitions committed_topic_partition_offsets{};
+    TopicPartitions assigned_topic_partitions{};
     size_t poll_count = 0;
     TopicPartitionLocks permanent_locks{};
     TopicPartitionLocks tmp_locks{};
@@ -131,23 +129,24 @@ private:
     LockedTopicPartitionInfo & getTopicPartitionLock(const TopicPartition & topic_partition);
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
-    std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitions & all_topic_partitions);
+    std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 
     void lockTemporaryLocks(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks);
 
     void updatePermanentLocks(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count);
 
+    void rollbackToCommittedOffsets();
+
     void saveCommittedOffset(int64_t new_offset);
     // To save commit and intent nodes
     void writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data);
     void writeIntentToKeeper(const KafkaConsumer2::TopicPartition & topic_partition, int64_t intent);
 
-    ReadBufferPtr consume();
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
     std::filesystem::path getTopicPartitionLockPath(const TopicPartition & topic_partition);
 
-    void appendToCommittedTopicPartitionOffsets(const TopicPartitionLocks & locks);
+    void appendToAssignedTopicPartitions(const TopicPartitionLocks & locks);
 };
 }

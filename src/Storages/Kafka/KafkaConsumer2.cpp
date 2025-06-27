@@ -1,18 +1,18 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 
-#include <fmt/ranges.h>
-#include <cppkafka/exceptions.h>
-#include <cppkafka/topic_partition.h>
-#include <cppkafka/cppkafka.h>
-#include <cppkafka/topic_partition_list.h>
-#include <fmt/ostream.h>
-
+#include <iterator>
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
-#include <Common/logger_useful.h>
+#include <cppkafka/cppkafka.h>
+#include <cppkafka/exceptions.h>
+#include <cppkafka/topic_partition.h>
+#include <cppkafka/topic_partition_list.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -32,7 +32,7 @@ static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
-    return std::tie(topic, partition_id, offset) < std::tie(other.topic, other.partition_id, other.offset);
+    return std::tie(topic, partition_id) < std::tie(other.topic, other.partition_id);
 }
 
 // BROKER-SIDE REBALANCE REMOVED
@@ -85,18 +85,15 @@ bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) 
     return different_topic_partition;
 }
 
-void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
+void KafkaConsumer2::updateOffsets(TopicPartitionOffsets && topic_partition_offsets)
 {
     cppkafka::TopicPartitionList original_topic_partitions;
-    original_topic_partitions.reserve(topic_partitions.size());
+    original_topic_partitions.reserve(topic_partition_offsets.size());
     std::transform(
-        topic_partitions.begin(),
-        topic_partitions.end(),
+        std::move_iterator(topic_partition_offsets.begin()),
+        std::move_iterator(topic_partition_offsets.end()),
         std::back_inserter(original_topic_partitions),
-        [](const TopicPartition & tp)
-        {
-            return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
-        });
+        [](TopicPartitionOffset && tp) { return cppkafka::TopicPartition{std::move(tp.topic), tp.partition_id, tp.offset}; });
     initializeQueues(original_topic_partitions);
     stalled_status = StalledStatus::NOT_STALLED;
 }
@@ -111,8 +108,7 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
     for (const auto & topic_partition : topic_partitions)
         // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without attaching them manually
         queues.emplace(
-            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), topic_partition.get_offset()},
-            consumer->get_partition_queue(topic_partition));
+            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}, consumer->get_partition_queue(topic_partition));
 }
 
 // it does the poll when needed
@@ -134,7 +130,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
         stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
         auto & queue_to_poll_from = queues.at(topic_partition);
-        LOG_TRACE(log, "Batch size {}, offset {}", batch_size, topic_partition.offset);
+        LOG_TRACE(log, "Batch size {}", batch_size);
         const auto messages_to_pull = message_count.value_or(batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
@@ -175,7 +171,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
     return getNextMessage();
 }
 
-void KafkaConsumer2::commit(const TopicPartition & topic_partition)
+void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
 {
     static constexpr auto max_retries = 5;
     bool committed = false;
@@ -183,14 +179,14 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     LOG_TEST(
         log,
         "Trying to commit offset {} to Kafka for topic-partition [{}:{}]",
-        topic_partition.offset,
-        topic_partition.topic,
-        topic_partition.partition_id);
+        topic_partition_offset.offset,
+        topic_partition_offset.topic,
+        topic_partition_offset.partition_id);
 
     const auto topic_partition_list = std::vector{cppkafka::TopicPartition{
-        topic_partition.topic,
-        topic_partition.partition_id,
-        topic_partition.offset,
+        topic_partition_offset.topic,
+        topic_partition_offset.partition_id,
+        topic_partition_offset.offset,
     }};
     for (auto try_count = 0; try_count < max_retries && !committed; ++try_count)
     {
@@ -206,9 +202,9 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
             LOG_INFO(
                 log,
                 "Committed offset {} to Kafka for topic-partition [{}:{}]",
-                topic_partition.offset,
-                topic_partition.topic,
-                topic_partition.partition_id);
+                topic_partition_offset.offset,
+                topic_partition_offset.topic,
+                topic_partition_offset.partition_id);
         }
         catch (const cppkafka::HandleException & e)
         {
@@ -233,11 +229,11 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     }
 }
 
-KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
+KafkaConsumer2::TopicPartitionOffsets KafkaConsumer2::getAllTopicPartitionOffsets() const
 {
     std::unordered_set<String> topics_set;
     topics_set.insert(topics.begin(), topics.end());
-    TopicPartitions topic_partitions;
+    TopicPartitionOffsets topic_partition_offsets;
 
     try
     {
@@ -249,14 +245,8 @@ KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
 
             for (const auto & partition_metadata : topic_metadata.get_partitions())
             {
-                topic_partitions.emplace_back(
-                    KafkaConsumer2::TopicPartition
-                    {
-                        .topic = topic_metadata.get_name(),
-                        .partition_id = static_cast<int32_t>(partition_metadata.get_id()),
-                        .offset = INVALID_OFFSET
-                    }
-                );
+                topic_partition_offsets.emplace_back(
+                    TopicPartitionOffset{{topic_metadata.get_name(), static_cast<int32_t>(partition_metadata.get_id())}, INVALID_OFFSET});
             }
         }
     } catch (const cppkafka::HandleException & e)
@@ -264,7 +254,7 @@ KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
         LOG_ERROR(log, "Exception during get topic partitions from Kafka: {}", e.what());
     }
 
-    return topic_partitions;
+    return topic_partition_offsets;
 }
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()
@@ -299,7 +289,7 @@ void KafkaConsumer2::resetIfStopped()
     }
 }
 
-std::size_t KafkaConsumer2::OnlyTopicNameAndPartitionIdHash::operator()(const TopicPartition & tp) const
+std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const TopicPartition & tp) const
 {
     SipHash s;
     s.update(tp.topic);
