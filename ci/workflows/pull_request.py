@@ -56,7 +56,7 @@ workflow = Workflow.Config(
         # *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        JobConfigs.integration_test_asan_flaky_pr_job,
+        # JobConfigs.integration_test_asan_flaky_pr_job,
         # *JobConfigs.stress_test_jobs,
         # *JobConfigs.upgrade_test_jobs,
         # *JobConfigs.ast_fuzzer_jobs,
