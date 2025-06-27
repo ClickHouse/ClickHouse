@@ -38,7 +38,7 @@ public:
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
-        bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
+        //bool isEvicting(const CachePriorityGuard::ReadLock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
         /// This does not look good to have isEvicting with two options for locks,
         /// but still it is valid as we do setEvicting always under both of them.
@@ -49,7 +49,7 @@ public:
         /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
         /// but it will introduce one more mutex while it is avoidable.
         /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
-        void setEvictingFlag(const LockedKey &, const CachePriorityGuard::Lock &) const
+        void setEvictingFlag(const LockedKey &) const
         {
             auto prev = evicting.exchange(true, std::memory_order_relaxed);
             chassert(!prev);
@@ -75,115 +75,22 @@ public:
 
         virtual EntryPtr getEntry() const = 0;
 
-        virtual size_t increasePriority(const CachePriorityGuard::Lock &) = 0;
+        virtual size_t increasePriority(const CachePriorityGuard::WriteLock &) = 0;
 
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
 
-        virtual void incrementSize(size_t size, const CachePriorityGuard::Lock &) = 0;
+        virtual void incrementSize(size_t size, const CachePriorityGuard::WriteLock &) = 0;
 
         virtual void decrementSize(size_t size) = 0;
 
-        virtual void remove(const CachePriorityGuard::Lock &) = 0;
+        virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
         virtual void invalidate() = 0;
 
         virtual QueueEntryType getType() const = 0;
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
-
-    virtual ~IFileCachePriority() = default;
-
-    size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
-
-    size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
-    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
-
-    virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
-
-    virtual size_t getSizeApprox() const = 0;
-
-    virtual size_t getElementsCount(const CachePriorityGuard::Lock &) const = 0;
-
-    virtual size_t getElementsCountApprox() const = 0;
-
-    virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
-
-    virtual void check(const CachePriorityGuard::Lock &) const;
-
-    enum class IterationResult : uint8_t
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
-
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-    virtual void iterate(IterateFunc func, const CachePriorityGuard::Lock &) = 0;
-
-    /// Throws exception if there is not enough size to fit it.
-    virtual IteratorPtr add( /// NOLINT
-        KeyMetadataPtr key_metadata,
-        size_t offset,
-        size_t size,
-        const UserInfo & user,
-        const CachePriorityGuard::Lock &,
-        bool best_effort = false) = 0;
-
-    /// `reservee` is the entry for which are reserving now.
-    /// It does not exist, if it is the first space reservation attempt
-    /// for the corresponding file segment.
-    virtual bool canFit( /// NOLINT
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::Lock &,
-        IteratorPtr reservee = nullptr,
-        bool best_effort = false) const = 0;
-
-    virtual void shuffle(const CachePriorityGuard::Lock &) = 0;
-
-    struct IPriorityDump
-    {
-        virtual ~IPriorityDump() = default;
-    };
-    using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
-
-    virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
-
-    /// Collect eviction candidates sufficient to free `size` bytes
-    /// and `elements` elements from cache.
-    virtual bool collectCandidatesForEviction(
-        size_t size,
-        size_t elements,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        IteratorPtr reservee,
-        const UserID & user_id,
-        const CachePriorityGuard::Lock &) = 0;
-
-    /// Collect eviction candidates sufficient to have `desired_size`
-    /// and `desired_elements_num` as current cache state.
-    /// Collect no more than `max_candidates_to_evict` elements.
-    /// Return SUCCESS status if the first condition is satisfied.
-    enum class CollectStatus
-    {
-        SUCCESS,
-        CANNOT_EVICT,
-        REACHED_MAX_CANDIDATES_LIMIT,
-    };
-    virtual CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & candidates,
-        const CachePriorityGuard::Lock &) = 0;
-
-    virtual bool modifySizeLimits(
-        size_t max_size_,
-        size_t max_elements_,
-        double size_ratio_,
-        const CachePriorityGuard::Lock &) = 0;
 
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.
@@ -194,7 +101,7 @@ public:
             size_t size_,
             size_t elements_,
             IFileCachePriority & priority_,
-            const CachePriorityGuard::Lock & lock)
+            const CachePriorityGuard::WriteLock & lock)
             : size(size_), elements(elements_), priority(priority_)
         {
             priority.holdImpl(size, elements, lock);
@@ -222,10 +129,115 @@ public:
     };
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
+
+    virtual ~IFileCachePriority() = default;
+
+    size_t getElementsLimit(const CachePriorityGuard::WriteLock &) const { return max_elements; }
+
+    size_t getSizeLimit(const CachePriorityGuard::WriteLock &) const { return max_size; }
+    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
+
+    virtual size_t getSize(const CachePriorityGuard::WriteLock &) const = 0;
+
+    virtual size_t getSizeApprox() const = 0;
+
+    virtual size_t getElementsCount(const CachePriorityGuard::WriteLock &) const = 0;
+
+    virtual size_t getElementsCountApprox() const = 0;
+
+    virtual std::string getStateInfoForLog(const CachePriorityGuard::WriteLock &) const = 0;
+
+    virtual void check(const CachePriorityGuard::WriteLock &) const;
+
+    enum class IterationResult : uint8_t
+    {
+        BREAK,
+        CONTINUE,
+        //REMOVE_AND_CONTINUE,
+    };
+
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    virtual void iterate(IterateFunc func, const CachePriorityGuard::ReadLock &) = 0;
+
+    /// Throws exception if there is not enough size to fit it.
+    virtual IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const UserInfo & user,
+        const CachePriorityGuard::WriteLock &,
+        bool best_effort = false) = 0;
+
+    /// `reservee` is the entry for which are reserving now.
+    /// It does not exist, if it is the first space reservation attempt
+    /// for the corresponding file segment.
+    virtual bool canFit( /// NOLINT
+        size_t size,
+        size_t elements,
+        const CachePriorityGuard::WriteLock &,
+        IteratorPtr reservee = nullptr,
+        bool best_effort = false) const = 0;
+
+    virtual void shuffle(const CachePriorityGuard::WriteLock &) = 0;
+
+    struct IPriorityDump
+    {
+        virtual ~IPriorityDump() = default;
+    };
+    using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
+
+    virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
+
+    struct EvictionInfo
+    {
+        size_t size_to_evict = 0;
+        size_t elements_to_evict = 0;
+        HoldSpacePtr hold_space;
+    };
+    virtual EvictionInfo checkEvictionInfo(
+        size_t size,
+        size_t elements,
+        const CachePriorityGuard::WriteLock &) = 0;
+
+    /// Collect eviction candidates sufficient to free `size` bytes
+    /// and `elements` elements from cache.
+    virtual bool collectCandidatesForEviction(
+        size_t size,
+        size_t elements,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        IteratorPtr reservee,
+        const UserID & user_id,
+        const CachePriorityGuard::ReadLock &) = 0;
+
+    /// Collect eviction candidates sufficient to have `desired_size`
+    /// and `desired_elements_num` as current cache state.
+    /// Collect no more than `max_candidates_to_evict` elements.
+    /// Return SUCCESS status if the first condition is satisfied.
+    enum class CollectStatus
+    {
+        SUCCESS,
+        CANNOT_EVICT,
+        REACHED_MAX_CANDIDATES_LIMIT,
+    };
+    virtual CollectStatus collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & candidates,
+        const CachePriorityGuard::WriteLock &) = 0;
+
+    virtual bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CachePriorityGuard::WriteLock &) = 0;
+
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
-    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CachePriorityGuard::Lock &) {}
+    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CachePriorityGuard::WriteLock &) {}
 
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 

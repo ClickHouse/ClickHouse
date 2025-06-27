@@ -184,8 +184,8 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::WriteLock lockCache() const;
+    CachePriorityGuard::WriteLock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -303,7 +303,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CachePriorityGuard::WriteLock *);
 };
 
 }

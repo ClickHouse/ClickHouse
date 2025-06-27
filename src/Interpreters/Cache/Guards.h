@@ -1,6 +1,7 @@
 #pragma once
 #include <mutex>
 #include <boost/noncopyable.hpp>
+#include <shared_mutex>
 
 namespace DB
 {
@@ -61,23 +62,34 @@ namespace DB
  */
 struct CachePriorityGuard : private boost::noncopyable
 {
-    using Mutex = std::timed_mutex;
+    using Mutex = std::shared_mutex;
     /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
     /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
-    struct Lock : public std::unique_lock<Mutex>
+    struct WriteLock : public std::unique_lock<Mutex>
     {
         using Base = std::unique_lock<Mutex>;
         using Base::Base;
     };
-
-    Lock lock() { return Lock(mutex); }
-
-    Lock tryLock() { return Lock(mutex, std::try_to_lock); }
-
-    Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
+    struct ReadLock : public std::shared_lock<Mutex>
     {
-        return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
-    }
+        using Base = std::shared_lock<Mutex>;
+        using Base::Base;
+    };
+
+    ReadLock readLock() { return ReadLock(mutex); }
+    WriteLock writeLock() { return WriteLock(mutex); }
+
+    ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
+    WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
+
+    //ReadLock tryReadLockFor(const std::chrono::milliseconds & acquire_timeout)
+    //{
+    //    return ReadLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+    //}
+    //WriteLock tryWriteLockFor(const std::chrono::milliseconds & acquire_timeout)
+    //{
+    //    return WriteLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+    //}
 
 private:
     Mutex mutex;

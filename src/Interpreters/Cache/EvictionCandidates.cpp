@@ -74,21 +74,18 @@ EvictionCandidates::~EvictionCandidates()
     }
 }
 
-void EvictionCandidates::add(
-    const FileSegmentMetadataPtr & candidate,
-    LockedKey & locked_key,
-    const CachePriorityGuard::Lock & lock)
+void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key)
 {
     auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
     if (inserted)
         it->second.key_metadata = locked_key.getKeyMetadata();
 
     it->second.candidates.push_back(candidate);
-    candidate->setEvictingFlag(locked_key, lock);
+    candidate->setEvictingFlag(locked_key);
     ++candidates_size;
 }
 
-void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
+void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock & lock)
 {
     /// Remove queue entries of eviction candidates.
     /// This will release space we consider to be hold for them.
@@ -113,7 +110,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
             /// In ordinary eviction we use `evicting` flag for this purpose,
             /// but here we cannot, because `evicting` is a property of a queue entry,
             /// but at this point for dynamic cache resize we have already deleted all queue entries.
-            candidate->setRemovedFlag(*locked_key, lock);
+            candidate->setRemovedFlag(*locked_key);
 
             queue_iterator->remove(lock);
         }
@@ -249,7 +246,7 @@ bool EvictionCandidates::needFinalize() const
 
 void EvictionCandidates::finalize(
     FileCacheQueryLimit::QueryContext * query_context,
-    const CachePriorityGuard::Lock & lock)
+    const CachePriorityGuard::WriteLock & lock)
 {
     chassert(lock.owns_lock());
 
@@ -272,7 +269,7 @@ void EvictionCandidates::finalize(
             query_context->remove(entry->key, entry->offset, lock);
         }
         /// Remove entry from main priority queue.
-        iterator->remove(lock);
+        //iterator->remove(lock);
     }
 
     for (auto & func : on_finalize)
@@ -287,7 +284,7 @@ void EvictionCandidates::setSpaceHolder(
     size_t size,
     size_t elements,
     IFileCachePriority & priority,
-    const CachePriorityGuard::Lock & lock)
+    const CachePriorityGuard::WriteLock & lock)
 {
     if (hold_space)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
