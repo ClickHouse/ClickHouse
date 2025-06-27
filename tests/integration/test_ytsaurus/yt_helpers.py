@@ -95,7 +95,7 @@ class YTsaurusCLI:
             [
                 "bash",
                 "-c",
-                "echo '{}' | yt {} '{}' --format json".format(
+                "echo '{}' | yt {} '{}' --format \'<uuid_mode=text_yql>json\'".format(
                     data, "insert-rows" if dynamic else "write-table", table_path
                 ),
             ],
@@ -110,7 +110,7 @@ class YTsaurusCLI:
             [
                 "bash",
                 "-c",
-                "echo '{}' | yt {} '{}' --format json".format(
+                "echo '{}' | yt {} '{}' --format \'<uuid_mode=text_yql>json\'".format(
                     data,  "write-table", table_path
                 ),
             ],

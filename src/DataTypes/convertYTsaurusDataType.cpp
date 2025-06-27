@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/Exception.h>
-#include "DataTypes/DataTypeFactory.h"
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
 namespace DB
@@ -99,7 +99,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "datetime64")
     {
-        data_type_ptr = DataTypeFactory::instance().get("DateTime"); // In seconds
+        data_type_ptr = DataTypeFactory::instance().get("DateTime64(0)"); // In seconds
     }
     else if (data_type == "timestamp64")
     {
@@ -115,7 +115,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "datetime")
     {
-        data_type_ptr = DataTypeFactory::instance().get("DateTime");
+        data_type_ptr = DataTypeFactory::instance().get("DateTime64(0)");
     }
     else if (data_type == "timestamp")
     {
@@ -193,13 +193,10 @@ DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
     }
     /// ClickHouse/docs/en/engines/table-engines/integrations/ytsaurus.md *See Also*
-    if (nested_type->isNullable() || !nested_type->canBeInsideNullable())
+    if (!nested_type->canBeInsideNullable())
     {
         switch (nested_type->getTypeId())
         {
-            case TypeIndex::Array:
-            case TypeIndex::Nullable:
-            case TypeIndex::Tuple:
             case TypeIndex::Dynamic:
                 return nested_type;
 
@@ -261,7 +258,9 @@ DataTypePtr convertYTStruct(const Poco::JSON::Object::Ptr &json)
     }
     auto members_json = json->getArray("members");
     DataTypes types;
+    Strings names;
     types.reserve(members_json->size());
+    names.reserve(members_json->size());
     for (const auto & member : *members_json)
     {
         auto member_json = member.extract<Poco::JSON::Object::Ptr>();
@@ -269,14 +268,10 @@ DataTypePtr convertYTStruct(const Poco::JSON::Object::Ptr &json)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus. Missing field `member`.");
         }
-        types.push_back(std::make_shared<DB::DataTypeTuple>(
-            std::vector<DataTypePtr>{
-                std::make_shared<DB::DataTypeString>(),
-                convertYTItemType(member_json->get("type"))
-            }
-        ));
+        types.push_back(convertYTItemType(member_json->get("type")));
+        names.push_back(member_json->get("name"));
     }
-    return std::make_shared<DB::DataTypeTuple>(types);
+    return std::make_shared<DB::DataTypeTuple>(types, names);
 }
 
 DataTypePtr convertYTTagged(const Poco::JSON::Object::Ptr & json)
@@ -285,7 +280,7 @@ DataTypePtr convertYTTagged(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'tagged' type from YTsaurus");
     }
-    return std::make_shared<DB::DataTypeTuple>(DB::DataTypes{std::make_shared<DB::DataTypeString>(), convertYTItemType(json->get("type"))});
+    return convertYTItemType(json->get("type"));
 }
 
 DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)

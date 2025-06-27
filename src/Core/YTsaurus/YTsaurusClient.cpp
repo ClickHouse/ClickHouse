@@ -1,4 +1,3 @@
-#include "Common/logger_useful.h"
 #include "config.h"
 #if USE_YTSAURUS
 #include "YTsaurusClient.h"
@@ -112,9 +111,9 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
 
             DB::HTTPHeaderEntries http_headers{
                 /// Always use json format for input and output.
-                {"Accept", "application/json"},
-                {"Content-Type", "application/json"},
                 {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+                {"X-YT-Header-Format", "<format=text>yson"},
+                {"X-YT-Output-Format", "<uuid_mode=text_yql>json"}
             };
 
             LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
@@ -151,7 +150,6 @@ Poco::Dynamic::Var YTsaurusClient::getMetadata(const String & path)
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
-
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
     return json;
@@ -182,7 +180,7 @@ Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_pat
     return schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const ColumnsDescription & columns)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const Block & sample_block)
 {
     auto schema_json = getTableSchema(table_path);
     chassert(schema_json);
@@ -191,14 +189,21 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const C
         {
             const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
             auto yt_column_name = yt_column_json->getValue<String>("name");
-            const auto * column_ptr = columns.tryGet(yt_column_name);
-            chassert(column_ptr != nullptr);
-            auto data_type = convertYTSchema(yt_column_json);
-            if (column_ptr->type->getName() != "Dynamic" &&
-                data_type->getName() != "Dynamic" &&
-                column_ptr->type->getName() != data_type->getName())
+            if (!sample_block.has(yt_column_name))
             {
-                LOG_ERROR(log, "Table schema mismatch. Clickhouse expecting: {}, Real: {}", column_ptr->type->getName(), data_type->getName());
+                LOG_ERROR(log, "Table schema mismatch. No column {}", yt_column_name);
+                return false;
+            }
+
+            const auto & column_type_ptr = sample_block.getByName(yt_column_name).type;
+
+            chassert(column_type_ptr != nullptr);
+            auto data_type = convertYTSchema(yt_column_json);
+            if (column_type_ptr->getName() != "Dynamic" &&
+                data_type->getName() != "Dynamic" &&
+                column_type_ptr->getName() != data_type->getName())
+            {
+                LOG_ERROR(log, "Table schema mismatch. Clickhouse expecting: {}, Real: {}", column_type_ptr->getName(), data_type->getName());
                 return false;
             }
         }

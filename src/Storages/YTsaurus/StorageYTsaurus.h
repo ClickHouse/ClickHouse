@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
+#include <Storages/YTsaurus/YTsaurusSettings.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ struct YTsaurusStorageConfiguration
     std::vector<String> http_proxy_urls;
     String cypress_path;
     String oauth_token;
+    YTsaurusSettings settings;
 };
 
 /**
@@ -25,15 +27,14 @@ struct YTsaurusStorageConfiguration
 class StorageYTsaurus final : public IStorage
 {
 public:
-    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, ASTStorage * storage_def, ContextPtr context);
 
     StorageYTsaurus(
         const StorageID & table_id_,
         YTsaurusStorageConfiguration configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context);
+        const String & comment);
 
     std::string getName() const override { return "YTsaurus"; }
     bool isRemote() const override { return true; }
@@ -49,6 +50,7 @@ public:
 
 private:
     const String cypress_path;
+    YTsaurusSettings settings;
     YTsaurusClient::ConnectionInfo client_connection_info;
 
     LoggerPtr log;

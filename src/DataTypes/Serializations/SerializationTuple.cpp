@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -316,6 +316,8 @@ template <typename ReturnType>
 ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const
 {
     static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
+
+    LOG_INFO(getLogger("deserializeTextJSON"), "read_named_tuples_as_objects: {}, have_explicit_names: {}", settings.json.read_named_tuples_as_objects, have_explicit_names);
 
     if (settings.json.read_named_tuples_as_objects
         && have_explicit_names)

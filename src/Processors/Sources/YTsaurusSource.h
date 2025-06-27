@@ -7,7 +7,7 @@
 #include <Processors/ISource.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-
+#include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <optional>
 #include <memory>
 
@@ -17,6 +17,7 @@ namespace DB
 struct YTsaurusTableSourceOptions
 {
     const String cypress_path;
+    YTsaurusSettings settings;
     std::optional<Block> lookup_input_block = std::nullopt;
 
     bool force_read_table = false;

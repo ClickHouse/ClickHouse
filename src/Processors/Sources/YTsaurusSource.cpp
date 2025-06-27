@@ -2,6 +2,7 @@
 
 #if USE_YTSAURUS
 #include "YTsaurusSource.h"
+#include <Storages/YTsaurus/YTsaurusSettings.h>
 
 
 namespace DB
@@ -13,12 +14,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace YTsaurusSetting
+{
+    extern const YTsaurusSettingsBool check_table_schema;
+}
+
 YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
     YTsaurusClientPtr client_, const String & cypress_path, const Block & sample_block_, const UInt64 & max_block_size_, const bool skip_unknown_columns)
     : ISource(sample_block_), client(std::move(client_)), sample_block(sample_block_), max_block_size(max_block_size_)
 {
     read_buffer = client->readTable(cypress_path);
     FormatSettings format_settings{.skip_unknown_fields = skip_unknown_columns};
+    format_settings.json.read_named_tuples_as_objects = true;
 
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
@@ -36,7 +43,7 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     , use_lookups(!source_options.force_read_table && source_options.lookup_input_block)
 {
     read_buffer = (use_lookups) ? client->lookupRows(source_options.cypress_path, *source_options.lookup_input_block) : client->selectRows(source_options.cypress_path);
-
+    format_settings.json.read_named_tuples_as_objects = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
 }
@@ -46,6 +53,10 @@ std::shared_ptr<ISource> YTsaurusSourceFactory::createSource(YTsaurusClientPtr c
     if (source_options.cypress_path.empty())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cypress path are empty for ytsarurus source factory.");
+    }
+    if (source_options.settings[YTsaurusSetting::check_table_schema] && !client->checkSchemaCompatibility(source_options.cypress_path, sample_block))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse table schema doesn't match with yt table");
     }
     auto yt_node_type = client->getNodeType(source_options.cypress_path);
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)

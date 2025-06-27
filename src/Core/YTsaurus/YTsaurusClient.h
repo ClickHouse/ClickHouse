@@ -1,13 +1,11 @@
 #pragma once
-
-#include <Poco/JSON/Object.h>
-#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #if USE_YTSAURUS
 
 #include "YTsaurusQueries.h"
-
+#include <Poco/JSON/Object.h>
+#include "Storages/ColumnsDescription.h"
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
@@ -63,7 +61,7 @@ public:
 
     Poco::JSON::Array::Ptr getTableSchema(const String & cypress_path);
 
-    bool checkSchemaCompatibility(const String & table_path, const ColumnsDescription & columns);
+    bool checkSchemaCompatibility(const String & table_path, const Block & sample_block);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 

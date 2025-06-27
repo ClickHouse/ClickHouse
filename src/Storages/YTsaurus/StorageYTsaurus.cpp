@@ -36,19 +36,13 @@ StorageYTsaurus::StorageYTsaurus(
     YTsaurusStorageConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context)
+    const String & comment)
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
+    , settings(configuration_.settings)
     , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
     , log(getLogger(" (" + table_id_.table_name + ")"))
 {
-    YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    LOG_DEBUG(log, "Compare schema from yt table {} and CH", cypress_path);
-    if (!client->checkSchemaCompatibility(cypress_path, columns_))
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse schema differ from yt table schema");
-    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -76,16 +70,22 @@ Pipe StorageYTsaurus::read(
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path}, sample_block, max_block_size);
+    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, ASTStorage * storage_def, ContextPtr context)
 {
     YTsaurusStorageConfiguration configuration;
+    if (storage_def)
+    {
+        configuration.settings.loadFromQuery(*storage_def);
+    }
     for (auto & engine_arg : engine_args)
+    {
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+    }
     if (engine_args.size() == 3)
     {
         boost::split(configuration.http_proxy_urls, checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_urls"), [](char c) { return c == '|'; });
@@ -107,14 +107,15 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, args.storage_def, args.getLocalContext()),
             args.columns,
             args.constraints,
-            args.comment,
-            args.getContext());
+            args.comment);
     },
     {
+        .supports_settings = true,
         .source_access_type = AccessType::YTSAURUS,
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     });
 }
 

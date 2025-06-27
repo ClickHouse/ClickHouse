@@ -74,13 +74,14 @@ def test_yt_simple_table_function(started_cluster):
     yt.remove_table("//tmp/table")
 
 @pytest.mark.parametrize(
-    "yt_data_type, yt_data, ch_column_type, ch_data_expected",
+    "yt_data_type, yt_data, ch_column_type, ch_data_expected, expect_throw",
     [
         pytest.param(
             "uint8",
             "1",
             "UInt8",
             "1",
+            False,
             id="uint8"
         ),
         pytest.param(
@@ -88,6 +89,7 @@ def test_yt_simple_table_function(started_cluster):
             "1",
             "UInt16",
             "1",
+            False,
             id="uint16"
         ),
         pytest.param(
@@ -95,6 +97,7 @@ def test_yt_simple_table_function(started_cluster):
             "1000000000",
             "UInt32",
             "1000000000",
+            False,
             id="uint32"
         ),
         pytest.param(
@@ -102,6 +105,7 @@ def test_yt_simple_table_function(started_cluster):
             "1000000000000",
             "UInt64",
             "1000000000000",
+            False,
             id="uint64"
         ),
         pytest.param(
@@ -109,6 +113,7 @@ def test_yt_simple_table_function(started_cluster):
             "-1",
             "Int8",
             "-1",
+            False,
             id="int8"
         ),
         pytest.param(
@@ -116,6 +121,7 @@ def test_yt_simple_table_function(started_cluster):
             "-1000",
             "Int16",
             "-1000",
+            False,
             id="int16"
         ),
         pytest.param(
@@ -123,6 +129,7 @@ def test_yt_simple_table_function(started_cluster):
             "-1000000000",
             "Int32",
             "-1000000000",
+            False,
             id="int32"
         ),
         pytest.param(
@@ -130,6 +137,7 @@ def test_yt_simple_table_function(started_cluster):
             "-1000000000000",
             "Int64",
             "-1000000000000",
+            False,
             id="int64"
         ),
         pytest.param(
@@ -137,6 +145,7 @@ def test_yt_simple_table_function(started_cluster):
             "\"text\"",
             "String",
             "text",
+            False,
             id="string"
         ),
         pytest.param(
@@ -144,6 +153,7 @@ def test_yt_simple_table_function(started_cluster):
             "\"text\"",
             "String",
             "text",
+            False,
             id="utf8"
         ),
         pytest.param(
@@ -151,6 +161,7 @@ def test_yt_simple_table_function(started_cluster):
             "0.1",
             "Float32",
             "0.1",
+            False,
             id="float"
         ),
         pytest.param(
@@ -158,6 +169,7 @@ def test_yt_simple_table_function(started_cluster):
             "0.1",
             "Float64",
             "0.1",
+            False,
             id="doubles"
         ),
         pytest.param(
@@ -165,27 +177,31 @@ def test_yt_simple_table_function(started_cluster):
             "true",
             "Bool",
             "true",
+            False,
             id="boolean"
         ),
-        # pytest.param(
-        #     "uuid",
-        #     "\"00000000-0000-0000-0000-000000000000\"",
-        #     "UUID",
-        #     "\"00000000-0000-0000-0000-000000000000\"",
-        #     id="uuid"
-        # ),
-        # pytest.param(
-        #     "date",
-        #     "42",
-        #     "Date",
-        #     "42",
-        #     id="date"
-        # ),
+        pytest.param(
+            "uuid",
+            "\"ba122011-349f-423b-873b-9d6a79c688ab\"",
+            "UUID",
+            "ba122011-349f-423b-873b-9d6a79c688ab",
+            False,
+            id="uuid"
+        ),
+        pytest.param(
+            "date",
+            "42",
+            "Date",
+            "1970-02-12",
+            True, # Will be set to False after bugfix
+            id="date"
+        ),
         pytest.param(
             "datetime",
             "42",
-            "DateTime",
+            "DateTime64(0)",
             "1970-01-01 00:00:42",
+            False,
             id="datetime"
         ),
         pytest.param(
@@ -193,12 +209,53 @@ def test_yt_simple_table_function(started_cluster):
             "42",
             "DateTime64(6)",
             "1970-01-01 00:00:00.000042",
+            False,
             id="timestamp"
+        ),
+        pytest.param(
+            "interval",
+            "42",
+            "Int64",
+            "42",
+            False,
+            id="interval"
+        ),
+        pytest.param(
+            "date32",
+            "42",
+            "Date",
+            "1970-02-12",
+            True, # Will be set to False after bugfix
+            id="date32"
+        ),
+        pytest.param(
+            "datetime64",
+            "42",
+            "DateTime64(0)",
+            "1970-01-01 00:00:42",
+            False,
+            id="datetime"
+        ),
+        pytest.param(
+            "timestamp64",
+            "42",
+            "DateTime64(6)",
+            "1970-01-01 00:00:00.000042",
+            False,
+            id="timestamp"
+        ),
+        pytest.param(
+            "interval64",
+            "42",
+            "Int64",
+            "42",
+            False,
+            id="interval"
         ),
     ]
 )
 def test_ytsaurus_primitive_types(
-    started_cluster, yt_data_type, yt_data, ch_column_type, ch_data_expected
+    started_cluster, yt_data_type, yt_data, ch_column_type, ch_data_expected, expect_throw
 ):
     yt = YTsaurusCLI(started_cluster, instance, "ytsaurus_backend1", 80)
     table_path = "//tmp/table"
@@ -207,24 +264,28 @@ def test_ytsaurus_primitive_types(
 
 
     yt.create_table(table_path, yt_data_json, schema={column_name: yt_data_type})
-
     instance.query(
         f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
     )
-    yt_result = instance.query("SELECT a FROM yt_test")
-    instance.query("DROP TABLE yt_test")
-    yt.remove_table(table_path)
-    assert yt_result == f"{ch_data_expected}\n"
+    try:
+        yt_result = instance.query("SELECT a FROM yt_test")
+        assert yt_result == f"{ch_data_expected}\n"
+    except:
+        assert expect_throw
+    finally:
+        instance.query("DROP TABLE yt_test")
+        yt.remove_table(table_path)
 
 
 @pytest.mark.parametrize(
-    "yt_data_type, yt_data, ch_column_type, ch_data_expected",
+    "yt_data_type, yt_data, ch_column_type, ch_data_expected, expect_throw",
     [
         pytest.param(
             "[{name = a; type_v3 = {type_name=optional; item=string;};};]",
             "\"ABBA\"",
             "Nullable(String)",
             "ABBA",
+            False,
             id="optional",
         ),
         pytest.param(
@@ -232,6 +293,7 @@ def test_ytsaurus_primitive_types(
             "null",
             "Nullable(String)",
             "\\N",
+            False,
             id="optional_null",
         ),
         pytest.param(
@@ -239,20 +301,23 @@ def test_ytsaurus_primitive_types(
             "[1, 2]",
             "Array(Int8)",
             "[1,2]",
+            False,
             id="list",
         ),
-        # pytest.param(
-        #     "[{name = a; type_v3 = {type_name = struct; members = [{name=first;type=int8};{name=second;type=int16};];};};]",
-        #     "{\"first\": -1, \"second\": 300}",
-        #     "Tuple(Tuple(String, Int8), Tuple(String, Int16))",
-        #     "",
-        #     id="struct",
-        # ),
+        pytest.param(
+            "[{name = a; type_v3 = {type_name = struct; members = [{name=first;type=int8};{name=second;type=int16};];};};]",
+            "{\"first\": -1, \"second\": 300}",
+            "Tuple(first Int8, second Int16)",
+            "(-1,300)",
+            False,
+            id="struct",
+        ),
         pytest.param(
             "[{name = a; type_v3 = {type_name=tuple; elements=[{type=double;};{type=float;};];};};]",
             "[0.1,1.0]",
             "Tuple(Float64, Float32)",
             "(0.1,1)",
+            False,
             id="tuple",
         ),
         pytest.param(
@@ -260,6 +325,7 @@ def test_ytsaurus_primitive_types(
             "[[42, \"good\"], [1, \"bad\"]]",
             "Array(Tuple(Int64, Nullable(String)))",
             "[(42,'good'),(1,'bad')]",
+            False,
             id="dict",
         ),
         pytest.param(
@@ -267,6 +333,7 @@ def test_ytsaurus_primitive_types(
             "[0, 42]",
             "Variant(Int32, String)",
             "[0,42]",
+            False,
             id="variant",
         ),
         pytest.param(
@@ -274,6 +341,7 @@ def test_ytsaurus_primitive_types(
             "[1, \"value\"]",
             "Variant(Int32, String)",
             "[1,\"value\"]",
+            False,
             id="variant",
         ),
         pytest.param(
@@ -281,6 +349,7 @@ def test_ytsaurus_primitive_types(
             "0.1",
             "Float64",
             "0.1",
+            False,
             id="tagged",
         ),
         pytest.param(
@@ -288,6 +357,7 @@ def test_ytsaurus_primitive_types(
             "[1, 2]",
             "Array(Int32)",
             "[1,2]",
+            False,
             id="Array_simple",
         ),
         pytest.param(
@@ -295,6 +365,7 @@ def test_ytsaurus_primitive_types(
             "[[1,1],[1,1]]",
             "Array(Array(Int32))",
             "[[1,1],[1,1]]",
+            False,
             id="Array_complex",
         ),
         pytest.param(
@@ -302,12 +373,13 @@ def test_ytsaurus_primitive_types(
             '{"a":"hello", "38 parrots":[38]}',
             "String",
             '{"a":"hello","38 parrots":[38]}',
+            False,
             id="Dict",
         ),
     ],
 )
 def test_ytsaurus_composite_types(
-    started_cluster, yt_data_type, yt_data, ch_column_type, ch_data_expected
+    started_cluster, yt_data_type, yt_data, ch_column_type, ch_data_expected, expect_throw
 ):
     yt = YTsaurusCLI(started_cluster, instance, "ytsaurus_backend1", 80)
     table_path = "//tmp/table"
@@ -321,15 +393,28 @@ def test_ytsaurus_composite_types(
     instance.query(
         f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
     )
-    if len(yt_data) > 0:
-        yt.write_table(table_path, yt_data_json)
+    yt.write_table(table_path, yt_data_json)
+    try:
         assert instance.query("SELECT a FROM yt_test") == f"{ch_data_expected}\n"
-    instance.query("DETACH TABLE yt_test")
-    instance.query("ATTACH TABLE yt_test")
-    
-    instance.query("DROP TABLE yt_test")
-    yt.remove_table(table_path)
+    except:
+        assert expect_throw
+    finally:
+        instance.query("DETACH TABLE yt_test")
+        instance.query("ATTACH TABLE yt_test")
+        
+        instance.query("DROP TABLE yt_test")
+        yt.remove_table(table_path)
 
+def test_disable_schema_check(started_cluster):
+    table_path = "//tmp/table"
+    yt = YTsaurusCLI(started_cluster, instance, YT_HOST, YT_PORT)
+    yt.create_table(table_path, '{"a":1,"b":2}\n{"a":2,"b":4}')
+    instance.query(
+        f"CREATE TABLE t0(a String, b String) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
+    )
+    instance.query("SELECT * FROM t0")
+    instance.query("DROP TABLE t0")
+    yt.remove_table(table_path)
 
 def test_ytsaurus_multiple_tables(started_cluster):
     table_path = "//tmp/table"

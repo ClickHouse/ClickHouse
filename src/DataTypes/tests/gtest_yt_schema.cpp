@@ -1,6 +1,5 @@
 #include <memory>
 #include <DataTypes/convertYTsaurusDataType.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <gtest/gtest.h>
 #include <Poco/JSON/Object.h>
@@ -15,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeFactory.h>
 #include "Common/IntervalKind.h"
 #include <Common/Exception.h>
 #include <fmt/format.h>
@@ -23,7 +23,7 @@ namespace DB::ErrorCodes {
     extern const int UNKNOWN_TYPE;
 }
 
-#define CH_TYPE(type, ...) std::make_shared<type>(__VA_ARGS__)
+#define CH_TYPE(type) DB::DataTypeFactory::instance().get(type)
 
 std::string createSimpleTypeJson(const std::string & simple_type, bool required) {
     std::string json = fmt::format("{{\"name\": \"id\", \"type\": \"{}\", \"required\": {}}}", simple_type, required);
@@ -48,43 +48,43 @@ bool checkColumnType(const String & yt_json_str, const DB::DataTypePtr & correct
 
 TEST(YTDataType, CheckSimpleTypeConversation) {
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint64", false), CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeUInt64))));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint32", true), CH_TYPE(DB::DataTypeUInt32)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint16", false), CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeUInt16))));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint8", true), CH_TYPE(DB::DataTypeUInt8)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint64", false), CH_TYPE("Nullable(UInt64)")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int64", false), CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeInt64))));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int32", true), CH_TYPE(DB::DataTypeInt32)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int16", false), CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeInt16))));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int8", true), CH_TYPE(DB::DataTypeInt8)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint32", true), CH_TYPE("UInt32")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint16", false), CH_TYPE("Nullable(UInt16)")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uint8", true), CH_TYPE("UInt8")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("float", true), CH_TYPE(DB::DataTypeFloat32)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("double", true), CH_TYPE(DB::DataTypeFloat64)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int64", false), CH_TYPE("Nullable(Int64)")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int32", true), CH_TYPE("Int32")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int16", false), CH_TYPE("Nullable(Int16)")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("int8", true), CH_TYPE("Int8")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("boolean", true), CH_TYPE(DB::DataTypeUInt8)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("float", true), CH_TYPE("Float32")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("double", true), CH_TYPE("Float64")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("string", true), CH_TYPE(DB::DataTypeString)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("utf8", true), CH_TYPE(DB::DataTypeString)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("json", true), CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uuid", true), CH_TYPE(DB::DataTypeUUID)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("boolean", true), CH_TYPE("Bool")));
 
-    // Dates
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date32", true), CH_TYPE(DB::DataTypeDate)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date", true), CH_TYPE(DB::DataTypeDate)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime64", true), CH_TYPE(DB::DataTypeDateTime)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime", true), CH_TYPE(DB::DataTypeDateTime)));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("string", true), CH_TYPE("String")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("utf8", true), CH_TYPE("String")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("json", true), CH_TYPE("JSON")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uuid", true), CH_TYPE("UUID")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("interval64", true), CH_TYPE(DB::DataTypeInterval, DB::IntervalKind::Kind::Microsecond)));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("interval", true), CH_TYPE(DB::DataTypeInterval, DB::IntervalKind::Kind::Microsecond)));
+    // // Dates
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date32", true), CH_TYPE("Date")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date", true), CH_TYPE("Date")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime64", true), CH_TYPE("DateTime64(0)")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime", true), CH_TYPE("DateTime64(0)")));
 
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("any", true), CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON))); // need to specify type_v3
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("interval64", true), CH_TYPE("Int64")));
+    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("interval", true), CH_TYPE("Int64")));
 
-    ASSERT_THROW(checkColumnType(createSimpleTypeJson("null", true), CH_TYPE(DB::DataTypeNothing)), DB::Exception);
-    ASSERT_THROW(checkColumnType(createSimpleTypeJson("void", true), CH_TYPE(DB::DataTypeNothing)), DB::Exception);
-    ASSERT_THROW(checkColumnType(createSimpleTypeJson("incorrect", false), CH_TYPE(DB::DataTypeNothing)), DB::Exception); // wrong typename
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("any", true), CH_TYPE("JSON")), DB::Exception);
 
-    ASSERT_TRUE(checkColumnType("{\"type_v3\": \"bool\"}", CH_TYPE(DB::DataTypeUInt8)));
-    ASSERT_THROW(checkColumnType("{\"type_v3\": \"yson\"}", CH_TYPE(DB::DataTypeObject, DB::DataTypeObject::SchemaFormat::JSON)), DB::Exception);
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("null", true), CH_TYPE("Nothing")), DB::Exception);
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("void", true), CH_TYPE("Nothing")), DB::Exception);
+    ASSERT_THROW(checkColumnType(createSimpleTypeJson("incorrect", false), CH_TYPE("Nothing")), DB::Exception); // wrong typename
+
+    ASSERT_TRUE(checkColumnType("{\"type_v3\": \"bool\"}", CH_TYPE("Bool")));
 }
 
 TEST(YTDataType, CheckDecimal) {
@@ -103,7 +103,7 @@ TEST(YTDataType, CheckDecimal) {
         decimal->set("precision", size_t(1));
         decimal->set("scale", size_t(0));
         json->set("type_v3", decimal);
-        ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeDecimal<DB::Decimal32>, 1, 0)));
+        ASSERT_TRUE(checkColumnType(json, CH_TYPE("Decimal(1, 0)")));
     }
 }
 
@@ -122,7 +122,7 @@ TEST(YTDataType, CheckOptional) {
             optional->set("type_name", "optional");
             optional->set("item", "boolean");
             json->set("type_v3", optional);
-            ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeUInt8))));
+            ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(UInt8)")));
         }
         {
             // {
@@ -143,7 +143,7 @@ TEST(YTDataType, CheckOptional) {
             optional1->set("type_name", "optional");
             optional1->set("item", optional2);
             json->set("type_v3", optional1);
-            ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeNullable, CH_TYPE(DB::DataTypeFloat64))));
+            ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Nullable(Float64))")), DB::Exception);
         }
 
         {
@@ -164,7 +164,7 @@ TEST(YTDataType, CheckOptional) {
             optional1->set("type_name", "optional");
             optional1->set("item", optional2);
             json->set("type_v3", optional1);
-            ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeArray, CH_TYPE(DB::DataTypeFloat64))));
+            ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Array(Float64))")), DB::Exception);
         }
 
         {
@@ -204,13 +204,11 @@ TEST(YTDataType, CheckOptional) {
             optional->set("type_name", "optional");
             optional->set("item", tuple);
             json->set("type_v3", optional);
-            DB::DataTypes data_types{CH_TYPE(DB::DataTypeString), CH_TYPE(DB::DataTypeString)};
             
-            ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeTuple, data_types)));
+            ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")), DB::Exception);
         }
     }
 }
-
 TEST(YTDataType, CheckList) {
     { // List
         // {
@@ -230,7 +228,7 @@ TEST(YTDataType, CheckList) {
         list1->set("type_name", "list");
         list1->set("item", list2);
         json->set("type_v3", list1);
-        ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeArray, CH_TYPE(DB::DataTypeArray, CH_TYPE(DB::DataTypeFloat64)))));
+        ASSERT_TRUE(checkColumnType(json, CH_TYPE("Array(Array(Float64))")));
     }
 }
 
@@ -270,13 +268,8 @@ TEST(YTDataType, CheckStruct) {
         s->set("members", members);
         json->set("type_v3", s);
         ASSERT_TRUE(checkColumnType(
-            json, 
-            CH_TYPE(DB::DataTypeTuple, 
-                DB::DataTypes{
-                    CH_TYPE(DB::DataTypeTuple, DB::DataTypes{CH_TYPE(DB::DataTypeString), CH_TYPE(DB::DataTypeInt32)}), 
-                    CH_TYPE(DB::DataTypeTuple, DB::DataTypes{CH_TYPE(DB::DataTypeString), CH_TYPE(DB::DataTypeString)})
-                }
-            )
+            json,
+            CH_TYPE("Tuple(Tuple(String, Int32), Tuple(String, String))")
         ));
     }
 }
@@ -323,8 +316,7 @@ TEST(YTDataType, CheckTuple) {
         tuple->set("type_name", "tuple");
         tuple->set("elements", elements);
         json->set("type_v3", tuple);
-        DB::DataTypes data_types{CH_TYPE(DB::DataTypeInt16), CH_TYPE(DB::DataTypeUInt32), CH_TYPE(DB::DataTypeInt16)};
-        ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeTuple, data_types)));
+        ASSERT_TRUE(checkColumnType(json, CH_TYPE("Tuple(Int16, UInt32, Int16)")));
     }
 }
 
@@ -363,12 +355,10 @@ TEST(YTDataType, CheckVariant) {
         variant->set("elements", elements);
         json->set("type_v3", variant);
 
-        DB::DataTypes data_types{CH_TYPE(DB::DataTypeString), CH_TYPE(DB::DataTypeInt64)};
 
-        ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeVariant, data_types)));
+        ASSERT_TRUE(checkColumnType(json, CH_TYPE("Variant(String, Int64)")));
     }
 }
-
 TEST(YTDataType, CheckTagged) {
     
     { // Tagged
@@ -388,7 +378,7 @@ TEST(YTDataType, CheckTagged) {
         tagged->set("type", "string");
         json->set("type_v3", tagged);
 
-        ASSERT_TRUE(checkColumnType(json, CH_TYPE(DB::DataTypeTuple, DB::DataTypes{CH_TYPE(DB::DataTypeString), CH_TYPE(DB::DataTypeString)})));
+        ASSERT_TRUE(checkColumnType(json, CH_TYPE("String")));
 
     }
 }
