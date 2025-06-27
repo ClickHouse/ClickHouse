@@ -11,6 +11,7 @@
 
 #endif
 
+#include <Core/ServerSettings.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/Azure/PocoHTTPClient.h>
 #include <Common/Exception.h>
@@ -34,6 +35,7 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsUInt64 azure_max_single_part_upload_size;
@@ -54,7 +56,20 @@ namespace Setting
     extern const SettingsBool azure_check_objects_after_upload;
     extern const SettingsBool azure_use_adaptive_timeouts;
     extern const SettingsUInt64 azure_max_redirects;
+    extern const SettingsUInt64 azure_connect_timeout_ms;
+    extern const SettingsUInt64 azure_request_timeout_ms;
+    extern const SettingsUInt64 tcp_keep_alive_timeout;
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
 }
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 keep_alive_timeout;
+    extern const ServerSettingsUInt64 max_keep_alive_requests;
+}
+
 
 namespace ErrorCodes
 {
@@ -397,31 +412,29 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
     return std::make_shared<Azure::Identity::ManagedIdentityCredential>();
 }
 
-BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk)
+BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & settings, bool for_disk)
 {
     Azure::Core::Http::Policies::RetryOptions retry_options;
     retry_options.MaxRetries = static_cast<Int32>(settings.sdk_max_retries);
     retry_options.RetryDelay = std::chrono::milliseconds(settings.sdk_retry_initial_backoff_ms);
     retry_options.MaxRetryDelay = std::chrono::milliseconds(settings.sdk_retry_max_backoff_ms);
 
-    Azure::Core::Http::CurlTransportOptions curl_options;
-    curl_options.NoSignal = true;
-    curl_options.IPResolve = settings.curl_ip_resolve;
-
-    auto context = Context::getGlobalContextInstance();
-    PocoAzureHTTPClientConfiguration conf{.remote_host_filter = context->getRemoteHostFilter(),
-                                     .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
-                                     .for_disk_azure = for_disk,
-                                     .get_request_throttler = nullptr,
-                                     .put_request_throttler = nullptr,
-                                     .extra_headers = HTTPHeaderEntries{},
-                                     .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
-                                     .http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT,
-                                     .http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST,
-                                     .http_max_fields = 1000000,
-                                     .http_max_field_name_size = 128 * 1024,
-                                     .http_max_field_value_size = 128 * 1024,
-                                     .error_report = []() { /* No-op */ }};
+    PocoAzureHTTPClientConfiguration conf{
+        .remote_host_filter = context->getRemoteHostFilter(),
+        .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
+        .for_disk_azure = for_disk,
+        .get_request_throttler = nullptr, // TODO (alesapin)
+        .put_request_throttler = nullptr, // TODO (alesapin)
+        .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
+        .connect_timeout_ms = context->getSettingsRef()[Setting::azure_connect_timeout_ms],
+        .request_timeout_ms = context->getSettingsRef()[Setting::azure_request_timeout_ms],
+        .tcp_keep_alive_interval_ms = context->getSettingsRef()[Setting::tcp_keep_alive_timeout],
+        .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
+        .http_keep_alive_timeout = context->getServerSettings()[ServerSetting::keep_alive_timeout],
+        .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
+        .http_max_fields = context->getSettingsRef()[Setting::http_max_fields],
+        .http_max_field_name_size = context->getSettingsRef()[Setting::http_max_field_name_size],
+        .http_max_field_value_size = context->getSettingsRef()[Setting::http_max_field_value_size]};
 
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;

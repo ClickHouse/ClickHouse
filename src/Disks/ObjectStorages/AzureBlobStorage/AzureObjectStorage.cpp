@@ -357,7 +357,7 @@ void AzureObjectStorage::applyNewSettings(
     {
         .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
         .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-        .client_options = AzureBlobStorage::getClientOptions(*settings.get(), is_client_for_disk),
+        .client_options = AzureBlobStorage::getClientOptions(context, *settings.get(), is_client_for_disk),
     };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);

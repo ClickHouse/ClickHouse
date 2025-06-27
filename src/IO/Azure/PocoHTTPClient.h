@@ -31,35 +31,29 @@ struct PocoAzureHTTPClientConfiguration
     UInt64 max_redirects;
     bool enable_requests_logging = false;
     bool for_disk_azure;
+
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
     HTTPHeaderEntries extra_headers;
+
+    size_t connect_timeout_ms = 10000; // Default connection timeout in milliseconds
+    size_t request_timeout_ms = 10000; // Default request timeout in milliseconds
+    size_t tcp_keep_alive_interval_ms = 10000; // Default TCP keep-alive interval in milliseconds
+
     bool use_adaptive_timeouts = true;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
     UInt64 http_max_fields = 1000000;
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
-    std::function<void()> error_report;
 };
 
 
 class PocoAzureHTTPClient : public Azure::Core::Http::HttpTransport
 {
 public:
-    explicit PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration & client_configuration)
-        : error_report(client_configuration.error_report)
-        , remote_host_filter(client_configuration.remote_host_filter)
-        , max_redirects(client_configuration.max_redirects)
-        , use_adaptive_timeouts(client_configuration.use_adaptive_timeouts)
-        , http_max_fields(client_configuration.http_max_fields)
-        , http_max_field_name_size(client_configuration.http_max_field_name_size)
-        , http_max_field_value_size(client_configuration.http_max_field_value_size)
-        , for_disk_azure(client_configuration.for_disk_azure)
-        , get_request_throttler(client_configuration.get_request_throttler)
-        , put_request_throttler(client_configuration.put_request_throttler)
-        , extra_headers(client_configuration.extra_headers)
-    {}
+    explicit PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration & client_configuration);
 
     ~PocoAzureHTTPClient() override = default;
 
@@ -102,17 +96,17 @@ private:
 
     std::unique_ptr<Azure::Core::Http::RawResponse> makeRequestInternalImpl(
         Azure::Core::Http::Request & request,
-        const Azure::Core::Context & context);
+        const Azure::Core::Context & context,
+        size_t redirects_left);
 
     ConnectionTimeouts getTimeouts(const std::string & method, bool first_attempt, bool first_byte) const;
-    LatencyType getFirstByteLatencyType(const std::string & attempt) const;
+    LatencyType getByteLatencyType(size_t attempt_number) const;
     void addMetric(MetricType type, ProfileEvents::Count amount = 1) const;
     void addLatency(const Azure::Core::Http::Request & request, LatencyType type, LatencyBuckets::Count amount = 1) const;
 
-    std::function<void()> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int max_redirects = 0;
+    const unsigned int max_redirects = 0;
     bool use_adaptive_timeouts = true;
     const UInt64 http_max_fields;
     const UInt64 http_max_field_name_size;

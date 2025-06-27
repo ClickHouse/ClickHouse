@@ -540,9 +540,14 @@ Minimal backoff between retries in azure sdk
     DECLARE(UInt64, azure_sdk_retry_max_backoff_ms, 1000, R"(
 Maximal backoff between retries in azure sdk
 )", 0) \
+    DECLARE(UInt64, azure_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
+Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
+)", 0) \
+    DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
+Connection timeout for host from s3 disks.
+)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
-
 Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
