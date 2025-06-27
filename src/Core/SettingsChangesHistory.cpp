@@ -75,8 +75,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
-            {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
-
             /// RELEASE CLOSED
             {"output_format_native_use_flattened_dynamic_and_json_serialization", false, false, "Add flattened Dynamic/JSON serializations to Native format"},
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
