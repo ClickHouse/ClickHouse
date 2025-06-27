@@ -52,12 +52,11 @@ ExecutorTasks::SpawnStatus ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueu
     else
         thread_to_wake = threads_queue.popAny();
 
-    idle_threads--;
     if (thread_to_wake >= use_threads)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 
     // Do not spawn new threads if there are already a lot of idle threads
-    SpawnStatus result = idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+    SpawnStatus result = threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
 
     lock.unlock();
     executor_contexts[thread_to_wake]->wakeUp();
@@ -130,7 +129,6 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
-        idle_threads++;
     }
 
     context.wait(finished);
@@ -185,6 +183,9 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
 
+    // Initialize slot counters with zeros up to max_threads
+    slot_count.resize(num_threads, 0);
+
     {
         std::lock_guard guard(executor_contexts_mutex);
 
@@ -229,11 +230,37 @@ void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
     }
 }
 
-ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t use_threads_)
+ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)
 {
     std::lock_guard lock(mutex);
-    use_threads = std::max(use_threads, use_threads_);
-    return idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+
+    chassert(slot_id < slot_count.size());
+    ++slot_count[slot_id];
+    use_threads = std::max(use_threads, slot_id + 1);
+
+    return threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+}
+
+void ExecutorTasks::downscale(size_t slot_id)
+{
+    std::lock_guard lock(mutex);
+
+    if (slot_id >= slot_count.size() || slot_count[slot_id] == 0)
+        return;
+    --slot_count[slot_id];
+
+    if (slot_id + 1 == use_threads)
+    {
+        // The highest slot was downscaled, find new highest
+        for (size_t i = use_threads; i > 0; --i)
+        {
+            if (slot_count[i - 1] > 0)
+            {
+                use_threads = i;
+                break;
+            }
+        }
+    }
 }
 
 void ExecutorTasks::processAsyncTasks()
@@ -261,7 +288,6 @@ void ExecutorTasks::processAsyncTasks()
                 else
                     thread_to_wake = threads_queue.popAny();
 
-                idle_threads--;
                 if (thread_to_wake >= use_threads)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 

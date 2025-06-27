@@ -395,7 +395,6 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
     //    all thread should be allocated through scheduler using different resource links
     // 4) If we have no cpu-related resources:
     //    the ConcurrencyControl class is used instead of resource scheduler
-    // NOTE: With enabled workload CPU scheduling, both links could be empty in case of unknown workload.
     if (concurrency_control)
     {
         auto query_context = CurrentThread::getQueryContext();
@@ -416,22 +415,25 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
 
         if (workload_cpu_scheduling_is_enabled)
         {
-            /// Allocate CPU slots through resource scheduler
-            if (query_context->getCPUSlotPreemption())
+            if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
             {
-                auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
-                return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
-                    CPULeaseSettings
-                    {
-                        .quantum_ns = static_cast<ResourceCost>(quantum_ns),
-                        .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
-                        .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
-                        .workload = query_context->getSettingsRef()[Setting::workload],
-                    });
-            }
-            else
-            {
-                return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
+                /// Allocate CPU slots through resource scheduler
+                if (query_context->getCPUSlotPreemption())
+                {
+                    auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
+                    return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
+                        CPULeaseSettings
+                        {
+                            .quantum_ns = static_cast<ResourceCost>(quantum_ns),
+                            .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
+                            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                            .workload = query_context->getSettingsRef()[Setting::workload],
+                        });
+                }
+                else
+                {
+                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
+                }
             }
         }
         else
@@ -440,12 +442,10 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
             return ConcurrencyControl::instance().allocate(master_threads, num_threads);
         }
     }
-    else
-    {
-        /// If concurrency control is not used we should not even count threads as competing.
-        /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
-        return std::make_shared<GrantedAllocation>(num_threads);
-    }
+
+    /// If concurrency control is not used we should not even count threads as competing.
+    /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
+    return std::make_shared<GrantedAllocation>(num_threads);
 }
 
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
@@ -478,11 +478,15 @@ bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_sp
         spawnThreads({});
     }
 
-    if (cpu_lease) // Check if preemtion is enabled (see `cpu_slot_preemption` server setting)
+    if (cpu_lease) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
     {
         // Preemption point. Renewal could block execution due to CPU overload.
         if (!cpu_lease->renew())
+        {
+            size_t slot_id = cpu_lease->slot_id;
+            tasks.downscale(slot_id);
             return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+        }
     }
 
     return true;
@@ -500,8 +504,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         size_t thread_num = slot->slot_id;
 
         /// Count of threads in use should be updated for proper finish() condition.
-        /// NOTE: this will not decrease `use_threads` below initially granted count
-        const auto spawn_status = tasks.upscale(thread_num + 1);
+        const auto spawn_status = tasks.upscale(thread_num);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]

@@ -55,18 +55,6 @@ def assert_profile_event(node, query_id, profile_event, check):
         )
     )
 
-def assert_query(node, query_id, slots):
-    node.query("SYSTEM FLUSH LOGS")
-    # Note that we cannot guarantee that all slots that should be (a) granted, (b) acquired and (c) passed to a thread, will actually undergo even the first stage before query finishes
-    # So any attempt to make a stricter checks here lead to flakyiness due to described race condition. Workaround would require failpoint.
-    assert_profile_event(
-        node,
-        query_id,
-        "ConcurrencyControlSlotsAcquired",
-        lambda x: x <= slots,
-    )
-    # NOTE: checking thread_ids length is pointless, because query could downscale and then upscale again, gaining more threads than slots
-
 
 def test_create_workload():
     node.query(
@@ -149,6 +137,31 @@ def test_independent_pools():
         thread.start()
     for thread in threads:
         thread.join()
+
+    def assert_query(node, query_id, slots):
+        node.query("SYSTEM FLUSH LOGS")
+        # Note that we cannot guarantee that all slots that should be (a) granted, (b) acquired and (c) passed to a thread, will actually undergo even the first stage before query finishes
+        # So any attempt to make a stricter checks here lead to flakyiness due to described race condition. Workaround would require failpoint.
+        # We assume threads will never be preempted and downscaled and upscaled again, so we cna check ConcurrencyControlSlotsAcquired against limit
+        assert_profile_event(
+            node,
+            query_id,
+            "ConcurrencyControlSlotsAcquired",
+            lambda x: x <= slots,
+        )
+        assert_profile_event(
+            node,
+            query_id,
+            "ConcurrencyControlPreemptions",
+            lambda x: x == 0,
+        )
+        assert_profile_event(
+            node,
+            query_id,
+            "ConcurrencyControlDownscales",
+            lambda x: x == 0,
+        )
+        # NOTE: checking thread_ids length is pointless, because query could downscale and then upscale again, gaining more threads than slots
 
     assert_query(node, 'test_production', 15)
     assert_query(node, 'test_development', 10)

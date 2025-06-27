@@ -9,8 +9,8 @@
 #include <atomic>
 #include <utility>
 
-#if 1
-#define LOG_EVENT(X) LOG_TEST(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
+#if 0
+#define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
     reinterpret_cast<void*>(this), settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, enqueued)
 namespace
