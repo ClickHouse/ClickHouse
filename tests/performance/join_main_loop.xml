@@ -22,7 +22,19 @@
     FORMAT Null SETTINGS max_threads=8, join_algorithm='hash'
   </query>
 
-  <query>select count() from numbers_mt(1e7) as lhs inner join numbers_mt(1e6) as rhs on lhs.number = rhs.number or lhs.number = rhs.number+1 format Null</query>
-  <query>select count() from numbers_mt(5e8) as lhs inner join numbers_mt(1e1) as rhs on lhs.number = rhs.number or lhs.number = rhs.number+1 format Null</query>
-  <query>select count() from numbers_mt(5e8) as lhs inner join numbers_mt(1e1) as rhs on lhs.number = rhs.number or lhs.number % 2 = 1 format Null</query>
+  <query>
+    SELECT count()
+    FROM numbers_mt(3e7) AS lhs
+    INNER JOIN numbers_mt(1e4) AS rhs ON (lhs.number = (rhs.number + 1000000000)) OR (lhs.number = (rhs.number + 2000000000))
+    FORMAT Null
+    SETTINGS max_threads = 1, join_algorithm = 'hash'
+  </query>
+
+  <query>
+    SELECT count()
+    FROM numbers_mt(3e7) AS lhs
+    INNER JOIN numbers_mt(1e5) AS rhs ON (lhs.number = (rhs.number + 1000000000)) OR (lhs.number = (rhs.number + 2000000000))
+    FORMAT Null
+    SETTINGS max_threads = 1, join_algorithm = 'hash'
+  </query>
 </test>
