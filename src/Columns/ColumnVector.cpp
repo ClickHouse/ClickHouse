@@ -766,21 +766,19 @@ namespace
 {
 
 MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
-MULTITARGET_FUNCTION_HEADER(template <typename ValueType> void),
+MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
-MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
+MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
 {
     auto *it = result;
 
-    /// Verify how many extra elements we can overwrite considering the extra padding
-    /// Currently the padding is 64 Bytes
-    constexpr size_t padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType));
-
-    if constexpr (padding_elements >= 2)
+    if constexpr (use_window && padding_elements >= 2)
     {
         for (size_t i = 0; i < size; ++i)
         {
             size_t span_size = (offsets[i] - offsets[i - 1]);
+            if (!span_size)
+                continue;
             /// We will do block writes of "padding_elements" size from left to write, so writing more bytes than necessary is ok
             /// as the data will be overwritten by the next offset (or it's part of the padding)
             size_t iterations = (span_size + padding_elements - 1) / padding_elements;
@@ -789,6 +787,10 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, const
                 std::fill(it + copy_iteration * padding_elements, it + (copy_iteration + 1) * padding_elements, data[i]);
             }
             it = result + offsets[i];
+
+            if constexpr (use_window)
+                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                    i += window_size - 1;
         }
     }
     else
@@ -798,6 +800,9 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, const
             auto * span_end = result + offsets[i];
             std::fill(it, span_end, data[i]);
             it = span_end;
+            if constexpr (use_window)
+                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                    i += window_size - 1;
         }
     }
 })
@@ -812,24 +817,45 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
-    if (0 == size)
+    if (size == 0 || offsets.back() == 0)
         return this->create();
 
     auto res = this->create(offsets.back());
 
+    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[i + window - 1])
+    /// The threshold of 16 is chosen experimentally, based on the case when all offsets are 0 and we spend no time doing actual copying (i.e. the overhead
+    /// from these additional checks is pronounced the most).
+    const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
+    bool use_window = window_size > 16;
+
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
-        replicateImplAVX512BW(data.data(), size, offsets, res->getData().data());
+        if (use_window)
+            replicateImplAVX512BW<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImplAVX512BW<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else if (isArchSupported(TargetArch::AVX512F))
-        replicateImplAVX512F(data.data(), size, offsets, res->getData().data());
+        if (use_window)
+            replicateImplAVX512F<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImplAVX512F<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else if (isArchSupported(TargetArch::AVX2))
-        replicateImplAVX2(data.data(), size, offsets, res->getData().data());
+        if (use_window)
+            replicateImplAVX2<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImplAVX2<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else if (isArchSupported(TargetArch::SSE42))
-        replicateImplSSE42(data.data(), size, offsets, res->getData().data());
+        if (use_window)
+            replicateImplSSE42<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImplSSE42<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else
 #endif
     {
-        replicateImpl(data.data(), size, offsets, res->getData().data());
+        if (use_window)
+            replicateImpl<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     }
 
     return res;
