@@ -6,7 +6,6 @@
 #include <boost/core/noncopyable.hpp>
 #include <memory>
 
-
 namespace DB
 {
 
