@@ -1,3 +1,34 @@
+
+<div align="right">
+  <details>
+    <summary >🌐 Language</summary>
+    <div>
+      <div align="right">
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=en">English</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=zh-CN">简体中文</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=zh-TW">繁體中文</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=ja">日本語</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=ko">한국어</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=hi">हिन्दी</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=th">ไทย</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=fr">Français</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=de">Deutsch</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=es">Español</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=it">Itapano</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=ru">Русский</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=pt">Português</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=nl">Nederlands</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=pl">Polski</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=ar">العربية</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=fa">فارسی</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=tr">Türkçe</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=vi">Tiếng Việt</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=ClickHouse&project=ClickHouse&lang=id">Bahasa Indonesia</a></p>
+      </div>
+    </div>
+  </details>
+</div>
+
 <div align=center>
 
 [![Website](https://img.shields.io/website?up_message=AVAILABLE&down_message=DOWN&url=https%3A%2F%2Fclickhouse.com&style=for-the-badge)](https://clickhouse.com)
