@@ -23,7 +23,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
 {
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
-    String hostname = "localhost";
+    String client_hostname = "localhost";
+    String server_hostname = "localhost";
     String container;
     String unix_socket;
     String user = "test";
@@ -33,7 +34,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     static const SettingEntries configEntries
-        = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+        = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
+           {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -55,8 +57,18 @@ static std::optional<ServerCredentials> loadServerCredentials(
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, container, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
+    return std::optional<ServerCredentials>(ServerCredentials(
+        client_hostname,
+        server_hostname,
+        container,
+        port,
+        mysql_port,
+        unix_socket,
+        user,
+        password,
+        database,
+        user_files_dir,
+        query_log_file));
 }
 
 static PerformanceMetric

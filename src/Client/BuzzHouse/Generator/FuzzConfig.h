@@ -50,13 +50,14 @@ using JSONObjectType = JSONParserImpl::Element;
 class ServerCredentials
 {
 public:
-    String hostname, container;
+    String client_hostname, server_hostname, container;
     uint32_t port, mysql_port;
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
 
     ServerCredentials()
-        : hostname("localhost")
+        : client_hostname("localhost")
+        , server_hostname("localhost")
         , port(0)
         , mysql_port(0)
         , user("test")
@@ -64,7 +65,8 @@ public:
     }
 
     ServerCredentials(
-        const String & hostname_,
+        const String & client_hostname_,
+        const String & server_hostname_,
         const String & container_,
         const uint32_t port_,
         const uint32_t mysql_port_,
@@ -74,7 +76,8 @@ public:
         const String & database_,
         const std::filesystem::path & user_files_dir_,
         const std::filesystem::path & query_log_file_)
-        : hostname(hostname_)
+        : client_hostname(client_hostname_)
+        , server_hostname(server_hostname_)
         , container(container_)
         , port(port_)
         , mysql_port(mysql_port_)
