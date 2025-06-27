@@ -2599,8 +2599,8 @@ def test_archive(started_cluster):
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
 
-    assert "true" == node2.query("SELECT getSetting('cluster_function_with_archives_send_over_whole_archive')").strip()
-    assert "false" == node.query("SELECT getSetting('cluster_function_with_archives_send_over_whole_archive')").strip()
+    assert "false" == node2.query("SELECT getSetting('cluster_function_process_archive_on_multiple_nodes')").strip()
+    assert "true" == node.query("SELECT getSetting('cluster_function_process_archive_on_multiple_nodes')").strip()
 
     function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
 
@@ -2610,7 +2610,7 @@ def test_archive(started_cluster):
     cluster_function_old = f"s3Cluster(cluster_with_old_server, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
     cluster_function_new = f"s3Cluster(cluster, 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/minio_data/archive* :: example*.csv', 'minio', '{minio_secret_key}')"
 
-    paths_list_new = node.query(f"SELECT distinct(_path) FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
+    paths_list_new = node.query(f"SELECT distinct(_path) FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1")
     assert "Failed to get object info" in node.query_and_get_error(
         f"SELECT distinct(_path) FROM {cluster_function_old} SETTINGS max_threads=1"
     )
@@ -2629,7 +2629,7 @@ def test_archive(started_cluster):
 
     assert expected_paths == int(
         node.query(
-            f"SELECT uniqExact(_path) FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0",
+            f"SELECT uniqExact(_path) FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1",
         )
     ), f"Processed files {paths_list_new}, expected: {expected_paths_list}"
 
@@ -2651,5 +2651,5 @@ def test_archive(started_cluster):
     assert 7 == int(node2.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message ilike '%send over the whole%'"))
 
     assert expected_count == int(
-        node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_with_archives_send_over_whole_archive = 0")
+        node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1")
     )

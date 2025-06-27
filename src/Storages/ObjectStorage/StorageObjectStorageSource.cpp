@@ -135,7 +135,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        const bool expect_whole_archive = local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
+        const bool expect_whole_archive = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
