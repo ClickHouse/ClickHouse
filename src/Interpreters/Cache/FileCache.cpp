@@ -1762,6 +1762,13 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 "To enable dynamic cache resize, "
                 "add `allow_dynamic_cache_resize` to cache configuration");
         }
+        else
+        {
+            LOG_DEBUG(
+                log, "Nothing to resize in filesystem cache. "
+                "Current max size: {}, max_elements: {}, slru ratio: {}",
+                current_limits.max_size, current_limits.max_elements, current_limits.slru_size_ratio);
+        }
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
@@ -1804,6 +1811,26 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
                 log, "Unexpected error during dynamic cache resize: {}",
                 getCurrentExceptionMessage(true));
 
+            if (!cache_lock.owns_lock())
+                cache_lock.lock();
+
+            size_t max_size = main_priority->getSizeLimit(cache_lock);
+            size_t max_elements = main_priority->getElementsLimit(cache_lock);
+
+            if (result_limits.max_size != max_size || result_limits.max_elements != max_elements)
+            {
+                LOG_DEBUG(
+                    log, "Resetting max size from {} to {}, max elements from {} to {}",
+                    result_limits.max_size, max_size, result_limits.max_elements, max_elements);
+
+                result_limits.max_size = max_size;
+                result_limits.max_elements = max_elements;
+            }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            cache_lock.unlock();
+            assertCacheCorrectness();
+#endif
             throw;
         }
     }
