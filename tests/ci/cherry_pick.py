@@ -478,18 +478,17 @@ class BackportPRs:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def receive_prs_for_backport(self, reserve_search_days: int) -> None:
-        # The first commits in each release branche
-        first_commits = [
-            git_runner(
+    def receive_prs_for_backport(self) -> None:
+        # The dates of every commit in each release branche
+        commit_dates = [
+            commit
+            for branch in self.release_branches
+            for commit in git_runner(
                 "git log --no-merges --format=format:%cs --reverse "
                 f"{self.remote}/{self.default_branch}..{self.remote}/{branch}"
-            ).split("\n", 1)[0]
-            for branch in self.release_branches
+            ).split("\n")
         ]
-        since_date = min(
-            date.fromisoformat(commit_date) for commit_date in first_commits
-        ) - timedelta(days=reserve_search_days)
+        since_date = min(date.fromisoformat(c_date) for c_date in commit_dates)
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs supposed to be backported")
@@ -678,6 +677,9 @@ def parse_args():
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
 
+    # TODO: remove this after the labels will be synced to the Sync PRs
+    # The parameter looks like a workaround for the issue with a wrong first commit date
+    # logic
     parser.add_argument(
         "--reserve-search-days",
         default=0,
@@ -714,7 +716,7 @@ def main():
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
     bpp.update_local_release_branches()
-    bpp.receive_prs_for_backport(args.reserve_search_days)
+    bpp.receive_prs_for_backport()
     bpp.process_backports()
     cpp = CherryPickPRs(gh, args.repo, args.dry_run)
     cpp.ping_stale_cherry_pick_prs()
