@@ -379,7 +379,7 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
         {
-            const auto & offsets = column_array.getOffsets();
+            const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
             const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
