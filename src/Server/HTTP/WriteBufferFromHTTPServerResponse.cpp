@@ -74,6 +74,8 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
     accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
+    /// Write the verbose summary with all the zero values included if any.
+    /// This is needed for the compatibility with other system, for example for the Elixir driver.
     writeHeaderProgressImpl("X-ClickHouse-Summary: ", Progress::DisplayMode::Verbose);
 }
 
