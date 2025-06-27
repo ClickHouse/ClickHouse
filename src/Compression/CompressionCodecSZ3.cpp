@@ -1,11 +1,10 @@
 #include <memory>
 #include "Common/Exception.h"
-#include "DataTypes/DataTypeArray.h"
 #include "base/types.h"
+
 #include "config.h"
 
 #if USE_SZ3
-
 #    include <Compression/CompressionFactory.h>
 #    include <Compression/CompressionInfo.h>
 #    include <Compression/ICompressionCodec.h>
@@ -19,10 +18,11 @@
 #    include <Parsers/ASTIdentifier.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
-#    include <SZ3/api/sz.hpp>
-#    include <SZ3/utils/Config.hpp>
 #    include <Common/CurrentThread.h>
 #    include <Common/SipHash.h>
+
+#    include <SZ3/api/sz.hpp>
+#    include <SZ3/utils/Config.hpp>
 
 namespace DB
 {
@@ -42,9 +42,14 @@ public:
 
     bool isVectorCodec() const override { return true; }
 
+    String getDescription() const override { return "SZ3"; }
+
 protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
+    /// SZ3 is still under development, it writes its current version into the serialized compressed data.
+    /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
+    /// We mark it as experimental for now.
     bool isExperimental() const override { return true; }
 
 private:

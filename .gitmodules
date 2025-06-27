@@ -357,6 +357,9 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
+[submodule "contrib/sz3"]
+	path = contrib/sz3
+	url = https://github.com/szcompressor/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -372,6 +375,3 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
-[submodule "contrib/sz3"]
-	path = contrib/sz3
-	url = https://github.com/szcompressor/SZ3.git
