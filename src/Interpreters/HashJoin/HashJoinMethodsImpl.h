@@ -914,8 +914,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
 
         if constexpr (join_features.need_replication)
         {
-            // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
-            if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
+            if (total_added_rows >= max_joined_block_rows)
                 exceeded_max_block_rows = true;
         }
     }
