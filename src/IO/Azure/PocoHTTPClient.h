@@ -29,7 +29,6 @@ struct PocoAzureHTTPClientConfiguration
 {
     const RemoteHostFilter & remote_host_filter;
     UInt64 max_redirects;
-    bool enable_requests_logging = false;
     bool for_disk_azure;
 
     ThrottlerPtr get_request_throttler;

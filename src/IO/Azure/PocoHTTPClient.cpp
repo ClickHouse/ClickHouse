@@ -18,82 +18,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <azure/core/http/policies/policy.hpp>
 
-namespace
-{
-
-class EmptyBodyStream : public Azure::Core::IO::BodyStream
-{
-public:
-    EmptyBodyStream() = default;
-
-    int64_t Length() const override
-    {
-        return 0;
-    }
-
-    void Rewind() override
-    {
-    }
-
-    size_t OnRead(uint8_t *, size_t, Azure::Core::Context const&) override
-    {
-        return 0;
-    }
-};
-
-class IStreamBodyStream : public Azure::Core::IO::BodyStream
-{
-private:
-    std::istream& m_stream;
-    std::istream::pos_type m_start_pos;
-    DB::HTTPSessionPtr session;
-    int64_t m_length;
-
-
-public:
-    // If length is unknown, pass -1
-    explicit IStreamBodyStream(std::istream& stream, DB::HTTPSessionPtr session_, int64_t length )
-        : m_stream(stream), session(session_), m_length(length)
-    {
-        m_start_pos = m_stream.tellg();
-    }
-
-    int64_t Length() const override
-    {
-        //LOG_DEBUG(getLogger("PocoHTTPClient::IStreamBodyStream"), "LENGTH CALLED");
-        return m_length;
-    }
-
-    void Rewind() override
-    {
-        //LOG_DEBUG(getLogger("PocoHTTPClient::IStreamBodyStream"), "REWIND CALLED");
-        if (m_start_pos == std::istream::pos_type(-1))
-        {
-            throw std::runtime_error("IStreamBodyStream: Rewind not supported (non-seekable stream)");
-        }
-        m_stream.clear(); // Clear any error flags
-        m_stream.seekg(m_start_pos);
-        if (!m_stream)
-        {
-            throw std::runtime_error("IStreamBodyStream: Failed to rewind the stream");
-        }
-    }
-
-private:
-    size_t OnRead(uint8_t * buffer, size_t count, Azure::Core::Context const&) override
-    {
-        if (!buffer || count == 0)
-        {
-            return 0;
-        }
-        //LOG_DEBUG(getLogger("PocoHTTPClient::IStreamBodyStream"), "PocoHTTPClient::IStreamBodyStream::OnRead called with count = {}", count);
-        m_stream.read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(count));
-
-        return static_cast<size_t>(m_stream.gcount());
-    }
-};
-
-}
 
 namespace DB::ErrorCodes
 {
@@ -169,6 +93,70 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace
+{
+
+class EmptyBodyStream : public Azure::Core::IO::BodyStream
+{
+public:
+    EmptyBodyStream() = default;
+
+    int64_t Length() const override
+    {
+        return 0;
+    }
+
+    void Rewind() override
+    {
+    }
+
+    size_t OnRead(uint8_t *, size_t, Azure::Core::Context const &) override
+    {
+        return 0;
+    }
+};
+
+class IStreamBodyStream : public Azure::Core::IO::BodyStream
+{
+private:
+    std::istream & stream;
+    std::istream::pos_type start_pos;
+    DB::HTTPSessionPtr session;
+    int64_t length;
+public:
+    IStreamBodyStream(std::istream & stream_, DB::HTTPSessionPtr session_, int64_t length_)
+        : stream(stream_)
+        , session(session_)
+        , length(length_)
+    {
+        start_pos = stream.tellg();
+    }
+
+    int64_t Length() const override
+    {
+        return length;
+    }
+
+    void Rewind() override
+    {
+        stream.clear(); // Clear any error flags
+        stream.seekg(start_pos);
+    }
+
+private:
+    size_t OnRead(uint8_t * buffer, size_t count, Azure::Core::Context const &) override
+    {
+        if (!buffer || count == 0)
+            return 0;
+
+        stream.read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(count));
+        return static_cast<size_t>(stream.gcount());
+    }
+};
+
+}
+
 
 std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
@@ -336,12 +324,13 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AzureRequests};
 
-    UInt64 connect_time = 0;
-    UInt64 first_byte_time = 0;
     size_t retry_attempt = getRetryAttempt(context);
 
     LatencyType first_byte_latency_type = getByteLatencyType(retry_attempt);
     bool latency_recorded = false;
+    UInt64 connect_time = 0;
+    UInt64 first_byte_time = 0;
+
     try
     {
         // Get request details
@@ -441,8 +430,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         auto http_method = request.GetMethod().ToString();
         auto adaptive_timeouts = getTimeouts(http_method, first_attempt, true);
 
-        connect_time = first_byte_time = 0;
-
         //std::ostringstream dump;
         //poco_request.write(dump);
         //LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Making request to {}", dump.str());
@@ -465,20 +452,20 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         addLatency(request, first_byte_latency_type, first_byte_time);
         latency_recorded = true;
 
-        // Handle request body
         if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
         {
             //LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Request has body stream {}", body_stream->Length());
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
             body_stream->Rewind();
 
-            std::vector<uint8_t> buffer(8192); // 8KB buffer
+            /// Manual copy
+            std::vector<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
                     request_stream.write(reinterpret_cast<const char *>(buffer.data()), read);
                 else
-                    break; // End of stream
+                    break;
             }
         }
 
@@ -514,6 +501,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
         //LOG_DEBUG(&Poco::Logger::get("AzureClient"), "Response status: {} {}", status, poco_response.getReason());
 
+        /// Not even sure that there can be redirects in Azure, but let's handle it just in case.
         if (status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
         {
             addMetric(MetricType::Redirects);
@@ -538,7 +526,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
         if (status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS || status == Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE)
         {
-            // API throttling
             addMetric(MetricType::Throttling);
         }
         else if (status >= Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
