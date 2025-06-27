@@ -1,18 +1,19 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/ISimpleTransform.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <memory>
 
@@ -27,7 +28,7 @@ using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSett
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -90,17 +91,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
+    SinkToStoragePtr
+    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void truncate(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context,
-        TableExclusiveLockHolder &) override;
+        const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -142,7 +137,6 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
-
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
@@ -218,7 +212,8 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+        = 0;
 
     bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
@@ -232,23 +227,23 @@ public:
     virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context) const;
-    virtual void validateNamespace(const String & /* name */) const {}
+    virtual void validateNamespace(const String & /* name */) const { }
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual std::optional<size_t> totalRows() { return {}; }
-    virtual std::optional<size_t> totalBytes() { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
@@ -267,7 +262,8 @@ public:
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
-        size_t /* list_batch_size */)
+        size_t /* list_batch_size */,
+        ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
@@ -279,9 +275,24 @@ public:
         bool if_not_updated_before,
         bool check_consistent_with_previous_metadata);
 
+    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+
+    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const Block & /*header*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context_*/) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getPositionDeleteTransformer() is not implemented for configuration type {}",
+            getTypeName());
+    }
+
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
     String format = "auto";
