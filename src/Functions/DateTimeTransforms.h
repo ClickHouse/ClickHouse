@@ -595,7 +595,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> = std::nullopt)
+    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> /* origin */ = std::nullopt)
     {
         Int128 interval_ticks = Int128(milliseconds) * scale_multiplier / 1000;
         if (t >= 0)
