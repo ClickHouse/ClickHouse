@@ -118,30 +118,34 @@ private:
     size_t topic_partition_index_to_consume_from{0};
     TopicPartitions assigned_topic_partitions{};
     size_t poll_count = 0;
-    TopicPartitionLocks permanent_locks{};
-    TopicPartitionLocks tmp_locks{};
+
+    /// Protects access to the locks, because they are accessed simultaneously when statistics are collected
+    std::mutex mutex;
+    TopicPartitionLocks TSA_GUARDED_BY(mutex) permanent_locks{};
+    TopicPartitionLocks TSA_GUARDED_BY(mutex) tmp_locks{};
     LoggerPtr log;
 
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
 
-    // Searches first in permanent_locks, then in tmp_locks.
-    LockedTopicPartitionInfo & getTopicPartitionLock(const TopicPartition & topic_partition);
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
     std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 
-    void lockTemporaryLocks(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks);
+    using MutexLock = std::lock_guard<decltype(mutex)>;
 
-    void updatePermanentLocks(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count);
+    LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(mutex);
+    void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(mutex);
 
     void rollbackToCommittedOffsets();
 
     void saveCommittedOffset(int64_t new_offset);
+    void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, int64_t intent);
     // To save commit and intent nodes
     void writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data);
-    void writeIntentToKeeper(const KafkaConsumer2::TopicPartition & topic_partition, int64_t intent);
+    // Searches first in permanent_locks, then in tmp_locks.
 
 
     std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
