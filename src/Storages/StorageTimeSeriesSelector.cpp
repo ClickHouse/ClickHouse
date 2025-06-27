@@ -132,11 +132,24 @@ namespace
     {
         auto select_query = std::make_shared<ASTSelectQuery>();
 
-        /// SELECT id, metric_name, tag_column1, ... any(tag_columnN), tags
+        /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
         {
             auto select_list_exp = std::make_shared<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
-            select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
+
+            ASTs args;
+            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+            args.push_back(std::make_shared<ASTLiteral>(TimeSeriesTagNames::MetricName));
+            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+
+            for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+            {
+                args.push_back(std::make_shared<ASTLiteral>(tag_name));
+                args.push_back(std::make_shared<ASTIdentifier>(column_name));
+            }
+
+            select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
