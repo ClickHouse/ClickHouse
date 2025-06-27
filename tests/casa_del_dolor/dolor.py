@@ -137,7 +137,7 @@ parser.add_argument(
     "-l",
     "--log-path",
     type=pathlib.Path,
-    default=tempfile.NamedTemporaryFile(),
+    default=tempfile.NamedTemporaryFile(suffix=".log"),
     help="Log path",
 )
 parser.add_argument(

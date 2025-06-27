@@ -16,10 +16,10 @@ from integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(self, binary: pathlib.Path, config: pathlib.Path):
+    def __init__(self, binary: pathlib.Path, config: pathlib.Path, _suffix: str):
         self.binary: pathlib.Path = binary
         self.config: pathlib.Path = config
-        self.temp = tempfile.NamedTemporaryFile()
+        self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
 
     @abstractmethod
     def run_generator(self) -> CommandRequest:
@@ -28,7 +28,7 @@ class Generator:
 
 class BuzzHouseGenerator(Generator):
     def __init__(self, args, cluster):
-        super().__init__(args.client_binary, args.client_config)
+        super().__init__(args.client_binary, args.client_config, ".json")
 
         # Load configuration
         buzz_config = {}
