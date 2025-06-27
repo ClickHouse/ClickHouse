@@ -175,7 +175,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// entry.size == 0 means that queue entry was invalidated,
             /// valid (active) queue entries always have size > 0,
             /// so we can safely remove it.
-            //it = remove(it, lock);
             continue;
         }
 
@@ -186,7 +185,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// the file segment of this queue entry no longer exists.
             /// This is normal if the key was removed from metadata,
             /// while queue entries can be removed lazily (with delay).
-            //it = remove(it, lock);
             continue;
         }
 
@@ -205,7 +203,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// Same as explained in comment above, metadata == nullptr,
             /// if file segment was removed from cache metadata,
             /// but queue entry still exists because it is lazily removed.
-            //it = remove(it, lock);
             continue;
         }
 
@@ -230,11 +227,6 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
                 ++it;
                 break;
             }
-            //case IterationResult::REMOVE_AND_CONTINUE:
-            //{
-            //    it = remove(it, lock);
-            //    break;
-            //}
         }
     }
 }
@@ -342,76 +334,6 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     }
     return success;
 }
-
-IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEviction(
-    [[maybe_unused]]size_t desired_size,
-    [[maybe_unused]]size_t desired_elements_count,
-    [[maybe_unused]]size_t max_candidates_to_evict,
-    [[maybe_unused]]FileCacheReserveStat & stat,
-    [[maybe_unused]]EvictionCandidates & res,
-    [[maybe_unused]]const CachePriorityGuard::WriteLock & lock)
-{
-    return CollectStatus::CANNOT_EVICT;
-    //auto desired_limits_satisfied = [&]()
-    //{
-    //    return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
-    //                  lock, &desired_size, &desired_elements_count);
-    //};
-    //auto status = CollectStatus::CANNOT_EVICT;
-    //auto stop_condition = [&]()
-    //{
-    //    if (desired_limits_satisfied())
-    //    {
-    //        status = CollectStatus::SUCCESS;
-    //        return true;
-    //    }
-    //    if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
-    //    {
-    //        status = CollectStatus::REACHED_MAX_CANDIDATES_LIMIT;
-    //        return true;
-    //    }
-    //    return false;
-    //};
-    //iterateForEviction(res, stat, stop_condition, lock);
-    //chassert(status != CollectStatus::SUCCESS || stop_condition());
-    //return status;
-}
-
-//void LRUFileCachePriority::iterateForEviction(
-//    EvictionCandidates & res,
-//    FileCacheReserveStat & stat,
-//    StopConditionFunc stop_condition,
-//    const CachePriorityGuard::ReadLock & lock)
-//{
-//    if (stop_condition && stop_condition())
-//        return;
-//
-//    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
-//
-//    IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-//    {
-//        const auto & file_segment = segment_metadata->file_segment;
-//        chassert(file_segment->assertCorrectness());
-//
-//        if (segment_metadata->releasable())
-//        {
-//            res.add(segment_metadata, locked_key);
-//            stat.update(segment_metadata->size(), file_segment->getKind(), true);
-//        }
-//        else
-//        {
-//            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-//            stat.update(segment_metadata->size(), file_segment->getKind(), false);
-//        }
-//
-//        return IterationResult::CONTINUE;
-//    };
-//
-//    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-//    {
-//        return stop_condition() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
-//    }, lock);
-//}
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     LRUIterator & it,

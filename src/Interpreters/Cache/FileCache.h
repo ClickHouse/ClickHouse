@@ -185,6 +185,7 @@ public:
     void deactivateBackgroundOperations();
 
     CachePriorityGuard::WriteLock lockCache() const;
+    CachePriorityGuard::WriteLock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 

@@ -68,14 +68,6 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
-    CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        const CachePriorityGuard::WriteLock &) override;
-
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
     struct LRUPriorityDump : public IPriorityDump
@@ -120,13 +112,6 @@ private:
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::WriteLock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::WriteLock &);
-
-    //using StopConditionFunc = std::function<bool()>;
-    //void iterateForEviction(
-    //    EvictionCandidates & res,
-    //    FileCacheReserveStat & stat,
-    //    StopConditionFunc stop_condition,
-    //    const CachePriorityGuard::WriteLock &);
 
     void holdImpl(
         size_t size,

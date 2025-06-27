@@ -141,6 +141,8 @@ public:
 
     virtual size_t getSizeApprox() const = 0;
 
+    virtual double getSLRUSizeRatio() const { return 0; }
+
     virtual size_t getElementsCount(const CachePriorityGuard::WriteLock &) const = 0;
 
     virtual size_t getElementsCountApprox() const = 0;
@@ -220,13 +222,6 @@ public:
         CANNOT_EVICT,
         REACHED_MAX_CANDIDATES_LIMIT,
     };
-    virtual CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & candidates,
-        const CachePriorityGuard::WriteLock &) = 0;
 
     virtual bool modifySizeLimits(
         size_t max_size_,
