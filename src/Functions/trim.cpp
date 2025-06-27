@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include "Columns/IColumn.h"
 #include "Functions/IFunction.h"
 #include <Functions/FunctionFactory.h>
@@ -30,7 +31,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
         };
 
         FunctionArgumentDescriptors optional_args{
@@ -39,7 +40,7 @@ public:
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return arguments[0].type;
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -55,14 +56,31 @@ public:
         ColumnPtr col_input_full;
         col_input_full = arguments[0].column->convertToFullColumnIfConst();
 
+        auto col_res = ColumnString::create();
         if (const ColumnString * col_input_string = checkAndGetColumn<ColumnString>(col_input_full.get()))
         {
-            auto col_res = ColumnString::create();
-            vector(col_input_string->getChars(), col_input_string->getOffsets(), custom_trim_characters, col_res->getChars(), col_res->getOffsets(), input_rows_count);
-            return col_res;
+            vector(
+                col_input_string->getChars(), col_input_string->getOffsets(),
+                custom_trim_characters,
+                col_res->getChars(), col_res->getOffsets(),
+                input_rows_count);
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else if (const ColumnFixedString * col_input_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input_full.get()))
+        {
+            vectorFixed(
+                col_input_fixed_string->getChars(), col_input_fixed_string->getN(),
+                custom_trim_characters,
+                col_res->getChars(),
+                col_res->getOffsets(),
+                input_rows_count);
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        }
+
+        return col_res;
     }
 
     static void vector(
@@ -93,6 +111,37 @@ public:
 
             res_offsets[i] = res_offset;
             prev_offset = input_offsets[i];
+        }
+    }
+
+    static void vectorFixed(
+        const ColumnString::Chars & input_data,
+        size_t n,
+        const std::optional<SearchSymbols> & custom_trim_characters,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
+    {
+        res_offsets.resize_exact(input_rows_count);
+        res_data.reserve_exact(input_data.size());
+
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
+
+        const UInt8 * start;
+        size_t length;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), n, custom_trim_characters, start, length);
+
+            res_data.resize(res_data.size() + length + 1);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
+            res_offset += length + 1;
+            res_data[res_offset - 1] = '\0';
+
+            res_offsets[i] = res_offset;
+            prev_offset += n;
         }
     }
 
