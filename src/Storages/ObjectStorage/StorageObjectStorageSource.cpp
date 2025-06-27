@@ -264,9 +264,10 @@ Chunk StorageObjectStorageSource::generate()
                  .etag = &(object_info->metadata->etag)},
                 read_context);
 
+
+#if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
-#if USE_PARQUET
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
                 if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
