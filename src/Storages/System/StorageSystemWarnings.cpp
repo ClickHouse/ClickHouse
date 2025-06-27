@@ -27,4 +27,10 @@ void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr co
     }
 }
 
+
+void StorageSystemWarnings::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+{
+    Context::getGlobalContextInstance()->removeAllWarnings();
+}
+
 }

@@ -279,7 +279,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:

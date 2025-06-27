@@ -46,6 +46,7 @@ void registerOutputFormatTSKV(FormatFactory & factory)
         return std::make_shared<TSKVRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("TSKV");
+    factory.setContentType("TSKV", "text/tab-separated-values; charset=UTF-8");
 }
 
 }

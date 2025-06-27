@@ -5,6 +5,7 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
+#include <variant>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -14,25 +15,45 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
-#include <Disks/DirectoryIterator.h>
-#include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
-#include <Disks/ObjectStorages/StoredObject.h>
-#include <Disks/WriteMode.h>
-#include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/threadPoolCallbackRunner.h>
+
+#include <Disks/DirectoryIterator.h>
+#include <Disks/DiskType.h>
+#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/WriteMode.h>
+
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+
+#include <Interpreters/Context_fwd.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
+#include <azure/core/credentials/credentials.hpp>
+#include <azure/storage/common/storage_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
+
 namespace DB::AzureBlobStorage
 {
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
+
+using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
+
+using AuthMethod = std::variant<
+    ConnectionString,
+    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
+    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
+
 }
+
+
 #endif
 
 #if USE_AWS_S3
@@ -64,10 +85,15 @@ struct ObjectMetadata
     ObjectAttributes attributes;
 };
 
+struct DataLakeObjectMetadata;
+
 struct RelativePathWithMetadata
 {
     String relative_path;
+    /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
+    /// Delta lake related object metadata.
+    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
@@ -220,13 +246,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
-    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
-    /// in different namespace.
-    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix, ContextPtr context) = 0;
-
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
@@ -264,6 +283,11 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+
+    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

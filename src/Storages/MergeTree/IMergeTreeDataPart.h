@@ -350,12 +350,16 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files);
+        /// For Store
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
+        /// For Load
+        static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;

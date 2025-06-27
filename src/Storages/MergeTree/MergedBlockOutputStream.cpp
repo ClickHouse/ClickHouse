@@ -324,7 +324,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
