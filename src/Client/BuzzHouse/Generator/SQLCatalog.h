@@ -448,6 +448,22 @@ public:
     const String & getBottomName() const { return path[path.size() - 1].cname; }
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
+
+    String columnPathRef() const
+    {
+        String res = "`";
+
+        for (size_t i = 0; i < path.size(); i++)
+        {
+            if (i != 0)
+            {
+                res += ".";
+            }
+            res += path[i].cname;
+        }
+        res += "`";
+        return res;
+    }
 };
 
 }

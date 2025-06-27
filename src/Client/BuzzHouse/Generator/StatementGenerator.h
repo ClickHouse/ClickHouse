@@ -286,7 +286,6 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg) const;

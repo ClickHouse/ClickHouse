@@ -578,22 +578,6 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
     }
 }
 
-String StatementGenerator::columnPathRef(const ColumnPathChain & entry) const
-{
-    String res = "`";
-
-    for (size_t i = 0; i < entry.path.size(); i++)
-    {
-        if (i != 0)
-        {
-            res += ".";
-        }
-        res += entry.path[i].cname;
-    }
-    res += "`";
-    return res;
-}
-
 void StatementGenerator::colRefOrExpression(
     RandomGenerator & rg, const SQLRelation & rel, const TableEngineValues teng, const ColumnPathChain & entry, Expr * expr)
 {

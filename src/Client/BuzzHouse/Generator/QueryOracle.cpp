@@ -237,7 +237,7 @@ void QueryOracle::generateExportQuery(
             buf += fmt::format(
                 "{}{} {}{}{}{}",
                 first ? "" : ", ",
-                entry.getBottomName(),
+                entry.columnPathRef(),
                 entry.path.size() > 1 ? "Array(" : "",
                 entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
