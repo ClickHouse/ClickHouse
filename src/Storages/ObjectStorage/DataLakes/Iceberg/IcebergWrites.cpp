@@ -97,9 +97,9 @@ String FileNamesGenerator::generateMetadataName()
     return fmt::format("{}metadata/{}-{}.metadata.json", metadata_dir, initial_version, uuid_generator.createRandom().toString());
 }
 
-std::string removeEscapedSlashes(const std::string & jsonStr)
+String removeEscapedSlashes(const String & json_str)
 {
-    std::string result = jsonStr;
+    auto result = json_str;
     size_t pos = 0;
     while ((pos = result.find("\\/", pos)) != std::string::npos)
     {
@@ -146,6 +146,7 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
+    const String & format,
     WriteBuffer & buf)
 {
     avro::ValidSchema schema;
@@ -168,7 +169,7 @@ void generateManifestFile(
     avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
     manifest.field("status") = avro::GenericDatum(1);
-    int64_t snapshot_id = new_snapshot->getValue<int64_t>(MetadataGenerator::f_snapshot_id);
+    Int64 snapshot_id = new_snapshot->getValue<Int64>(MetadataGenerator::f_snapshot_id);
 
     auto set_versioned_field = [&](const auto & value, const String & field_name)
     {
@@ -194,7 +195,7 @@ void generateManifestFile(
 
     if (version > 1)
     {
-        int64_t sequence_number = new_snapshot->getValue<int64_t>(MetadataGenerator::f_sequence_number);
+        Int64 sequence_number = new_snapshot->getValue<Int64>(MetadataGenerator::f_sequence_number);
 
         set_versioned_field(sequence_number, Iceberg::f_sequence_number);
         set_versioned_field(sequence_number, "file_sequence_number");
@@ -202,16 +203,16 @@ void generateManifestFile(
     avro::GenericRecord & data_file = manifest.field("data_file").value<avro::GenericRecord>();
 
     if (version > 1)
-        data_file.field("content") = avro::GenericDatum(static_cast<int32_t>(0));
+        data_file.field("content") = avro::GenericDatum(0);
     data_file.field("file_path") = avro::GenericDatum(data_file_name);
-    data_file.field("file_format") = avro::GenericDatum(String("PARQUET"));
+    data_file.field("file_format") = avro::GenericDatum(format);
 
     auto summary = new_snapshot->getObject(MetadataGenerator::f_summary);
-    int32_t added_records = summary->getValue<int32_t>(MetadataGenerator::f_added_records);
-    int32_t added_files_size = summary->getValue<int32_t>(MetadataGenerator::f_added_files_size);
+    Int64 added_records = summary->getValue<Int64>(MetadataGenerator::f_added_records);
+    Int64 added_files_size = summary->getValue<Int64>(MetadataGenerator::f_added_files_size);
 
-    data_file.field("record_count") = avro::GenericDatum(static_cast<int64_t>(added_records));
-    data_file.field("file_size_in_bytes") = avro::GenericDatum(static_cast<int64_t>(added_files_size));
+    data_file.field("record_count") = avro::GenericDatum(added_records);
+    data_file.field("file_size_in_bytes") = avro::GenericDatum(added_files_size);
 
     avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
     for (size_t i = 0; i < partition_columns.size(); ++i)
@@ -380,7 +381,12 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
 }
 
 Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
-    const String & manifest_list_name, Int64 parent_snapshot_id, Int32 added_files, Int32 added_records, Int32 added_files_size)
+    const String & manifest_list_name,
+    Int64 parent_snapshot_id,
+    Int32 added_files,
+    Int32 added_records,
+    Int32 added_files_size,
+    Int32 num_partitions)
 {
     int format_version = metadata_object->getValue<Int32>("format-version");
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -401,7 +407,7 @@ Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
     summary->set(f_added_data_files, added_files);
     summary->set(f_added_records, added_records);
     summary->set(f_added_files_size, added_files_size);
-    summary->set(f_changed_partition_count, "1"); // TODO: change this if needs
+    summary->set(f_changed_partition_count, num_partitions);
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
     {
@@ -723,7 +729,7 @@ void IcebergStorageSink::initializeMetadata()
 
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     auto new_snapshot = MetadataGenerator(metadata).generateNextMetadata(
-        manifest_list_name, /*parent_snapshot_id TODO*/ parent_snapshot, 1, total_rows, total_chunks_size);
+        manifest_list_name, parent_snapshot, 1, total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
     Strings manifest_entries;
     for (const auto & [partition_key, data_filename] : data_filenames)
@@ -733,7 +739,7 @@ void IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, *buffer_manifest_entry);
+        generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, configuration->format, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
     }
 
@@ -742,14 +748,13 @@ void IcebergStorageSink::initializeMetadata()
             StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
         generateManifestList(
-            metadata, object_storage, context, manifest_entries, new_snapshot, /*TODO : size of manifest entry*/ 0, *buffer_manifest_list);
+            metadata, object_storage, context, manifest_entries, new_snapshot, 0, *buffer_manifest_list);
         buffer_manifest_list->finalize();
     }
 
     {
         std::ostringstream oss;
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-
         std::string json_representation = removeEscapedSlashes(oss.str());
 
         auto buffer_metadata = object_storage->writeObject(

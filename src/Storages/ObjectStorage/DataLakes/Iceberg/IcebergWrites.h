@@ -28,12 +28,12 @@
 namespace DB
 {
 
-std::string removeEscapedSlashes(const std::string & jsonStr);
+String removeEscapedSlashes(const String & jsonStr);
 
 class FileNamesGenerator
 {
 public:
-    FileNamesGenerator(const String & metadata_dir_);
+    explicit FileNamesGenerator(const String & metadata_dir_);
 
     String generateDataFileName();
     String generateManifestEntryName();
@@ -55,6 +55,7 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
+    const String & format,
     WriteBuffer & buf);
 
 void generateManifestList(
@@ -72,7 +73,12 @@ public:
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
     Poco::JSON::Object::Ptr generateNextMetadata(
-        const String & manifest_list_name, Int64 parent_snapshot_id, Int32 added_files, Int32 added_records, Int32 added_files_size);
+        const String & manifest_list_name,
+        Int64 parent_snapshot_id,
+        Int32 added_files,
+        Int32 added_records,
+        Int32 added_files_size,
+        Int32 num_partitions);
 
     static constexpr const char * f_sequence_number = "sequence-number";
     static constexpr const char * f_snapshots = "snapshots";
