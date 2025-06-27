@@ -302,20 +302,6 @@ CachePriorityGuard::WriteLock FileCache::lockCache() const
     return cache_guard.writeLock();
 }
 
-CachePriorityGuard::WriteLock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> ) const
-{
-    return cache_guard.writeLock();
-    //if (acquire_timeout.has_value())
-    //{
-    //    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
-    //    return cache_guard.tryLockFor(acquire_timeout.value());
-    //}
-    //else
-    //{
-    //    return cache_guard.tryLock();
-    //}
-}
-
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,

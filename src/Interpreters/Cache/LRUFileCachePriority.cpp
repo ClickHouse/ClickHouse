@@ -330,7 +330,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
             return IterationResult::CONTINUE;
         };
 
-        iterate([&](LockedKey &, const FileSegmentMetadataPtr & )
+        iterate([&](LockedKey &, const FileSegmentMetadataPtr &)
         {
             if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
             {
