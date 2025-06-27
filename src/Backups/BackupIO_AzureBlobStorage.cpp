@@ -66,15 +66,13 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
             return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
         }
     }
-    /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
-    catch(const Azure::Core::Credentials::AuthenticationException & e)
+    catch (const Azure::Core::Credentials::AuthenticationException & e)
     {
+        /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
         LOG_DEBUG(getLogger("compareAuthMethod"), "Exception caught while comparing credentials, error = {}", e.what());
         return false;
     }
-
     return false;
-
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
