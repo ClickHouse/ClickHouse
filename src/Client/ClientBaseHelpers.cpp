@@ -278,7 +278,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             {
                 /// Closing round bracket should match the last opening round bracket.
                 /// If there is no opening round bracket, advance.
-                if (color_stack.empty())
+                if (color_stack.empty() || brace_stack.empty())
                 {
                     ++highlight_token_iterator;
                     continue;
@@ -289,25 +289,30 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
-                /// If there is no opening round bracket, advance.
+                /// If there is no matching opening round bracket, advance.
                 auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
                 auto mapped_cursor_position = static_cast<uint64_t>(cursor_position);
 
-                if (cursor_position < 0 || (highlight_pos != mapped_cursor_position && matching_brace_pos != mapped_cursor_position))
+                auto cursor_on_current_brace = mapped_cursor_position == highlight_pos;
+                auto cursor_on_matching_brace = mapped_cursor_position == matching_brace_pos;
+
+                if (cursor_position < 0 || (cursor_on_current_brace || cursor_on_matching_brace))
                 {
                     ++highlight_token_iterator;
                     color_stack.pop_back();
+                    brace_stack.pop_back();
                     continue;
                 }
 
-                /// If the cursor is on one of round bracket,
-                /// highlight both the opening and closing round brackets with a brighter color.
+                /// If the cursor is on one of the round braces,
+                /// highlight both the opening and closing round braces with a brighter color.
                 auto bright_color = bright_colormap.at(color_stack.back());
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
 
-                /// Remove the last opening round bracket from the stack and advance.
+                /// Remove the last opening round brace from the stack and advance.
+                color_stack.pop_back();
                 brace_stack.pop_back();
                 ++highlight_token_iterator;
                 continue;
