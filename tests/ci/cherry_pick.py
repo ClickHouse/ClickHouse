@@ -731,7 +731,7 @@ def main():
         args.from_repo,
         args.dry_run,
     )
-    # https://github.com/python/mypy/issues/3004
+
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
     bpp.update_local_release_branches()
