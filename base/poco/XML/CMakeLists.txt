@@ -30,6 +30,7 @@ add_compile_definitions (_poco_xml PRIVATE XML_GE=0)
 target_compile_options (_poco_xml
     PRIVATE
         -Wno-cast-qual
+        -Wno-covered-switch-default
         -Wno-deprecated-dynamic-exception-spec
         -Wno-implicit-fallthrough
         -Wno-missing-noreturn
@@ -42,11 +43,10 @@ target_compile_options (_poco_xml
         -Wno-tautological-type-limit-compare
         -Wno-tautological-unsigned-zero-compare
         -Wno-unreachable-code
+        -Wno-unreachable-code-break
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
-        -Wno-covered-switch-default
-        -Wno-unreachable-code-break
 )
 target_include_directories (_poco_xml SYSTEM PUBLIC "include")
 target_link_libraries (_poco_xml PUBLIC Poco::Foundation Poco::XML::Expat)
