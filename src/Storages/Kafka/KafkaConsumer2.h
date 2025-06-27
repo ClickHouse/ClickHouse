@@ -25,6 +25,9 @@ namespace DB
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
+class KafkaConsumer2;
+using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
+
 class KafkaConsumer2
 {
 public:
