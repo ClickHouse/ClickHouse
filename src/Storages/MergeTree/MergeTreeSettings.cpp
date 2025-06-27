@@ -258,7 +258,10 @@ namespace ErrorCodes
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version_for_zero_level_parts, "v2", R"(
     TBD
     )", 0) \
-    DECLARE(NonZeroUInt64, object_shared_data_buckets, 1, R"(
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 1, R"(
+    TBD
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 1, R"(
     TBD
     )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(

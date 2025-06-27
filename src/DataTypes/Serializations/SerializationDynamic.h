@@ -31,7 +31,7 @@ public:
             V1 = 1,
             /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
             V2 = 2,
-            /// V3 serialization: the same as V2 but variant type names are serialized in binary format.
+            /// V3 serialization: the same as V2 but variant type names are serialized in binary format and statistics can be empty.
             V3 = 4,
             /// FLATTENED serialization:
             /// - DynamicStructure stream:
@@ -47,6 +47,11 @@ public:
         Value value;
 
         static void checkVersion(UInt64 version);
+
+        bool supportsEmptyStatistics() const
+        {
+            return value == V3;
+        }
 
         explicit DynamicSerializationVersion(UInt64 version);
         explicit DynamicSerializationVersion(MergeTreeDynamicSerializationVersion version);

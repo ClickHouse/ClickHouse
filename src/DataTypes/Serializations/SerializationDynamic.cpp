@@ -107,7 +107,7 @@ SerializationDynamic::DynamicSerializationVersion::DynamicSerializationVersion(U
 
 void SerializationDynamic::DynamicSerializationVersion::checkVersion(UInt64 version)
 {
-    if (version != V1 && version != V2 && version != FLATTENED)
+    if (version != V1 && version != V2 && version != FLATTENED && version != V3)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization: {}", version);
 }
 
@@ -219,6 +219,12 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX)
     {
         const auto & statistics = column_dynamic.getStatistics();
+
+        /// If serialization version supports it, write flag that statistics is not empty.
+        /// It is needed to be able to write empty statistics if needed.
+        if (structure_version.supportsEmptyStatistics())
+            writeBinary(true, *stream);
+
         /// First, write statistics for usual variants.
         for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
@@ -273,9 +279,27 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             }
         }
     }
+    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX_EMPTY)
+    {
+        /// If serialization version supports empty statistics flag just write 0.
+        if (structure_version.supportsEmptyStatistics())
+        {
+            writeBinary(false, *stream);
+        }
+        /// Otherwise serialize the minimum version of statistics.
+        else
+        {
+            /// Write 0 for each variant.
+            for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+                writeVarUInt(0, *stream);
+
+            /// Write 0 elements for shared variant statistics.
+            writeVarUInt(0, *stream);
+        }
+    }
     /// Otherwise statistics will be written in the suffix, in this case we will recalculate
     /// statistics during serialization to make it more precise.
-    else
+    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
     {
         dynamic_state->recalculate_statistics = true;
     }
@@ -405,22 +429,29 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             /// Read statistics.
             if (settings.object_and_dynamic_read_statistics)
             {
-                ColumnDynamic::Statistics statistics(ColumnDynamic::Statistics::Source::READ);
-                /// First, read statistics for usual variants.
-                for (const auto & variant : variant_type->getVariants())
-                    readVarUInt(statistics.variants_statistics[variant->getName()], *structure_stream);
-
-                /// Second, read statistics for shared variants.
-                size_t statistics_size;
-                readVarUInt(statistics_size, *structure_stream);
-                String variant_name;
-                for (size_t i = 0; i != statistics_size; ++i)
+                bool has_statistics = true;
+                if (structure_state->structure_version.supportsEmptyStatistics())
+                    readBinary(has_statistics, *structure_stream);
+                if (has_statistics)
                 {
-                    readStringBinary(variant_name, *structure_stream);
-                    readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
-                }
+                    ColumnDynamic::Statistics statistics(ColumnDynamic::Statistics::Source::READ);
 
-                structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));
+                    /// First, read statistics for usual variants.
+                    for (const auto & variant : variant_type->getVariants())
+                        readVarUInt(statistics.variants_statistics[variant->getName()], *structure_stream);
+
+                    /// Second, read statistics for shared variants.
+                    size_t statistics_size;
+                    readVarUInt(statistics_size, *structure_stream);
+                    String variant_name;
+                    for (size_t i = 0; i != statistics_size; ++i)
+                    {
+                        readStringBinary(variant_name, *structure_stream);
+                        readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
+                    }
+
+                    structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));
+                }
             }
 
             structure_state->variant_type = std::move(variant_type);

@@ -227,6 +227,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             std::vector<std::vector<MarkInCompressedFile>> paths_substreams_marks;
 
             SerializeBinaryBulkSettings data_serialization_settings;
+            data_serialization_settings.data_part_type = MergeTreeDataPartType::Compact;
             data_serialization_settings.position_independent_encoding = true;
             data_serialization_settings.low_cardinality_max_dictionary_size = 0;
             data_serialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
@@ -581,6 +582,9 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
 
         if (structure_granule.num_rows != rows_offset + limit)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part", structure_granule.num_rows, rows_offset + limit);
+
+        structure_granule.offset = rows_offset;
+        structure_granule.limit = limit;
 
         /// Read suffix of the structure stream.
         settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
@@ -973,7 +977,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 nested_offset = offsets[skipped_idx] - prev_last_offset;
 
                 for (auto i = prev_offset_size; i + rows_offset < offsets.size(); ++i)
-                    offsets[i] = offsets[i + rows_offset] - skipped_nested_rows;
+                    offsets[i] = offsets[i + rows_offset] - nested_offset;
 
                 offsets_column->assumeMutable()->popBack(rows_offset);
             }
@@ -983,7 +987,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            SerializationString().deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();

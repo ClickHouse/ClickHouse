@@ -150,8 +150,8 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         ObjectSerializationVersion serialization_version;
-        std::vector<String> sorted_dynamic_paths;
-        std::unordered_set<String> dynamic_paths;
+        std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::unordered_set<std::string_view> dynamic_paths;
         size_t shared_data_buckets = 1;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;

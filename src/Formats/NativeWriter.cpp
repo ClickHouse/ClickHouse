@@ -87,8 +87,13 @@ void NativeWriter::flush()
     settings.format_settings = format_settings ? &*format_settings : nullptr;
     if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
     {
-        settings.use_v1_dynamic_serialization = client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION;
+        settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
         settings.object_serialization_version = MergeTreeObjectSerializationVersion::V1;
+    }
+    else
+    {
+        settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
+        settings.object_serialization_version = MergeTreeObjectSerializationVersion::V2;
     }
 
     ISerialization::SerializeBinaryBulkStatePtr state;
