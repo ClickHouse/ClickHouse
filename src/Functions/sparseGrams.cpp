@@ -71,12 +71,17 @@ private:
         {
         }
 
-        void increment()
+        bool increment()
         {
+            if (isEnd())
+                return false;
+
             right_iterator = getNextPosition(right_iterator);
 
             if (++num_increments >= n)
                 left_iterator = getNextPosition(left_iterator);
+
+            return true;
         }
 
         bool isEnd() const
@@ -238,7 +243,8 @@ public:
 
         symbol_iterator = NGramSymbolIterator(pos, end, min_ngram_length - 1);
         for (size_t i = 0; i < min_ngram_length - 2; ++i)
-            symbol_iterator.increment();
+            if (!symbol_iterator.increment())
+                return;
     }
 
     /// Get the next token, if any, or return false.
@@ -337,7 +343,7 @@ are strictly greater than those of any (n-1)-gram inside the substring.)",
             {"min_ngram_length", "The minimum length of extracted ngram. The default and minimal value is 3"},
             {"max_ngram_length", "The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'"},
         },
-        .returned_value{"An array of selected substrings"},
+        .returned_value{"Returns an array of selected substrings", {"Array(T)"}},
         .category = FunctionDocumentation::Category::String
     };
     const FunctionDocumentation hashes_description{
@@ -345,7 +351,7 @@ are strictly greater than those of any (n-1)-gram inside the substring.)",
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.)",
         .arguments = description.arguments,
-        .returned_value = "An array of selected substrings hashes",
+        .returned_value = {"An array of selected substrings hashes"},
         .category = description.category};
 
     factory.registerFunction<FunctionSparseGrams>(description);

@@ -40,6 +40,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -52,7 +53,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool validate_mutation_query;
 }
@@ -1037,6 +1038,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
+            stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
@@ -1563,7 +1565,14 @@ bool MutationsInterpreter::isAffectingAllColumns() const
     if (stages.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
-    return stages.back().isAffectingAllColumns(storage_columns);
+    /// Find first not readonly stage from the end.
+    for (auto it = stages.rbegin(); it != stages.rend(); ++it)
+    {
+        if (!it->is_readonly)
+            return it->isAffectingAllColumns(storage_columns);
+    }
+
+    return false;
 }
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)

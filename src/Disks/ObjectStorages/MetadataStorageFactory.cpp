@@ -101,9 +101,10 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
         fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
+        auto db_disk
+            = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, key_compatibility_prefix);
     });
 }
 

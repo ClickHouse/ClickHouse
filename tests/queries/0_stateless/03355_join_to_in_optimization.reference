@@ -23,7 +23,7 @@ Positions: 1
 333	333
 Expression ((Project names + Projection))
   CreatingSets (Create sets before main query execution)
-    Expression
+    Expression ((WHERE + ( + (Join filter + Change column names to column identifiers))))
       ReadFromMergeTree (system.query_log)
     CreatingSet (Create set for subquery)
       Expression ((JOIN keys + Change column names to column identifiers))
