@@ -26,14 +26,11 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
+    POSITIONAL_DELETE = 1,
+    EQUALITY_DELETE = 2
 };
 
-struct DataFileEntry
-{
-    String file_name;
-};
+String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
 {
@@ -43,17 +40,30 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
-using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
+struct PartitionSpecsEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
+    // It's a processed file path to be used by Object Storage
+    String file_path;
+
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
-    FileEntry file;
     DB::Row partition_key_value;
+    PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+
+    std::optional<String> reference_data_file_path; // For position delete files only.
 };
 
 /**
@@ -82,7 +92,7 @@ struct ManifestFileEntry
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
-class ManifestFileContent
+class ManifestFileContent : public boost::noncopyable
 {
 public:
     explicit ManifestFileContent(
@@ -96,7 +106,7 @@ public:
         const std::string & table_location,
         DB::ContextPtr context);
 
-    const std::vector<ManifestFileEntry> & getFiles() const;
+    const std::vector<ManifestFileEntry> & getFiles(FileContentType content_type) const;
     Int32 getSchemaId() const;
 
     bool hasPartitionKey() const;
@@ -108,18 +118,25 @@ public:
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
-    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
+    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFiles() const;
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
+
+    ManifestFileContent(ManifestFileContent &&) = delete;
+    ManifestFileContent & operator=(ManifestFileContent &&) = delete;
+
 private:
 
     Int32 schema_id;
     Poco::JSON::Object::Ptr schema_object;
+    PartitionSpecification common_partition_specification;
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> files;
+    std::vector<ManifestFileEntry> data_files;
+    // Partition level deletes files
+    std::vector<ManifestFileEntry> position_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
 
@@ -127,6 +144,11 @@ private:
 
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
+bool operator<(const DB::Row & lhs, const DB::Row & rhs);
+
+
+std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
 }
 
 #endif

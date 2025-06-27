@@ -248,6 +248,7 @@ def main():
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
+            CH.set_random_timezone,
         ]
 
         if is_flaky_check:
@@ -380,7 +381,7 @@ def main():
         results.append(
             Result.create_from(
                 name="Check errors",
-                results=CH.check_fatal_messeges_in_logs(),
+                results=CH.check_fatal_messages_in_logs(),
                 status=Result.Status.SUCCESS,
                 stopwatch=sw_,
             )

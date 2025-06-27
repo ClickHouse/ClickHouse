@@ -26,38 +26,32 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int LOGICAL_ERROR;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
-    IMetadataStorage & metadata_storage_,
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
+    IMetadataStorage & metadata_storage_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_storage.createTransaction())
-    , metadata_helper(metadata_helper_)
 {}
 
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
     MetadataTransactionPtr metadata_transaction_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
-    , metadata_helper(metadata_helper_)
 {}
 
 MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
-    IObjectStorage& destination_object_storage_,
-    IMetadataStorage& destination_metadata_storage_,
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, metadata_helper_, destination_metadata_storage_.createTransaction())
+    IObjectStorage & destination_object_storage_,
+    IMetadataStorage & destination_metadata_storage_)
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
     , destination_object_storage(destination_object_storage_)
     , destination_metadata_storage(destination_metadata_storage_)
 {}
@@ -748,16 +742,6 @@ void DiskObjectStorageTransaction::removeSharedFiles(
     operations_to_execute.emplace_back(std::move(operation));
 }
 
-namespace
-{
-
-String revisionToString(UInt64 revision)
-{
-    return std::bitset<64>(revision).to_string();
-}
-
-}
-
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
     const std::string & path,
     size_t buf_size,
@@ -767,22 +751,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 {
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
-
-    if (metadata_helper)
-    {
-        if (!object_key.hasPrefix())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata helper is not supported with absolute paths");
-
-        auto revision = ++metadata_helper->revision_counter;
-        object_attributes =
-        {
-            {"path", path}
-        };
-
-        object_key = ObjectStorageKey::createAsRelative(
-            object_key.getPrefix(),
-            "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
-    }
 
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
     const bool do_not_write_empty_blob = metadata_storage.supportsEmptyFilesWithoutBlobs();
@@ -886,22 +854,6 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
-
-    if (metadata_helper)
-    {
-        if (!object_key.hasPrefix())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "metadata helper is not supported with abs paths");
-
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter++;
-        object_attributes = {
-            {"path", path}
-        };
-
-        object_key = ObjectStorageKey::createAsRelative(
-            object_key.getPrefix(),
-            "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
-    }
 
     /// seems ok
     auto object = StoredObject(object_key.serialize(), path);

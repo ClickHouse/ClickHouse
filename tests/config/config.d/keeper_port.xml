@@ -7,7 +7,6 @@
         <create_snapshot_on_exit>0</create_snapshot_on_exit>
         <digest_enabled>1</digest_enabled>
         <digest_enabled_on_commit>1</digest_enabled_on_commit>
-        <inject_auth>0</inject_auth>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>

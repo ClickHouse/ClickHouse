@@ -1,6 +1,7 @@
 import contextlib
 import time
 from string import Template
+import uuid
 
 import pymysql.cursors
 import pytest
@@ -13,7 +14,7 @@ from helpers.network import PartitionManager
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml", "configs/backups.xml"],
     user_configs=["configs/users.xml"],
     with_mysql8=True,
     stay_alive=True,
@@ -1080,3 +1081,34 @@ def test_mysql_database_engine_comment(started_cluster):
         assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
 
         mysql_node.query("DROP DATABASE test_database")
+
+
+def test_backup_database(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS backup_database")
+        mysql_node.query("CREATE DATABASE backup_database DEFAULT CHARACTER SET 'utf8'")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS backup_database")
+        clickhouse_node.query(
+            f"CREATE DATABASE backup_database ENGINE = MySQL('mysql80:3306', 'backup_database', 'root', '{mysql_pass}')"
+        )
+
+        backup_id = uuid.uuid4().hex
+        backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+        clickhouse_node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+        clickhouse_node.query("DROP DATABASE backup_database SYNC")
+        assert "backup_database" not in clickhouse_node.query("SHOW DATABASES")
+
+        clickhouse_node.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
+        assert (
+            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
+            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
+        )
+
+        clickhouse_node.query("DROP DATABASE backup_database")
+        mysql_node.query("DROP DATABASE backup_database")
