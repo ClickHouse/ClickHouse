@@ -178,6 +178,17 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             continue;
         }
 
+        /// Check Unlocked version of setEvicting before taking
+        /// key_metadata lock as an optimization.
+        if (entry.isEvictingUnlocked())
+        {
+            /// Skip queue entries which are in evicting state.
+            /// We threat them the same way as deleted entries.
+            ++it;
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+            continue;
+        }
+
         auto locked_key = entry.key_metadata->tryLock();
         if (!locked_key || entry.size == 0)
         {

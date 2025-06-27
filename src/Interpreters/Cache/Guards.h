@@ -82,15 +82,6 @@ struct CachePriorityGuard : private boost::noncopyable
     ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
     WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
 
-    //ReadLock tryReadLockFor(const std::chrono::milliseconds & acquire_timeout)
-    //{
-    //    return ReadLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
-    //}
-    //WriteLock tryWriteLockFor(const std::chrono::milliseconds & acquire_timeout)
-    //{
-    //    return WriteLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
-    //}
-
 private:
     Mutex mutex;
 };

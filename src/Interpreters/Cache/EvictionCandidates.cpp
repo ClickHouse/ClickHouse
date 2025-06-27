@@ -265,11 +265,9 @@ void EvictionCandidates::finalize(
         /// Remove entry from per query priority queue.
         if (query_context)
         {
-            const auto & entry = iterator->getEntry();
-            query_context->remove(entry->key, entry->offset, lock);
+            //const auto & entry = iterator->getEntry();
+            //query_context->remove(entry->key, entry->offset, lock);
         }
-        /// Remove entry from main priority queue.
-        //iterator->remove(lock);
     }
 
     for (auto & func : on_finalize)

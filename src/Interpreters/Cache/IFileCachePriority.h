@@ -38,7 +38,7 @@ public:
 
         std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
-        //bool isEvicting(const CachePriorityGuard::ReadLock &) const { return evicting; }
+        bool isEvictingUnlocked() const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
         /// This does not look good to have isEvicting with two options for locks,
         /// but still it is valid as we do setEvicting always under both of them.
