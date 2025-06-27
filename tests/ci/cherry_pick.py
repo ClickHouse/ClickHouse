@@ -479,15 +479,16 @@ class BackportPRs:
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
     def receive_prs_for_backport(self, reserve_search_days: int) -> None:
-        # The commits in the oldest open release branch
-        oldest_branch_commits = git_runner(
-            "git log --no-merges --format=%H --reverse "
-            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
-        )
-        # The first commit is the one we are looking for
-        since_commit = oldest_branch_commits.split("\n", 1)[0]
-        since_date = date.fromisoformat(
-            git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
+        # The first commits in each release branche
+        first_commits = [
+            git_runner(
+                "git log --no-merges --format=format:%cs --reverse "
+                f"{self.remote}/{self.default_branch}..{self.remote}/{branch}"
+            ).split("\n", 1)[0]
+            for branch in self.release_branches
+        ]
+        since_date = min(
+            date.fromisoformat(commit_date) for commit_date in first_commits
         ) - timedelta(days=reserve_search_days)
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
