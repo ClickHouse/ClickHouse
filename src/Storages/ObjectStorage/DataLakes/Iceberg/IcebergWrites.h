@@ -33,7 +33,7 @@ std::string removeEscapedSlashes(const std::string & jsonStr);
 class FileNamesGenerator
 {
 public:
-    FileNamesGenerator(const String & data_dir_, const String & metadata_dir_);
+    FileNamesGenerator(const String & metadata_dir_);
 
     String generateDataFileName();
     String generateManifestEntryName();

@@ -68,10 +68,13 @@ extern const int CANNOT_PARSE_TEXT;
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & data_dir_, const String & metadata_dir_)
-    : data_dir(data_dir_)
-    , metadata_dir(metadata_dir_)
+FileNamesGenerator::FileNamesGenerator(const String & metadata_dir_)
+    : metadata_dir(metadata_dir_)
 {
+    if (metadata_dir.ends_with("metadata/"))
+        data_dir = metadata_dir.substr(0, metadata_dir.size() - std::strlen("metadata/")) + "data/";
+    else
+        data_dir = metadata_dir;
 }
 
 String FileNamesGenerator::generateDataFileName()
@@ -584,7 +587,7 @@ IcebergStorageSink::IcebergStorageSink(
     , context(context_)
     , configuration(configuration_)
     , format_settings(format_settings_)
-    , filename_generator(configuration_->getPath(), configuration_->getPath())
+    , filename_generator(configuration_->getPath())
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergMetadata");
