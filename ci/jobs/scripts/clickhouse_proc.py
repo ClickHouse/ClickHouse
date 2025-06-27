@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -11,7 +12,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -181,7 +181,7 @@ profiles:
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
-                f"Server not ready after [{attempts*delay}s]", out, err
+                f"Server not ready after [{attempts * delay}s]", out, err
             )
             return False
         self.pid = int(Shell.get_output(f"cat {self.pid_file}").strip())
@@ -436,6 +436,7 @@ class ClickHouseProc:
 
         with open(config_file, "w") as f:
             f.write(config_content)
+        return True
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
@@ -605,7 +606,7 @@ class ClickHouseProc:
                 return False
         else:
             Utils.print_formatted_error(
-                f"Server replica {replica_num} not ready after [{attempts*delay}s]",
+                f"Server replica {replica_num} not ready after [{attempts * delay}s]",
                 out,
                 err,
             )
@@ -1039,18 +1040,25 @@ quit
 if __name__ == "__main__":
     ch = ClickHouseProc()
     command = sys.argv[1]
-    if command == "logs_export_config":
-        ch.create_log_export_config()
-    elif command == "logs_export_start":
-        # FIXME: the start_time must be preserved globally in ENV or something like that
-        # to get the same values in different DBs
-        # As a wild idea, it could be stored in a Info.check_start_timestamp
-        ch.start_log_exports(check_start_time=Utils.timestamp())
-    elif command == "logs_export_stop":
-        ch.stop_log_exports()
-    elif command == "start_minio":
-        param = sys.argv[2]
-        assert param in ["stateless"]
-        ch.start_minio(param)
-    else:
-        raise ValueError(f"Unknown command: {command}")
+    res = False
+    try:
+        if command == "logs_export_config":
+            res = ch.create_log_export_config()
+        elif command == "logs_export_start":
+            # FIXME: the start_time must be preserved globally in ENV or something like that
+            # to get the same values in different DBs
+            # As a wild idea, it could be stored in a Info.check_start_timestamp
+            res = ch.start_log_exports(check_start_time=Utils.timestamp())
+        elif command == "logs_export_stop":
+            res = ch.stop_log_exports()
+        elif command == "start_minio":
+            param = sys.argv[2]
+            assert param in ["stateless"]
+            res = ch.start_minio(param)
+        else:
+            raise ValueError(f"Unknown command: {command}")
+    except Exception as e:
+        print(f"ERROR: Failed to do [{command}]")
+        traceback.print_exc()
+
+    sys.exit(1 if not res else 0)
