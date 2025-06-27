@@ -266,10 +266,10 @@ Chunk StorageObjectStorageSource::generate()
 
             if (chunk_size && chunk.hasColumns())
             {
+#if USE_PARQUET
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
                 if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {
-#if USE_PARQUET
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// (Because it does not make sense to support it in a nice way
