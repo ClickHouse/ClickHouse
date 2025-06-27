@@ -454,7 +454,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.teng != TableEngineValues::GenerateRandom;
+            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };

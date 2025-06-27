@@ -234,7 +234,7 @@ parser.add_argument(
     "--add-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
-    help="Add 'add_distributed_ddl' settings",
+    help="Add 'distributed_ddl' settings",
 )
 parser.add_argument(
     "--add-shared-catalog",

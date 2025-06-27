@@ -262,7 +262,11 @@ public:
             || isExternalDistributedEngine();
     }
 
-    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
+    bool hasDatabasePeer() const
+    {
+        chassert(is_deterministic || peer_table == PeerTableDatabase::None);
+        return peer_table != PeerTableDatabase::None;
+    }
 
     bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }
 
