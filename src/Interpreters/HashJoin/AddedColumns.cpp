@@ -59,7 +59,7 @@ void AddedColumns<true>::buildOutputFromRowRefLists()
     {
         auto & col = columns[i];
         col->reserve(col->size() + output_row_count);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
+        col->fillFromRowRefs(right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
     }
 }
 

@@ -574,7 +574,7 @@ public:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
+    virtual void fillFromRowRefs(size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -818,7 +818,7 @@ private:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
+    void fillFromRowRefs(size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
