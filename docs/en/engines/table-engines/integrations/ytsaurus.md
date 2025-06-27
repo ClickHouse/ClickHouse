@@ -86,14 +86,13 @@ SELECT * FROM yt_saurus;
 | `uint64`           | `UInt64`                |
 | `float`            | `Float32`               |
 | `double`           | `Float64`               |
-| `boolean`          | `Boolean`               |
-| `bool(type_v3)`    | `Boolean`               |
+| `boolean`          | `Bool`                  |
 | `string`           | `String`                |
 | `utf8`             | `String`                |
 | `json`             | `JSON`                  |
 | `yson(type_v3)`    | `JSON`                  |
 | `uuid`             | `UUID`                  |
-| `date32`           | `Int32`                 |
+| `date32`           | `Date`(Not supported yet)|
 | `datetime64`       | `Int64`                 |
 | `timestamp64`      | `Int64`                 |
 | `interval64`       | `Int64`                 |
@@ -112,19 +111,12 @@ SELECT * FROM yt_saurus;
 | `decimal`          | `Decimal`            |
 | `optional`         | `Nullable`           |
 | `list`             | `Array`              |
-| `struct`           | -                    |
+| `struct`           | `NamedTuple`         |
 | `tuple`            | `Tuple`              |
 | `variant`          | `Variant`            |
-| `dict`             | -                    |
+| `dict`             | `Array(Tuple(...))   |
 | `tagged`           | `T`                  |
 
-### Restrictions
-#### Nullable
-Since ClickHouse doesn't support types `Nullable<Nullable<T>>`, `Nullable<Array>` and `Nullable<Tuple>`, this types have alternative convertation.
-
-- `optional<optional<T>>` converts to `optional<T>`, which is `Nullable<T>` in ClickHouse
-- `optional<list<T>>` converts to `Array<T>` in ClickHouse with default value `[]`, which represents `null`
-- `optional<tuple<T1, T2, ...>>` converts to `Tuple<T1, T2, ...>` in ClickHouse with default value `(T1(), T2(), ...)`(each value in tuple is default constructor of type `TN`), which represents `null`.
 
 
 **See Also**
