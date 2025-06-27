@@ -62,6 +62,7 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsBool azure_sdk_use_native_client;
 }
 
 namespace ServerSetting
@@ -418,29 +419,38 @@ BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & s
     retry_options.MaxRetries = static_cast<Int32>(settings.sdk_max_retries);
     retry_options.RetryDelay = std::chrono::milliseconds(settings.sdk_retry_initial_backoff_ms);
     retry_options.MaxRetryDelay = std::chrono::milliseconds(settings.sdk_retry_max_backoff_ms);
-
-    PocoAzureHTTPClientConfiguration conf{
-        .remote_host_filter = context->getRemoteHostFilter(),
-        .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
-        .for_disk_azure = for_disk,
-        .get_request_throttler = nullptr, // TODO (alesapin)
-        .put_request_throttler = nullptr, // TODO (alesapin)
-        .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
-        .connect_timeout_ms = context->getSettingsRef()[Setting::azure_connect_timeout_ms],
-        .request_timeout_ms = context->getSettingsRef()[Setting::azure_request_timeout_ms],
-        .tcp_keep_alive_interval_ms = context->getSettingsRef()[Setting::tcp_keep_alive_timeout],
-        .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
-        .http_keep_alive_timeout = context->getServerSettings()[ServerSetting::keep_alive_timeout],
-        .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
-        .http_max_fields = context->getSettingsRef()[Setting::http_max_fields],
-        .http_max_field_name_size = context->getSettingsRef()[Setting::http_max_field_name_size],
-        .http_max_field_value_size = context->getSettingsRef()[Setting::http_max_field_value_size]};
-
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
-    client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
-    //client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
+
+    if (context->getSettingsRef()[Setting::azure_sdk_use_native_client])
+    {
+        PocoAzureHTTPClientConfiguration conf{
+            .remote_host_filter = context->getRemoteHostFilter(),
+            .max_redirects = context->getSettingsRef()[Setting::azure_max_redirects],
+            .for_disk_azure = for_disk,
+            .get_request_throttler = nullptr, // TODO (alesapin)
+            .put_request_throttler = nullptr, // TODO (alesapin)
+            .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
+            .connect_timeout_ms = context->getSettingsRef()[Setting::azure_connect_timeout_ms],
+            .request_timeout_ms = context->getSettingsRef()[Setting::azure_request_timeout_ms],
+            .tcp_keep_alive_interval_ms = context->getSettingsRef()[Setting::tcp_keep_alive_timeout],
+            .use_adaptive_timeouts = context->getSettingsRef()[Setting::azure_use_adaptive_timeouts],
+            .http_keep_alive_timeout = context->getServerSettings()[ServerSetting::keep_alive_timeout],
+            .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
+            .http_max_fields = context->getSettingsRef()[Setting::http_max_fields],
+            .http_max_field_name_size = context->getSettingsRef()[Setting::http_max_field_name_size],
+            .http_max_field_value_size = context->getSettingsRef()[Setting::http_max_field_value_size]};
+
+        client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
+    }
+    else
+    {
+        Azure::Core::Http::CurlTransportOptions curl_options;
+        curl_options.NoSignal = true;
+        curl_options.IPResolve = settings.curl_ip_resolve;
+        client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
+    }
 
     return client_options;
 }

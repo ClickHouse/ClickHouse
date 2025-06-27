@@ -546,6 +546,9 @@ Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP
     DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
 Connection timeout for host from s3 disks.
 )", 0) \
+    DECLARE(Bool, azure_sdk_use_native_client, true, R"(
+Maximum number of retries in azure sdk
+)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
 Possible values:
