@@ -3,9 +3,8 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Common/UniqueLock.h>
-#include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
 
@@ -24,24 +23,18 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
-struct ClusterFunctionReadTaskResponse;
-using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+using TaskIterator = std::function<String()>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
 public:
     using ReadContext = RemoteQueryExecutorReadContext;
-
-    /// To avoid deadlock in case of OOM and timeout in CancellationChecker
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, std::mutex>;
 
     /// We can provide additional logic for RemoteQueryExecutor
     /// For example for s3Cluster table function we provide an Iterator over tasks to do.
@@ -180,9 +173,9 @@ public:
             return fd;
         }
 
-        const Type type;
+        Type type;
         Block block;
-        const int fd{-1};
+        int fd{-1};
     };
 
     /// Read next block of data. Returns empty block if query is finished.
@@ -311,9 +304,7 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
-#if defined(OS_LINUX)
     bool packet_in_progress = false;
-#endif
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

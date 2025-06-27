@@ -18,9 +18,7 @@ const auto zeroOneTwo = [](RandomGenerator & rg) { return std::to_string(rg.rand
 
 const auto zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
-const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); };
-
-const auto probRangeNoZero = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.01, 0.99)); };
+const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
 const auto highRange = [](RandomGenerator & rg)
 {
@@ -28,25 +26,15 @@ const auto highRange = [](RandomGenerator & rg)
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
 };
 
-const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(8192))); };
+const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); };
 
 const auto bytesRange = [](RandomGenerator & rg)
-{ return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
+{ return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
     {"0", "1", std::to_string(std::thread::hardware_concurrency())},
     false);
-
-const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
-
-const auto probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
-
-const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
-
-const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
-
-extern std::unordered_map<String, CHSetting> hotSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 
@@ -59,8 +47,8 @@ extern std::unordered_map<String, CHSetting> formatSettings;
 const std::unordered_map<String, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep", CHSetting(bytesRange, {}, false)},
        {"max_bytes_to_keep", CHSetting(bytesRange, {}, false)},
-       {"min_rows_to_keep", CHSetting(rowsRange, {}, false)},
-       {"max_rows_to_keep", CHSetting(rowsRange, {}, false)},
+       {"min_rows_to_keep", CHSetting(bytesRange, {}, false)},
+       {"max_rows_to_keep", CHSetting(bytesRange, {}, false)},
        {"compress", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
@@ -93,6 +81,19 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             {},
             false)}};
 
+const std::unordered_map<String, CHSetting> s3QueueTableSettings
+    = {{"after_processing",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"''", "'keep'", "'delete'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+       {"processing_threads_num", threadSetting}};
+
 const std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
        {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
@@ -104,13 +105,11 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
-    = {{"min_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)},
-       {"max_compress_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}};
+    = {{"min_compress_block_size", CHSetting(highRange, {}, false)}, {"max_compress_block_size", CHSetting(highRange, {}, false)}};
 
 const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
        {ReplacingMergeTree, mergeTreeColumnSettings},
-       {CoalescingMergeTree, mergeTreeColumnSettings},
        {SummingMergeTree, mergeTreeColumnSettings},
        {AggregatingMergeTree, mergeTreeColumnSettings},
        {CollapsingMergeTree, mergeTreeColumnSettings},
@@ -133,22 +132,12 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {S3, {}},
        {S3Queue, {}},
        {Hudi, {}},
-       {DeltaLakeS3, {}},
-       {DeltaLakeAzure, {}},
-       {DeltaLakeLocal, {}},
+       {DeltaLake, {}},
        {IcebergS3, {}},
-       {IcebergAzure, {}},
-       {IcebergLocal, {}},
        {Merge, {}},
        {Distributed, {}},
        {Dictionary, {}},
-       {GenerateRandom, {}},
-       {AzureBlobStorage, {}},
-       {AzureQueue, {}},
-       {URL, {}},
-       {KeeperMap, {}},
-       {ExternalDistributed, {}},
-       {MaterializedPostgreSQL, {}}};
+       {GenerateRandom, {}}};
 
 const std::unordered_map<String, CHSetting> backupSettings
     = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
@@ -178,6 +167,6 @@ extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSettin
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-void loadSystemTables(FuzzConfig & fc);
+void loadSystemTables(const FuzzConfig & fc);
 
 }

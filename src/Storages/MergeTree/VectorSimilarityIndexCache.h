@@ -14,8 +14,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric VectorSimilarityIndexCacheBytes;
-    extern const Metric VectorSimilarityIndexCacheCells;
+    extern const Metric VectorSimilarityIndexCacheSize;
 }
 
 namespace DB
@@ -33,6 +32,12 @@ struct VectorSimilarityIndexCacheCell
         : granule(std::move(granule_))
         , memory_bytes(granule->memoryUsageBytes() + ENTRY_OVERHEAD_BYTES_GUESS)
     {
+        CurrentMetrics::add(CurrentMetrics::VectorSimilarityIndexCacheSize, memory_bytes);
+    }
+
+    ~VectorSimilarityIndexCacheCell()
+    {
+        CurrentMetrics::sub(CurrentMetrics::VectorSimilarityIndexCacheSize, memory_bytes);
     }
 
     VectorSimilarityIndexCacheCell(const VectorSimilarityIndexCacheCell &) = delete;
@@ -56,7 +61,7 @@ public:
     using Base = CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>;
 
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
+        : Base(cache_policy, max_size_in_bytes, max_count, size_ratio)
     {}
 
     static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
@@ -72,10 +77,8 @@ public:
     template <typename LoadFunc>
     MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell>
-        {
-            MergeTreeIndexGranulePtr granule;
-            load(granule);
+        auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell> {
+            MergeTreeIndexGranulePtr granule = load();
             return std::make_shared<VectorSimilarityIndexCacheCell>(std::move(granule));
         };
 
@@ -89,11 +92,9 @@ public:
     }
 
 private:
-    /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
         ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 

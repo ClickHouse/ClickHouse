@@ -1,10 +1,9 @@
-#include <LocalServer.h>
+#include "LocalServer.h"
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -34,12 +33,11 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -129,9 +127,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
-    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
 }
 
 namespace ErrorCodes
@@ -167,7 +162,7 @@ void LocalServer::processError(std::string_view) const
         String message;
         if (server_exception)
         {
-            message = getExceptionMessageForLogging(*server_exception, print_stack_trace, true);
+            message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
         {
@@ -269,11 +264,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
-
-    getFormatParsingThreadPool().initialize(
-        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
-        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
-        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 }
 
 
@@ -429,19 +419,12 @@ void LocalServer::cleanup()
 }
 
 
-std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
+std::string LocalServer::getInitialCreateTableQuery()
 {
-    /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
-    /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
-    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
-
-    if (!getClientConfiguration().has("table-structure")
-        && !getClientConfiguration().has("table-file")
-        && !getClientConfiguration().has("table-data-format")
-        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
+    if (!getClientConfiguration().has("table-structure") && !getClientConfiguration().has("table-file") && !getClientConfiguration().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
         return {};
 
-    auto table_name = getClientConfiguration().getString("table-name", "table");
+    auto table_name = backQuoteIfNeed(getClientConfiguration().getString("table-name", "table"));
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
@@ -460,24 +443,15 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(file_name);
     }
 
-    String data_format;
-
-    if (default_input_format == "auto" && getClientConfiguration().has("table-structure"))
-        data_format = "TabSeparated";   /// Compatibility with older versions when format inference was not available.
-    else
-        data_format = backQuoteIfNeed(default_input_format);
+    String data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
     else
         table_structure = "(" + table_structure + ")";
 
-    return
-    {
-        table_name,
-        fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-            backQuote(table_name), table_structure, data_format, table_file, compression)
-    };
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+                       table_name, table_structure, data_format, table_file, compression);
 }
 
 
@@ -575,6 +549,7 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     thread_status.emplace();
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
@@ -628,6 +603,7 @@ try
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die
     try
@@ -652,13 +628,10 @@ try
         std::cerr << std::endl;
     }
 
-    auto [table_name, initial_query] = getInitialCreateTableQuery();
-    if (!table_name.empty())
-        client_context->setSetting("implicit_table_at_top_level", table_name);
-
     connect();
 
-    if (!table_name.empty())
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
         processQueryText(initial_query);
 
 #if USE_FUZZING_MODE
@@ -679,10 +652,10 @@ try
 
     return Application::EXIT_OK;
 }
-catch (DB::Exception & e)
+catch (const DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
@@ -896,11 +869,8 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
-    NamedCollectionFactory::instance().loadIfNot();
-    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
-
     /// NOTE: it is important to apply any overrides before
-    /// `setDefaultProfiles` calls since it will copy current context (i.e.
+    /// setDefaultProfiles() calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
     adjustSettings();
     applySettingsOverridesForLocal(global_context);
@@ -915,25 +885,22 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string server_default_database = server_settings[ServerSetting::default_database];
-    if (!server_default_database.empty())
+    std::string default_database = server_settings[ServerSetting::default_database];
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     {
-        DatabasePtr database = createClickHouseLocalDatabaseOverlay(server_default_database, global_context);
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(server_default_database, database);
-        global_context->setCurrentDatabase(server_default_database);
+        DatabaseCatalog::instance().attachDatabase(default_database, database);
     }
+    global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
     {
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-
-        /// Attaching "automatic" tables in the system database is done after attaching the system database.
-        /// Consequently, it depends on whether we load it from the path.
-        /// If it is loaded from a user-specified path, we load it as usual. If not, we create it as a memory (ephemeral) database.
-        bool attached_system_database = false;
 
         String path = global_context->getPath();
 
@@ -949,9 +916,6 @@ void LocalServer::processConfig()
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
-
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
-                attached_system_database = true;
             }
 
             if (!getClientConfiguration().has("only-system-tables"))
@@ -961,38 +925,18 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().startupBackgroundTasks();
             }
 
+            /// For ClickHouse local if path is not set the loader will be disabled.
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
             LOG_DEBUG(log, "Loaded metadata.");
         }
-
-        if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
-
-        if (fs::exists(fs::path(path) / "user_defined"))
-            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-
-        /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
-        /// even in temporary mode (--path not set) without persistent storage
-        DatabaseCatalog::instance().createBackgroundTasks();
-        DatabaseCatalog::instance().startupBackgroundTasks();
     }
-    else
-    {
-        /// Similarly, for other cases, create background tasks for DDL operations like
-        /// DROP VIEW SYNC in temporaty mode (--path not set) without persistent storage
-        DatabaseCatalog::instance().createBackgroundTasks();
-        DatabaseCatalog::instance().startupBackgroundTasks();
-    }
-
-    std::string default_database = getClientConfiguration().getString("database", server_default_database);
-    if (default_database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
-    global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 
@@ -1069,7 +1013,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings->changes());
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 
@@ -1092,8 +1036,6 @@ void LocalServer::createClientContext()
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
-    if (options.count("path"))
-        getClientConfiguration().setString("path", options["path"].as<std::string>());
     if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
@@ -1134,8 +1076,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     {
         std::string_view arg = argv[arg_num];
 
-        /// Parameter arg after underline or dash.
-        if (arg.starts_with("--param_") || arg.starts_with("--param-"))
+        /// Parameter arg after underline.
+        if (arg.starts_with("--param_"))
         {
             auto param_continuation = arg.substr(strlen("--param_"));
             auto equal_pos = param_continuation.find_first_of('=');
@@ -1178,9 +1120,9 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         app.init(argc, argv);
         return app.run();
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

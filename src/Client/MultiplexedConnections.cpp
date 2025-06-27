@@ -227,12 +227,12 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendClusterFunctionReadTaskResponse(response);
+    current_connection->sendReadTaskResponse(response);
 }
 
 
