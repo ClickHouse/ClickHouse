@@ -3976,12 +3976,12 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE P
 
 Possible values:
 
-| Value | Description                                                                    |
-|-------|--------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                              |
-| `1`   | The query waits for all mutations to complete on the current server.           |
-| `2`   | The query waits for all mutations to complete on all replicas (if they exist). |
-| `3`   | The query waits only for active replicas.                                      |
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
+| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -3999,12 +3999,12 @@ The same as [`mutations_sync`](#mutations_sync), but controls only execution of 
 
 Possible values:
 
-| Value | Description                                                                              |
-|-------|------------------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                                        |
-| `1`   | The query waits for the lightweight deletes to complete on the current server.           |
-| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist). |
-| `3`   | The query waits only for active replicas.                                                |
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
+| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
