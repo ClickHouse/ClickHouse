@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
+#include <Storages/System/StorageSystemCodecs.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
@@ -101,6 +102,7 @@
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemLatencyBuckets.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -235,7 +237,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes", "Lists all Refreshable Materialized Views of current server.");
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
-    attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Contains a list of iceberg history.");
+    attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
 
     if (has_zookeeper)
     {
@@ -247,6 +249,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
 
     attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
+    attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

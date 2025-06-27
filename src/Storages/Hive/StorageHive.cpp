@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Parsers/ASTExpressionList.h>
@@ -62,7 +63,7 @@ namespace Setting
 {
     extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
     extern const SettingsBool input_format_orc_case_insensitive_column_matching;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsMaxThreads max_threads;
 }
@@ -278,21 +279,23 @@ public:
                 else
                     read_buf = std::move(raw_read_buf);
 
+                ContextPtr context = getContext();
+
                 auto input_format = FormatFactory::instance().getInput(
                     format,
                     *read_buf,
                     to_read_block,
-                    getContext(),
+                    context,
                     max_block_size,
                     updateFormatSettings(current_file),
-                    /* max_parsing_threads */ 1);
+                    FormatParserGroup::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
                 {
                     pipe.addSimpleTransform([&](const Block & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
@@ -615,14 +618,15 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
+    ContextPtr context = getContext();
     auto format = FormatFactory::instance().getInput(
         "CSV",
         buffer,
         partition_key_expr->getSampleBlock(),
-        getContext(),
-        getContext()->getSettingsRef()[Setting::max_block_size],
+        context,
+        context->getSettingsRef()[Setting::max_block_size],
         std::nullopt,
-        /* max_parsing_threads */ 1);
+        FormatParserGroup::singleThreaded(context->getSettingsRef()));
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
@@ -642,7 +646,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
             ranges.emplace_back(fields[i]);
 
         ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
-        const KeyCondition partition_key_condition(inverted_dag, getContext(), partition_names, partition_minmax_idx_expr);
+        const KeyCondition partition_key_condition(inverted_dag, context, partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
     }

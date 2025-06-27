@@ -108,13 +108,14 @@ public:
 };
 
 template <typename Storage>
-void addNode(Storage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0)
+void addNode(Storage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, uint64_t acl_id = 0)
 {
     using Node = typename Storage::Node;
     Node node{};
     node.setData(data);
     if (ephemeral_owner)
         node.stats.setEphemeralOwner(ephemeral_owner);
+    node.acl_id = acl_id;
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);

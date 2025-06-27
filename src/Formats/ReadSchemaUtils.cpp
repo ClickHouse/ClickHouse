@@ -240,6 +240,13 @@ try
 
             if (format_name)
             {
+                if (!FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} file format doesn't support schema inference. You must specify the structure manually",
+                        *format_name);
+                }
                 SchemaReaderPtr schema_reader;
 
                 try

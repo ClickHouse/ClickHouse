@@ -5,9 +5,14 @@ FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_archive="https://archive.ubuntu.com"
 
 # We shouldn't use `apt upgrade` to not change the upstream image. It's updated biweekly
+
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -15,20 +20,18 @@ ARG apt_archive="http://archive.ubuntu.com"
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
+RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|https://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
-        ca-certificates \
         locales \
         tzdata \
-        wget \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+        wget
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="25.4.2.31"
+ARG VERSION="25.6.1.3206"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -116,6 +119,9 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     && apt-get autoremove --purge -yq dirmngr gnupg2 \
     && chmod ugo+Xrw -R /etc/clickhouse-server /etc/clickhouse-client
 # The last chmod is here to make the next one is No-op in docker official library Dockerfile
+
+# Cleanup
+RUN rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # post install
 # we need to allow "others" access to clickhouse folder, because docker container

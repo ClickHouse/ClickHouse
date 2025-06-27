@@ -551,6 +551,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_SQL_SECURITY, database, table);
             break;
         }
+        case ASTAlterCommand::APPLY_PATCHES:
+        {
+            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table);
+            break;
+        }
     }
 
     return required_access;
