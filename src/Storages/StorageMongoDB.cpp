@@ -37,6 +37,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <memory>
+#include <regex>
 
 using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::make_document;
@@ -51,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -61,6 +63,8 @@ namespace Setting
 
 void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
 {
+    if (!uri)
+        return;
     // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
     for (const auto & host : uri->hosts())
         context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
@@ -102,20 +106,41 @@ Pipe StorageMongoDB::read(
     }
 
     auto options = mongocxx::options::find{};
+    if (!configuration.uri)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB storage requires a valid URI");
 
     return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
         std::move(options), sample_block, max_block_size));
 }
 
-static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
+static std::unique_ptr<mongocxx::uri> tryCreateMongoUri(const String & mongo_uri_string, String & error_message, bool throw_on_error)
+{
+    if (throw_on_error)
+        return std::make_unique<mongocxx::uri>(mongo_uri_string);
+
+    try
+    {
+        return std::make_unique<mongocxx::uri>(mongo_uri_string);
+    }
+    catch (const mongocxx::exception & e)
+    {
+        error_message = e.what();
+        return nullptr;
+    }
+}
+
+static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_illegal_uri)
 {
     MongoDBConfiguration configuration;
+    String uri_parse_error;
+    String mongo_uri_string;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
         if (named_collection->has("uri"))
         {
             validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
-            configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
+            mongo_uri_string = named_collection->get<String>("uri");
+            configuration.uri = tryCreateMongoUri(mongo_uri_string, uri_parse_error, !allow_illegal_uri);
         }
         else
         {
@@ -127,12 +152,13 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
             Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
                 auth_string = fmt::format("{}:{}@", user, escaped_password);
-            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                          auth_string,
-                                                          named_collection->get<String>("host"),
-                                                          named_collection->get<String>("port"),
-                                                          named_collection->get<String>("database"),
-                                                          named_collection->getOrDefault<String>("options", "")));
+            mongo_uri_string = fmt::format("mongodb://{}{}:{}/{}?{}",
+                auth_string,
+                named_collection->get<String>("host"),
+                named_collection->get<String>("port"),
+                named_collection->get<String>("database"),
+                named_collection->getOrDefault<String>("options", ""));
+            configuration.uri = tryCreateMongoUri(mongo_uri_string, uri_parse_error, !allow_illegal_uri);
         }
         configuration.collection = named_collection->get<String>("collection");
         if (named_collection->has("oid_columns"))
@@ -161,33 +187,39 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
             auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
             auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
             auto parsed_host_port = parseAddress(host_port, 27017);
-            try
+
+            mongo_uri_string = fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options);
+            configuration.uri = tryCreateMongoUri(mongo_uri_string, uri_parse_error, !allow_illegal_uri);
+
+            /// For compatibility with old versions which used Poco Based mongo integration
+            /// we do not want to fail here in table attach, but rather try to parse arguments in best effort manner
+            /// and otherwise attach table with unitialized uri and throw error later on read
+
+            /// First try to fix uri by removing path from first argument (which should be only host:port)
+            if (!configuration.uri)
             {
-                configuration.uri = std::make_unique<mongocxx::uri>(
-                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
-            }
-            catch (const mongocxx::logic_error & e)
-            {
-                auto pos = host_port.find('/');
-                if (!allow_excessive_path_in_host || pos == String::npos)
-                    throw;
+                if (auto pos = host_port.find('/'); pos != String::npos)
+                {
+                    LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", uri_parse_error);
 
-                LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", e.what());
+                    host_port = host_port.substr(0, pos);
+                    parsed_host_port = parseAddress(host_port, 27017);
 
-                host_port = host_port.substr(0, pos);
-                parsed_host_port = parseAddress(host_port, 27017);
+                    mongo_uri_string = fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options);
+                    configuration.uri = tryCreateMongoUri(mongo_uri_string, uri_parse_error, !allow_illegal_uri);
 
-                configuration.uri = std::make_unique<mongocxx::uri>(
-                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
-
-                context->addOrUpdateWarningMessage(
-                    Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
-                    PreformattedMessage::create(
-                        "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
-                        "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
-                        "or use only host:port format and specify database name and other parameters separately in the table engine definition. "
-                        "In future versions, this will be an error when loading the table.",
-                        table_id ? table_id->getNameForLogs() : ""));
+                    if (configuration.uri)
+                    {
+                        context->addOrUpdateWarningMessage(
+                            Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+                            PreformattedMessage::create(
+                                "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
+                                "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
+                                "or use only host:port format and specify database name and other parameters separately in the table engine definition. "
+                                "In future versions, this will be an error when loading the table.",
+                                table_id ? table_id->getNameForLogs() : ""));
+                    }
+                }
             }
 
             if (engine_args.size() == 7)
@@ -197,7 +229,8 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
         else if (engine_args.size() == 2 || engine_args.size() == 3)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-            configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
+            mongo_uri_string = checkAndGetLiteralArgument<String>(engine_args[0], "host");
+            configuration.uri = tryCreateMongoUri(mongo_uri_string, uri_parse_error, !allow_illegal_uri);
             if (engine_args.size() == 3)
                 boost::split(configuration.oid_fields,
                     checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
@@ -206,6 +239,20 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Incorrect number of arguments. Example usage: "
                                 "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
+    }
+
+    /// If we could not parse uri, attach table with unitialized uri, will throw error later on read
+    if (!configuration.uri)
+    {
+        std::regex auth_regex("(\\w+)\\:(\\w+)@");
+        mongo_uri_string = std::regex_replace(mongo_uri_string, auth_regex, "***:***@");
+
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+            PreformattedMessage::create(
+                "Got error while parsing uri '{}' for MongoDB table '{}' definition: {}\n"
+                "Please re-create table with correct arguments",
+                mongo_uri_string, table_id ? table_id->getNameForLogs() : "", uri_parse_error));
     }
 
     configuration.checkHosts(context);
@@ -594,13 +641,13 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
-        /// Allow loading tables with excessive path in host parameter created on older ClickHouse versions
-        /// (that used the previous Poco-based MongoDB implementation which allowed it).
+        /// Allow loading tables with illegal parameters,
+        /// to be compatible with previous Poco-based MongoDB implementation which allowed it.
         /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
-        bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
+        bool allow_illegal_uri = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
+            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_illegal_uri),
             args.columns,
             args.constraints,
             args.comment);
