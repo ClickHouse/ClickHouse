@@ -204,7 +204,6 @@ def get_creation_expression(
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
-    schema="",
     **kwargs,
 ):
     settings_array = []
@@ -238,7 +237,7 @@ def get_creation_expression(
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name} {schema}
+                    CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
                     + settings_expression
                 )
@@ -258,7 +257,7 @@ def get_creation_expression(
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name} {schema}
+                    CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
                     + settings_expression
                 )
@@ -274,7 +273,7 @@ def get_creation_expression(
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
-                CREATE TABLE {table_name} {schema}
+                CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
                 + settings_expression
             )
@@ -315,11 +314,10 @@ def create_iceberg_table(
     table_name,
     cluster,
     format="Parquet",
-    schema="",
     **kwargs,
 ):
     node.query(
-        get_creation_expression(storage_type, table_name, cluster, format, schema, **kwargs)
+        get_creation_expression(storage_type, table_name, cluster, format, **kwargs)
     )
 
 
@@ -3230,7 +3228,7 @@ def test_compressed_metadata(started_cluster, storage_type):
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE not ignore(*)") == "1\tAlice\n2\tBob\n"
 
-    
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes(started_cluster, format_version, storage_type):
