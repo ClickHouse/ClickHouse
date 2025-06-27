@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -72,9 +71,8 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 
         /// Handle the case when tie_correction is close to zero (all values are identical)
         Float64 sd = 0.0;
-        if (std::abs(tie_correction) > std::numeric_limits<Float64>::epsilon()) {
+        if (std::abs(tie_correction) > std::numeric_limits<Float64>::epsilon())
             sd = std::sqrt(tie_correction * n1 * n2 * (n1 + n2 + 1) / 12.0);
-        }
 
         Float64 u = 0;
         if (alternative == Alternative::TwoSided)
@@ -89,9 +87,8 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         /// z will be 0, which leads to p-value = 0.5 for one-sided tests
         /// and p-value = 1.0 for two-sided tests
         Float64 z = 0.0;
-        if (sd > std::numeric_limits<Float64>::epsilon()) {
+        if (sd > std::numeric_limits<Float64>::epsilon())
             z = (u - meanrank) / sd;
-        }
 
         if (unlikely(!std::isfinite(z)))
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
