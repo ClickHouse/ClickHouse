@@ -28,7 +28,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <memory>
@@ -344,14 +343,6 @@ bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
                 /// Subquery will always produce at least one row
                 return true;
             }
-            node = node->children[0];
-            continue;
-        }
-        if (typeid_cast<LimitStep *>(node->step.get()))
-        {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
             node = node->children[0];
             continue;
         }

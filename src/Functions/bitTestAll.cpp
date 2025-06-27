@@ -27,10 +27,10 @@ The logical AND between two bits is true if and only if both input bits are true
     )";
     FunctionDocumentation::Syntax syntax = "bitTestAll(a, index1[, index2, ... , indexN])";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "An integer value.", {"(U)Int8/16/32/64"}},
-        {"index1, ...", "One or multiple positions of bits.", {"(U)Int8/16/32/64"}},
+        {"a", "An integer value. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
+        {"index1[, index2, ... , indexN]", "One or multiple positions of bits. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the logical conjunction", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the logical conjunction. [`UInt8`](../data-types/int-uint.md).";
     FunctionDocumentation::Examples examples = {{"Usage example 1", "SELECT bitTestAll(43, 0, 1, 3, 5);",
         R"(
 ┌─bin(43)──┬─bitTestAll(43, 0, 1, 3, 5)─┐

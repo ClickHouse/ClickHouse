@@ -335,8 +335,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    String current_shard;
+    String current_shard = parseFullReplicaName(hosts.front()).first;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
+    shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const auto & id = host_ids[i];
@@ -348,7 +349,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         if (shard != current_shard)
         {
             current_shard = shard;
-            shards.emplace_back();
+            if (!shards.back().empty())
+                shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});

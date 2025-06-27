@@ -187,8 +187,7 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    /// Checks that command will drop something or rename column.
-    bool isDropOrRename() const;
+    bool isDropSomething() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after

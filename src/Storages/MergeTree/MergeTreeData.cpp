@@ -3872,7 +3872,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
-        checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -8228,10 +8228,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
-    else if (data_part->getState() == MergeTreeDataPartState::Active)
-        broken_part_callback(data_part->name);
     else
-        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    {
+        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
+        {
+            auto lock = lockParts();
+            state = data_part->getState();
+        }
+
+        if (state == MergeTreeDataPartState::Active)
+            broken_part_callback(data_part->name);
+        else
+            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
+    }
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -8314,6 +8323,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+        disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
 
@@ -8773,24 +8785,21 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
-void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
-    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
-    if (!command.isDropOrRename() || unfinished_mutations.empty())
+    if (!command.isDropSomething() || unfinished_mutations.empty())
         return;
 
     auto throw_exception = [] (
         const std::string & mutation_name,
-        const std::string & action_name,
         const std::string & entity_name,
         const std::string & identifier_name)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+            "Cannot drop {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
             "Wait this mutation, or KILL it with command "
             "\"KILL MUTATION WHERE mutation_id = '{}'\"",
-            action_name,
             entity_name,
             backQuoteIfNeed(identifier_name),
             mutation_name,
@@ -8803,19 +8812,17 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
         {
             if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
             {
-                throw_exception(mutation_name, "drop", "index", command.index_name);
+                throw_exception(mutation_name, "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)
             {
-                throw_exception(mutation_name, "drop", "projection", command.projection_name);
+                throw_exception(mutation_name, "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN)
             {
-                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
-
                 if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, action, "column", command.column_name);
+                    throw_exception(mutation_name, "column", command.column_name);
 
                 if (mutation_command.predicate)
                 {
@@ -8823,18 +8830,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
                 }
 
                 for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
                     if (name == command.column_name)
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
 
                     auto query_tree = buildQueryTree(expr, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        throw_exception(mutation_name, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -8842,7 +8849,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 for (const auto & stats_col1 : command.statistics_columns)
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
-                            throw_exception(mutation_name, "drop", "statistics", stats_col1);
+                            throw_exception(mutation_name, "statistics", stats_col1);
             }
         }
     }

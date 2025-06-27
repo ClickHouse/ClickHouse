@@ -1,8 +1,8 @@
 #pragma once
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/ISimpleTransform.h>
+#include <boost/noncopyable.hpp>
+#include "Interpreters/ActionsDAG.h"
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 
@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -41,18 +40,8 @@ public:
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
-
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /* object_info */,
-        const Block & /* header */,
-        const std::optional<FormatSettings> & /* format_settings */,
-        ContextPtr /*context*/) const
-    {
-        return {};
-    }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & /* path */) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & /* path */) const { return {}; }
 
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
@@ -65,11 +54,11 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> totalRows() const { return {}; }
+    virtual std::optional<size_t> totalBytes() const { return {}; }
 
 protected:
-    virtual ObjectIterator createKeysIterator(
+    ObjectIterator createKeysIterator(
         Strings && data_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_) const;

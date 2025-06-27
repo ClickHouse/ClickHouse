@@ -124,7 +124,7 @@ Keys and values can be quoted.
 **Syntax**
 
 ```sql
-extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character[, unexpected_quoting_character_strategy]]])
+extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character]]])
 ```
 
 Alias:
@@ -137,7 +137,6 @@ Alias:
 - `key_value_delimiter` - Single character delimiting keys and values. Defaults to `:`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `pair_delimiters` - Set of character delimiting pairs. Defaults to ` `, `,` and `;`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `quoting_character` - Single character used as quoting character. Defaults to `"`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: "invalid", "accept" and "promote". Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character.
 
 **Returned values**
 
@@ -171,74 +170,6 @@ Result:
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-unexpected_quoting_character_strategy examples:
-
-unexpected_quoting_character_strategy=invalid
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
-```
-
-```text
-┌─kv────────────────┐
-│ {'abc':'5'}  │
-└───────────────────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
-```
-
-```text
-┌─kv──┐
-│ {}  │
-└─────┘
-```
-
-unexpected_quoting_character_strategy=accept
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
-```
-
-```text
-┌─kv────────────────┐
-│ {'name"abc':'5'}  │
-└───────────────────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
-```
-
-```text
-┌─kv─────────────────┐
-│ {'name"abc"':'5'}  │
-└────────────────────┘
-```
-
-unexpected_quoting_character_strategy=promote
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
-```
-
-```text
-┌─kv──┐
-│ {}  │
-└─────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
-```
-
-```text
-┌─kv───────────┐
-│ {'abc':'5'}  │
-└──────────────┘
 ```
 
 Escape sequences without escape sequences support:

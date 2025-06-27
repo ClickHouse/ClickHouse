@@ -1,4 +1,4 @@
-http_wait_end_of_query=0
+wait_end_of_query=0
 One block
 Parallel formatting: 0
 JSON
@@ -431,7 +431,7 @@ Test 2
 Test 3
 1
 1
-http_wait_end_of_query=1
+wait_end_of_query=1
 One block
 Parallel formatting: 0
 JSON

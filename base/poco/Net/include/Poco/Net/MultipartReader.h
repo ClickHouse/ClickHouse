@@ -19,7 +19,6 @@
 
 
 #include <istream>
-#include <memory>
 #include "Poco/BufferedStreamBuf.h"
 #include "Poco/Net/Net.h"
 
@@ -152,7 +151,7 @@ namespace Net
 
         std::istream & _istr;
         std::string _boundary;
-        std::unique_ptr<MultipartInputStream> _pMPI;
+        MultipartInputStream * _pMPI;
     };
 
 
