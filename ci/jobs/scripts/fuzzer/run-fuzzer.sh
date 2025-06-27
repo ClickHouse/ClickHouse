@@ -18,6 +18,7 @@ repo_dir=/repo
 CONFIG_DIR="/etc/clickhouse-server"
 
 export PATH="$repo_dir/ci/tmp/:$PATH"
+export PYTHONPATH=$repo_dir:$repo_dir/ci
 
 cd /workspace
 
@@ -35,6 +36,7 @@ function configure
     cp -av --dereference "$repo_dir"/programs/server/user* $CONFIG_DIR
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/allow-nullable-key.xml $CONFIG_DIR/config.d
 
@@ -57,7 +59,7 @@ EOL
 </clickhouse>
 EOL
 
-    PYTHONPATH=$repo_dir:$repo_dir/ci python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config || ( echo "Failed to create log export config" && exit 1 )
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || { echo "Failed to create log export config"; exit 1; }
 }
 
 function filter_exists_and_template
@@ -181,7 +183,7 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    PYTHONPATH=$repo_dir:$repo_dir/ci python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start || ( echo "Failed to start log exports" && exit 1 )
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || { echo "Failed to start log exports"; exit 1; }
 
     # Setup arguments for the fuzzer
     FUZZER_OUTPUT_SQL_FILE=''
