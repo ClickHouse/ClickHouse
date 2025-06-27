@@ -16,6 +16,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/CompressionMethod.h>
 
 namespace Iceberg
 {
@@ -33,9 +35,17 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    LoggerPtr log);
+    LoggerPtr log,
+    CompressionMethod compression_method);
 
-std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
+struct MetadataFileWithInfo
+{
+    Int32 version;
+    String path;
+    CompressionMethod compression_method;
+};
+
+MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     StorageObjectStorage::ConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,

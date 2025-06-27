@@ -1,35 +1,34 @@
 #pragma once
 
 #include <unordered_map>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Functions/IFunction.h>
+#include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
-#include "Common/Config/ConfigProcessor.h"
-#include "Disks/ObjectStorages/IObjectStorage.h"
-#include "Functions/IFunction.h"
-#include "IO/WriteBuffer.h"
-#include "config.h"
+#include <Common/Config/ConfigProcessor.h>
 
 #if USE_AVRO
 
-#include <Common/randomSeed.h>
-#include <Storages/PartitionedSink.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Interpreters/Context_fwd.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <Processors/Formats/IOutputFormat.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Storages/PartitionedSink.h>
+#    include <Common/randomSeed.h>
 
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 
-#include <Compiler.hh>
-#include <ValidSchema.hh>
-#include <Generic.hh>
-#include <Encoder.hh>
-#include <Stream.hh>
+#    include <Compiler.hh>
+#    include <Encoder.hh>
+#    include <Generic.hh>
+#    include <Stream.hh>
+#    include <ValidSchema.hh>
 
 namespace DB
 {
 
-std::string removeEscapedSlashes(const std::string& jsonStr);
+std::string removeEscapedSlashes(const std::string & jsonStr);
 
 class FileNamesGenerator
 {
@@ -41,10 +40,7 @@ public:
     String generateManifestListName();
     String generateMetadataName();
 
-    void setVersion(Int32 initial_version_)
-    {
-        initial_version = initial_version_;
-    }
+    void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
 private:
     Poco::UUIDGenerator uuid_generator;
@@ -76,12 +72,7 @@ public:
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
     Poco::JSON::Object::Ptr generateNextMetadata(
-        const String & manifest_list_name,
-        Int64 parent_snapshot_id,
-        Int32 added_files,
-        Int32 added_records,
-        Int32 added_files_size
-    );
+        const String & manifest_list_name, Int64 parent_snapshot_id, Int32 added_files, Int32 added_records, Int32 added_files_size);
 
     static constexpr const char * f_sequence_number = "sequence-number";
     static constexpr const char * f_snapshots = "snapshots";
@@ -115,7 +106,8 @@ private:
 class ChunkPartitioner
 {
 public:
-    explicit ChunkPartitioner(Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
+    explicit ChunkPartitioner(
+        Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
 
     using PartitionKey = std::vector<Field>;
     struct PartitionKeyHasher
@@ -127,10 +119,8 @@ public:
 
     std::unordered_map<PartitionKey, Chunk, PartitionKeyHasher> participateChunk(const Chunk & chunk);
 
-    const std::vector<String> & getColumns() const
-    {
-        return columns_to_apply;
-    }
+    const std::vector<String> & getColumns() const { return columns_to_apply; }
+
 private:
     Block sample_block;
 
