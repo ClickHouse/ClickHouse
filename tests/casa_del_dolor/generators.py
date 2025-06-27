@@ -38,6 +38,10 @@ class BuzzHouseGenerator(Generator):
 
         buzz_config["seed"] = random.randint(1, 18446744073709551615)
 
+        # Connect back to peer ClickHouse server running in the host machine
+        if "clickhouse" in buzz_config:
+            buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
+
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
