@@ -1,4 +1,5 @@
-set allow_experimental_analyzer = 1;
+SET allow_experimental_analyzer = 1;
+SET enable_parallel_replicas = 0;
 
 CREATE TABLE t0 (c0 Int, c1 Int ALIAS 1) ENGINE = Memory;
 CREATE TABLE t0__fuzz_42 (`c0` Array(Nullable(UInt32)), `c1` IPv4 ALIAS 1) ENGINE = Memory;
