@@ -63,7 +63,7 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%' and message not like '%Out of memory%03147_parquet_memory_tracking%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs

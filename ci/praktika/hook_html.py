@@ -268,7 +268,7 @@ class HtmlRunnerHooks:
 
         if not result.is_ok():
             print(
-                "Current job failed - find dependee jobs in the workflow and set their statuses to skipped"
+                "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
 

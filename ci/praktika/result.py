@@ -336,6 +336,12 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
+                if result_.is_completed():
+                    # job was skipped in workflow configuration by user' hook
+                    print(
+                        f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not escalate status to dropped"
+                    )
+                    continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
