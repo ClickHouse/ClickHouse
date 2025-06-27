@@ -203,6 +203,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             if (table_expression)
             {
                 scope.expression_join_tree_node = table_expression;
+                scope.registered_table_expression_nodes.insert(table_expression);
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
                 initializeTableExpressionData(scope.expression_join_tree_node, scope);
             }
@@ -248,6 +249,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     if (table_expression)
     {
         scope.expression_join_tree_node = table_expression;
+        scope.registered_table_expression_nodes.insert(table_expression);
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
     }
@@ -2934,50 +2936,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /// Resolve function arguments
-    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
-
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
-        bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
-            ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
-            : exists_subquery_argument->as<UnionNode>()->isCorrelated();
-        if (!correlated_exists_subquery)
+        /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
+        const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+
+        new_exists_subquery->setIsSubquery(true);
+        new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        new_exists_subquery->getJoinTree() = exists_subquery_argument;
+        new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+        QueryTreeNodePtr new_exists_argument = new_exists_subquery;
+
+        auto exists_arguments_projection_names = resolveExpressionNode(
+            new_exists_argument,
+            scope,
+            true /*allow_lambda_expression*/,
+            true /*allow_table_expression*/
+        );
+
+        if (new_exists_subquery->isCorrelated())
         {
-            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-            auto constant_data_type = std::make_shared<DataTypeUInt64>();
-
-            auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-            in_subquery->setIsSubquery(true);
-            in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-            in_subquery->getJoinTree() = exists_subquery_argument;
-            in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-            function_node_ptr = std::make_shared<FunctionNode>("in");
             function_node_ptr->getArguments().getNodes() = {
-                std::make_shared<ConstantNode>(1UL, constant_data_type),
-                std::move(in_subquery)
+                std::move(new_exists_argument)
             };
 
-            /// Resolve modified arguments
-            arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
-                scope,
-                true /*allow_lambda_expression*/,
-                true /*allow_table_expression*/);
-
-            node = function_node_ptr;
-            function_name = "in";
-            is_special_function_in = true;
-        }
-        else
-        {
             /// Subquery is correlated and EXISTS can not be replaced by IN function.
             /// EXISTS function will be replated by JOIN during query planning.
             auto function_exists = std::make_shared<FunctionExists>();
@@ -2987,9 +2974,32 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 )
             );
 
-            return { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+            return { calculateFunctionProjectionName(node, parameters_projection_names, exists_arguments_projection_names) };
+        }
+        else
+        {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+            QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+            function_node_ptr = std::make_shared<FunctionNode>("in");
+            function_node_ptr->getArguments().getNodes() = {
+                constant,
+                std::move(new_exists_argument)
+            };
+
+            node = function_node_ptr;
+            function_name = "in";
+            is_special_function_in = true;
         }
     }
+
+    /// Resolve function arguments
+    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
+        scope,
+        true /*allow_lambda_expression*/,
+        allow_table_expressions /*allow_table_expression*/);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -3357,6 +3367,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
+
+        if (function_name == "lag" || function_name == "lead")
+        {
+            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
+            if (!frame.is_default)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
+                    function_name,
+                    function_node.formatASTForErrorMessage());
+            }
+
+            frame = WindowFrame{
+                .is_default = false,
+                .type = WindowFrame::FrameType::ROWS,
+                .begin_type = WindowFrame::BoundaryType::Unbounded,
+                .begin_preceding = true,
+                .end_type = WindowFrame::BoundaryType::Unbounded,
+                .end_preceding = false,
+            };
+        }
 
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;
