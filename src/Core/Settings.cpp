@@ -27,7 +27,7 @@
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 0;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
