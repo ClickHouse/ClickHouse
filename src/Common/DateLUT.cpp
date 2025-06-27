@@ -24,6 +24,11 @@ namespace Setting
 namespace
 {
 
+std::string extractTimezoneFromContext(DB::ContextPtr query_context)
+{
+    return query_context->getSettingsRef()[DB::Setting::session_timezone].value;
+}
+
 Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 {
     std::ifstream stream(path);
@@ -155,27 +160,31 @@ const DateLUTImpl & DateLUT::instance()
 {
     const auto & date_lut = getInstance();
 
-    std::string timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
+        std::string timezone_from_context;
         const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-        if (query_context)
-            timezone_from_context = query_context->getSettingsRef()[DB::Setting::session_timezone];
-    }
 
-    if (timezone_from_context.empty())
-    {
+        if (query_context)
+        {
+            timezone_from_context = extractTimezoneFromContext(query_context);
+
+            if (!timezone_from_context.empty())
+                return date_lut.getImplementation(timezone_from_context);
+        }
+
         /// On the server side, timezone is passed in query_context,
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
-        const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
+        const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
         if (global_context)
-            timezone_from_context = global_context->getSettingsRef()[DB::Setting::session_timezone];
+        {
+            timezone_from_context = extractTimezoneFromContext(global_context);
+
+            if (!timezone_from_context.empty())
+                return date_lut.getImplementation(timezone_from_context);
+        }
     }
-
-    if (!timezone_from_context.empty())
-        return date_lut.getImplementation(timezone_from_context);
-
     return serverTimezoneInstance();
 }
 

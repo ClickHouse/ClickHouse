@@ -4,6 +4,7 @@
 
 #if USE_MONGODB
 #include <Common/JSONBuilder.h>
+#include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageMongoDB.h>
 

@@ -8,7 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <base/defines.h>
 
@@ -121,7 +121,6 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        FormatParserGroupPtr parser_group,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,

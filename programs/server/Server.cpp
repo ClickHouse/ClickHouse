@@ -1,4 +1,4 @@
-#include <Server.h>
+#include "Server.h"
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -59,7 +59,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
@@ -97,7 +96,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
-#include <MetricsTransmitter.h>
+#include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
@@ -209,7 +208,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
-    extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
@@ -265,8 +263,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -317,9 +313,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
-    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -330,11 +323,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
-}
-
-namespace ErrorCodes
-{
-    extern const int STARTUP_SCRIPTS_ERROR;
 }
 
 }
@@ -414,7 +402,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int INVALID_SETTING_VALUE;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
@@ -439,15 +426,6 @@ static std::string getCanonicalPath(std::string && path)
     return std::move(path);
 }
 
-static constexpr unsigned DEFAULT_LISTEN_BACKLOG = 4096;
-
-static Poco::Net::TCPServerParams::Ptr makeServerParams(const Poco::Util::AbstractConfiguration & config)
-{
-    Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
-    params->setMaxQueued(config.getUInt("listen_backlog", DEFAULT_LISTEN_BACKLOG));
-    return params;
-}
-
 Poco::Net::SocketAddress Server::socketBindListen(
     const Poco::Util::AbstractConfiguration & config,
     Poco::Net::ServerSocket & socket,
@@ -464,7 +442,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config.getUInt("listen_backlog", DEFAULT_LISTEN_BACKLOG));
+    socket.listen(/* backlog = */ config.getUInt("listen_backlog", 4096));
 
     return address;
 }
@@ -812,7 +790,7 @@ void sanityChecks(Server & server)
 
     try
     {
-        if (!logs_path.empty() && fs::is_regular_file(logs_path))
+        if (!logs_path.empty())
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
@@ -851,8 +829,6 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
         for (const auto & key : keys)
         {
-            if (key == "throw_on_error")
-                continue;
             std::string full_prefix = "startup_scripts." + key;
 
             auto user = config.getString(full_prefix + ".user", "");
@@ -922,10 +898,6 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
     {
         CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
-        if (config.getBool("startup_scripts.throw_on_error", false))
-            throw Exception(
-                ErrorCodes::STARTUP_SCRIPTS_ERROR,
-                "Cannot finish startup_script successfully. Use startup_scripts.throw_on_error setting to change this behavior");
     }
 }
 
@@ -1155,13 +1127,6 @@ try
             page_cache_max_size);
     }
 
-    size_t update_period_seconds = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
-    size_t heavy_metrics_update_period_seconds = server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s];
-    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
-    {
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Settings asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
-    }
-
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
@@ -1385,11 +1350,6 @@ try
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
-
-    getFormatParsingThreadPool().initialize(
-        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
-        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
-        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
@@ -1852,7 +1812,8 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
-    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
+
+    FileCacheFactory::instance().loadDefaultCaches(config());
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -2000,23 +1961,12 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setServerSetting("s3queue_disable_streaming", new_server_settings[ServerSetting::s3queue_disable_streaming].value);
+            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
 
-            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
-
-            size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
-            size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
-
-            global_context->reloadRemoteThrottlerConfig(remote_read_bandwidth,remote_write_bandwidth);
-            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", remote_read_bandwidth);
-            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", remote_write_bandwidth);
-
-            size_t local_read_bandwidth = new_server_settings[ServerSetting::max_local_read_bandwidth_for_server];
-            size_t local_write_bandwidth = new_server_settings[ServerSetting::max_local_write_bandwidth_for_server];
-
-            global_context->reloadLocalThrottlerConfig(local_read_bandwidth,local_write_bandwidth);
-            LOG_INFO(log, "Setting max_local_read_bandwidth_for_server was set to {}", local_read_bandwidth);
-            LOG_INFO(log, "Setting max_local_write_bandwidth_for_server was set to {}", local_write_bandwidth);
+            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
 
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
@@ -2116,11 +2066,6 @@ try
                 new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
                 new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
-            getFormatParsingThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_format_parsing_thread_pool_size],
-                new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
-                new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
-
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
@@ -2166,6 +2111,7 @@ try
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
+
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             HTTPConnectionPools::instance().setLimits(
@@ -2532,7 +2478,29 @@ try
         throw;
     }
 
-    DatabaseCatalog::instance().startReplicatedDDLQueries();
+    bool found_stop_flag = false;
+
+    if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
+    {
+        try
+        {
+            auto zookeeper = global_context->getZooKeeper();
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
+            found_stop_flag = zookeeper->exists(stop_flag_path);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
+                throw;
+            tryLogCurrentException(log);
+        }
+    }
+
+    if (found_stop_flag)
+        LOG_INFO(log, "Found a stop flag for replicated DDL queries. They will be disabled");
+    else
+        DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
 
@@ -2895,16 +2863,16 @@ void Server::createServers(
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
     http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
     http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
-    http_params->setMaxQueued(config.getUInt("listen_backlog", DEFAULT_LISTEN_BACKLOG));
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
     const TCPServerConnectionFilter::Ptr & connection_filter = new TCPServerConnectionFilter{[&]()
     {
-        return !ProfileEvents::checkCPUOverload(global_context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-                global_context->getMinOSCPUWaitTimeRatioToDropConnection(),
-                global_context->getMaxOSCPUWaitTimeRatioToDropConnection(),
+        const auto & server_settings = global_context->getServerSettings();
+        return !ProfileEvents::checkCPUOverload(server_settings[ServerSetting::os_cpu_busy_time_threshold],
+                server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection],
+                server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection],
                 /*should_throw*/ false);
     }};
 
@@ -2951,7 +2919,7 @@ void Server::createServers(
                         stack.release(),
                         server_pool,
                         socket,
-                        makeServerParams(config),
+                        new Poco::Net::TCPServerParams,
                         connection_filter));
             });
         }
@@ -3023,7 +2991,7 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        makeServerParams(config),
+                        new Poco::Net::TCPServerParams,
                         connection_filter));
             });
         }
@@ -3046,7 +3014,7 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        makeServerParams(config),
+                        new Poco::Net::TCPServerParams,
                         connection_filter));
             });
         }
@@ -3070,7 +3038,7 @@ void Server::createServers(
                         new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
-                        makeServerParams(config),
+                        new Poco::Net::TCPServerParams,
                         connection_filter));
     #else
                 UNUSED(port);
@@ -3102,7 +3070,7 @@ void Server::createServers(
                             new SSHPtyHandlerFactory(*this, config),
                             server_pool,
                             socket,
-                            makeServerParams(config),
+                            new Poco::Net::TCPServerParams,
                             connection_filter));
 #else
                 UNUSED(port);
@@ -3124,12 +3092,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(
-                         new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes),
-                         server_pool,
-                         socket,
-                         makeServerParams(config),
-                         connection_filter));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
             });
         }
 
@@ -3147,19 +3110,9 @@ void Server::createServers(
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
 #if USE_SSL
-                    std::make_unique<TCPServer>(
-                         new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
-                         server_pool,
-                         socket,
-                         makeServerParams(config),
-                         connection_filter));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
 #else
-                    std::make_unique<TCPServer>(
-                         new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
-                         server_pool,
-                         socket,
-                         makeServerParams(config),
-                         connection_filter));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams, connection_filter));
 #endif
             });
         }
@@ -3215,7 +3168,6 @@ void Server::createInterserverServers(
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
     http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
-    http_params->setMaxQueued(config.getUInt("listen_backlog", DEFAULT_LISTEN_BACKLOG));
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)

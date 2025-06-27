@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283
+personal_ws-1.1 en 3238 
 AArch
 ACLs
 ALTERs
@@ -82,7 +82,6 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
-Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -183,7 +182,6 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
-CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -265,8 +263,6 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
-DictionaryMaxUpdateDelay
-DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -338,7 +334,6 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
-FixedStrings
 FlameGraph
 Flink
 ForEach
@@ -602,7 +597,6 @@ MSan
 MVCC
 MacBook
 MacOS
-Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -716,8 +710,6 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-NumericIndexedVector
-NumericIndexedVectors
 ODBCDriver
 OFNS
 OLAP
@@ -802,6 +794,8 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
+ParallelParsingInputFormatThreads
+ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -902,7 +896,6 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
-RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -991,7 +984,6 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
-SegWit
 SelfManaged
 Sematext
 SendExternalTables
@@ -1096,7 +1088,6 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
-Testnet
 Tgz
 Theil's
 Theils
@@ -1396,7 +1387,6 @@ backupview
 balancer
 basename
 bcrypt
-bech
 benchmarked
 benchmarking
 bfloat
@@ -1441,7 +1431,6 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
-blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1861,6 +1850,7 @@ formatter
 formatters
 fqdn
 frac
+freezed
 frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
@@ -1948,7 +1938,6 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
-groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1966,13 +1955,11 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
-groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
 gtest
 gtid
-gunzip
 gzip
 gzipped
 hadoop
@@ -2030,7 +2017,6 @@ iTerm
 icebergCluster
 icosahedron
 icudata
-idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2068,7 +2054,6 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
-irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2083,7 +2068,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2225,13 +2209,9 @@ mapAll
 mapApply
 mapConcat
 mapContains
-mapContainsKey
 mapContainsKeyLike
-mapContainsValue
-mapContainsValueLike
 mapExists
 mapExtractKeyLike
-mapExtractValueLike
 mapFilter
 mapFromArrays
 mapKeys
@@ -2269,7 +2249,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2362,10 +2341,8 @@ namespace
 namespaces
 natively
 nats
-ncat
 ness
 nestjs
-netcat
 netloc
 newjson
 ngram
@@ -2417,23 +2394,6 @@ nullable
 nullables
 nullptr
 num
-numericIndexedVector
-numericIndexedVectorAllValueSum
-numericIndexedVectorBuild
-numericIndexedVectorCardinality
-numericIndexedVectorGetValue
-numericIndexedVectorPointwiseAdd
-numericIndexedVectorPointwiseDivide
-numericIndexedVectorPointwiseEqual
-numericIndexedVectorPointwiseGreater
-numericIndexedVectorPointwiseGreaterEqual
-numericIndexedVectorPointwiseLess
-numericIndexedVectorPointwiseLessEqual
-numericIndexedVectorPointwiseMultiply
-numericIndexedVectorPointwiseNotEqual
-numericIndexedVectorPointwiseSubtract
-numericIndexedVectorShortDebugString
-numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2501,7 +2461,6 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
-pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2657,11 +2616,6 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
-readWKBLineString
-readWKBMultiLineString
-readWKBMultiPolygon
-readWKBPoint
-readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2777,8 +2731,6 @@ satisfiable
 scala
 sccache
 schemas
-searchAny
-searchAll
 seekable
 seektable
 sequenceCount
@@ -3010,13 +2962,7 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
-timeSeriesDeltaToGrid
 timeSeriesMetrics
-timeSeriesInstantDeltaToGrid
-timeSeriesInstantRateToGrid
-timeSeriesLastTwoSamples
-timeSeriesRateToGrid
-timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3103,7 +3049,6 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
-toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
@@ -3123,7 +3068,6 @@ toYear
 toYearWeek
 tokenbf
 tokenization
-tokenize
 tokenized
 tokenizer
 toml

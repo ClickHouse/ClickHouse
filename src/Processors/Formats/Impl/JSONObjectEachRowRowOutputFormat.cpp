@@ -89,7 +89,6 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
     factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
-    factory.setContentType("JSONObjectEachRow", "application/json; charset=UTF-8");
 }
 
 }

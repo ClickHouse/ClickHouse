@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_AGGREGATION;
-    extern const int NOT_IMPLEMENTED;
 }
 
 class GetAggregatesMatcher
@@ -80,13 +79,6 @@ private:
             if (data.assert_no_windows)
                 throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
                                 node.getColumnName(), String(data.assert_no_windows));
-
-            if (node.name == "lag" || node.name == "lead")
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Window function '{}' is supported only with enabled analyzer",
-                    node.formatForErrorMessage());
-            }
 
             String column_name = node.getColumnName();
             if (data.uniq_names.contains(column_name))
