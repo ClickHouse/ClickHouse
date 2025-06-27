@@ -1771,3 +1771,5 @@ def test_hive_partition_strategy(cluster):
     res = azure_query(node, "select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from test_hive_partition_strategy order by counter;")
 
     assert "cont/test_hive_partition_strategy/year=2020/country=Brazil/<snowflakeid>.parquet\t1\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t2\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t3\n" == res
+
+    azure_query(node, "DROP TABLE IF EXISTS test_hive_partition_strategy")
