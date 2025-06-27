@@ -166,11 +166,11 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-In some cases, you might want to avoid pre-aggregating rows at insert time to shift aggregation from insert to merge. 
-Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` clause of the
-materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) function with
-setting `optimize_initialize_aggregation = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` is no longer
-required in this case:
+In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
+to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
+function with setting `optimize_initialize_aggregation = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
+is no longer required in this case:
 
 ```sql
 CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
