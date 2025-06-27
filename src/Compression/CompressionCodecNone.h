@@ -24,6 +24,12 @@ protected:
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isNone() const override { return true; }
+
+    std::string getDescription() const override
+    {
+        return "No compression at all. Can be used on the columns that can not be compressed anyway.";
+    }
+
 };
 
 }
