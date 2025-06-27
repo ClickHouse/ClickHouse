@@ -159,7 +159,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
-            if (!response->description.empty() || response->finish)
+            if (response->description.empty() || response->finish)
                 no_more_tasks_available = true;
         }
         else
