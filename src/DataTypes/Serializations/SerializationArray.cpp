@@ -12,7 +12,6 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 
@@ -379,7 +378,7 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
         {
-            const auto & offsets = column_array.getOffsets();
+            const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
             const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
@@ -390,7 +389,8 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         }
 
         /// The length of the offset column added to the stream cache is limit + rows_offset.
-        addColumnToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column));
+        if (cache)
+            addColumnToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column));
     }
 }
 

@@ -16,7 +16,7 @@ public:
     {
     }
 
-    struct DynamicSerializationVersion
+    struct SerializationVersion
     {
         enum Value
         {
@@ -31,7 +31,7 @@ public:
             V1 = 1,
             /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
             V2 = 2,
-            /// V3 serialization: the same as V2 but variant type names are serialized in binary format.
+            /// V3 serialization: the same as V2 but variant type names are serialized in binary format and statistics can be empty.
             V3 = 4,
             /// FLATTENED serialization:
             /// - DynamicStructure stream:
@@ -48,10 +48,14 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        explicit DynamicSerializationVersion(UInt64 version);
-        explicit DynamicSerializationVersion(MergeTreeDynamicSerializationVersion version);
+        bool supportsEmptyStatistics() const
+        {
+            return value == V3;
+        }
 
-        DynamicSerializationVersion(Value value_) : value(value_) {}
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
     void enumerateStreams(
@@ -140,7 +144,7 @@ private:
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        DynamicSerializationVersion structure_version;
+        SerializationVersion structure_version;
         DataTypePtr variant_type;
         size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;

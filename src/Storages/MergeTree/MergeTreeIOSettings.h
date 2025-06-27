@@ -98,6 +98,7 @@ struct MergeTreeWriterSettings
     bool use_compact_variant_discriminators_serialization;
     MergeTreeDynamicSerializationVersion dynamic_serialization_version;
     MergeTreeObjectSerializationVersion object_serialization_version;
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     size_t object_shared_data_buckets = 1;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t adaptive_write_buffer_initial_size;

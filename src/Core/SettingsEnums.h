@@ -425,12 +425,19 @@ enum class MergeTreeObjectSerializationVersion : uint8_t
 {
     V1,
     V2,
-    V2_WITH_BUCKETS,
     V3,
-    V4,
 };
 
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+
+enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
+{
+    MAP,
+    MAP_WITH_BUCKETS,
+    ADVANCED,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 
 enum class MergeTreeDynamicSerializationVersion : uint8_t
 {

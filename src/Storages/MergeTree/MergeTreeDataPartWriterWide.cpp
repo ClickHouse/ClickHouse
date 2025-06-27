@@ -127,7 +127,9 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
 {
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
+    enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    enumerate_settings.data_part_type = MergeTreeDataPartType::Wide;
     return enumerate_settings;
 }
 
@@ -495,8 +497,11 @@ void MergeTreeDataPartWriterWide::writeColumn(
         serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
         serialize_settings.dynamic_serialization_version = settings.dynamic_serialization_version;
         serialize_settings.object_serialization_version = settings.object_serialization_version;
+        serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
         serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+        serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
+        serialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
 
@@ -505,6 +510,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+    serialize_settings.data_part_type = MergeTreeDataPartType::Wide;
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         auto stream_name = getStreamName(name_and_type, substream_path);
@@ -707,6 +713,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
@@ -730,6 +737,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
             {
                 serialize_settings.getter = createStreamGetter(*it, written_offset_columns ? *written_offset_columns : offset_columns);
                 serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
+                serialize_settings.data_part_type = MergeTreeDataPartType::Wide;
                 getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 

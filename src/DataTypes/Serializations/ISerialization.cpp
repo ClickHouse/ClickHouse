@@ -224,7 +224,7 @@ String getNameForSubstreamPath(
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::ObjectSharedDataBucket)
-            stream_name += it->object_shared_data_bucket > 0 ? "." + std::to_string(it->object_shared_data_bucket) : "";
+            stream_name +=   "." + std::to_string(it->object_shared_data_bucket);
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -247,8 +247,8 @@ String getNameForSubstreamPath(
             stream_name += ".copy";
         else if (it->type == SubstreamType::ObjectSharedDataCopySizes)
             stream_name += ".sizes";
-        else if (it->type == SubstreamType::ObjectSharedDataCopyIndexes)
-            stream_name += ".indexes";
+        else if (it->type == SubstreamType::ObjectSharedDataCopyPathsIndexes)
+            stream_name += ".paths_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
             stream_name += ".values";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
@@ -317,7 +317,7 @@ namespace
 /// Element of substeams cache that contains single column.
 struct SubstreamsCacheColumnElement : public ISerialization::ISubstreamsCacheElement
 {
-    SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
+    explicit SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
 
     ColumnPtr column;
 };

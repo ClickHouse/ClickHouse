@@ -68,7 +68,7 @@ public:
     DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
+    static DataTypePtr getTypeOfSharedData();
 
 private:
     /// Don't change these constants, it can break backward compatibility.

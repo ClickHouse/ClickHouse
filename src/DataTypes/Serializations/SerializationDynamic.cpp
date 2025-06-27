@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -28,7 +27,7 @@ namespace ErrorCodes
 
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
 {
-    SerializationDynamic::DynamicSerializationVersion structure_version;
+    SerializationDynamic::SerializationVersion structure_version;
     size_t num_dynamic_types;
     DataTypePtr variant_type;
     Names variant_names;
@@ -45,7 +44,7 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
     ISerialization::SerializeBinaryBulkStatePtr flattened_indexes_state;
 
-    explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::DynamicSerializationVersion structure_version_)
+    explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::SerializationVersion structure_version_)
         : structure_version(structure_version_), statistics(ColumnDynamic::Statistics::Source::READ)
     {
     }
@@ -100,18 +99,18 @@ void SerializationDynamic::enumerateStreams(
     settings.path.pop_back();
 }
 
-SerializationDynamic::DynamicSerializationVersion::DynamicSerializationVersion(UInt64 version) : value(static_cast<Value>(version))
+SerializationDynamic::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
 {
     checkVersion(version);
 }
 
-void SerializationDynamic::DynamicSerializationVersion::checkVersion(UInt64 version)
+void SerializationDynamic::SerializationVersion::checkVersion(UInt64 version)
 {
-    if (version != V1 && version != V2 && version != FLATTENED)
+    if (version != V1 && version != V2 && version != FLATTENED && version != V3)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization: {}", version);
 }
 
-SerializationDynamic::DynamicSerializationVersion::DynamicSerializationVersion(MergeTreeDynamicSerializationVersion version)
+SerializationDynamic::SerializationVersion::SerializationVersion(MergeTreeDynamicSerializationVersion version)
 {
     switch (version)
     {
@@ -144,16 +143,16 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
 
     /// Choose serialization type.
     /// By default we use serialization V2.
-    DynamicSerializationVersion structure_version(settings.dynamic_serialization_version);
+    SerializationVersion structure_version(settings.dynamic_serialization_version);
     /// Check if we are writing data in Native format and have FLATTENED serialization enabled.
     if (settings.native_format && settings.format_settings && settings.format_settings->native.use_flattened_dynamic_and_json_serialization)
-        structure_version = DynamicSerializationVersion::FLATTENED;
+        structure_version = SerializationVersion(SerializationVersion::FLATTENED);
 
     /// Write selected structure serialization version.
     writeBinaryLittleEndian(static_cast<UInt64>(structure_version.value), *stream);
 
     auto dynamic_state = std::make_shared<SerializeBinaryBulkStateDynamic>(structure_version);
-    if (structure_version.value == DynamicSerializationVersion::FLATTENED)
+    if (structure_version.value == SerializationVersion::FLATTENED)
     {
         auto flattened_column = flattenDynamicColumn(column_dynamic);
         /// Write the list of all flattened types.
@@ -193,11 +192,11 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     /// In V1 version we had max_dynamic_types parameter written, but now we need only actual number of variants.
     /// For compatibility we need to write V1 version sometimes, but we should write number of variants instead of
     /// max_dynamic_types (because now max_dynamic_types can be different in different serialized columns).
-    if (structure_version.value == DynamicSerializationVersion::V1)
+    if (structure_version.value == SerializationVersion::V1)
         writeVarUInt(dynamic_state->num_dynamic_types, *stream);
 
     writeVarUInt(dynamic_state->num_dynamic_types, *stream);
-    if ((settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format) || structure_version.value == DynamicSerializationVersion::V3)
+    if ((settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format) || structure_version.value == SerializationVersion::V3)
     {
         const auto & variants = assert_cast<const DataTypeVariant &>(*dynamic_state->variant_type).getVariants();
         for (const auto & variant: variants)
@@ -219,6 +218,12 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX)
     {
         const auto & statistics = column_dynamic.getStatistics();
+
+        /// If serialization version supports it, write flag that statistics is not empty.
+        /// It is needed to be able to write empty statistics if needed.
+        if (structure_version.supportsEmptyStatistics())
+            writeBinary(true, *stream);
+
         /// First, write statistics for usual variants.
         for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
@@ -273,9 +278,27 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             }
         }
     }
+    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX_EMPTY)
+    {
+        /// If serialization version supports empty statistics flag just write 0.
+        if (structure_version.supportsEmptyStatistics())
+        {
+            writeBinary(false, *stream);
+        }
+        /// Otherwise serialize the minimum version of statistics.
+        else
+        {
+            /// Write 0 for each variant.
+            for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+                writeVarUInt(0, *stream);
+
+            /// Write 0 elements for shared variant statistics.
+            writeVarUInt(0, *stream);
+        }
+    }
     /// Otherwise statistics will be written in the suffix, in this case we will recalculate
     /// statistics during serialization to make it more precise.
-    else
+    else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
     {
         dynamic_state->recalculate_statistics = true;
     }
@@ -300,7 +323,7 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
     auto dynamic_state = std::make_shared<DeserializeBinaryBulkStateDynamic>();
     dynamic_state->structure_state = std::move(structure_state);
     auto * structure_state_typed = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
-    if (structure_state_typed->structure_version.value == DynamicSerializationVersion::FLATTENED)
+    if (structure_state_typed->structure_version.value == SerializationVersion::FLATTENED)
     {
         dynamic_state->flattened_states.reserve(structure_state_typed->flattened_data_types.size());
         /// Read prefix of indexes and all flattened types.
@@ -350,7 +373,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         UInt64 structure_version;
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
-        if (structure_state->structure_version.value == DynamicSerializationVersion::FLATTENED)
+        if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
         {
             /// Read the flattened list of types.
             size_t num_types;
@@ -374,7 +397,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         }
         else
         {
-            if (structure_state->structure_version.value == DynamicSerializationVersion::V1)
+            if (structure_state->structure_version.value == SerializationVersion::V1)
             {
                 /// Skip max_dynamic_types parameter in V1 serialization version.
                 size_t max_dynamic_types;
@@ -384,7 +407,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             DataTypes variants;
             readVarUInt(structure_state->num_dynamic_types, *structure_stream);
             variants.reserve(structure_state->num_dynamic_types + 1); /// +1 for shared variant.
-            if ((settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format) || structure_state->structure_version.value == DynamicSerializationVersion::V3)
+            if ((settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format) || structure_state->structure_version.value == SerializationVersion::V3)
             {
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                     variants.push_back(decodeDataType(*structure_stream));
@@ -405,22 +428,29 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             /// Read statistics.
             if (settings.object_and_dynamic_read_statistics)
             {
-                ColumnDynamic::Statistics statistics(ColumnDynamic::Statistics::Source::READ);
-                /// First, read statistics for usual variants.
-                for (const auto & variant : variant_type->getVariants())
-                    readVarUInt(statistics.variants_statistics[variant->getName()], *structure_stream);
-
-                /// Second, read statistics for shared variants.
-                size_t statistics_size;
-                readVarUInt(statistics_size, *structure_stream);
-                String variant_name;
-                for (size_t i = 0; i != statistics_size; ++i)
+                bool has_statistics = true;
+                if (structure_state->structure_version.supportsEmptyStatistics())
+                    readBinary(has_statistics, *structure_stream);
+                if (has_statistics)
                 {
-                    readStringBinary(variant_name, *structure_stream);
-                    readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
-                }
+                    ColumnDynamic::Statistics statistics(ColumnDynamic::Statistics::Source::READ);
 
-                structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));
+                    /// First, read statistics for usual variants.
+                    for (const auto & variant : variant_type->getVariants())
+                        readVarUInt(statistics.variants_statistics[variant->getName()], *structure_stream);
+
+                    /// Second, read statistics for shared variants.
+                    size_t statistics_size;
+                    readVarUInt(statistics_size, *structure_stream);
+                    String variant_name;
+                    for (size_t i = 0; i != statistics_size; ++i)
+                    {
+                        readStringBinary(variant_name, *structure_stream);
+                        readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
+                    }
+
+                    structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));
+                }
             }
 
             structure_state->variant_type = std::move(variant_type);
@@ -439,7 +469,7 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
 {
     auto * dynamic_state = checkAndGetState<SerializeBinaryBulkStateDynamic>(state);
 
-    if (dynamic_state->structure_version.value == DynamicSerializationVersion::FLATTENED)
+    if (dynamic_state->structure_version.value == SerializationVersion::FLATTENED)
     {
         /// Write suffix for indexes and all flattened types.
         settings.path.push_back(Substream::DynamicData);
@@ -502,7 +532,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
 {
     const auto & column_dynamic = assert_cast<const ColumnDynamic &>(column);
     auto * dynamic_state = checkAndGetState<SerializeBinaryBulkStateDynamic>(state);
-    if (dynamic_state->structure_version.value == DynamicSerializationVersion::FLATTENED)
+    if (dynamic_state->structure_version.value == SerializationVersion::FLATTENED)
     {
         if (offset != 0 || (limit != 0 && limit != column.size()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Flattened serialization for Dynamic column is supported only when the whole column is serialized. Provided offset and limit: {}/{}", offset, limit);
@@ -582,7 +612,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
     auto * dynamic_state = checkAndGetState<DeserializeBinaryBulkStateDynamic>(state);
     auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state);
 
-    if (structure_state->structure_version.value == DynamicSerializationVersion::FLATTENED)
+    if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
     {
         settings.path.push_back(Substream::DynamicData);
 

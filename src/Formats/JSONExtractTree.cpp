@@ -1641,7 +1641,9 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        /// Temporary Dynamic column that will be used to create and serialize values in shared data.
+        auto tmp_dynamic_column = ColumnDynamic::create();
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, *tmp_dynamic_column, true))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1698,6 +1700,7 @@ private:
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
         String & error,
+        IColumn & tmp_dynamic_column,
         bool is_root) const
     {
         if (shouldSkipPath(current_path))
@@ -1721,7 +1724,7 @@ private:
                     return false;
                 }
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, tmp_dynamic_column, false))
                     return false;
             }
 
@@ -1783,9 +1786,7 @@ private:
         /// Otherwise this path should go to the shared data.
         else
         {
-            auto tmp_dynamic_column = ColumnDynamic::create();
-            tmp_dynamic_column->reserve(1);
-            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings, format_settings, error))
+            if (!dynamic_node->insertResultToColumn(tmp_dynamic_column, element, insert_settings, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
@@ -1795,7 +1796,7 @@ private:
             WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
             /// Use default format settings for binary serialization. Non-default settings may change
             /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
+            dynamic_serialization->serializeBinary(tmp_dynamic_column, tmp_dynamic_column.size() - 1, buf, getDefaultFormatSettings());
         }
 
         return true;

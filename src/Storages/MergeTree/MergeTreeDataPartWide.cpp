@@ -25,8 +25,9 @@ namespace MergeTreeSetting
 {
     extern MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version_for_zero_level_parts;
-    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -102,11 +103,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    ISerialization::EnumerateStreamsSettings enumerate_settings;
-    enumerate_settings.object_shared_data_buckets = (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_shared_data_buckets];
-    enumerate_settings.object_serialization_version = isZeroLevel() ? (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_serialization_version_for_zero_level_parts] : (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_serialization_version];
-    auto serialization = getSerialization(column.name);
-    auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
 
@@ -126,9 +123,8 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    };
+    }, column.type, columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column));
 
-    serialization->enumerateStreams(enumerate_settings, callback, ISerialization::SubstreamData(serialization).withType(column.type).withColumn(columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column)));
     return size;
 }
 

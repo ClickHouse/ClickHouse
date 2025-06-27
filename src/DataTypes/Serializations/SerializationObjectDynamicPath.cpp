@@ -15,12 +15,13 @@ namespace ErrorCodes
 }
 
 SerializationObjectDynamicPath::SerializationObjectDynamicPath(
-    const DB::SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_)
+    const DB::SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_)
     : SerializationWrapper(nested_)
     , path(path_)
     , path_subcolumn(path_subcolumn_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
     , dynamic_type(dynamic_type_)
+    , subcolumn_type(subcolumn_type_)
 {
 }
 
@@ -43,9 +44,9 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
 };
 
 void SerializationObjectDynamicPath::enumerateStreams(
-    DB::ISerialization::EnumerateStreamsSettings & settings,
-    const DB::ISerialization::StreamCallback & callback,
-    const DB::ISerialization::SubstreamData & data) const
+    ISerialization::EnumerateStreamsSettings & settings,
+    const ISerialization::StreamCallback & callback,
+    const ISerialization::SubstreamData & data) const
 {
     settings.path.push_back(Substream::ObjectStructure);
     callback(settings.path);
@@ -117,10 +118,11 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
         settings.path.push_back(Substream::ObjectSharedData);
         dynamic_path_state->shared_data_path_serialization = std::make_shared<SerializationObjectSharedDataPath>(
             nested_serialization,
-            SerializationObject::chooseSharedDataMode(object_structure_state->serialization_version),
+            object_structure_state->shared_data_serialization_version,
             path,
             path_subcolumn,
             dynamic_type,
+            subcolumn_type,
             getSharedDataPathBucket(path, object_structure_state->shared_data_buckets));
         dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
@@ -163,19 +165,6 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
-    /// Otherwise, read the whole shared data column and extract requested path from it.
-    /// TODO: We can read several subcolumns of the same path located in the shared data
-    ///       and right now we extract the whole path column from shared data every time
-    ///       and then extract the requested subcolumns. We can optimize it and use substreams
-    ///       cache here to avoid extracting the same path from shared data several times.
-    ///
-    /// TODO: We can change the serialization of shared data to optimize reading paths from it.
-    ///       Right now we cannot know if shared data contains our path in current range or not,
-    ///       but we can change the serialization and write the list of all paths stored in shared
-    ///       data before each granule, and then replace the column that stores paths with column
-    ///       with indexes in this list. It can also reduce the storage, because we will store
-    ///       each path only once and can replace UInt64 string offset column with indexes column
-    ///       that can have smaller type depending on the number of paths in the list.
     else
     {
         settings.path.push_back(Substream::ObjectSharedData);

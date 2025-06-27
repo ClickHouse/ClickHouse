@@ -1,11 +1,10 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
-#include <Columns/ColumnDynamic.h>
+#include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnObject.h>
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
-#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -13,27 +12,33 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
-    const SerializationPtr & nested_, SerializationObjectSharedData::Mode mode_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, size_t bucket_)
+    const SerializationPtr & nested_,
+    SerializationObjectSharedData::SerializationVersion serialization_version_,
+    const String & path_,
+    const String & path_subcolumn_,
+    const DataTypePtr & dynamic_type_,
+    const DataTypePtr & subcolumn_type_,
+    size_t bucket_)
     : SerializationWrapper(nested_)
-    , mode(mode_)
+    , serialization_version(serialization_version_)
+    , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
     , path(path_)
     , path_subcolumn(path_subcolumn_)
     , dynamic_type(dynamic_type_)
+    , subcolumn_type(subcolumn_type_)
     , dynamic_serialization(dynamic_type_->getDefaultSerialization())
     , bucket(bucket_)
 {
-    if (mode == SerializationObjectSharedData::Mode::MAP)
-        serialization_map = DataTypeObject::getTypeOfSharedData()->getDefaultSerialization();
 }
 
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;
-    ColumnPtr shared_data_map;
-    size_t shared_data_map_size = 0;
+    ColumnPtr map_column;
 
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
@@ -51,23 +56,76 @@ void SerializationObjectSharedDataPath::enumerateStreams(
     const ISerialization::StreamCallback & callback,
     const ISerialization::SubstreamData & data) const
 {
-    if (mode == SerializationObjectSharedData::Mode::MAP)
+    if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP || serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
+    {
+        if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataBucket);
+            settings.path.back().object_shared_data_bucket = bucket;
+        }
+
+        const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(data.deserialize_state) : nullptr;
+        auto map_data = SubstreamData(serialization_map)
+                            .withType(data.type ? DataTypeObject::getTypeOfSharedData() : nullptr)
+                            .withColumn(data.column ? DataTypeObject::getTypeOfSharedData()->createColumn() : nullptr)
+                            .withSerializationInfo(data.serialization_info)
+                            .withDeserializeState(deserialize_state ? deserialize_state->map_state : nullptr);
+        serialization_map->enumerateStreams(settings, callback, map_data);
+
+        if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
+            settings.path.pop_back();
+    }
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
         settings.path.push_back(Substream::ObjectSharedDataBucket);
         settings.path.back().object_shared_data_bucket = bucket;
-        const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(data.deserialize_state) : nullptr;
-        auto shared_data_substream_data = SubstreamData(serialization_map)
-                                              .withType(data.type ? DataTypeObject::getTypeOfSharedData() : nullptr)
-                                              .withColumn(data.column ? DataTypeObject::getTypeOfSharedData()->createColumn() : nullptr)
-                                              .withSerializationInfo(data.serialization_info)
-                                              .withDeserializeState(deserialize_state->map_state);
-        settings.path.back().data = shared_data_substream_data;
-        serialization_map->enumerateStreams(settings, callback, data);
+
+        if (settings.use_specialized_prefixes_and_suffixes_substreams)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
+            callback(settings.path);
+            settings.path.pop_back();
+        }
+        else
+        {
+            settings.path.push_back(Substream::ObjectSharedDataStructure);
+            callback(settings.path);
+            settings.path.pop_back();
+        }
+
+        settings.path.push_back(Substream::ObjectSharedDataData);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        if (settings.use_specialized_prefixes_and_suffixes_substreams)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
+            callback(settings.path);
+            settings.path.pop_back();
+        }
+
         settings.path.pop_back();
     }
     else
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for mode {}", mode);
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
 }
 
@@ -99,159 +157,54 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
     ISerialization::SubstreamsDeserializeStatesCache * cache) const
 {
     auto shared_data_path_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataPath>();
-    settings.path.push_back(Substream::ObjectSharedDataBucket);
-    settings.path.back().object_shared_data_bucket = bucket;
-    if (mode == SerializationObjectSharedData::Mode::MAP)
+
+    if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP || serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
     {
+        if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataBucket);
+            settings.path.back().object_shared_data_bucket = bucket;
+        }
+
         serialization_map->deserializeBinaryBulkStatePrefix(settings, shared_data_path_state->map_state, cache);
+
+        if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
+            settings.path.pop_back();
+    }
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    {
+        settings.path.push_back(Substream::ObjectSharedDataBucket);
+        settings.path.back().object_shared_data_bucket = bucket;
+
+        shared_data_path_state->structure_state = SerializationObjectSharedData::deserializeStructureStatePrefix(settings, cache);
+        auto * structure_state_concrete = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
+        if (structure_state_concrete->requested_paths.contains(path))
+        {
+            /// We already requested the whole path, even if here we read only subcolumn,
+            /// we will just extract it in memory from whole path column.
+        }
+        /// If no subcolumn requested or path matches any requested prefixes, request the whole path.
+        else if (path_subcolumn.empty() || structure_state_concrete->checkIfPathMatchesAnyRequestedPrefix(path))
+        {
+            structure_state_concrete->requested_paths.insert(path);
+            /// Remove all subcolumns of this path if any. We will read the whole path and extract all subcolumns in memory.
+            structure_state_concrete->requested_paths_subcolumns.erase(path);
+        }
+        /// Otherwise request only subcolumn of this path.
+        else
+        {
+            structure_state_concrete->requested_paths_subcolumns[path].emplace_back(path_subcolumn, subcolumn_type, nested_serialization);
+        }
+
+        settings.path.pop_back();
     }
     else
     {
-        shared_data_path_state->structure_state = SerializationObjectSharedData::deserializeStructureStatePrefix(settings, cache);
-        auto * structure_state_concrete = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
-        if (!structure_state_concrete->read_all_paths)
-            structure_state_concrete->requested_paths.insert(path);
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
-    settings.path.pop_back();
 
     state = std::move(shared_data_path_state);
-}
-
-std::shared_ptr<SerializationObjectSharedDataPath::PathsInfosGranules> SerializationObjectSharedDataPath::deserializePathsInfos(
-    const SerializationObjectSharedData::StructureGranules & structure_granules,
-    DB::ISerialization::DeserializeBinaryBulkSettings & settings,
-    DB::ISerialization::SubstreamsCache * cache) const
-{
-    auto paths_infos_path = settings.path;
-    paths_infos_path.push_back(Substream::ObjectSharedDataPathsInfos);
-    /// First check if we already deserialized paths infos and have it in cache.
-    if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, paths_infos_path))
-        return assert_cast<SubstreamsCachePathsInfossElement *>(cached_paths_infos)->paths_infos_granules;
-
-    /// Deserialize paths infos granule by granule.
-    auto paths_infos_granules = std::make_shared<PathsInfosGranules>();
-    paths_infos_granules->reserve(structure_granules.size());
-    for (size_t granule = 0; granule != structure_granules.size(); ++granule)
-    {
-        auto & path_to_info = (*paths_infos_granules).emplace_back().path_to_info;
-
-        /// If there is nothing to read from this granule, just skip it.
-        if (structure_granules[granule].limit == 0 || structure_granules[granule].paths.empty())
-            continue;
-
-        /// If we don't read any subcolumns, we need only paths marks in the data stream.
-        if (mode == SerializationObjectSharedData::Mode::SEPARATE_PATHS || path_subcolumn.empty())
-        {
-            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
-            auto * paths_marks_stream = settings.getter(settings.path);
-
-            if (!paths_marks_stream)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths marks");
-
-            /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
-            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_marks_stream_mark);
-
-            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
-            {
-                auto pos_it = structure_granules[granule].original_position_to_local_position.find(i);
-                /// Skip marks of not requested paths.
-                if (pos_it == structure_granules[granule].original_position_to_local_position.end())
-                {
-                    paths_marks_stream->ignore(2 * sizeof(UInt64));
-                }
-                else
-                {
-                    auto & path_info = path_to_info[structure_granules[granule].paths[pos_it->second]];
-                    readBinaryLittleEndian(path_info.data_mark.offset_in_compressed_file, *paths_marks_stream);
-                    readBinaryLittleEndian(path_info.data_mark.offset_in_decompressed_block, *paths_marks_stream);
-                }
-            }
-
-            settings.path.pop_back();
-        }
-        /// If we read subcolumn of a path, we need to read all information about subcolumns of requested paths.
-        else
-        {
-            /// Read metadata about paths subcolumns.
-            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-            auto * paths_substreams_metadata_stream = settings.getter(settings.path);
-
-            if (!paths_substreams_metadata_stream)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams metadata");
-
-            /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
-            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_substreams_metadata_stream_mark);
-            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
-            {
-                auto pos_it = structure_granules[granule].original_position_to_local_position.find(i);
-                /// Skip metadata of not requested paths.
-                if (pos_it == structure_granules[granule].original_position_to_local_position.end())
-                {
-                    paths_substreams_metadata_stream->ignore(4 * sizeof(UInt64));
-                }
-                else
-                {
-                    auto & path_info = path_to_info[structure_granules[granule].paths[pos_it->second]];
-                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
-                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
-                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
-                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
-                }
-            }
-
-            settings.path.pop_back();
-
-            /// Read list of substreams for each requested path.
-            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-            auto * paths_substreams_stream = settings.getter(settings.path);
-
-            if (!paths_substreams_stream)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams");
-
-            for (const auto & path_in_granule : structure_granules[granule].paths)
-            {
-                auto & path_info = path_to_info[path_in_granule];
-                /// Seek to the start of the substreams list for this path.
-                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
-                size_t num_substreams;
-                readVarUInt(num_substreams, *paths_substreams_stream);
-                path_info.substreams.reserve(num_substreams);
-                for (size_t i = 0; i != num_substreams; ++i)
-                {
-                    path_info.substreams.emplace_back();
-                    readStringBinary(path_info.substreams.back(), *paths_substreams_stream);
-                }
-            }
-
-            settings.path.pop_back();
-
-            /// Read mark in the data stream for each substream of each requested path.
-            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-            auto * paths_substreams_marks_stream = settings.getter(settings.path);
-
-            if (!paths_substreams_marks_stream)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams marks");
-
-            for (const auto & path_in_granule : structure_granules[granule].paths)
-            {
-                auto & path_info = path_to_info[path_in_granule];
-                /// Seek to the start of the substreams marks for this path.
-                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
-                for (size_t i = 0; i != path_info.substreams.size(); ++i)
-                {
-                    MarkInCompressedFile substream_mark;
-                    readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
-                    readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
-                    path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
-                }
-            }
-
-            settings.path.pop_back();
-        }
-    }
-
-    addElementToSubstreamsCache(cache, paths_infos_path, std::make_unique<SubstreamsCachePathsInfossElement>(paths_infos_granules));
-    return paths_infos_granules;
 }
 
 void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams(
@@ -267,25 +220,68 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
 
     auto * shared_data_path_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(state);
 
-    settings.path.push_back(Substream::ObjectSharedDataBucket);
-    settings.path.back().object_shared_data_bucket = bucket;
-    if (mode == SerializationObjectSharedData::Mode::MAP)
+    if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP || serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
     {
-        /// Initialize shared_data column if needed.
-        if (column->empty() || !shared_data_path_state->shared_data_map)
+        ColumnPtr map_column;
+        size_t num_read_rows = 0;
+        if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP)
         {
-            shared_data_path_state->shared_data_map = DataTypeObject::getTypeOfSharedData()->createColumn();
-            shared_data_path_state->shared_data_map_size = 0;
+            /// Initialize map column if needed.
+            if (column->empty() || !shared_data_path_state->map_column)
+                shared_data_path_state->map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+
+            if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+            {
+                const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
+                shared_data_path_state->map_column = map_element->map_column;
+                num_read_rows = map_element->num_read_rows;
+            }
+            /// If we don't have it in cache, deserialize and put deserialized map in cache.
+            else
+            {
+                size_t prev_size = shared_data_path_state->map_column->size();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_path_state->map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
+                num_read_rows = shared_data_path_state->map_column->size() - prev_size;
+                addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(shared_data_path_state->map_column, num_read_rows));
+            }
+
+            map_column = shared_data_path_state->map_column;
         }
-        serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_path_state->shared_data_map, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
+        else
+        {
+            settings.path.push_back(Substream::ObjectSharedDataBucket);
+            settings.path.back().object_shared_data_bucket = bucket;
+
+            if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+            {
+                const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
+                map_column = map_element->map_column;
+            }
+            /// If we don't have it in cache, deserialize and put deserialized map in cache.
+            else
+            {
+                /// Don't use shared_data_path_state->map_column here, because map column from bucket is never present in the result columns,
+                /// so we don't need to preserve old rows to keep valid usage of substreams cache (when column in cache is also present in the result columns).
+                /// Here we can store only rows from current deserialization even in cache.
+                map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
+                addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(map_column, map_column->size()));
+            }
+
+            num_read_rows = map_column->size();
+            settings.path.pop_back();
+        }
+
+        size_t map_column_offset = map_column->size() - num_read_rows;
+
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.
         MutableColumnPtr dynamic_column = path_subcolumn.empty() ? column->assumeMutable() : dynamic_type->createColumn();
         /// Check if we don't have any paths in shared data in current range.
-        const auto & offsets = assert_cast<const ColumnArray &>(*shared_data_path_state->shared_data_map).getOffsets();
-        if (offsets.back() == offsets[ssize_t(shared_data_path_state->shared_data_map_size) - 1])
+        const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
+        if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
             dynamic_column->insertManyDefaults(limit);
         else
-            ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, shared_data_path_state->shared_data_map, shared_data_path_state->shared_data_map_size, shared_data_path_state->shared_data_map->size());
+            ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, map_column, map_column_offset, map_column->size());
 
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
@@ -293,116 +289,77 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column->getPtr());
             column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
-
-        shared_data_path_state->shared_data_map_size = shared_data_path_state->shared_data_map->size();
     }
-    else if (mode == SerializationObjectSharedData::Mode::SEPARATE_PATHS || mode == SerializationObjectSharedData::Mode::SEPARATE_SUBSTREAMS)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
-        if (!settings.seek_stream_to_mark_callback)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read object shared data path because seek_stream_to_mark_callback is not initialized");
+        settings.path.push_back(Substream::ObjectSharedDataBucket);
+        settings.path.back().object_shared_data_bucket = bucket;
 
         auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
-        auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache, mode);
-        auto paths_infos_granules = deserializePathsInfos(*structure_granules, settings, cache);
-
-        /// Now we have all required information to read the data of requested path and subcolumn (if any).
-        settings.path.push_back(Substream::ObjectSharedDataData);
-        auto * data_stream = settings.getter(settings.path);
-        if (!data_stream)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data data");
-
-        ColumnPtr dynamic_column = path_subcolumn.empty() ? column->assumeMutable() : dynamic_type->createColumn();
-
-        DeserializeBinaryBulkSettings deserialization_settings;
-        deserialization_settings.object_and_dynamic_read_statistics = false;
-        deserialization_settings.position_independent_encoding = true;
-        deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-        deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
-        deserialization_settings.seek_stream_to_mark_callback = [&](const SubstreamPath &, const MarkInCompressedFile & mark)
-        {
-            settings.seek_stream_to_mark_callback(settings.path, mark);
-        };
+        auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
+        auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
+        auto paths_data_granules = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 
         for (size_t granule = 0; granule != structure_granules->size(); ++granule)
         {
             const auto & structure_granule = (*structure_granules)[granule];
+            const auto & paths_info_granule = (*paths_infos_granules)[granule];
+            const auto & paths_data_granule = (*paths_data_granules)[granule];
 
             /// Skip granule if there is nothing to read from it.
             if (!structure_granule.limit)
                 continue;
 
             /// Skip granule if it doesn't have requested path.
-            if (!structure_granule.paths_set.contains(path))
+            if (!paths_info_granule.path_to_info.contains(path))
             {
-                dynamic_column->assumeMutable()->insertManyDefaults(structure_granule.limit);
+                column->assumeMutable()->insertManyDefaults(structure_granule.limit);
                 continue;
             }
 
-            auto path_info_it = (*paths_infos_granules)[granule].path_to_info.find(path);
-            if (path_info_it == (*paths_infos_granules)[granule].path_to_info.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Info for path {} is not deserialized", path);
-
-            const auto & path_info = path_info_it->second;
-
-            /// If we have subcolumn we read only requireed substreams.
-            if (mode == SerializationObjectSharedData::Mode::SEPARATE_SUBSTREAMS && !path_subcolumn.empty())
+            auto path_data_it = paths_data_granule.paths_data.find(path);
+            /// Check if we have data of the whole path.
+            if (path_data_it != paths_data_granule.paths_data.end())
             {
-                deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
+                /// If no subcolumn is requested, just insert path data into destination column.
+                if (path_subcolumn.empty())
                 {
-                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path);
-
-                    auto it = path_info.substream_to_mark.find(stream_name);
-                    if (it == path_info.substream_to_mark.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Substream {} for path {} and subcolumn {} is requested but not found in substreams list", stream_name, path, path_subcolumn);
-
-                    /// Seek to the requested substream in the data stream.
-                    settings.seek_stream_to_mark_callback(settings.path, it->second);
-                };
-
-                deserialization_settings.getter = [&](const SubstreamPath & substream_path) -> ReadBuffer *
+                    column->assumeMutable()->insertRangeFrom(*path_data_it->second, structure_granule.offset, structure_granule.limit);
+                }
+                /// If subcolumn is requested, extract it from the path data.
+                else
                 {
-                    /// Seek to the requested substream before returning the data stream.
-                    deserialization_settings.seek_stream_to_current_mark_callback(substream_path);
-                    return data_stream;
-                };
-
-                DeserializeBinaryBulkStatePtr path_subcolumn_state;
-                /// We can't read directly into the provided column, because it might have different
-                /// dynamic structure from what is serialized in this granule.
-                ColumnPtr subcolumn = column->cloneEmpty();
-                nested_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_subcolumn_state, nullptr);
-                nested_serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, structure_granule.offset, structure_granule.limit, deserialization_settings, path_subcolumn_state, nullptr);
-                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
+                    column->assumeMutable()->insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
+                }
             }
+            /// If no subcolumn is requested we must have path data.
+            else if (path_subcolumn.empty())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Data of path {} is not deserialized", path);
+            }
+            /// Otherwise we must have subcolumn in paths subcolumns data.
             else
             {
-                deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
-                settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
-                DeserializeBinaryBulkStatePtr path_state;
-                /// We can't read directly into the provided column, because it might have different
-                /// dynamic structure from what is serialized in this granule.
-                ColumnPtr new_dynamic_column = dynamic_type->createColumn();
-                dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(new_dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
-                dynamic_column->assumeMutable()->insertRangeFrom(*new_dynamic_column, structure_granule.offset, structure_granule.limit);
+                auto path_subcolumns_data_it = paths_data_granule.paths_subcolumns_data.find(path);
+                if (path_subcolumns_data_it == paths_data_granule.paths_subcolumns_data.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Subcolumns data of path {} is not deserialized", path);
+
+                auto subcolumn_data_it = path_subcolumns_data_it->second.find(path_subcolumn);
+                if (subcolumn_data_it == path_subcolumns_data_it->second.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Data of subcolumn {} of path {} is not deserialized", path_subcolumn, path);
+
+                column->assumeMutable()->insertRangeFrom(*subcolumn_data_it->second, structure_granule.offset, structure_granule.limit);
             }
         }
-
-        if (!path_subcolumn.empty())
-        {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column->getPtr());
-            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
-        }
-
 
         settings.path.pop_back();
     }
     else
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "deserializeBinaryBulkWithMultipleStreams is not implemented for mode {}", mode);
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
-
-    settings.path.pop_back();
 }
 
 }
