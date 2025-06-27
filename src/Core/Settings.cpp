@@ -27,7 +27,7 @@
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 0;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
@@ -6690,6 +6690,13 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
+)", 0) \
+    DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
+Allows to change the behaviour of the result type of `dateTrunc` function.
+
+Possible values:
+- 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
+- 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     \
     /* ####################################################### */ \
