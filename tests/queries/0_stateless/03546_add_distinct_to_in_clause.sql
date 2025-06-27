@@ -1,4 +1,4 @@
--- Tags: long, shard, no-parallel
+-- Tags: shard, no-parallel
 
 drop table if exists local_table_1;
 drop table if exists local_table_2;
@@ -9,7 +9,7 @@ SET prefer_localhost_replica = 1;
 SET allow_experimental_analyzer = 1;
 SET distributed_product_mode = 'allow';
 SET prefer_global_in_and_join = 1;
-SET max_rows_to_read = 10000000000;
+SET max_rows_to_read = 100000000;
 SET read_overflow_mode = 'break';
 
 create table local_table_1 (id int) engine = MergeTree order by id;
@@ -33,25 +33,27 @@ SYSTEM FLUSH LOGS query_log;
 -- Compare both NetworkReceiveBytes between with_distinct and without_distinct
 WITH
     -- Get the value for with_distinct
-    (SELECT ProfileEvents['NetworkReceiveBytes']
+    (SELECT read_rows, ProfileEvents
      FROM system.query_log
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1%'
        AND type = 'QueryFinish'
        AND is_initial_query
-     ORDER BY event_time DESC LIMIT 1) AS with_distinct_recv_bytes,
+     ORDER BY event_time DESC LIMIT 1) AS q1,
 
     -- Get the value for without_distinct
-    (SELECT ProfileEvents['NetworkReceiveBytes']
+    (SELECT read_rows, ProfileEvents
      FROM system.query_log
      WHERE current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0%'
        AND type = 'QueryFinish'
        AND is_initial_query
-     ORDER BY event_time DESC LIMIT 1) AS without_distinct_recv_bytes
+     ORDER BY event_time DESC LIMIT 1) AS q2
 
 SELECT
-    with_distinct_recv_bytes < without_distinct_recv_bytes AS recv_optimization_effective;
+    q1.read_rows < q2.read_rows AS read_rows_optimization_effective,
+    q1.ProfileEvents['NetworkSendBytes'] < q2.ProfileEvents['NetworkSendBytes'] AS send_optimization_effective,
+    q1.ProfileEvents['NetworkReceiveBytes'] < q2.ProfileEvents['NetworkReceiveBytes'] AS recv_optimization_effective;
 
 
 drop table if exists local_table_1;
