@@ -682,6 +682,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
