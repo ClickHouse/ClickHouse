@@ -29,7 +29,7 @@ avg(x)
 Query:
 
 ```sql
-SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5);
+SELECT avg(x) FROM VALUES('x Int8', 0, 1, 2, 3, 4, 5);
 ```
 
 Result:
@@ -47,7 +47,7 @@ Create a temp table:
 Query:
 
 ```sql
-CREATE table test (t UInt8) ENGINE = Memory;
+CREATE TABLE test (t UInt8) ENGINE = Memory;
 ```
 
 Get the arithmetic mean:
