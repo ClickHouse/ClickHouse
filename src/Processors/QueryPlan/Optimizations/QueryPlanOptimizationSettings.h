@@ -22,7 +22,8 @@ struct QueryPlanOptimizationSettings
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        bool optimize_projection_on_parallel_replicas_initiator_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -83,6 +84,10 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// When optimizing projections for parallel replicas reading, the initiator and follower require different handling.
+    /// This parameter is used to distinguish between the initiator and the follower.
+    bool optimize_projection_on_parallel_replicas_initiator = false;
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;

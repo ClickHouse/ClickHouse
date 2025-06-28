@@ -41,6 +41,8 @@ function run_query()
         --optimize_use_projections 1
         --force_optimize_projection 1
         --log_processors_profiles 1
+        --parallel_replicas_local_plan 1
+        --parallel_replicas_support_projection 1
         --query_id "$query_id"
     )
     $CLICKHOUSE_CLIENT "${opts[@]}" "$@" -q "$query"
