@@ -19,11 +19,11 @@ REGISTER_FUNCTION(ArrayEnumerateDenseRanked)
     FunctionDocumentation::Description description = "Returns an array the same size as the source array, indicating where each element first appears in the source array. It allows for enumeration of a multidimensional array with the ability to specify how deep to look inside the array.";
     FunctionDocumentation::Syntax syntax = "arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)";
     FunctionDocumentation::Arguments arguments = {
-        {"clear_depth", "Enumerate elements at the specified level separately. [`(U)Int*`](../data-types/int-uint.md) less than or equal to `max_arr_depth`."},
-        {"arr", "N-dimensional array to enumerate. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"max_array_depth", "The maximum effective depth. Positive [`(U)Int*`](../data-types/int-uint.md) less than or equal to the depth of `arr`."},
+        {"clear_depth", "Enumerate elements at the specified level separately. Must be less than or equal to `max_arr_depth`.", {"UInt*"}},
+        {"arr", "N-dimensional array to enumerate.", {"Array(T)"}},
+        {"max_array_depth", "The maximum effective depth. Must be less than or equal to the depth of `arr`.", {"UInt*"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array denoting where each element first appears in the source array. [Array](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array denoting where each element first appears in the source array", {"Array"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(
 -- With clear_depth=1 and max_array_depth=1, the result is identical to what arrayEnumerateDense would give.

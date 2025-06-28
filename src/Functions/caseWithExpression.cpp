@@ -59,6 +59,84 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
+    /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
+    ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
+    {
+        // handle Nothing type - it's an empty type that can't contain any values
+        // if either argument is Nothing, the result should be an empty column
+        if (expr.type->onlyNull() || when_value.type->onlyNull())
+        {
+            // return a constant false column
+            return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        }
+
+        // for CASE WHEN semantics, NULL should match NULL
+        // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
+
+        auto is_null_func = FunctionFactory::instance().get("isNull", context);
+        auto if_func = FunctionFactory::instance().get("if", context);
+        auto equals_func = FunctionFactory::instance().get("equals", context);
+
+        // isNull(expr)
+        ColumnsWithTypeAndName is_null_expr_args{expr};
+        auto is_null_expr = is_null_func->build(is_null_expr_args)
+            ->execute(is_null_expr_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+
+        // isNull(when)
+        ColumnsWithTypeAndName is_null_when_args{when_value};
+        auto is_null_when = is_null_func->build(is_null_when_args)
+            ->execute(is_null_when_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+
+        // expr = when
+        ColumnsWithTypeAndName equals_args{expr, when_value};
+
+        // determine return type for equals
+        bool needs_nullable = expr.type->isNullable() || when_value.type->isNullable();
+        DataTypePtr equals_return_type;
+        if (needs_nullable)
+            equals_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+        else
+            equals_return_type = std::make_shared<DataTypeUInt8>();
+
+        auto equals_result = equals_func->build(equals_args)
+            ->execute(equals_args, equals_return_type, input_rows_count, false);
+
+        // convert nullable equals result to non-nullable
+        if (isColumnNullable(*equals_result))
+        {
+            auto if_null_func = FunctionFactory::instance().get("ifNull", context);
+            auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            ColumnsWithTypeAndName if_null_args
+            {
+                {equals_result, equals_return_type, ""},
+                {zero_const, std::make_shared<DataTypeUInt8>(), ""}
+            };
+            equals_result = if_null_func->build(if_null_args)
+                ->execute(if_null_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+        }
+
+        // if (isNull(when)) then 0 else (expr = when)
+        auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        ColumnsWithTypeAndName inner_if_args
+        {
+            {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
+            {zero_const, std::make_shared<DataTypeUInt8>(), ""},
+            {equals_result, std::make_shared<DataTypeUInt8>(), ""}
+        };
+        auto inner_if_result = if_func->build(inner_if_args)
+            ->execute(inner_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+
+        // if (isNull(expr)) then (isNull(when)) else inner_if_result
+        ColumnsWithTypeAndName outer_if_args
+        {
+            {is_null_expr, std::make_shared<DataTypeUInt8>(), ""},
+            {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
+            {inner_if_result, std::make_shared<DataTypeUInt8>(), ""}
+        };
+        return if_func->build(outer_if_args)
+            ->execute(outer_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (args.empty())
@@ -131,35 +209,15 @@ public:
         }
         else
         {
-            bool needs_nullable = args.front().type->isNullable();
-            for (size_t i = 1; i < args.size() - 1; i += 2)
-            {
-                if (args[i].type->isNullable())
-                {
-                    needs_nullable = true;
-                    break;
-                }
-            }
-
-            /// the correct return type for equals(), it should respect NULLs
-            DataTypePtr equals_return_type;
-            if (needs_nullable)
-                equals_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-            else
-                equals_return_type = std::make_shared<DataTypeUInt8>();
-
             ColumnsWithTypeAndName multi_if_args;
 
             // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
             for (size_t i = 1; i < args.size() - 1; i += 2)
             {
-                // Add condition: expr_column = when_column
-                auto equals_func = FunctionFactory::instance().get("equals", context);
-                ColumnsWithTypeAndName equals_args{args.front(), args[i]};
-                auto condition = equals_func->build(equals_args)
-                    ->execute(equals_args, equals_return_type, input_rows_count, false);
+                // use CASE WHEN equality semantics (NULL = NULL is true)
+                auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
 
-                multi_if_args.push_back({condition, equals_return_type, ""});
+                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
                 multi_if_args.push_back(args[i + 1]); // Then value
             }
 

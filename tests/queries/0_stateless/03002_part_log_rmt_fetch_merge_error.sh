@@ -37,12 +37,11 @@ $CLICKHOUSE_CLIENT -m -q "
     system flush logs part_log;
     select 'before';
     select table, event_type, error>0, countIf(error=0) from system.part_log where database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
-
-    system start replicated sends rmt_master;
 "
 # wait until rmt_slave will fetch the part and reflect this error in system.part_log
 wait_until "select count()>0 from system.part_log where table = 'rmt_slave' and database = '$CLICKHOUSE_DATABASE' and error > 0"
 $CLICKHOUSE_CLIENT -m -q "
+    system start replicated sends rmt_master;
     system sync replica rmt_slave;
 
     system flush logs part_log;

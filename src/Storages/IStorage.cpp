@@ -102,11 +102,6 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     return lock;
 }
 
-void IStorage::updateExternalDynamicMetadata(ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
-}
-
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     auto lock = tryLockForAlter(acquire_timeout);
