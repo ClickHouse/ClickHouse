@@ -187,7 +187,76 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    // find ReadFromLocalParallelReplicaStep and replace with optimized local plan
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        {
+            /// NOTE: frame cannot be safely used after stack was modified.
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+
+                /// Projection optimization relies on PK optimization
+                if (optimization_settings.optimize_projection)
+                {
+                    auto applied_projection = optimizeUseAggregateProjections(
+                        *frame.node,
+                        nodes,
+                        optimization_settings.optimize_use_implicit_projections,
+                        optimization_settings.optimize_projection_on_parallel_replicas_initiator);
+                    if (applied_projection)
+                        applied_projection_names.insert(*applied_projection);
+                }
+
+                if (optimization_settings.aggregation_in_order)
+                    optimizeAggregationInOrder(*frame.node, nodes);
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+        }
+
+        if (optimization_settings.optimize_projection)
+        {
+            /// Projection optimization relies on PK optimization
+            if (auto applied_projection = optimizeUseNormalProjections(
+                stack,
+                nodes,
+                optimization_settings.optimize_projection_on_parallel_replicas_initiator))
+            {
+                applied_projection_names.insert(*applied_projection);
+
+                if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
+                {
+                    /// Limit only first pass in EXPLAIN mode.
+                    if (!optimization_settings.is_explain)
+                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                        "Too many projection optimizations applied to query plan. Current limit {}",
+                                        max_optimizations_to_apply);
+                }
+
+                /// Stack is updated after this optimization and frame is not valid anymore.
+                /// Try to apply optimizations again to newly added plan steps.
+                --stack.back().next_child;
+                continue;
+            }
+        }
+
+        stack.pop_back();
+    }
+
+    /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
+    /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
+    /// Which would cause an exception when force_use_projection is enabled.
     bool read_from_local_parallel_replica_plan = false;
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -223,67 +292,6 @@ void optimizeTreeSecondPass(
     // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
-
-
-    stack.push_back({.node = &root});
-
-    while (!stack.empty())
-    {
-        {
-            /// NOTE: frame cannot be safely used after stack was modified.
-            auto & frame = stack.back();
-
-            if (frame.next_child == 0)
-            {
-                has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
-
-                /// Projection optimization relies on PK optimization
-                if (optimization_settings.optimize_projection)
-                {
-                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
-                    if (applied_projection)
-                        applied_projection_names.insert(*applied_projection);
-                }
-
-                if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
-            }
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
-            {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-        }
-
-        if (optimization_settings.optimize_projection)
-        {
-            /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes))
-            {
-                applied_projection_names.insert(*applied_projection);
-
-                if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
-                {
-                    /// Limit only first pass in EXPLAIN mode.
-                    if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
-                }
-
-                /// Stack is updated after this optimization and frame is not valid anymore.
-                /// Try to apply optimizations again to newly added plan steps.
-                --stack.back().next_child;
-                continue;
-            }
-        }
-
-        stack.pop_back();
-    }
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step

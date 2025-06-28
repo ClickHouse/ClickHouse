@@ -61,6 +61,8 @@ INSERT INTO wikistat1 SELECT toDateTime('2020-10-01 00:00:00'), 'hello', 'world'
 
 SYSTEM SYNC REPLICA wikistat2;
 
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
+
 SELECT COUNT() from wikistat1 WHERE NOT ignore(*);
 SELECT COUNT() from wikistat2 WHERE NOT ignore(*);
 

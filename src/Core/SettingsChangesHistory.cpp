@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
+            {"parallel_replicas_support_projection", "false", "false", "New setting.Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
