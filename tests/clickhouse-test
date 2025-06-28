@@ -553,7 +553,7 @@ def kill_process_group(pgid):
             if RELEASE_NON_SANITIZED:
                 sleep(0.5)
             else:
-                sleep(10)
+                sleep(30)
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
