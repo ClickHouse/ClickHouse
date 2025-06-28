@@ -1051,6 +1051,8 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
 
         "max_remote_read_network_bandwidth_for_server",
         "max_remote_write_network_bandwidth_for_server",
+        "max_local_read_bandwidth_for_server",
+        "max_local_write_bandwidth_for_server",
     };
 
     for (const auto & setting : all())
@@ -1157,6 +1159,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
              {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_local_read_bandwidth_for_server",
+             {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_local_write_bandwidth_for_server",
+             {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
