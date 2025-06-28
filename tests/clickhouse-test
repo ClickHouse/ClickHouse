@@ -547,6 +547,15 @@ def kill_process_group(pgid):
     )
     try:
         if CAPTURE_CLIENT_STACKTRACE:
+            # NOTE: not always we can capture the stacktrace with TSTP, let's also try to capture via debugger
+            pgrep = subprocess.check_output(
+                f"pgrep --pgroup {pgid} clickhouse", shell=True, stderr=subprocess.STDOUT
+            )
+            proc_list = pgrep.decode("utf-8").strip().split("\n")
+            processes = list(map(lambda x: int(x.strip()), proc_list))
+            for child in processes:
+                print(get_stacktraces_from_gdb(child))
+
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
             # Wait some time for clickhouse utilities to gather stacktrace
@@ -763,32 +772,13 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def kill_gdb_if_any():
-    # Check if we have running gdb.
-    code = subprocess.call("pidof gdb", shell=True)
-    if code != 0:
-        return
-
-    for i in range(5):
-        code = subprocess.call("kill -TERM $(pidof gdb)", shell=True, timeout=30)
-        if code != 0:
-            sleep(i)
-        else:
-            break
-
-
 # collect server stacktraces using gdb
-def get_stacktraces_from_gdb(server_pid):
+def get_stacktraces_from_gdb(pid):
     try:
-        # We could attach gdb to clickhouse-server before running some tests
-        # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-        # We should kill existing gdb if any before starting new one.
-        kill_gdb_if_any()
-
-        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {server_pid}"
+        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {pid}"
         return subprocess.check_output(cmd, shell=True).decode("utf-8")
     except Exception as e:
-        print(f"Error occurred while receiving stack traces from gdb: {e}")
+        print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
         return None
 
 
@@ -2756,7 +2746,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 5)
+                signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -3092,7 +3082,6 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                kill_gdb_if_any()
                 # Wait for test results
                 sleep(args.timeout)
                 for p in processes:
