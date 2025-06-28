@@ -14,6 +14,8 @@
 #include <TableFunctions/TableFunctionFileCluster.h>
 
 #include <memory>
+#include <Storages/HivePartitioningUtils.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -22,6 +24,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -59,8 +67,36 @@ StorageFileCluster::StorageFileCluster(
         storage_metadata.setColumns(columns_);
     }
 
+    auto & storage_columns = storage_metadata.columns;
+
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        const std::string sample_path = paths.empty() ? "" : paths.front();
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, std::nullopt, context);
+
+        /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+        /// Because they might not be present in the data and exist only in the path
+        if (columns_.empty())
+        {
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
+        }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+        }
+    }
+
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, paths.empty() ? "" : paths[0]));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -84,7 +120,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ContextPtr & context,
     const size_t) const
 {
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();

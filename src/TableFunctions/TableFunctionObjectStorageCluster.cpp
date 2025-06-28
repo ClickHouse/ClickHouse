@@ -45,7 +45,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
             /* distributed_processing */ true,
-            /* partition_by_ */nullptr,
+            /* partition_by_ */ Base::partition_by,
             /* is_table_function */true);
     }
     else
@@ -57,6 +57,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
+            Base::partition_by,
             context);
     }
 
