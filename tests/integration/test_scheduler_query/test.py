@@ -99,7 +99,7 @@ def test_create() -> None:
 
 
 class QueryPool:
-    def __init__(self, num_queries: int, workload: str, query: str) -> None:
+    def __init__(self, num_queries: int, workload: str, query: str = None) -> None:
         self.num_queries: int = num_queries
         self.workload: str = workload
         self.stop_event: threading.Event = threading.Event()
@@ -254,8 +254,10 @@ def test_max_query_slot_wait_time_reached() -> None:
     )
 
     query = (
-        f"select count(*) from numbers_mt(100000000) settings "
-        f"workload='all', max_query_slot_wait_time=10"
+        f"""
+        select count(*) from numbers_mt(100000000) settings 
+        workload='all', max_query_slot_wait_time=10
+        """
     )
 
     pool_all = QueryPool(6, "all", query)
@@ -264,4 +266,4 @@ def test_max_query_slot_wait_time_reached() -> None:
     ensure_total_concurrency(1)
     ensure_workload_concurrency("all", 1)
     pool_all.stop()
-    assert "Workload limit `max_query_slot_wait_time` has been reached: 10 of 10" in pool_all.last_error
+    assert pool_all.last_error is not None and "Workload limit `max_query_slot_wait_time` has been reached: 10 of 10" in pool_all.last_error
