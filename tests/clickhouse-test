@@ -1940,6 +1940,9 @@ class TestCase:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
         self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # Ensure that we start with empty files
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            os.remove(path)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
