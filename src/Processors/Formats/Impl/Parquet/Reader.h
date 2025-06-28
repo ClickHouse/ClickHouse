@@ -151,7 +151,6 @@ struct Reader
         size_t schema_idx;
         String name;
         PageDecoderInfo decoder;
-        std::unique_ptr<StatsDecoder> stats_decoder;
 
         DataTypePtr raw_decoded_type; // not Nullable
         DataTypePtr intermediate_type; // maybe Nullable

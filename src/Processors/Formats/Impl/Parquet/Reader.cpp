@@ -168,7 +168,7 @@ void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_bloc
         if (!key_condition_columns[i].has_value())
             continue;
         const PrimitiveColumnInfo & column_info = primitive_columns[*key_condition_columns[i]];
-        if (!column_info.stats_decoder)
+        if (!column_info.decoder.allow_stats)
             continue;
         const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
         if (!column_meta.__isset.statistics)
@@ -194,9 +194,9 @@ void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_bloc
         }
 
         if (column_meta.statistics.__isset.min_value)
-            column_info.stats_decoder->decode(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
+            column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
         if (column_meta.statistics.__isset.max_value)
-            column_info.stats_decoder->decode(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
+            column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
 
         if (range.left > range.right)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk statistics for column '{}' appear to have min_value > max_value: {} > {}. Use setting input_format_parquet_filter_push_down=0 to ignore.", column_info.name, static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
@@ -752,8 +752,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         }
         else
         {
-            column_info.stats_decoder->decode(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
-            column_info.stats_decoder->decode(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
+            column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
+            column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
 
             if (range.left > range.right)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Column index appears to have min_value > max_value: {} > {}. Use setting input_format_parquet_page_filter_push_down=0 to ignore.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
@@ -872,7 +872,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         for (size_t i = 0; i < primitive_columns.size(); ++i)
             bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
 
-        size_t n = size_t(options.preferred_block_size_bytes / bytes_per_row);
+        size_t n = size_t(options.preferred_block_size_bytes / std::max(bytes_per_row, 1.));
         rows_per_subgroup = std::min(rows_per_subgroup, std::max(n, 1ul));
     }
     chassert(rows_per_subgroup > 0);
@@ -1676,10 +1676,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     {
         if (!page.indices_column)
             page.indices_column = ColumnUInt32::create();
-        auto & data = assert_cast<ColumnUInt32 &>(*page.indices_column).getData();
+        auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
+        auto & data = indices_column_uint32.getData();
         chassert(data.empty());
         page.decoder->decode(encoded_values_to_read, *page.indices_column);
-        column.dictionary.index(data, *subchunk.column);
+        column.dictionary.index(indices_column_uint32, *subchunk.column);
         data.clear();
     }
     else

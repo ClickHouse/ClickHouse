@@ -280,7 +280,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         }
 
         DataTypePtr inferred_type;
-        processPrimitiveColumn(element, primitive_type_hint, primitive.decoder, primitive.raw_decoded_type, inferred_type, primitive.stats_decoder);
+        processPrimitiveColumn(element, primitive_type_hint, primitive.decoder, primitive.raw_decoded_type, inferred_type);
         if (!primitive.raw_decoded_type)
             primitive.raw_decoded_type = inferred_type;
 
@@ -493,7 +493,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, const IDataType * type_hint,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type, std::unique_ptr<StatsDecoder> & out_stats_decoder)
+    DataTypePtr & out_inferred_type)
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
@@ -518,7 +518,7 @@ void SchemaConverter::processPrimitiveColumn(
     const parq::LogicalType & logical = element.logicalType;
     using CONV = parq::ConvertedType;
     chassert(!out_inferred_type && !out_decoded_type);
-    out_decoder.kind = PageDecoderInfo::Kind::FixedSize;
+    out_decoder.physical_type = type;
 
     auto get_output_type_index = [&]
     {
@@ -526,99 +526,75 @@ void SchemaConverter::processPrimitiveColumn(
         return type_hint ? type_hint->getTypeId() : out_inferred_type->getTypeId();
     };
 
-    auto dispatch_int_stats_decoder = [&](size_t input_value_size, bool input_signed, bool allow_datetime_and_ipv4)
+    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
     {
-        auto dec = std::make_unique<IntStatsDecoder>();
-        dec->input_value_size = input_value_size;
-        dec->input_signed = input_signed;
         WhichDataType which(get_output_type_index());
         if (which.isNativeInteger())
-            dec->output_signed = which.isNativeInt();
+            converter.field_signed = which.isNativeInt();
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
                 if (allow_datetime_and_ipv4)
-                    dec->output_ipv4 = true;
+                {
+                    converter.field_ipv4 = true;
+                    converter.field_signed = false;
+                }
                 else
-                    return;
+                    return false;
                 break;
             case TypeIndex::Date:
             case TypeIndex::Date32:
+                converter.field_signed = false;
                 break;
             case TypeIndex::DateTime:
                 if (!allow_datetime_and_ipv4)
-                    return;
+                    return false;
+                converter.field_signed = false;
                 break;
             case TypeIndex::Enum8:
             case TypeIndex::Enum16:
-                dec->output_signed = true;
                 break;
             /// Not supported: DateTime64, Decimal*, Float*
             /// Not possible (in most cases): String, FixedString
             default:
-                return;
+                return false;
         }
-        out_stats_decoder = std::move(dec);
+        return true;
     };
 
-    auto dispatch_decimal_stats_decoder = [&](size_t input_value_size, UInt32 input_scale, bool input_big_endian)
+    auto is_output_type_decimal = [&](size_t expected_size, UInt32 expected_scale) -> bool
     {
-        auto dec = std::make_unique<DecimalStatsDecoder>();
-        dec->input_value_size = input_value_size;
-        dec->input_scale = input_scale;
-        dec->input_big_endian = input_big_endian;
         const IDataType * output_type = type_hint ? type_hint : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
-        if (which.isNativeInt() || which.isDateTime()) // note: "isNativeInt" means signed
-        {
-            dec->output_int = true;
-            dec->output_value_size = 8;
-            dec->output_scale = 0;
-        }
-        else if (which.isDecimal())
-        {
-            dec->output_value_size = output_type->getSizeOfValueInMemory();
-            dec->output_scale = getDecimalScale(*output_type);
-        }
+        if (which.isDecimal())
+            return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
         else if (which.isDateTime64())
-        {
-            dec->output_value_size = 8;
-            dec->output_scale = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale();
-        }
-        else
-        {
-            return;
-        }
-        out_stats_decoder = std::move(dec);
+            return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
+        return false;
     };
 
-    auto dispatch_float_stats_decoder = [&](size_t input_value_size)
+    auto is_output_type_float = [&](size_t expected_size) -> bool
     {
-        size_t output_value_size;
+        size_t size = 0;
         switch (get_output_type_index())
         {
-            case TypeIndex::Float32:
-                output_value_size = 4;
-                break;
-            case TypeIndex::Float64:
-                output_value_size = 8;
-                break;
-            default:
-                return;
+            case TypeIndex::Float32: size = 4; break;
+            case TypeIndex::Float64: size = 8; break;
+            default: return false;
         }
-        if (output_value_size != input_value_size)
-            return;
-        auto dec = std::make_unique<FloatStatsDecoder>();
-        dec->value_size = input_value_size;
-        out_stats_decoder = std::move(dec);
+        return size == expected_size;
     };
 
-    auto dispatch_string_stats_decoder = [&]
+    auto is_output_type_fixed_string = [&](size_t expected_size) -> bool
     {
-        if (!WhichDataType(get_output_type_index()).isStringOrFixedString())
-            return;
-        auto dec = std::make_unique<StringStatsDecoder>();
-        out_stats_decoder = std::move(dec);
+        const IDataType * output_type = type_hint ? type_hint : out_inferred_type.get();
+        auto fixed_string_type = typeid_cast<const DataTypeFixedString *>(output_type);
+        return fixed_string_type && fixed_string_type->getN() == expected_size;
+    };
+
+    auto is_output_type_string = [&]() -> bool
+    {
+        return get_output_type_index() == TypeIndex::String;
     };
 
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
@@ -631,9 +607,8 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.INTEGER || (converted >= CONV::UINT_8 && converted <= CONV::INT_64))
     {
-        const parq::IntType & integer = logical.INTEGER;
-        bool is_signed = integer.isSigned;
-        size_t bits = integer.bitWidth;
+        bool is_signed = logical.INTEGER.isSigned;
+        size_t bits = logical.INTEGER.bitWidth;
         if (!logical.__isset.INTEGER)
         {
             switch (converted)
@@ -650,6 +625,17 @@ void SchemaConverter::processPrimitiveColumn(
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected integer logical type: {}", thriftToString(element));
             }
         }
+
+        size_t physical_bits;
+        if (type == parq::Type::INT32)
+            physical_bits = 32;
+        else if (type == parq::Type::INT64)
+            physical_bits = 64;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-int physical type for int logical type: {}", thriftToString(element));
+
+        bits = std::min(bits, physical_bits);
+
         if (!is_signed && bits == 8)
             out_inferred_type = std::make_shared<DataTypeUInt8>();
         else if (!is_signed && bits == 16)
@@ -672,34 +658,22 @@ void SchemaConverter::processPrimitiveColumn(
         /// Can't leave the signed->unsigned conversion to castColumn.
         /// E.g. if parquet type is UINT64, and the requested clickhouse type is Int128,
         /// casting Int64 -> UInt64 -> Int128 produces different result from Int64 -> Int128.
-        if (type == parq::Type::INT32)
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = physical_bits / 8;
+        converter->input_signed = is_signed;
+        if (physical_bits == 64)
         {
-            if (bits == 8)
-            {
-                out_decoder.kind = PageDecoderInfo::Kind::ShortInt;
-                out_decoder.value_size = 1;
-            }
-            else if (bits == 16)
-            {
-                out_decoder.kind = PageDecoderInfo::Kind::ShortInt;
-                out_decoder.value_size = 2;
-            }
-            else
-                out_decoder.value_size = 4;
-        }
-        else if (type == parq::Type::INT64)
-        {
-            out_decoder.value_size = 8;
             out_decoded_type = is_signed
                 ? std::static_pointer_cast<IDataType>(std::make_shared<DataTypeInt64>())
                 : std::static_pointer_cast<IDataType>(std::make_shared<DataTypeUInt64>());
         }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-int physical type for int logical type: {}", thriftToString(element));
-        }
+        else if (bits == 8)
+            converter->truncate_output = 1;
+        else if (bits == 16)
+            converter->truncate_output = 2;
 
-        dispatch_int_stats_decoder(bits / 8, is_signed, /*allow_datetime_and_ipv4=*/ true);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+        out_decoder.fixed_size_converter = std::move(converter);
 
         return;
     }
@@ -724,10 +698,30 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        out_decoder.value_size = 8;
         out_inferred_type = std::make_shared<DataTypeDateTime64>(scale);
-
-        dispatch_decimal_stats_decoder(/*input_value_size=*/ 8, /*input_scale=*/ scale, /*input_big_endian=*/ false);
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        if (is_output_type_decimal(8, scale))
+        {
+            converter->field_decimal_scale = scale;
+            out_decoder.allow_stats = true;
+        }
+        else if (scale == 3 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        {
+            /// We generally don't use stats when nontrivial type cast is required, but we make an
+            /// exception for casting DateTime64(3) to DateTime. This comes up when round-tripping
+            /// DateTime values through parquet. Our writer writes DateTime (seconds) as
+            /// TIMESTAMP_MILLIS (milliseconds) because parquet doesn't have a more suitable type.
+            /// It's probably common to then read it back with DateTime type hint. It's pretty
+            /// important for min/max stats to work with timestamps, so we add this special case.
+            ///
+            /// We could generalize it and allow arbitrary Decimal scale and signedness conversions,
+            /// but it doesn't seem worth the complexity and risk of bugs.
+            converter->field_timestamp_from_millis = true;
+            converter->field_signed = false;
+            out_decoder.allow_stats = true;
+        }
+        out_decoder.fixed_size_converter = std::move(converter);
 
         return;
     }
@@ -736,10 +730,12 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for date logical type: {}", thriftToString(element));
 
-        out_decoder.value_size = 4;
         out_inferred_type = std::make_shared<DataTypeDate32>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 4;
 
-        dispatch_int_stats_decoder(/*input_value_size=*/ 4, /*input_signed=*/ true, /*allow_datetime_and_ipv4=*/ false);
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.fixed_size_converter = std::move(converter);
 
         return;
     }
@@ -750,30 +746,66 @@ void SchemaConverter::processPrimitiveColumn(
         precision = std::max(precision, scale);
 
         UInt32 max_precision = 0;
-        if (type == parq::Type::INT32)
-            max_precision = 9;
-        else if (type == parq::Type::INT64)
-            max_precision = 18;
+        if (type == parq::Type::INT32 || type == parq::Type::INT64)
+        {
+            max_precision = type == parq::Type::INT32 ? 9 : 18;
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = type == parq::Type::INT32 ? 4 : 8;
+            converter->field_decimal_scale = scale;
+            out_decoder.fixed_size_converter = std::move(converter);
+        }
         else if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
         {
-            /// FIXED_LEN_BYTE_ARRAY decimals are big endian, while INT32/INT64 are little-endian.
-            out_decoder.kind = PageDecoderInfo::Kind::BigEndian;
-            out_decoder.input_value_size = element.type_length;
+            size_t input_size = element.type_length;
 
-            if (out_decoder.input_value_size > 32)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal value too long: {} bytes (at most 32 is supported)", out_decoder.input_value_size);
+            if (input_size > 32)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal value too long: {} bytes (at most 32 is supported)", input_size);
 
-            if (precision <= 9 && out_decoder.input_value_size <= 4)
+            if (precision <= 9 && input_size <= 4)
+            {
                 max_precision = 9;
-            else if (precision <= 18 && out_decoder.input_value_size <= 8)
+                /// FIXED_LEN_BYTE_ARRAY decimals are big endian, while INT32/INT64 are little-endian.
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int32>>(input_size, scale);
+            }
+            else if (precision <= 18 && input_size <= 8)
+            {
                 max_precision = 18;
-            else if (precision <= 36 && out_decoder.input_value_size <= 16)
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int64>>(input_size, scale);
+            }
+            else if (precision <= 36 && input_size <= 16)
+            {
                 max_precision = 36;
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int128>>(input_size, scale);
+            }
             else
+            {
                 max_precision = 76;
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int256>>(input_size, scale);
+            }
         }
         else if (type == parq::Type::BYTE_ARRAY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decimal encoded as BYTE_ARRAY is not supported");
+        {
+            if (precision <= 9)
+            {
+                max_precision = 9;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int32>>(scale);
+            }
+            else if (precision <= 18)
+            {
+                max_precision = 18;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int64>>(scale);
+            }
+            else if (precision <= 36)
+            {
+                max_precision = 36;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int128>>(scale);
+            }
+            else
+            {
+                max_precision = 76;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int256>>(scale);
+            }
+        }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for Decimal column: {}", thriftToString(type));
 
@@ -781,9 +813,8 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(max_precision, scale);
-        out_decoder.value_size = out_inferred_type->getSizeOfValueInMemory();
-
-        dispatch_decimal_stats_decoder(out_decoder.input_value_size, scale, out_decoder.kind == PageDecoderInfo::Kind::BigEndian);
+        size_t output_size = out_inferred_type->getSizeOfValueInMemory();
+        out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
 
         return;
     }
@@ -824,43 +855,63 @@ void SchemaConverter::processPrimitiveColumn(
         case parq::Type::BOOLEAN:
             /// TODO [parquet]:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN not implemented");
-            //dispatch_int_stats_decoder(1, false, /*allow_datetime_and_ipv4=*/ false);
             //return;
         case parq::Type::INT32:
-            out_decoder.value_size = 4;
+        {
             out_inferred_type = std::make_shared<DataTypeInt32>();
-            dispatch_int_stats_decoder(/*input_value_size=*/ 4, /*input_signed=*/ true, /*allow_datetime_and_ipv4=*/ true);
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 4;
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+            out_decoder.fixed_size_converter = std::move(converter);
             return;
+        }
         case parq::Type::INT64:
-            out_decoder.value_size = 8;
+        {
             out_inferred_type = std::make_shared<DataTypeInt64>();
-            dispatch_int_stats_decoder(/*input_value_size=*/ 8, /*input_signed=*/ true, /*allow_datetime_and_ipv4=*/ true);
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 8;
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.fixed_size_converter = std::move(converter);
             return;
+        }
         case parq::Type::INT96:
             /// TODO [parquet]:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INT96 not implemented");
-            //(leave out_stats_decoder null, INT96 sort order is undefined)
+            //(leave allow_stats == false, INT96 sort order is undefined)
             //return;
         case parq::Type::FLOAT:
-            out_decoder.value_size = 4;
+        {
             out_inferred_type = std::make_shared<DataTypeFloat32>();
-            dispatch_float_stats_decoder(4);
+            auto converter = std::make_shared<FloatConverter<float>>();
+            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            out_decoder.fixed_size_converter = std::move(converter);
             return;
+        }
         case parq::Type::DOUBLE:
-            out_decoder.value_size = 8;
+        {
             out_inferred_type = std::make_shared<DataTypeFloat64>();
-            dispatch_float_stats_decoder(8);
+            auto converter = std::make_shared<FloatConverter<double>>();
+            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            out_decoder.fixed_size_converter = std::move(converter);
             return;
+        }
         case parq::Type::BYTE_ARRAY:
-            out_decoder.kind = PageDecoderInfo::Kind::String;
+        {
             out_inferred_type = std::make_shared<DataTypeString>();
-            dispatch_string_stats_decoder();
+            auto converter = std::make_shared<TrivialStringConverter>();
+            out_decoder.allow_stats = is_output_type_string();
+            out_decoder.string_converter = std::move(converter);
             return;
+        }
         case parq::Type::FIXED_LEN_BYTE_ARRAY:
-            out_decoder.value_size = size_t(element.type_length);
+        {
             out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
-            dispatch_string_stats_decoder();
+            auto converter = std::make_shared<FixedStringConverter>();
+            converter->input_size = size_t(element.type_length);
+            out_decoder.allow_stats = is_output_type_fixed_string(converter->input_size) || is_output_type_string();
+            out_decoder.fixed_size_converter = std::move(converter);
             return;
+        }
     }
 
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", thriftToString(element));
