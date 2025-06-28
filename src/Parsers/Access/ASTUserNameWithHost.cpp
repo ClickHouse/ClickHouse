@@ -51,14 +51,14 @@ ASTUserNameWithHost::ASTUserNameWithHost(const String & name)
     children.emplace_back(username);
 }
 
-ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_, String host_pattern_)
+ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_, String && host_pattern_)
 {
-    username = name_;
+    username = std::move(name_);
     children.emplace_back(username);
 
     if (!host_pattern_.empty() && host_pattern_ != "%")
     {
-        host_pattern = std::make_shared<ASTLiteral>(host_pattern_);
+        host_pattern = std::make_shared<ASTLiteral>(std::move(host_pattern_));
         children.emplace_back(host_pattern);
     }
 }
@@ -134,17 +134,17 @@ bool ASTUserNamesWithHost::getHostPatternIfCommon(String & out_common_host_patte
 
 String ASTUserNameWithHost::getStringFromAST(const ASTPtr & ast) const
 {
-    if (const auto * l = ast->as<ASTLiteral>())
-        return l->value.safeGet<String>();
-    else if (const auto * ind = ast->as<ASTIdentifier>())
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return literal->value.safeGet<String>();
+    else if (const auto * identifier = ast->as<ASTIdentifier>())
     {
-        if (!ind->isParam())
-            return getIdentifierName(ind);
+        if (!identifier->isParam())
+            return getIdentifierName(identifier);
 
         WriteBufferFromOwnString buf;
         FormatSettings settings(true, false);
 
-        ind->format(buf, settings);
+        identifier->format(buf, settings);
         return buf.str();
     }
 

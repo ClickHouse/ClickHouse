@@ -16,7 +16,7 @@ class ASTUserNameWithHost : public IAST
 {
 public:
     explicit ASTUserNameWithHost(const String & name_);
-    explicit ASTUserNameWithHost(ASTPtr && name_ast_, String host_pattern_ = "");
+    explicit ASTUserNameWithHost(ASTPtr && name_ast_, String && host_pattern_ = "");
 
     String getBaseName() const;
     String getHostPattern() const;
