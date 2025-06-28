@@ -67,6 +67,7 @@ namespace FailPoints
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 keeper_multiread_batch_size;
+    extern const ServerSettingsBool s3queue_disable_streaming;
 }
 
 namespace ObjectStorageQueueSetting
@@ -509,8 +510,9 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
+    const auto & settings = getContext()->getServerSettings();
 
-    if (getContext()->getS3QueueDisableStreaming())
+    if (settings[ServerSetting::s3queue_disable_streaming])
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 

@@ -308,6 +308,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
@@ -548,8 +549,6 @@ struct ContextSharedPart : boost::noncopyable
     size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
-
-    bool s3queue_disable_streaming = false;
 
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
@@ -4666,13 +4665,13 @@ void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop
 bool Context::getS3QueueDisableStreaming() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->s3queue_disable_streaming;
+    return shared->server_settings[ServerSetting::s3queue_disable_streaming];
 }
 
 void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 {
-    SharedLockGuard lock(shared->mutex);
-    shared->s3queue_disable_streaming = s3queue_disable_streaming;
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
