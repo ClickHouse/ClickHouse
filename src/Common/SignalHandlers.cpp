@@ -223,6 +223,9 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);
+
+    /// Reset our signal handler because they calls sleep() which is intersepted by sanitizers and can lead to deadlock.
+    HandledSignals::instance().reset();
 }
 #endif
 
