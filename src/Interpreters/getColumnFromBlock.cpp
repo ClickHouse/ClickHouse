@@ -14,14 +14,24 @@ namespace ErrorCodes
 
 ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & requested_column)
 {
+    bool is_subcolumn = requested_column.isSubcolumn();
     const auto * elem = block.findByName(requested_column.getNameInStorage());
+
+    /// If a tuple element (e.g. `t.x`) was requested, storage may read either the whole tuple (`t`)
+    /// or just the element (`t.x`).
+    if (!elem && requested_column.isSubcolumn())
+    {
+        elem = block.findByName(requested_column.name);
+        is_subcolumn = false;
+    }
+
     if (!elem)
         return nullptr;
 
     auto elem_type = elem->type;
     auto elem_column = elem->column->decompress();
 
-    if (requested_column.isSubcolumn())
+    if (is_subcolumn)
     {
         auto subcolumn_name = requested_column.getSubcolumnName();
         elem_column = elem_type->tryGetSubcolumn(subcolumn_name, elem_column);

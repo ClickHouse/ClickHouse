@@ -41,18 +41,45 @@ ReadFromFormatInfo prepareReadingFromFormat(
     /// Create header for Source that will contain all requested columns including virtual columns at the end
     /// (because they will be added to the chunk after reading regular columns).
     info.source_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
-
-    /// Set requested columns that should be read from data.
-    info.requested_columns = info.source_header.getNamesAndTypesList();
-
     for (const auto & requested_virtual_column : info.requested_virtual_columns)
         info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
+
+    /// Set requested columns that should be read from data.
+    info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
 
     if (supports_subset_of_columns)
     {
         if (supports_subset_of_subcolumns)
         {
-            /// Format can handle anything, no need to modify columns_to_read.
+            /// Format can read individual subcolumns or a whole column. But not both at the same time:
+            ///   SELECT t, t.x
+            /// In such case we should request only `t` from the format parser. Similar to how for
+            ///   SELECT a, a
+            /// we request only one copy of `a`.
+            ///
+            /// TODO [parquet]:
+            ///   1. This is not enough, there can be multiple levels of tuples, e.g. `SELECT t.x, t.x.x`.
+            ///   2. This probably breaks on json columns. We have to either distinguish dynamic
+            ///      subcolumns vs tuple elements here, or make parquet reader v3 support dynamic
+            ///      subcolumns. Note that parquet reader will likely need some form of such support
+            ///      anyway for https://github.com/apache/parquet-format/blob/master/VariantEncoding.md ;
+            ///      but maybe that shouldn't apply for input_format_parquet_enable_json_parsing since
+            ///      it has to parse all columns anyway.
+            ///   3. Selective tuple element reading doesn't work for unnamed elements, e.g.
+            ///      `SELECT t.1` reads the whole `t`. It would be nice to add support for it, somehow.
+            std::unordered_set<String> columns_to_read_set;
+            for (const auto & column_to_read : info.requested_columns)
+                columns_to_read_set.insert(column_to_read.name);
+            /// Save original order of columns.
+            std::vector<String> new_columns_to_read;
+            for (const auto & column_to_read : info.requested_columns)
+            {
+                if (column_to_read.isSubcolumn() && columns_to_read_set.contains(column_to_read.getNameInStorage()))
+                    continue;
+
+                new_columns_to_read.push_back(column_to_read.name);
+            }
+            columns_to_read = std::move(new_columns_to_read);
         }
         else if (columns_to_read.empty())
         {

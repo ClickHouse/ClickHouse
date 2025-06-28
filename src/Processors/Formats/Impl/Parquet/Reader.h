@@ -56,6 +56,9 @@ namespace DB::Parquet
 //     - expression appearing both in prewhere and in select list (presumably remove_prewhere_column = false)
 //     - prewhere with all 3 storages (maybe have the main big test pick random storage)
 //     - prewhere and where together
+//     - reading tuple element without reading the whole tuple
+//     - `select t, t.x`
+//     - `select t.x.x, t.x`
 //     - prewhere with tuple element access (prepareReadingFromFormat looks like it won't work)
 //     - prewhere with expression string equal to some (weird) column name in the file
 //     - prewhere with expression that's just a (UInt8) column name, present or not present in select
