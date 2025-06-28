@@ -152,12 +152,13 @@ struct BitPackedRLEDecoder : public PageDecoder
 struct PlainFixedSizeDecoder : public PageDecoder
 {
     size_t value_size;
+    std::shared_ptr<FixedSizeConverter> converter;
 
-    explicit PlainFixedSizeDecoder(std::span<const char> data_, size_t value_size_) : PageDecoder(data_), value_size(value_size_) {}
+    PlainFixedSizeDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_)) {}
 
     void skip(size_t num_values) override
     {
-        size_t bytes = num_values * value_size;
+        size_t bytes = num_values * converter->input_size;
         requireRemainingBytes(bytes);
         data += bytes;
     }
@@ -166,124 +167,16 @@ struct PlainFixedSizeDecoder : public PageDecoder
     {
         const char * from = data;
         skip(num_values);
-        auto to = col.insertRawUninitialized(num_values);
-        chassert(to.size() == size_t(data - from));
-        memcpy(to.data(), from, to.size());
-    }
-};
-
-template <typename From, typename To>
-struct PlainCastDecoder : public PageDecoder
-{
-    using PageDecoder::PageDecoder;
-
-    void skip(size_t num_values) override
-    {
-        size_t bytes = num_values * sizeof(From);
-        requireRemainingBytes(bytes);
-        data += bytes;
-    }
-
-    void decode(size_t num_values, IColumn & col) override
-    {
-        const char * from_bytes = data;
-        skip(num_values);
-        /// Note that `col` element type may be different from To, e.g. different signedness, so
-        /// we can't assert_cast to ColumnVector<To>, and need to be careful about aliasing rules.
-        /// (We use To = UInt16 for Int16 columns to reduce the number of template instantiations,
-        ///  since a To = Int16 instantiation should compile to identical machine code anyway.)
-        auto to_bytes = col.insertRawUninitialized(num_values);
-        chassert(to_bytes.size() == num_values * sizeof(To));
-        To * to = reinterpret_cast<To *>(to_bytes.data());
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            From x;
-            memcpy(&x, from_bytes + i * sizeof(From), sizeof(From));
-            to[i] = static_cast<To>(x);
-        }
-    }
-};
-
-template <typename T>
-struct BigEndianDecoder : public PageDecoder
-{
-    size_t input_value_size = 0;
-
-    size_t value_offset = 0;
-    T value_mask = 0;
-    T sign_mask = 0;
-    T sign_extension_mask = 0;
-
-    BigEndianDecoder(std::span<const char> data_, size_t input_value_size_) : PageDecoder(data_), input_value_size(input_value_size_)
-    {
-        chassert(sizeof(T) >= input_value_size);
-        value_offset = sizeof(T) - input_value_size;
-        value_mask = (~T(0)) << (8 * value_offset);
-
-        if (value_offset != 0)
-        {
-            sign_mask = T(1) << (8 * input_value_size - 1);
-            sign_extension_mask = (~T(0)) << (8 * input_value_size);
-        }
-    }
-
-    void skip(size_t num_values) override
-    {
-        size_t bytes = num_values * input_value_size;
-        requireRemainingBytes(bytes);
-        data += bytes;
-    }
-
-    void decode(size_t num_values, IColumn & col) override
-    {
-        const char * from_bytes = data;
-        skip(num_values);
-        auto to_bytes = col.insertRawUninitialized(num_values);
-        chassert(to_bytes.size() == num_values * sizeof(T));
-        T * to = reinterpret_cast<T *>(to_bytes.data());
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            T x;
-
-            /// We take advantage of input padding and do fixed-size memcpy of size sizeof(T) instead
-            /// of variable-size memcpy of size input_value_size. Variable-size memcpy is slow.
-            memcpy(&x, from_bytes - value_offset, sizeof(T));
-            x &= value_mask; // mask off the garbage bytes that we've read out of bounds
-
-            /// Convert to little-endian.
-            if constexpr (sizeof(T) <= 8)
-                x = std::byteswap(x);
-            else
-            {
-                x.items[0] = std::byteswap(x.items[0]);
-                x.items[1] = std::byteswap(x.items[1]);
-                if constexpr (sizeof(T) == 16)
-                {
-                    std::swap(x.items[0], x.items[1]);
-                }
-                else
-                {
-                    static_assert(sizeof(T) == 32, "");
-                    x.items[2] = std::byteswap(x.items[2]);
-                    x.items[3] = std::byteswap(x.items[3]);
-                    std::swap(x.items[0], x.items[3]);
-                    std::swap(x.items[1], x.items[2]);
-                }
-            }
-
-            /// Sign-extend.
-            if (x & sign_mask)
-                x |= sign_extension_mask;
-
-            to[i] = x;
-            from_bytes += input_value_size;
-        }
+        converter->convertColumn(std::span(from, num_values * converter->input_size), num_values, col);
     }
 };
 
 struct PlainStringDecoder : public PageDecoder
 {
-    using PageDecoder::PageDecoder;
+    std::shared_ptr<StringConverter> converter;
+    IColumn::Offsets offsets;
+
+    PlainStringDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_) : PageDecoder(data_), converter(std::move(converter_)) {}
 
     void skip(size_t num_values) override
     {
@@ -299,16 +192,42 @@ struct PlainStringDecoder : public PageDecoder
 
     void decode(size_t num_values, IColumn & col) override
     {
-        auto & col_str = assert_cast<ColumnString &>(col);
-        col_str.reserve(col_str.size() + num_values);
-        for (size_t i = 0; i < num_values; ++i)
+        if (converter->isTrivial())
         {
-            UInt32 x;
-            memcpy(&x, data, 4); /// omitting range check because input is padded
-            size_t len = 4 + size_t(x);
-            requireRemainingBytes(len);
-            col_str.insertData(data + 4, size_t(x));
-            data += len;
+            /// Fast path for directly appending to ColumnString.
+            auto & col_str = assert_cast<ColumnString &>(col);
+            col_str.reserve(col_str.size() + num_values);
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                UInt32 x;
+                memcpy(&x, data, 4); /// omitting range check because input is padded
+                size_t len = 4 + size_t(x);
+                requireRemainingBytes(len);
+                col_str.insertData(data + 4, size_t(x));
+                data += len;
+            }
+        }
+        else
+        {
+            offsets.clear();
+            /// We have extra 4 bytes *before* each string, but StringConverter expects
+            /// separator_bytes *after* each string (for compatibility with ColumnString, which has
+            /// extra '\0' byte after each string). So we offset the `data` start pointer to skip the
+            /// first 4 bytes.
+            const char * chars_start = data + 4;
+            size_t offset = 0;
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                UInt32 x;
+                memcpy(&x, data, 4); /// omitting range check because input is padded
+                size_t len = 4 + size_t(x);
+                requireRemainingBytes(len);
+                offset += len;
+                offsets.push_back(offset);
+                data += len;
+            }
+
+            converter->convertColumn(std::span(chars_start, offset), offsets, /*separator_bytes*/ 4, num_values, col);
         }
     }
 };
@@ -316,13 +235,26 @@ struct PlainStringDecoder : public PageDecoder
 
 bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, size_t num_values, IColumn & col, std::span<char> & out) const
 {
-    if (encoding == parq::Encoding::PLAIN && kind == Kind::FixedSize)
+    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && fixed_size_converter->isTrivial())
     {
-        chassert(col.sizeOfValueIfFixed() == value_size);
+        chassert(col.sizeOfValueIfFixed() == fixed_size_converter->input_size);
         out = col.insertRawUninitialized(num_values);
         return true;
     }
     return false;
+}
+
+void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field & out) const
+{
+    if (!allow_stats)
+        return;
+
+    if (fixed_size_converter)
+        fixed_size_converter->convertField(data, is_max, out);
+    else if (string_converter)
+        string_converter->convertField(data, is_max, out);
+    else
+        chassert(false);
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
@@ -331,38 +263,30 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
     switch (encoding)
     {
         case parq::Encoding::PLAIN:
-            switch (kind)
+            switch (physical_type)
             {
-                case Kind::FixedSize: return std::make_unique<PlainFixedSizeDecoder>(data, value_size);
-                case Kind::String: return std::make_unique<PlainStringDecoder>(data);
-                case Kind::ShortInt:
-                    switch (value_size)
-                    {
-                        case 1: return std::make_unique<PlainCastDecoder<UInt32, UInt8>>(data);
-                        case 2: return std::make_unique<PlainCastDecoder<UInt32, UInt16>>(data);
-                        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value_size for ShortInt decoder");
-                    }
-                case Kind::BigEndian:
-                    switch (value_size)
-                    {
-                        case 4: return std::make_unique<BigEndianDecoder<UInt32>>(data, input_value_size);
-                        case 8: return std::make_unique<BigEndianDecoder<UInt64>>(data, input_value_size);
-                        case 16: return std::make_unique<BigEndianDecoder<UInt128>>(data, input_value_size);
-                        case 32: return std::make_unique<BigEndianDecoder<UInt256>>(data, input_value_size);
-                        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value_size for BigEndian decoder");
-                    }
-                case Kind::Boolean: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN is not implemented");
+                case parq::Type::INT32:
+                case parq::Type::INT64:
+                case parq::Type::INT96:
+                case parq::Type::FLOAT:
+                case parq::Type::DOUBLE:
+                case parq::Type::FIXED_LEN_BYTE_ARRAY:
+                    return std::make_unique<PlainFixedSizeDecoder>(data, fixed_size_converter);
+                case parq::Type::BYTE_ARRAY:
+                    return std::make_unique<PlainStringDecoder>(data, string_converter);
+                case parq::Type::BOOLEAN:
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN is not implemented");
             }
-        /// TODO [parquet]: RLE for BOOLEAN (Kind::Boolean)
+        /// TODO [parquet]: RLE for BOOLEAN
         case parq::Encoding::RLE: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RLE encoding is not implemented");
         case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected BIT_PACKED encoding for values");
-        /// TODO [parquet]: DELTA_BINARY_PACKED for INT32 and INT64 (Kind::FixedSize or ShortInt)
+        /// TODO [parquet]: DELTA_BINARY_PACKED for INT32 and INT64
         case parq::Encoding::DELTA_BINARY_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BINARY_PACKED encoding is not implemented");
-        /// TODO [parquet]: DELTA_LENGTH_BYTE_ARRAY for BYTE_ARRAY (Kind::String)
+        /// TODO [parquet]: DELTA_LENGTH_BYTE_ARRAY for BYTE_ARRAY
         case parq::Encoding::DELTA_LENGTH_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_LENGTH_BYTE_ARRAY encoding is not implemented");
-        /// TODO [parquet]: DELTA_BYTE_ARRAY for BYTE_ARRAY (Kind::String) and FIXED_LEN_BYTE_ARRAY (Kind::FixedSize or BigEndian)
+        /// TODO [parquet]: DELTA_BYTE_ARRAY for BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY
         case parq::Encoding::DELTA_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BYTE_ARRAY encoding is not implemented");
-        /// TODO [parquet]: BYTE_STREAM_SPLIT for FLOAT and DOUBLE (Kind::FixedSize)
+        /// TODO [parquet]: BYTE_STREAM_SPLIT for FLOAT and DOUBLE
         case parq::Encoding::BYTE_STREAM_SPLIT: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BYTE_STREAM_SPLIT encoding is not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
@@ -417,6 +341,7 @@ double Dictionary::getAverageValueSize() const
     {
         case Mode::FixedSize: return value_size;
         case Mode::StringPlain: return std::max(0., double(data.size()) / std::max(offsets.size(), 1ul) - 4);
+        case Mode::Column: return double(col->byteSize()) / std::max(col->size(), 1ul);
         case Mode::Uninitialized: break;
     }
     chassert(false);
@@ -426,67 +351,69 @@ double Dictionary::getAverageValueSize() const
 void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type)
 {
     chassert(mode == Mode::Uninitialized);
+    chassert(info.fixed_size_converter || info.string_converter);
     if (encoding == parq::Encoding::PLAIN_DICTIONARY)
         encoding = parq::Encoding::PLAIN;
     count = num_values;
     bool decode_generic = false;
-    switch (info.kind)
+    if (encoding != parq::Encoding::PLAIN)
     {
-        case PageDecoderInfo::Kind::FixedSize:
-            mode = Mode::FixedSize;
-            value_size = info.value_size;
-            if (encoding == parq::Encoding::PLAIN)
-                data = data_;
-            else
-                /// Parquet supports only PLAIN encoding for dictionaries, but we support any encoding
-                /// because it's easy (we need decode_generic code path anyway for ShortInt and Boolean).
-                decode_generic = true;
-            break;
-        case PageDecoderInfo::Kind::String:
-            if (encoding == parq::Encoding::PLAIN)
-            {
-                mode = Mode::StringPlain;
-                data = data_;
+        /// Parquet supports only PLAIN encoding for dictionaries, but we support any encoding
+        /// because it's easy (we need decode_generic code path anyway for ShortInt and Boolean).
+        decode_generic = true;
+    }
+    else if (info.fixed_size_converter && info.fixed_size_converter->isTrivial())
+    {
+        /// No decoding needed, we'll be just copying bytes from dictionary page directly.
+        mode = Mode::FixedSize;
+        value_size = info.fixed_size_converter->input_size;
+        data = data_;
+    }
+    else if (info.string_converter && info.string_converter->isTrivial())
+    {
+        mode = Mode::StringPlain;
+        data = data_;
 
-                offsets.resize(num_values);
-                const char * ptr = data.data();
-                const char * end = data.data() + data.size();
-                for (size_t i = 0; i < num_values; ++i)
-                {
-                    UInt32 x;
-                    memcpy(&x, ptr, 4); /// omitting range check because input is padded
-                    size_t len = 4 + size_t(x);
-                    if (len > size_t(end - ptr))
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
-                    ptr += len;
-                    offsets[i] = ptr - data.data();
-                }
-            }
-            else
-            {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-plain encoding in dictionary");
-            }
-            break;
-        case PageDecoderInfo::Kind::BigEndian:
-        case PageDecoderInfo::Kind::ShortInt:
-        case PageDecoderInfo::Kind::Boolean:
-            mode = Mode::FixedSize;
-            value_size = info.value_size;
-            decode_generic = true;
-            break;
+        offsets.resize(num_values);
+        const char * ptr = data.data();
+        const char * end = data.data() + data.size();
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            UInt32 x;
+            memcpy(&x, ptr, 4); /// omitting range check because input is padded
+            size_t len = 4 + size_t(x);
+            if (len > size_t(end - ptr))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
+            ptr += len;
+            offsets[i] = ptr - data.data();
+        }
+    }
+    else
+    {
+        /// Values need to be converted, e.g. Decimal encoded as BYTE_ARRAY, or Int8 encoded as INT32.
+        decode_generic = true;
     }
 
     if (decode_generic)
     {
-        chassert(mode == Mode::FixedSize);
         auto decoder = info.makeDecoder(encoding, data_);
         auto c = raw_decoded_type.createColumn();
         c->reserve(num_values);
         decoder->decode(num_values, *c);
         col = std::move(c);
 
-        std::string_view s = col->getRawData();
-        data = std::span(s.data(), s.size());
+        if (col->isFixedAndContiguous())
+        {
+            mode = Mode::FixedSize;
+            value_size = col->sizeOfValueIfFixed();
+            std::string_view s = col->getRawData();
+            data = std::span(s.data(), s.size());
+            chassert(data.size() == col->size() * value_size);
+        }
+        else
+        {
+            mode = Mode::Column;
+        }
     }
 
     chassert(mode != Mode::Uninitialized);
@@ -503,8 +430,9 @@ static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const ch
         memcpy(to.data() + i * S, data.data() + indexes[i] * S, S);
 }
 
-void Dictionary::index(const PaddedPODArray<UInt32> & indexes, IColumn & out)
+void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
 {
+    const PaddedPODArray<UInt32> & indexes = indexes_col.getData();
     switch (mode)
     {
         case Mode::FixedSize:
@@ -540,60 +468,121 @@ void Dictionary::index(const PaddedPODArray<UInt32> & indexes, IColumn & out)
             }
             break;
         }
+        case Mode::Column:
+        {
+            ColumnPtr temp = col->index(indexes_col, /*limit*/ 0);
+            out.insertRangeFrom(*temp, 0, indexes.size());
+            break;
+        }
         case Mode::Uninitialized: chassert(false);
     }
 }
 
-void IntStatsDecoder::decode(const String & in, bool /*is_max*/, Field & out) const
+void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, IColumn & col)
 {
-    if (in.size() != input_value_size)
-        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", in.size(), input_value_size);
+    auto to = col.insertRawUninitialized(num_values);
+    chassert(to.size() == num_values * value_size);
+    memcpy(to.data(), data, to.size());
+}
+
+template <typename From, typename To>
+static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_t num_values)
+{
+    To * to = reinterpret_cast<To *>(to_bytes);
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// (Can't reinterpret_cast<const From *>(from_bytes) because pointer may be unaligned).
+        From x;
+        memcpy(&x, from_bytes + i * sizeof(From), sizeof(From));
+        to[i] = static_cast<To>(x);
+    }
+}
+
+void IntConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    if (truncate_output.has_value())
+    {
+        chassert(input_size == 4);
+        auto to = col.insertRawUninitialized(num_values);
+        chassert(to.size() == num_values * truncate_output.value());
+        /// Signedness doesn't matter here, we just need to copy the first 1 or 2 bytes of each
+        /// group of 4 bytes.
+        if (*truncate_output == 1)
+            convertIntColumnImpl<UInt32, UInt8>(data.data(), to.data(), num_values);
+        else if (*truncate_output == 2)
+            convertIntColumnImpl<UInt32, UInt16>(data.data(), to.data(), num_values);
+        else
+            chassert(false);
+    }
+    else
+    {
+        memcpyIntoColumn(data.data(), num_values, input_size, col);
+    }
+}
+
+void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", data.size(), input_size);
 
     UInt64 val = 0;
-    switch (input_value_size)
+    switch (input_size)
     {
-        case 1: val = unalignedLoad<UInt8>(in.data()); break;
-        case 2: val = unalignedLoad<UInt16>(in.data()); break;
-        case 4: val = unalignedLoad<UInt32>(in.data()); break;
-        case 8: val = unalignedLoad<UInt64>(in.data()); break;
+        case 4: val = unalignedLoad<UInt32>(data.data()); break;
+        case 8: val = unalignedLoad<UInt64>(data.data()); break;
         default: chassert(false);
     }
 
     /// Sign-extend.
-    if (input_signed && input_value_size < 8 && (val >> (input_value_size * 8 - 1)) != 0)
-        val |= 0 - (1ul << (input_value_size * 8));
+    if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
+        val |= 0 - (1ul << (input_size * 8));
 
     /// Check for overflow in signed <-> unsigned conversion.
-    if (input_signed && !output_signed && Int64(val) < 0)
+    if (input_signed && !field_signed && Int64(val) < 0)
         return;
-    if (!input_signed && output_signed && val > UInt64(INT64_MAX))
+    if (!input_signed && field_signed && val > UInt64(INT64_MAX))
         return;
 
-    if (output_ipv4)
+    if (field_ipv4)
     {
         if (val <= UInt64(UINT32_MAX))
             out = Field(IPv4(UInt32(val)));
     }
-    else if (output_signed)
+    else if (field_timestamp_from_millis)
+    {
+        /// Convert milliseconds to seconds, with the same rounding as when casting from
+        /// DateTime64(3) to DateTime.
+        /// (Shouldn't we round max towards positive infinity and min towards negative infinity?
+        ///  No, that's not required because the values in the column will also be converted to
+        ///  seconds by castColumn, with the same rounding. So the rounded min/max stats
+        ///  accurately represent min/max among the rounded values.)
+        val /= 1000;
+        if (val <= UInt64(UINT32_MAX))
+            out = Field(val);
+    }
+    else if (field_decimal_scale.has_value())
+    {
+        switch (input_size)
+        {
+            case 4: out = DecimalField<Decimal32>(Int32(val), *field_decimal_scale); break;
+            case 8: out = DecimalField<Decimal64>(val, *field_decimal_scale); break;
+            default: chassert(false);
+        }
+    }
+    else if (field_signed)
         out = Field(Int64(val));
     else
         out = Field(val);
 }
 
-void StringStatsDecoder::decode(const String & in, bool, Field & out) const
+template<typename T>
+void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
 {
-    out = Field(in);
-}
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", data.size(), input_size);
 
-void DecimalStatsDecoder::decode(const String &, bool, Field &) const
-{
-    /// TODO [parquet]: Decimal stats (be careful about rounding up/down and overflow checks).
-}
-
-void FloatStatsDecoder::decode(const String & in, bool, Field & out) const
-{
-    if (in.size() != value_size)
-        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", in.size(), value_size);
+    T x;
+    memcpy(&x, data.data(), sizeof(x));
 
     /// parquet.thrift says:
     /// (*) Because the sorting order is not specified properly for floating
@@ -607,20 +596,175 @@ void FloatStatsDecoder::decode(const String & in, bool, Field & out) const
     ///
     /// We reject NaNs, but don't do anything about +-0 because normal Field comparisons should
     /// already treat them as equal.
-
-    if (value_size == 8)
-    {
-        double x;
-        memcpy(&x, in.data(), 8);
+    if (!std::isnan(x))
         out = Field(x);
-    }
+}
+
+template struct FloatConverter<float>;
+template struct FloatConverter<double>;
+
+void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of fixed string in statistics: {} != {}", data.size(), input_size);
+
+    out = Field(String(data.data(), data.size()));
+}
+
+void TrivialStringConverter::convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+{
+    auto & col_str = assert_cast<ColumnString &>(col);
+    col_str.reserve(col_str.size() + num_values);
+    chassert(chars.size() == offsets.back());
+    col_str.getChars().reserve(col_str.getChars().size() + offsets.back() - separator_bytes * num_values + num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
+}
+
+void TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    out = Field(String(data.data(), data.size()));
+}
+
+/// Reverse bytes. Like std::byteswap, but works for Int128 and Int256 too.
+template <typename T>
+T byteswap(T x)
+{
+    if constexpr (sizeof(T) <= 8)
+        x = std::byteswap(x);
     else
     {
-        chassert(value_size == 4);
-        float x;
-        memcpy(&x, in.data(), 4);
-        out = Field(x);
+        x.items[0] = std::byteswap(x.items[0]);
+        x.items[1] = std::byteswap(x.items[1]);
+        if constexpr (sizeof(T) == 16)
+        {
+            std::swap(x.items[0], x.items[1]);
+        }
+        else
+        {
+            static_assert(sizeof(T) == 32, "");
+            x.items[2] = std::byteswap(x.items[2]);
+            x.items[3] = std::byteswap(x.items[3]);
+            std::swap(x.items[0], x.items[3]);
+            std::swap(x.items[1], x.items[2]);
+        }
+    }
+    return x;
+}
+
+template <typename T>
+BigEndianHelper<T>::BigEndianHelper(size_t input_size)
+{
+    chassert(sizeof(T) >= input_size);
+    value_offset = sizeof(T) - input_size;
+    value_mask = (~T(0)) << (8 * value_offset);
+
+    if (value_offset != 0)
+    {
+        sign_mask = T(1) << (8 * input_size - 1);
+        sign_extension_mask = (~T(0)) << (8 * input_size);
     }
 }
+
+template <typename T>
+void BigEndianHelper<T>::fixupValue(T & x) const
+{
+    x &= value_mask; // mask off the garbage bytes that we've read out of bounds
+
+    /// Convert to little-endian.
+    x = byteswap(x);
+
+    /// Sign-extend.
+    if (x & sign_mask)
+        x |= sign_extension_mask;
+}
+
+template <typename T>
+T BigEndianHelper<T>::convertPaddedValue(const char * data) const
+{
+    /// We take advantage of input padding and do fixed-size memcpy of size sizeof(T) instead
+    /// of variable-size memcpy of size input_size. Variable-size memcpy is slow.
+    T x;
+    memcpy(&x, data - value_offset, sizeof(T));
+    fixupValue(x);
+    return x;
+}
+
+template <typename T>
+T BigEndianHelper<T>::convertUnpaddedValue(std::span<const char> data) const
+{
+    chassert(data.size() <= sizeof(T));
+    T x = 0;
+    memcpy(reinterpret_cast<char *>(&x) + value_offset, data.data(), data.size());
+    fixupValue(x);
+    return x;
+}
+
+template struct BigEndianHelper<Int32>;
+template struct BigEndianHelper<Int64>;
+template struct BigEndianHelper<Int128>;
+template struct BigEndianHelper<Int256>;
+
+template <typename T>
+void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    const char * from_bytes = data.data();
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        to[i] = helper.convertPaddedValue(from_bytes);
+        from_bytes += input_size;
+    }
+}
+
+template <typename T>
+void BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in Decimal statistics: {} != {}", data.size(), input_size);
+
+    T x = helper.convertUnpaddedValue(data);
+    out = DecimalField(Decimal<T>(x), scale);
+}
+
+template struct BigEndianDecimalFixedSizeConverter<Int32>;
+template struct BigEndianDecimalFixedSizeConverter<Int64>;
+template struct BigEndianDecimalFixedSizeConverter<Int128>;
+template struct BigEndianDecimalFixedSizeConverter<Int256>;
+
+template <typename T>
+void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+{
+    auto to_bytes = col.insertRawUninitialized(num_values);
+    chassert(to_bytes.size() == num_values * sizeof(T));
+    T * to = reinterpret_cast<T *>(to_bytes.data());
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        const char * data = chars.data() + offsets[i - 1];
+        size_t size = offsets[i] - offsets[i - 1] - separator_bytes;
+        if (size > sizeof(T))
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide Decimal value: {} > {} bytes", size, sizeof(T));
+
+        to[i] = BigEndianHelper<T>(size).convertPaddedValue(data);
+    }
+}
+
+template <typename T>
+void BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() > sizeof(T))
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide value in Decimal statistics: {} > {} bytes", data.size(), sizeof(T));
+
+    T x = BigEndianHelper<T>(data.size()).convertUnpaddedValue(data);
+    out = DecimalField(Decimal<T>(x), scale);
+}
+
+template struct BigEndianDecimalStringConverter<Int32>;
+template struct BigEndianDecimalStringConverter<Int64>;
+template struct BigEndianDecimalStringConverter<Int128>;
+template struct BigEndianDecimalStringConverter<Int256>;
 
 }
