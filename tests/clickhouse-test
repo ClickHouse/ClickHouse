@@ -1313,6 +1313,7 @@ class TestCase:
             database = testcase_args.database
             os.environ.setdefault("CLICKHOUSE_DATABASE", database)
             os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
+            os.environ.setdefault("CLICKHOUSE_WRITE_COVERAGE", f"coverage.{database}")
             testcase_args.test_tmp_dir = suite_tmp_dir
         else:
             # If --database is not specified, we will create temporary database with
@@ -1341,6 +1342,7 @@ class TestCase:
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
             os.mkdir(testcase_args.test_tmp_dir)
             os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
+            os.environ["CLICKHOUSE_WRITE_COVERAGE"] = f"coverage.{database}"
 
         testcase_args.testcase_database = database
 
@@ -1879,7 +1881,7 @@ class TestCase:
             # Check for dumped coverage files
 
             # FIXME: This is a race condition
-            file_pattern = "coverage.*"
+            file_pattern = f"coverage.{self.testcase_args.testcase_database}.*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
                 try:
