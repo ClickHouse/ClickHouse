@@ -67,8 +67,8 @@ find_os() {
 download_minio() {
   local os
   local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2024-08-03T04-33-23Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2024-07-31T15-58-33Z}
+  local minio_server_version=${MINIO_SERVER_VERSION:-2025-06-13T11-33-47Z}
+  local minio_client_version=${MINIO_CLIENT_VERSION:-2025-05-21T01-59-54Z}
 
   os=$(find_os)
   arch=$(find_arch)

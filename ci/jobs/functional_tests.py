@@ -381,7 +381,7 @@ def main():
         results.append(
             Result.create_from(
                 name="Check errors",
-                results=CH.check_fatal_messeges_in_logs(),
+                results=CH.check_fatal_messages_in_logs(),
                 status=Result.Status.SUCCESS,
                 stopwatch=sw_,
             )

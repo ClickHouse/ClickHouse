@@ -8,7 +8,7 @@
 #include <Interpreters/Cache/UserInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 namespace DB
 {

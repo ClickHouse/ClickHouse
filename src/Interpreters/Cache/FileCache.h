@@ -304,6 +304,19 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CachePriorityGuard::Lock *);
+
+    struct SizeLimits
+    {
+        size_t max_size;
+        size_t max_elements;
+        double slru_size_ratio;
+    };
+    SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
+    bool doDynamicResizeImpl(
+        const SizeLimits & current_limits,
+        const SizeLimits & desired_limits,
+        SizeLimits & result_limits,
+        CachePriorityGuard::Lock &);
 };
 
 }

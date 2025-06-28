@@ -7,6 +7,14 @@ ENV CXX=clang++-${LLVM_VERSION}
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
 COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /cctools /cctools
 
+# We need OpenSSL FIPS in permissive mode for build on MasterCI
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
+
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \
     && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
