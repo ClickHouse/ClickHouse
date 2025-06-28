@@ -680,9 +680,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
@@ -696,9 +694,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
