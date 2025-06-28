@@ -28,6 +28,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Parquet
@@ -318,7 +319,7 @@ void Reader::prefilterAndInitRowGroups()
             if (!primitive_column_idx.has_value())
                 continue;
 
-            /// Check for presense of bloom filter only in first row group, expecting that usually
+            /// Check for presence of bloom filter only in first row group, expecting that usually
             /// either all or none of the row groups have bloom filter for any given column.
             const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[*primitive_column_idx].meta;
             if (!column_chunk_meta->meta_data.__isset.bloom_filter_offset)

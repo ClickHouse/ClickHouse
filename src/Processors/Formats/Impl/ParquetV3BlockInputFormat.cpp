@@ -1,29 +1,14 @@
 #include "ParquetV3BlockInputFormat.h"
 
+#if USE_PARQUET
+
 #include <Common/ThreadPool.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Formats/FormatParserGroup.h>
 #include <IO/SharedThreadPools.h>
 
-#if USE_PARQUET
-
-namespace ProfileEvents
-{
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric ParquetDecoderThreads;
-    extern const Metric ParquetDecoderThreadsActive;
-    extern const Metric ParquetDecoderThreadsScheduled;
-}
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-}
 
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {

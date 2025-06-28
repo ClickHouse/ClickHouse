@@ -9,12 +9,8 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_DECOMPRESS;
-    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_NUMBER;
 }
 
 namespace DB::Parquet
@@ -71,7 +67,7 @@ struct PageDecoder
     void requireRemainingBytes(size_t n)
     {
         if (size_t(end - data) < n)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpectd end of page data");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
     }
 };
 

@@ -49,7 +49,7 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
 template <typename T>
 std::string thriftToString(const T & obj)
 {
-    std::stringstream ss;
+    std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss << obj;
     return ss.str();
 }

@@ -376,7 +376,7 @@ struct Reader
         size_t row_group_idx; // in parquet file
 
         /// Parallel to Reader::primitive_columns.
-        /// NOT parallel to `meta.columns` (it's a subset of parquet colums).
+        /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
