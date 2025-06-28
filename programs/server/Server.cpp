@@ -1,4 +1,4 @@
-#include "Server.h"
+#include <Server.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -97,7 +97,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
-#include "MetricsTransmitter.h"
+#include <MetricsTransmitter.h>
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
