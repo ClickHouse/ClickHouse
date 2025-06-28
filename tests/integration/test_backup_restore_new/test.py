@@ -209,6 +209,21 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_empty_table(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine, n=0)
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+
 def test_restore_materialized_view_with_definer():
     instance.query("CREATE DATABASE test")
     instance.query(
