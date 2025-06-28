@@ -277,7 +277,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (create_query->uuid != UUIDHelpers::Nil)
                 {
                     /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
-                    if (is_startup)
+                    /// When attaching a database with a read-only disk, the UUIDs do not exist, we add them manually.
+                    if (is_startup || (db_disk->isReadOnly() && !DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid)))
                     {
                         /// Server is starting up. Lock UUID used by permanently detached table.
                         DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
