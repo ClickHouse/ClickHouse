@@ -30,11 +30,11 @@ namespace DB::Parquet
 //     - perf or samply
 //     - add OpenTelemetry::SpanHolder-s and try https://github.com/ClickHouse/ClickHouse/blob/bae91a06d914eac4cda7b90ac65dfef07eef0c82/utils/trace-visualizer/README.md
 //  * check fields for false sharing, add cacheline padding as needed
-//  * enable_json_parsing
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * input_format_parquet_enable_json_parsing
 //  * allow_geoparquet_parser
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
+//  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
 //  * make writer write SizeStatistics
 //  * make writer write PageEncodingStats
@@ -46,7 +46,6 @@ namespace DB::Parquet
 //  * add comments everywhere
 //  * test getMissingValues()
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
-//  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * cache FileMetaData in something like SchemaCache
 //  * TSA
 //  * test with tsan

@@ -75,6 +75,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
+            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
+            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_fuzz", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -174,7 +181,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
             /// Release closed. Please use 25.5
-            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {

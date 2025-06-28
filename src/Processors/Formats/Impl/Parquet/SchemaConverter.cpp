@@ -356,7 +356,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         std::vector<size_t> elements;
         if (type_hint)
         {
-            if (tuple_type_hint->haveExplicitNames() && !tuple_type_hint->getElements().empty())
+            if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty())
             {
                 /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
                 lookup_by_name = true;
