@@ -1,5 +1,7 @@
 drop table if exists x;
 
+set enable_analyzer = 1, parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
+
 create table x (i int) engine MergeTree order by i settings index_granularity = 3;
 insert into x select * from numbers(10);
 select * from (explain select count() from x where (i >= 3 and i <= 6) or i = 7) where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';

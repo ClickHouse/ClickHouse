@@ -23,10 +23,12 @@ struct RangesInDataPartDescription
     MergeTreePartInfo info{};
     MarkRanges ranges{};
     size_t rows = 0;
+    String projection_name;
 
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
+    String getPartOrProjectionName() const;
 };
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>

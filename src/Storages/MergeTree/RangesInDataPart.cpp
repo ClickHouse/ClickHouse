@@ -34,13 +34,29 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
     info.serialize(out);
     ranges.serialize(out);
     writeVarUInt(rows, out);
+
+    if (!projection_name.empty())
+    {
+        writeBinary(static_cast<UInt8>(1), out);
+        writeBinary(projection_name, out);
+    }
+    else
+        writeBinary(static_cast<UInt8>(0), out);
 }
 
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("part {} with ranges [{}]", info.getPartNameV1(), fmt::join(ranges, ","));
+    result += fmt::format("part {} with ranges [{}]", getPartOrProjectionName(), fmt::join(ranges, ","));
     return result;
+}
+
+String RangesInDataPartDescription::getPartOrProjectionName() const
+{
+    if (projection_name.empty())
+        return info.getPartNameV1();
+
+    return info.getPartNameV1() + "." + projection_name;
 }
 
 void RangesInDataPartDescription::deserialize(ReadBuffer & in)
@@ -48,6 +64,11 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in)
     info.deserialize(in);
     ranges.deserialize(in);
     readVarUInt(rows, in);
+    UInt8 have_projection_name = 0;
+
+    readBinary(have_projection_name, in);
+    if (have_projection_name)
+        readBinary(projection_name, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
@@ -108,10 +129,20 @@ RangesInDataPart::RangesInDataPart(
 
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
+    if (!data_part->isProjectionPart())
+        return RangesInDataPartDescription{
+            .info = data_part->info,
+            .ranges = ranges,
+            .rows = getRowsCount(),
+            .projection_name = "",
+        };
+
+    chassert(parent_part);
     return RangesInDataPartDescription{
-        .info = data_part->info,
+        .info = parent_part->info,
         .ranges = ranges,
         .rows = getRowsCount(),
+        .projection_name = data_part->name,
     };
 }
 

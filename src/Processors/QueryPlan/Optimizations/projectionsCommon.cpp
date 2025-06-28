@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace ErrorCodes
@@ -45,13 +46,13 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->isParallelReadingEnabled())
-        return false;
-
     if (reading->readsInOrder())
         return false;
 
     const auto & query_settings = reading->getContext()->getSettingsRef();
+
+    if (reading->isParallelReadingEnabled() && !query_settings[Setting::parallel_replicas_support_projection])
+        return false;
 
     // Currently projection don't support deduplication when moving parts between shards.
     if (query_settings[Setting::allow_experimental_query_deduplication])

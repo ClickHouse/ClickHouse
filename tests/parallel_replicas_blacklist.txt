@@ -245,18 +245,8 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/14887
     Projections
-01710_minmax_count_projection
-01710_projection_vertical_merges
-01710_force_use_projection
-01710_projection_pk_trivial_count
-01710_projection_additional_filters
-01710_projection_in_index
-02906_force_optimize_projection_name
-01710_projections
-02907_preferred_optimize_projection_name
 01710_projection_aggregation_in_order
 01710_projections_optimize_aggregation_in_order
-03206_projection_merge_special_mergetree_ignore
 03254_project_lwd_respects_row_exists
 02968_projection_merge
 01710_normal_projection_fix1

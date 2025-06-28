@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
+#include <Core/Settings.h>
 #include <Common/checkStackSize.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -14,6 +15,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -24,6 +26,37 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallel_replicas_support_projection;
+}
+
+static void findReadFromMergeTree(QueryPlan::Node * node, ReadFromMergeTree *& reading, QueryPlan::Node *& result_node)
+{
+    while (node)
+    {
+        reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (reading)
+        {
+            result_node = node;
+            break;
+        }
+
+        if (!node->children.empty())
+        {
+            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
+            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
+            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+                || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
+                node = node->children.at(1);
+            else
+                node = node->children.at(0);
+        }
+        else
+            node = nullptr;
+    }
+}
 
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
@@ -57,54 +90,57 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
-    QueryPlan::Node * node = query_plan->getRootNode();
+    QueryPlan::Node * node = nullptr;
     ReadFromMergeTree * reading = nullptr;
-    while (node)
-    {
-        reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
-        if (reading)
-            break;
-
-        if (!node->children.empty())
-        {
-            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
-            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
-            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-             || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
-                node = node->children.at(1);
-            else
-                node = node->children.at(0);
-        }
-        else
-            node = nullptr;
-    }
-
+    findReadFromMergeTree(query_plan->getRootNode(), reading, node);
     if (!reading)
         /// it can happened if merge tree table is empty, - it'll be replaced with ReadFromPreparedSource
         return {std::move(query_plan), false};
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
-    if (analyzed_read_from_merge_tree.get())
+    if (new_context->getSettingsRef()[Setting::parallel_replicas_support_projection])
     {
-        auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
-        if (analyzed_merge_tree)
-            analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+        query_plan->optimize(QueryPlanOptimizationSettings(new_context));
+        findReadFromMergeTree(query_plan->getRootNode(), reading, node);
+
+        if (!reading || !reading->getAnalyzedResult())
+            /// After projection optimization, the sourceStep may be replaced with ReadFromPreparedSource in the following scenarios:
+            /// 1. Empty Projections: When no projections are available.
+            /// 2. Min-Max Projection: When the selected projection is a min-max projection.
+            /// 3. Exact Count Optimization: When all parent projections are filtered out by the exact count optimization
+            return {std::move(query_plan), false};
+
+        analyzed_result_ptr = reading->getAnalyzedResult();
+    }
+    else
+    {
+        if (analyzed_read_from_merge_tree.get())
+        {
+            auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
+            if (analyzed_merge_tree)
+                analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+        }
     }
 
     MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
-    { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
+    {
+        coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    };
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
-    { return coordinator->handleRequest(std::move(req)); };
+    {
+        return coordinator->handleRequest(std::move(req));
+    };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        analyzed_result_ptr,
+        std::move(all_ranges_cb),
+        std::move(read_task_cb),
+        replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
 
     return {std::move(query_plan), true};
 }
-
 }

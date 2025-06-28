@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
@@ -17,8 +16,12 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
+    bool hasOptimized() const { return has_optimized; }
+    void setOptimized(bool optimized) { has_optimized = optimized; }
+
 private:
     QueryPlanPtr query_plan;
+    bool has_optimized = false;
 };
 
 }

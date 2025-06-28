@@ -187,8 +187,11 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    // find ReadFromLocalParallelReplicaStep and replace with optimized local plan
+    /// Find read_from_local before optimizing projection to ensure that exact count optimization is not applied to remote replicas.
+    /// This is necessary to determine whether the current context involves remote replicas before applying the optimization.
     bool read_from_local_parallel_replica_plan = false;
+    std::vector<ReadFromLocalParallelReplicaStep *> read_from_local_list = {};
+    std::vector<QueryPlan::Node *> local_plan_node_list = {};
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -202,28 +205,17 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+
+        auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get());
+        if (read_from_local)
         {
-            read_from_local_parallel_replica_plan = true;
-
-            auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
-
-            auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
-
-            // after applying optimize() we still can have several expression in a row,
-            // so merge them to make plan more concise
-            if (optimization_settings.merge_expressions)
-                tryMergeExpressions(local_plan_node, nodes, {});
+            read_from_local_list.push_back(read_from_local);
+            local_plan_node_list.push_back(frame.node);
         }
 
         stack.pop_back();
     }
-    // local plan can contain redundant sorting
-    if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
-        tryRemoveRedundantSorting(&root);
-
+    read_from_local_parallel_replica_plan = !read_from_local_list.empty();
 
     stack.push_back({.node = &root});
 
@@ -240,7 +232,11 @@ void optimizeTreeSecondPass(
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
                 {
-                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+                    auto applied_projection = optimizeUseAggregateProjections(
+                        *frame.node,
+                        nodes,
+                        optimization_settings.optimize_use_implicit_projections,
+                        read_from_local_parallel_replica_plan);
                     if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
                 }
@@ -284,6 +280,30 @@ void optimizeTreeSecondPass(
 
         stack.pop_back();
     }
+
+    /// Replace read_from_local with local_plan_node after projection optimization to prevent double execution of the projection optimization on coordinator,
+    /// Which would cause an exception when force_use_projection is enabled.
+    if (read_from_local_parallel_replica_plan)
+    {
+        chassert(read_from_local_list.size() == local_plan_node_list.size());
+        for (size_t i = 0; i < read_from_local_list.size(); i++)
+        {
+            auto local_plan = read_from_local_list[i]->extractQueryPlan();
+            if (!read_from_local_list[i]->hasOptimized())
+                local_plan->optimize(optimization_settings);
+
+            query_plan.replaceNodeWithPlan(local_plan_node_list[i], std::move(local_plan));
+
+            // after applying optimize() we still can have several expression in a row,
+            // so merge them to make plan more concise
+            if (optimization_settings.merge_expressions)
+                tryMergeExpressions(local_plan_node_list[i], nodes, {});
+        }
+    }
+
+    // local plan can contain redundant sorting
+    if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
+        tryRemoveRedundantSorting(&root);
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step

@@ -41,6 +41,8 @@ private:
 
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;
+
+    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
 };
 
 };
