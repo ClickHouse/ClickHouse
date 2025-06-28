@@ -68,6 +68,11 @@ MESSAGES_TO_RETRY = [
     "Unable to get registers from thread",
 ]
 
+IGNORED_SANITIZER_ERRORS = [
+    "LLVM ERROR: IO failure on output stream: Broken pipe",
+    "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+]
+
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
@@ -1655,7 +1660,9 @@ class TestCase:
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
-                content = "\n".join(filter(lambda l: "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!" not in l, content.splitlines()))
+                def ignore_sanitizer_line(line):
+                    return any(filter(lambda exception: exception in line, IGNORED_SANITIZER_ERRORS))
+                content = "\n".join(filter(lambda line: not ignore_sanitizer_line(line), content.splitlines())).strip()
                 if content:
                     stderr += f"Path: {path}\n"
                     stderr += content
