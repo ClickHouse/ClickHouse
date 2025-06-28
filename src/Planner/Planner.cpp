@@ -1070,6 +1070,16 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
+    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
+    /// as it may break `rows_before_limit_at_least` value during the second stage in
+    /// case it also contains LIMIT BY
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
+    {
+        return;
+    }
+
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
