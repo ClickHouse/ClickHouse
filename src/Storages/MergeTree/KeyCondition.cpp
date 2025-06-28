@@ -953,7 +953,7 @@ KeyCondition::KeyCondition(
 }
 
 KeyCondition::KeyCondition(
-    const this_is_private, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
+    this_is_private, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
     bool date_time_overflow_behavior_ignore_, bool relaxed_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))

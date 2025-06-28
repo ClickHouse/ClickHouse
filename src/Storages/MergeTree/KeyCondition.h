@@ -288,7 +288,7 @@ public:
 
     /// Private constructor.
     KeyCondition(
-        const this_is_private,
+        this_is_private,
         ColumnIndices key_columns_,
         size_t num_key_columns_,
         bool single_point_,
