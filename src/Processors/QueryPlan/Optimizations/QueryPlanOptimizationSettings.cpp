@@ -53,6 +53,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace ServerSetting
@@ -65,7 +67,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     ExpressionActionsSettings actions_settings_,
-    PreparedSetsCachePtr prepared_sets_cache_)
+    PreparedSetsCachePtr prepared_sets_cache_,
+    bool optimize_projection_on_parallel_replicas_initiator_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -104,6 +107,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
 
+    optimize_projection_on_parallel_replicas_initiator = optimize_projection_on_parallel_replicas_initiator_;
+
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
@@ -136,7 +141,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
-        from->getPreparedSetsCache())
+        from->getPreparedSetsCache(),
+        (from->canUseParallelReplicasOnInitiator()
+            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
+            && from->getSettingsRef()[Setting::parallel_replicas_support_projection]))
 {
 }
 

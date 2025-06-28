@@ -11,9 +11,6 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
@@ -466,7 +463,11 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool optimize_projection_on_parallel_replicas_initiator)
 {
     if (node.children.size() != 1)
         return {};
@@ -777,7 +778,10 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             reading->getNumStreams(),
             max_added_blocks,
             best_candidate->merge_tree_projection_select_result_ptr,
-            reading->isParallelReadingEnabled());
+            reading->isParallelReadingEnabled(),
+            reading->getAllRangesCallback(),
+            reading->getReadTaskCallback(),
+            reading->getNumberOfCurrentReplica());
 
         if (!projection_reading)
         {
@@ -830,13 +834,84 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         aggregate_projection_node = &projection_reading_node;
     }
 
+    /// The exact count optimization may modify the `ReadFromMergeTree` to use `ReadFromPreparedSource`.
+    /// ---------------------------if parent parts have been partially filtered------------------------
+    ///                                             AggregatingProjection
+    ///  ReadFromMergeTree  ---is replaced by--->       ReadFromMergeTree
+    ///                                                 ReadFromPreparedSource (_exact_count_projection)
+    /// ------------------------------------------------------------------------------------------------
+    /// Only the initiator should read the exact count projection to avoid potential data duplication.
+    if (exact_count > 0 && reading->isParallelReadingEnabled() && !optimize_projection_on_parallel_replicas_initiator)
+    {
+        auto header = projection_reading_node.step->getOutputHeader();
+        Pipe pipe(std::make_shared<NullSource>(header));
+        QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_reading_node.step = std::move(null_reading);
+        LOG_DEBUG(logger, "parallel replicas follower skip reading from exact_count_projection");
+    }
+
     if (has_parent_parts)
     {
+        /// The result contains both the projection stream and the part stream.
+        /// -------------------------------------------------------------------------------------------
+        ///                                                 AggregatingProjection
+        ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
+        ///                                                     ReadFromMergeTree (projection_agg)
+        /// -------------------------------------------------------------------------------------------
+        ///                                         or
+        /// -------------------------------------------------------------------------------------------
+        ///                                                 Union
+        ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
+        ///                                                     ReadFromPreparedSource
+        /// -------------------------------------------------------------------------------------------
+        /// The coordinator cannot be shared between these two streams, so read projections are performed directly on the initial replica.
+        if (best_candidate && reading->isParallelReadingEnabled() && optimize_projection_on_parallel_replicas_initiator)
+        {
+            auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get());
+            if (read_from_projections)
+            {
+                read_from_projections->cancelParallelReading();
+                LOG_DEBUG(logger, "parallel replicas initiator fall back to read projection locally");
+            }
+        }
+
+        /// Only the initiator should read the projection to avoid potential data duplication.
+        if (best_candidate && reading->isParallelReadingEnabled() && !optimize_projection_on_parallel_replicas_initiator)
+        {
+            auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get());
+            if (read_from_projections)
+            {
+                auto header = read_from_projections->getOutputHeader();
+                Pipe pipe(std::make_shared<NullSource>(header));
+                QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+                projection_reading_node.step = std::move(null_reading);
+                LOG_DEBUG(logger, "parallel replicas follower skip reading from projection");
+            }
+        }
+
         node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.push_back(aggregate_projection_node);
     }
     else
     {
+        /// The min-max projection optimization modifies ReadFromMergeTree to ReadFromPreparedSource.
+        /// -------------------------------------------------------------------------------------------------
+        ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_minmax_count_projection)
+        /// -------------------------------------------------------------------------------------------------
+        /// Only the initiator should read the min-max projection to avoid potential data duplication.
+        if (candidates.minmax_projection && reading->isParallelReadingEnabled() && !optimize_projection_on_parallel_replicas_initiator)
+        {
+            auto header = projection_reading_node.step->getOutputHeader();
+            Pipe pipe(std::make_shared<NullSource>(header));
+            QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            projection_reading_node.step = std::move(null_reading);
+            LOG_DEBUG(logger, "parallel replicas follower skip reading from min_max_projection");
+        }
+
+        /// Reading from projections has completely replaced reading from parts, disable parallel reading to avoid affecting the state of the coordinator.
+        if (reading->isParallelReadingEnabled())
+            reading->cancelParallelReading();
+
         /// All parts are taken from projection
         aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;

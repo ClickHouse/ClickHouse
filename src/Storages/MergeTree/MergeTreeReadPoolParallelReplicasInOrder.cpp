@@ -60,10 +60,17 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
     for (const auto & part : parts_ranges)
-        request.push_back({part.data_part->info, MarkRanges{}});
+    {
+        bool is_projection = part.data_part->isProjectionPart();
+        if (is_projection)
+            chassert(part.parent_part);
 
-    for (const auto & part : parts_ranges)
-        buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
+        auto info = is_projection ? part.parent_part->info : part.data_part->info;
+        auto projection_name = is_projection ? part.data_part->name : "";
+
+        request.push_back({.info = info, .ranges = MarkRanges{}, .projection_name = projection_name});
+        buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
+    }
 
     extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
 
@@ -78,7 +85,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
-    const auto & part_info = per_part_infos[task_idx]->data_part->info;
+    bool is_projection = per_part_infos[task_idx]->data_part->isProjectionPart();
+    if (is_projection)
+        chassert(per_part_infos[task_idx]->parent_part);
+
+    const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
+    const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
     const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     auto get_from_buffer = [&,
@@ -88,7 +100,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
         const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         for (auto & desc : buffered_tasks)
         {
-            if (desc.info == part_info && !desc.ranges.empty())
+            if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())
             {
                 if (mode == CoordinationMode::WithOrder)
                 {

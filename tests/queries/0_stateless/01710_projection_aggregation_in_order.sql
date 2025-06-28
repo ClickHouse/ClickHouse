@@ -27,6 +27,7 @@ INSERT INTO normal SELECT
 FROM numbers(100000);
 
 SET optimize_use_projections=1, optimize_aggregation_in_order=1, force_optimize_projection=1;
+SET parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
