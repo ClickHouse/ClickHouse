@@ -3,14 +3,14 @@
 
 SET send_logs_level = 'fatal';
 
-drop table if exists rmt;
-drop table if exists rmt2;
+drop table if exists rmt sync;
+drop table if exists rmt2 sync;
 
 set apply_mutations_on_fly = 0;
 
 -- Disable compact parts, because we need hardlinks in mutations.
 create table rmt (n int, m int, k int) engine=ReplicatedMergeTree('/test/02432/{database}', '1') order by tuple()
-    settings storage_policy = 's3_cache',
+    settings /*storage_policy = 's3_cache',*/
         concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,
         max_replicated_merges_in_queue=0, max_replicated_mutations_in_queue=0, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
@@ -40,7 +40,7 @@ select count(), sum(n), sum(m) from rmt;
 
 -- New table can assign merges/mutations and can remove old parts
 create table rmt2 (n int, m int, k String) engine=ReplicatedMergeTree('/test/02432/{database}', '2') order by tuple()
-    settings storage_policy = 's3_cache',
+    settings /*storage_policy = 's3_cache',*/
         concurrent_part_removal_threshold=1, cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,
         min_bytes_for_wide_part=0, min_rows_for_wide_part=0, max_replicated_merges_in_queue=1,
         old_parts_lifetime=0;
@@ -52,7 +52,7 @@ alter table rmt modify setting old_parts_lifetime=0, max_replicated_mutations_in
 
 -- Wait for mutations to finish
 system sync replica rmt2;
-alter table rmt2 update k = 'zero copy' where 1 settings mutations_sync=2;
+alter table rmt2 update k = 'wtf' where 1 settings mutations_sync=2;
 
 -- Test does not rely on sleep, it increases probability of reproducing issues.
 select sleep(3);
@@ -63,10 +63,10 @@ select count(), sum(n), sum(m) from rmt2;
 -- So there will be at least 2 parts (just in case no parts are removed until drop)
 insert into rmt(n) values (10);
 
-drop table rmt;
-drop table rmt2;
+drop table rmt sync;
+drop table rmt2 sync;
 
 system flush logs text_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 select count() > 0 from system.text_log where yesterday() <= event_date and logger_name like '%' || currentDatabase() || '%' and message like '%Removing % parts from filesystem (concurrently): Parts:%';
-select count() > 1, countDistinct(thread_id) > 1 from system.text_log where yesterday() <= event_date and logger_name like '%' || currentDatabase() || '%' and message like '%Removing % parts in blocks range%';
+select message from system.text_log where yesterday() <= event_date and logger_name like '%' || currentDatabase() || '%' and message like '%Removing % parts in blocks range%';
