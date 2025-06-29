@@ -712,7 +712,9 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"output_format_parquet_datetime_as_uint32", trueOrFalseSettingNoOracle},
-    {"output_format_parquet_max_dictionary_size", [](RandomGenerator & rg)
+    {"output_format_parquet_max_dictionary_size",
+     CHSetting(
+        [](RandomGenerator & rg)
         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
         {},
         false)},
