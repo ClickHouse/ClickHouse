@@ -173,6 +173,9 @@ public:
             ArrayElements,
             ArraySizes,
 
+            StringSizes,
+            InlinedStringSizes,
+
             NullableElements,
             NullMap,
 
@@ -280,6 +283,10 @@ public:
         /// It may be needed when dynamic subcolumns are processed separately.
         bool enumerate_dynamic_streams = true;
 
+        /// If set to false, don't enumerate virtual subcolumns
+        /// (such as .size subcolumn in String column).
+        bool enumerate_virtual_streams = false;
+
         /// If set to true, enumerate also specialized substreams for prefixes and suffixes.
         /// For example for discriminators in Variant column we should enumerate a separate
         /// substream VariantDiscriminatorsPrefix together with substream VariantDiscriminators that is
@@ -306,6 +313,13 @@ public:
 
     /// Enumerate streams with default settings.
     void enumerateStreams(
+        const StreamCallback & callback,
+        const DataTypePtr & type = nullptr,
+        const ColumnPtr & column = nullptr) const;
+
+    /// Similar to enumerateStreams, but also includes virtual substreams.
+    /// For example, DataTypeString has a virtual `.size` substream, which is included here.
+    void enumerateAllStreams(
         const StreamCallback & callback,
         const DataTypePtr & type = nullptr,
         const ColumnPtr & column = nullptr) const;
@@ -564,7 +578,9 @@ public:
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
+
+    static void addElementToSubstreamsCache(
+        SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element, bool upsert = false);
     static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);

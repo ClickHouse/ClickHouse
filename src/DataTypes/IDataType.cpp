@@ -130,6 +130,7 @@ void IDataType::forEachSubcolumn(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
+    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 }
 
@@ -182,6 +183,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     settings.position_independent_encoding = false;
     /// Don't enumerate dynamic subcolumns, they are handled separately.
     settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -323,6 +325,11 @@ SerializationPtr IDataType::getSerialization(const SerializationInfo & info) con
     return getSerialization(info.getKind());
 }
 
+SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
+{
+    return getSerialization(*createSerializationInfo(settings));
+}
+
 // static
 SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfo & info)
 {
@@ -334,6 +341,19 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
     }
 
     return column.type->getSerialization(info);
+}
+
+// static
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings)
+{
+    if (column.isSubcolumn())
+    {
+        const auto & type_in_storage = column.getTypeInStorage();
+        auto serialization = type_in_storage->getSerialization(settings);
+        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), serialization);
+    }
+
+    return column.type->getSerialization(settings);
 }
 
 // static

@@ -124,6 +124,7 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"optimize_and_compare_chain", trueOrFalseSetting},
     {"optimize_distinct_in_order", trueOrFalseSetting},
     {"optimize_distributed_group_by_sharding_key", trueOrFalseSetting},
+    {"optimize_empty_string_comparisons", trueOrFalseSetting},
     {"optimize_functions_to_subcolumns", trueOrFalseSetting},
     {"optimize_group_by_constant_keys", trueOrFalseSetting},
     {"optimize_group_by_function_keys", trueOrFalseSetting},

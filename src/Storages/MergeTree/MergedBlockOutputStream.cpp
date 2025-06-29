@@ -353,7 +353,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
-    if (!serialization_infos.empty())
+    if (!serialization_infos.empty() || serialization_infos.getVersion() > DEFAULT_SERIALIZATION_INFO_VERSION)
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {

@@ -194,6 +194,22 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
+    DECLARE(Bool, serialize_string_with_size_stream, true, R"(
+    Enables using a separate size stream when serializing top-level `String` columns.
+
+    When enabled, `String` columns at the top level of a table schema
+    are serialized as `StringWithSizeStream`, which stores string lengths
+    in a dedicated stream rather than inline. This allows real `.size` subcolumns
+    and may improve compression efficiency.
+
+    Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
+    are not affected, except when they appear in a `Tuple`.
+
+    Possible values:
+
+    - 1 — `String` columns use a separate size stream during serialization.
+    - 0 — `String` columns use the standard serialization format with inline sizes.
+    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
