@@ -996,6 +996,8 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
         if (!candidates_end)
             candidates_end = index_granularity->getMarksCountWithoutFinal();
+        if (candidates_end != 0) /// Come back by 1 because we are now 1 past the upper bound or at the final mark
+            candidates_end = candidates_end.value() - 1;
 
         for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
         {
