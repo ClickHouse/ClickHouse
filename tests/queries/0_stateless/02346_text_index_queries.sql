@@ -10,7 +10,7 @@ SELECT 'Test text(tokenizer="ngram", ngram_size = 2)';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
             ENGINE = MergeTree() ORDER BY k
             SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -66,7 +66,7 @@ SELECT 'Test text(tokenizer = "default")';
 
 DROP TABLE IF EXISTS tab_x;
 
-CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default'))
+CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default') GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -119,7 +119,7 @@ SELECT 'Test on array columns';
 
 DROP TABLE IF EXISTS tab;
 
-create table tab (k UInt64, s Array(String), INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
+create table tab (k UInt64, s Array(String), INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -146,7 +146,7 @@ SELECT 'Test on map columns';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE text(tokenizer = 'ngram', ngram_size = 2))
+CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -187,7 +187,7 @@ SELECT 'Test text(tokenizer = "ngram", ngram_size = 2) on a column with two part
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -215,7 +215,7 @@ SELECT 'Test text(tokenizer = "ngram", ngram_size = 2) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
@@ -245,7 +245,7 @@ SELECT 'Test max_rows_per_postings_list';
 DROP TABLE IF EXISTS tab;
 
 -- create table 'tab' with text index parameter (ngrams, max_rows_per_most_list) which is (0, 10240)
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default', max_rows_per_postings_list = 12040))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = 'default', max_rows_per_postings_list = 12040) GRANULARITY 1)
                      Engine=MergeTree
                      ORDER BY (k)
                      AS
@@ -258,7 +258,7 @@ DROP TABLE IF EXISTS tab;
 
 -- create table 'tab' with GINindex parameter (ngrams, max_rows_per_most_list) which is (0, 123)
 -- it should throw exception since max_rows_per_most_list(123) is less than its minimum value(8196)
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(3, 123))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(3, 123) GRANULARITY 1)
                      Engine=MergeTree
                      ORDER BY (k)
                      AS
