@@ -24,6 +24,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
     /* those are mapped to format factory settings */ \
     DECLARE(String, kafka_format, "", "The message format for Kafka engine.", 0) \
+    DECLARE(String, kafka_format_avro_schema_registry_url, "", "For AvroConfluent format: Kafka schema registry URL", 0) \
     DECLARE(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     DECLARE(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
     /* default is = max_insert_block_size / kafka_num_consumers  */ \

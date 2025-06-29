@@ -69,6 +69,7 @@ namespace KafkaSetting
     extern const KafkaSettingsBool kafka_commit_on_select;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsString kafka_format;
+    extern const KafkaSettingsString kafka_format_avro_schema_registry_url;
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsString kafka_keeper_path;
@@ -514,6 +515,12 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
+
+    const auto format_avro_schema_registry_url = kafka_settings[KafkaSetting::kafka_format_avro_schema_registry_url].value;
+    if (!format_avro_schema_registry_url.empty())
+    {
+        result.emplace_back("format_avro_schema_registry_url", format_avro_schema_registry_url);
+    }
 
     auto kafka_format_settings = kafka_settings.getFormatSettings();
     result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
