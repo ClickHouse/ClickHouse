@@ -65,6 +65,9 @@ public:
     /// for the next readLine() call.
     virtual void enableBracketedPaste() {}
     virtual void disableBracketedPaste() {}
+    
+    /// Set text to be prepopulated in the next readLine call
+    virtual void setInitialText(const String &) {}
 
     bool hasInputData() const;
 

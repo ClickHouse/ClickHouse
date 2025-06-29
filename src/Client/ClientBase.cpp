@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/InternalTextLogs.h>
@@ -5,6 +7,9 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Client/AI/AIProviderFactory.h>
+#include <Client/AI/IAIProvider.h>
+#include <Client/AI/SchemaProviderFunctionsImpl.h>
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
@@ -85,6 +90,8 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <thread>
+#include <chrono>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -2805,6 +2812,43 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
+#if USE_CLIENT_AI
+    // Handle "?? <free_text>" command
+    if (text.starts_with("??"))
+    {
+        size_t skip_prefix_size = 2; // Length of "??"
+        auto free_text = text.substr(skip_prefix_size);
+        // Trim leading whitespace from the free text
+        free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
+
+        if (!ai_provider)
+        {
+            error_stream << "AI provider is not initialized" << std::endl;
+            return true;
+        }
+        
+        if (free_text.empty())
+        {
+            error_stream << "Please provide a natural language query after ??" << std::endl;
+            return true;
+        }
+        
+        try
+        {
+            std::string generated_sql = ai_provider->generateSQL(free_text);
+            
+            /// Prepopulate the next query with the generated SQL
+            next_query_to_prepopulate = generated_sql;
+        }
+        catch (const std::exception & e)
+        {
+            error_stream << "AI query generation failed: " << e.what() << std::endl;
+        }
+
+        return true;
+    }
+#endif
+
     if (query_fuzzer_runs)
     {
         processWithASTFuzzer(text);
@@ -2813,6 +2857,113 @@ bool ClientBase::processQueryText(const String & text)
 
     return executeMultiQuery(text);
 }
+
+#if USE_CLIENT_AI
+void ClientBase::initAIProvider()
+{
+    try {
+        AIConfiguration ai_config = AIProviderFactory::loadConfiguration(getClientConfiguration());
+        ai_provider = AIProviderFactory::createProvider(ai_config);
+    } catch (const std::exception & e) {
+        error_stream << "Failed to initialize AI provider: " << e.what() << std::endl;
+    }
+}
+
+void ClientBase::setupAISchemaProvider()
+
+{
+    if (!ai_provider || !connection)
+        return;
+        
+    try
+    {
+        /// Create a query executor that uses the common utility method
+        auto query_executor = [this](const std::string & query) -> std::string
+        {
+            return executeQueryForSingleString(query);
+        };
+        
+        /// Create and set the schema provider
+        auto schema_provider = std::make_shared<SchemaProviderFunctionsImpl>(query_executor);
+        ai_provider->setSchemaProvider(schema_provider);
+    }
+    catch (...)
+    {
+        /// Ignore errors in schema provider setup
+    }
+}
+
+std::string ClientBase::executeQueryForSingleString(const std::string & query)
+{
+    if (!connection)
+        return "";
+        
+    try
+    {
+        std::string result;
+        
+        /// Send the query
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            {},  /// query_parameters
+            "",  /// query_id
+            QueryProcessingStage::Complete,
+            nullptr,  /// settings
+            nullptr,  /// client_info
+            false,    /// with_pending_data
+            {},       /// external_roles
+            {}        /// external_data
+        );
+        
+        /// Receive and process results
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block && packet.block.rows() > 0)
+                    {
+                        /// Convert block to string representation
+                        /// For schema queries, we expect single column results
+                        const auto & column = packet.block.getByPosition(0).column;
+                        for (size_t i = 0; i < column->size(); ++i)
+                        {
+                            if (!result.empty())
+                                result += "\n";
+                            result += column->getDataAt(i).toString();
+                        }
+                    }
+                    break;
+                    
+                case Protocol::Server::EndOfStream:
+                    return result;
+                    
+                case Protocol::Server::Exception:
+                    /// Return empty string on exception
+                    return "";
+                    
+                case Protocol::Server::Progress:
+                case Protocol::Server::ProfileInfo:
+                case Protocol::Server::Log:
+                case Protocol::Server::ProfileEvents:
+                case Protocol::Server::TimezoneUpdate:
+                    /// Ignore these packet types
+                    break;
+                    
+                default:
+                    /// Ignore unknown packet types
+                    break;
+            }
+        }
+    }
+    catch (...)
+    {
+        return "";
+    }
+}
+#endif
 
 
 String ClientBase::getPrompt() const
@@ -3180,6 +3331,11 @@ void ClientBase::runInteractive()
 
     initQueryIdFormats();
 
+#if USE_CLIENT_AI
+    initAIProvider();
+    setupAISchemaProvider();
+#endif
+
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
@@ -3305,16 +3461,22 @@ void ClientBase::runInteractive()
     do
     {
         String input;
-        {
-            /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
-            /// But keep it disabled outside of query input, because it breaks password input
-            /// (e.g. if we need to reconnect and show a password prompt).
-            /// (Alternatively, we could make the password input ignore the control sequences.)
-            lr->enableBracketedPaste();
-            SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
+        
+        /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+        /// But keep it disabled outside of query input, because it breaks password input
+        /// (e.g. if we need to reconnect and show a password prompt).
+        /// (Alternatively, we could make the password input ignore the control sequences.)
+        lr->enableBracketedPaste();
+        SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
-            input = lr->readLine(getPrompt(), ":-] ");
+        // Check if we have a prepopulated query to show
+        if (!next_query_to_prepopulate.empty())
+        {
+            lr->setInitialText(next_query_to_prepopulate);
+            next_query_to_prepopulate.clear();
         }
+
+        input = lr->readLine(getPrompt(), ":-] ");
 
         if (input.empty())
             break;
@@ -3419,6 +3581,11 @@ void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
         initQueryIdFormats();
+
+#if USE_CLIENT_AI
+    initAIProvider();
+    setupAISchemaProvider();
+#endif
 
     if (!buzz_house && !queries_files.empty())
     {
