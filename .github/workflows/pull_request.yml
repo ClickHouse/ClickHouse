@@ -1309,239 +1309,11 @@ jobs:
             python3 -m praktika run 'Unit tests (ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  docker_server_image:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
-    name: "Docker server image"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  docker_keeper_image:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
-    name: "Docker keeper image"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  install_packages_release:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAocmVsZWFzZSk=') }}
-    name: "Install packages (release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Install packages (release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  install_packages_aarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYWFyY2g2NCk=') }}
-    name: "Install packages (aarch64)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (aarch64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Install packages (aarch64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  compatibility_check_release:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAocmVsZWFzZSk=') }}
-    name: "Compatibility check (release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Compatibility check (release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  compatibility_check_aarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYWFyY2g2NCk=') }}
-    name: "Compatibility check (aarch64)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (aarch64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Compatibility check (aarch64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_asan_distributed_plan_1_2:
+  stateless_tests_amd_asan_distributed_plan_parallel_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMS8yKQ==') }}
-    name: "Stateless tests (amd_asan, distributed plan, 1/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1570,16 +1342,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_asan_distributed_plan_2_2:
+  stateless_tests_amd_asan_distributed_plan_parallel_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMi8yKQ==') }}
-    name: "Stateless tests (amd_asan, distributed plan, 2/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1608,16 +1380,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_binary:
+  stateless_tests_amd_asan_distributed_plan_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_asan, distributed plan, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5KQ==') }}
-    name: "Stateless tests (amd_binary)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgcGFyYWxsZWwp') }}
+    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1646,16 +1456,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_1_2:
+  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgMS8yKQ==') }}
-    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1684,16 +1532,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_2_2:
+  stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgMi8yKQ==') }}
-    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1722,54 +1570,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_binary_parallelreplicas_s3_storage:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlKQ==') }}
-    name: "Stateless tests (amd_binary, ParallelReplicas, s3 storage)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_debug_asyncinsert_s3_storage:
+  stateless_tests_amd_debug_asyncinsert_s3_storage_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIEFzeW5jSW5zZXJ0LCBzMyBzdG9yYWdlKQ==') }}
-    name: "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIEFzeW5jSW5zZXJ0LCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1798,16 +1608,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_debug:
+  stateless_tests_amd_debug_asyncinsert_s3_storage_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIEFzeW5jSW5zZXJ0LCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_debug_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcp') }}
-    name: "Stateless tests (amd_debug)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_debug, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1836,16 +1684,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_1_3:
+  stateless_tests_amd_debug_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_debug, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_tsan_parallel_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgMS8zKQ==') }}
-    name: "Stateless tests (amd_tsan, 1/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwsIDEvMik=') }}
+    name: "Stateless tests (amd_tsan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1874,16 +1760,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, 1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, 1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_2_3:
+  stateless_tests_amd_tsan_parallel_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgMi8zKQ==') }}
-    name: "Stateless tests (amd_tsan, 2/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwsIDIvMik=') }}
+    name: "Stateless tests (amd_tsan, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1912,16 +1798,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, 2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, 2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_3_3:
+  stateless_tests_amd_tsan_sequential:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgMy8zKQ==') }}
-    name: "Stateless tests (amd_tsan, 3/3)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_tsan, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -1950,54 +1836,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, 3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, 3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_msan_1_4:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgMS80KQ==') }}
-    name: "Stateless tests (amd_msan, 1/4)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, 1/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_msan, 1/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_msan_2_4:
+  stateless_tests_amd_msan_parallel_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgMi80KQ==') }}
-    name: "Stateless tests (amd_msan, 2/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgcGFyYWxsZWwsIDEvMik=') }}
+    name: "Stateless tests (amd_msan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2026,16 +1874,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, 2/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, 2/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_msan_3_4:
+  stateless_tests_amd_msan_sequential_1_2:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgc2VxdWVudGlhbCwgMS8yKQ==') }}
+    name: "Stateless tests (amd_msan, sequential, 1/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_msan_parallel_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgMy80KQ==') }}
-    name: "Stateless tests (amd_msan, 3/4)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgcGFyYWxsZWwsIDIvMik=') }}
+    name: "Stateless tests (amd_msan, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2064,16 +1950,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, 3/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, 3/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_msan_4_4:
+  stateless_tests_amd_msan_sequential_2_2:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgNC80KQ==') }}
-    name: "Stateless tests (amd_msan, 4/4)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgc2VxdWVudGlhbCwgMi8yKQ==') }}
+    name: "Stateless tests (amd_msan, sequential, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2102,16 +1988,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, 4/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, 4/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_ubsan:
+  stateless_tests_amd_ubsan_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdWJzYW4p') }}
-    name: "Stateless tests (amd_ubsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdWJzYW4sIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_ubsan, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2140,16 +2026,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_debug_distributed_plan_s3_storage:
+  stateless_tests_amd_ubsan_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_ubsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdWJzYW4sIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_ubsan, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_debug_distributed_plan_s3_storage_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2Up') }}
-    name: "Stateless tests (amd_debug, distributed plan, s3 storage)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_debug, distributed plan, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2178,16 +2102,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_s3_storage_1_3:
+  stateless_tests_amd_debug_distributed_plan_s3_storage_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_debug, distributed plan, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_tsan_s3_storage_parallel:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgMS8zKQ==') }}
-    name: "Stateless tests (amd_tsan, s3 storage, 1/3)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
+    name: "Stateless tests (amd_tsan, s3 storage, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2216,16 +2178,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 1/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 1/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_s3_storage_2_3:
+  stateless_tests_amd_tsan_s3_storage_sequential:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgMi8zKQ==') }}
-    name: "Stateless tests (amd_tsan, s3 storage, 2/3)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_tsan, s3 storage, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2254,54 +2216,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 2/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 2/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_tsan_s3_storage_3_3:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgMy8zKQ==') }}
-    name: "Stateless tests (amd_tsan, s3 storage, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 3/3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, 3/3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_arm_binary:
+  stateless_tests_arm_binary_parallel:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5KQ==') }}
-    name: "Stateless tests (arm_binary)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (arm_binary, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2330,16 +2254,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_coverage_1_6:
+  stateless_tests_arm_binary_sequential:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMS82KQ==') }}
-    name: "Stateless tests (amd_coverage,1/6)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_arm_binary]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (arm_binary, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2368,199 +2292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_coverage,1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_coverage_2_6:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMi82KQ==') }}
-    name: "Stateless tests (amd_coverage,2/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_coverage,2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_coverage_3_6:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMy82KQ==') }}
-    name: "Stateless tests (amd_coverage,3/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_coverage,3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_coverage_4_6:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNC82KQ==') }}
-    name: "Stateless tests (amd_coverage,4/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_coverage,4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_coverage_5_6:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNS82KQ==') }}
-    name: "Stateless tests (amd_coverage,5/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_coverage,5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_coverage_6_6:
-    runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNi82KQ==') }}
-    name: "Stateless tests (amd_coverage,6/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_coverage,6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_coverage,6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   bugfix_validation_integration_tests:
@@ -2679,7 +2413,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_1_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 1/6)"
     outputs:
@@ -2717,7 +2451,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_2_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 2/6)"
     outputs:
@@ -2755,7 +2489,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_3_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMy82KQ==') }}
     name: "Integration tests (asan, old analyzer, 3/6)"
     outputs:
@@ -2793,7 +2527,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_4_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNC82KQ==') }}
     name: "Integration tests (asan, old analyzer, 4/6)"
     outputs:
@@ -2831,7 +2565,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_5_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 5/6)"
     outputs:
@@ -2869,7 +2603,7 @@ jobs:
 
   integration_tests_asan_old_analyzer_6_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 6/6)"
     outputs:
@@ -2907,7 +2641,7 @@ jobs:
 
   integration_tests_release_1_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDEvNCk=') }}
     name: "Integration tests (release, 1/4)"
     outputs:
@@ -2945,7 +2679,7 @@ jobs:
 
   integration_tests_release_2_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDIvNCk=') }}
     name: "Integration tests (release, 2/4)"
     outputs:
@@ -2983,7 +2717,7 @@ jobs:
 
   integration_tests_release_3_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDMvNCk=') }}
     name: "Integration tests (release, 3/4)"
     outputs:
@@ -3021,7 +2755,7 @@ jobs:
 
   integration_tests_release_4_4:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHJlbGVhc2UsIDQvNCk=') }}
     name: "Integration tests (release, 4/4)"
     outputs:
@@ -3059,7 +2793,7 @@ jobs:
 
   integration_tests_aarch64_distributed_plan_1_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDEvNCk=') }}
     name: "Integration tests (aarch64, distributed plan, 1/4)"
     outputs:
@@ -3097,7 +2831,7 @@ jobs:
 
   integration_tests_aarch64_distributed_plan_2_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDIvNCk=') }}
     name: "Integration tests (aarch64, distributed plan, 2/4)"
     outputs:
@@ -3135,7 +2869,7 @@ jobs:
 
   integration_tests_aarch64_distributed_plan_3_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDMvNCk=') }}
     name: "Integration tests (aarch64, distributed plan, 3/4)"
     outputs:
@@ -3173,7 +2907,7 @@ jobs:
 
   integration_tests_aarch64_distributed_plan_4_4:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFhcmNoNjQsIGRpc3RyaWJ1dGVkIHBsYW4sIDQvNCk=') }}
     name: "Integration tests (aarch64, distributed plan, 4/4)"
     outputs:
@@ -3211,7 +2945,7 @@ jobs:
 
   integration_tests_tsan_1_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDEvNik=') }}
     name: "Integration tests (tsan, 1/6)"
     outputs:
@@ -3249,7 +2983,7 @@ jobs:
 
   integration_tests_tsan_2_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDIvNik=') }}
     name: "Integration tests (tsan, 2/6)"
     outputs:
@@ -3287,7 +3021,7 @@ jobs:
 
   integration_tests_tsan_3_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDMvNik=') }}
     name: "Integration tests (tsan, 3/6)"
     outputs:
@@ -3325,7 +3059,7 @@ jobs:
 
   integration_tests_tsan_4_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDQvNik=') }}
     name: "Integration tests (tsan, 4/6)"
     outputs:
@@ -3363,7 +3097,7 @@ jobs:
 
   integration_tests_tsan_5_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDUvNik=') }}
     name: "Integration tests (tsan, 5/6)"
     outputs:
@@ -3401,7 +3135,7 @@ jobs:
 
   integration_tests_tsan_6_6:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDYvNik=') }}
     name: "Integration tests (tsan, 6/6)"
     outputs:
@@ -3475,9 +3209,237 @@ jobs:
             python3 -m praktika run 'Integration tests (asan, flaky check)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
+  docker_server_image:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
+    name: "Docker server image"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  docker_keeper_image:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
+    name: "Docker keeper image"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  install_packages_release:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAocmVsZWFzZSk=') }}
+    name: "Install packages (release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Install packages (release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Install packages (release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  install_packages_aarch64:
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYWFyY2g2NCk=') }}
+    name: "Install packages (aarch64)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Install packages (aarch64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Install packages (aarch64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  compatibility_check_release:
+    runs-on: [self-hosted, style-checker]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAocmVsZWFzZSk=') }}
+    name: "Compatibility check (release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Compatibility check (release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Compatibility check (release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  compatibility_check_aarch64:
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYWFyY2g2NCk=') }}
+    name: "Compatibility check (aarch64)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Compatibility check (aarch64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Compatibility check (aarch64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
   stress_test_amd_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9kZWJ1Zyk=') }}
     name: "Stress test (amd_debug)"
     outputs:
@@ -3515,7 +3477,7 @@ jobs:
 
   stress_test_amd_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
     name: "Stress test (amd_tsan)"
     outputs:
@@ -3553,7 +3515,7 @@ jobs:
 
   stress_test_arm_asan:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFybV9hc2FuKQ==') }}
     name: "Stress test (arm_asan)"
     outputs:
@@ -3591,7 +3553,7 @@ jobs:
 
   stress_test_amd_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF91YnNhbik=') }}
     name: "Stress test (amd_ubsan)"
     outputs:
@@ -3629,7 +3591,7 @@ jobs:
 
   stress_test_amd_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9tc2FuKQ==') }}
     name: "Stress test (amd_msan)"
     outputs:
@@ -3667,7 +3629,7 @@ jobs:
 
   upgrade_check_arm_asan:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSBjaGVjayAoYXJtX2FzYW4p') }}
     name: "Upgrade check (arm_asan)"
     outputs:
@@ -3705,7 +3667,7 @@ jobs:
 
   upgrade_check_amd_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX3RzYW4p') }}
     name: "Upgrade check (amd_tsan)"
     outputs:
@@ -3743,7 +3705,7 @@ jobs:
 
   upgrade_check_amd_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX21zYW4p') }}
     name: "Upgrade check (amd_msan)"
     outputs:
@@ -3781,7 +3743,7 @@ jobs:
 
   upgrade_check_amd_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX2RlYnVnKQ==') }}
     name: "Upgrade check (amd_debug)"
     outputs:
@@ -3819,7 +3781,7 @@ jobs:
 
   ast_fuzzer_amd_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYW1kX2RlYnVnKQ==') }}
     name: "AST fuzzer (amd_debug)"
     outputs:
@@ -3857,7 +3819,7 @@ jobs:
 
   ast_fuzzer_arm_asan:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYXJtX2FzYW4p') }}
     name: "AST fuzzer (arm_asan)"
     outputs:
@@ -3895,7 +3857,7 @@ jobs:
 
   ast_fuzzer_amd_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYW1kX3RzYW4p') }}
     name: "AST fuzzer (amd_tsan)"
     outputs:
@@ -3933,7 +3895,7 @@ jobs:
 
   ast_fuzzer_amd_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYW1kX21zYW4p') }}
     name: "AST fuzzer (amd_msan)"
     outputs:
@@ -3971,7 +3933,7 @@ jobs:
 
   ast_fuzzer_amd_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIGZ1enplciAoYW1kX3Vic2FuKQ==') }}
     name: "AST fuzzer (amd_ubsan)"
     outputs:
@@ -4009,7 +3971,7 @@ jobs:
 
   buzzhouse_amd_debug:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfZGVidWcp') }}
     name: "BuzzHouse (amd_debug)"
     outputs:
@@ -4047,7 +4009,7 @@ jobs:
 
   buzzhouse_arm_asan:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_asan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhcm1fYXNhbik=') }}
     name: "BuzzHouse (arm_asan)"
     outputs:
@@ -4085,7 +4047,7 @@ jobs:
 
   buzzhouse_amd_tsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfdHNhbik=') }}
     name: "BuzzHouse (amd_tsan)"
     outputs:
@@ -4123,7 +4085,7 @@ jobs:
 
   buzzhouse_amd_msan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_msan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfbXNhbik=') }}
     name: "BuzzHouse (amd_msan)"
     outputs:
@@ -4161,7 +4123,7 @@ jobs:
 
   buzzhouse_amd_ubsan:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfdWJzYW4p') }}
     name: "BuzzHouse (amd_ubsan)"
     outputs:
@@ -4199,7 +4161,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_1_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 1/3)"
     outputs:
@@ -4237,7 +4199,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_2_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 2/3)"
     outputs:
@@ -4275,7 +4237,7 @@ jobs:
 
   performance_comparison_amd_release_master_head_3_3:
     runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
     name: "Performance Comparison (amd_release, master_head, 3/3)"
     outputs:
@@ -4313,7 +4275,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_1_3:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 1/3)"
     outputs:
@@ -4351,7 +4313,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_2_3:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 2/3)"
     outputs:
@@ -4389,7 +4351,7 @@ jobs:
 
   performance_comparison_arm_release_master_head_3_3:
     runs-on: [self-hosted, func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzMp') }}
     name: "Performance Comparison (arm_release, master_head, 3/3)"
     outputs:
@@ -4427,7 +4389,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, docs_check, fast_test, build_amd_tidy, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, docker_server_image, docker_keeper_image, install_packages_release, install_packages_aarch64, compatibility_check_release, compatibility_check_aarch64, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, stateless_tests_amd_binary, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_1_2, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_2_2, stateless_tests_amd_binary_parallelreplicas_s3_storage, stateless_tests_amd_debug_asyncinsert_s3_storage, stateless_tests_amd_debug, stateless_tests_amd_tsan_1_3, stateless_tests_amd_tsan_2_3, stateless_tests_amd_tsan_3_3, stateless_tests_amd_msan_1_4, stateless_tests_amd_msan_2_4, stateless_tests_amd_msan_3_4, stateless_tests_amd_msan_4_4, stateless_tests_amd_ubsan, stateless_tests_amd_debug_distributed_plan_s3_storage, stateless_tests_amd_tsan_s3_storage_1_3, stateless_tests_amd_tsan_s3_storage_2_3, stateless_tests_amd_tsan_s3_storage_3_3, stateless_tests_arm_binary, stateless_tests_amd_coverage_1_6, stateless_tests_amd_coverage_2_6, stateless_tests_amd_coverage_3_6, stateless_tests_amd_coverage_4_6, stateless_tests_amd_coverage_5_6, stateless_tests_amd_coverage_6_6, bugfix_validation_integration_tests, bugfix_validation_functional_tests, stateless_tests_amd_asan_flaky_check, integration_tests_asan_old_analyzer_1_6, integration_tests_asan_old_analyzer_2_6, integration_tests_asan_old_analyzer_3_6, integration_tests_asan_old_analyzer_4_6, integration_tests_asan_old_analyzer_5_6, integration_tests_asan_old_analyzer_6_6, integration_tests_release_1_4, integration_tests_release_2_4, integration_tests_release_3_4, integration_tests_release_4_4, integration_tests_aarch64_distributed_plan_1_4, integration_tests_aarch64_distributed_plan_2_4, integration_tests_aarch64_distributed_plan_3_4, integration_tests_aarch64_distributed_plan_4_4, integration_tests_tsan_1_6, integration_tests_tsan_2_6, integration_tests_tsan_3_6, integration_tests_tsan_4_6, integration_tests_tsan_5_6, integration_tests_tsan_6_6, integration_tests_asan_flaky_check, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_arm_asan, upgrade_check_amd_tsan, upgrade_check_amd_msan, upgrade_check_amd_debug, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_3, performance_comparison_amd_release_master_head_2_3, performance_comparison_amd_release_master_head_3_3, performance_comparison_arm_release_master_head_1_3, performance_comparison_arm_release_master_head_2_3, performance_comparison_arm_release_master_head_3_3]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, style_check, docs_check, fast_test, build_amd_tidy, build_arm_tidy, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_arm_coverage, build_arm_binary, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel, stateless_tests_amd_tsan_s3_storage_sequential, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, bugfix_validation_integration_tests, bugfix_validation_functional_tests, stateless_tests_amd_asan_flaky_check, integration_tests_asan_old_analyzer_1_6, integration_tests_asan_old_analyzer_2_6, integration_tests_asan_old_analyzer_3_6, integration_tests_asan_old_analyzer_4_6, integration_tests_asan_old_analyzer_5_6, integration_tests_asan_old_analyzer_6_6, integration_tests_release_1_4, integration_tests_release_2_4, integration_tests_release_3_4, integration_tests_release_4_4, integration_tests_aarch64_distributed_plan_1_4, integration_tests_aarch64_distributed_plan_2_4, integration_tests_aarch64_distributed_plan_3_4, integration_tests_aarch64_distributed_plan_4_4, integration_tests_tsan_1_6, integration_tests_tsan_2_6, integration_tests_tsan_3_6, integration_tests_tsan_4_6, integration_tests_tsan_5_6, integration_tests_tsan_6_6, integration_tests_asan_flaky_check, docker_server_image, docker_keeper_image, install_packages_release, install_packages_aarch64, compatibility_check_release, compatibility_check_aarch64, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_arm_asan, upgrade_check_amd_tsan, upgrade_check_amd_msan, upgrade_check_amd_debug, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_3, performance_comparison_amd_release_master_head_2_3, performance_comparison_amd_release_master_head_3_3, performance_comparison_arm_release_master_head_1_3, performance_comparison_arm_release_master_head_2_3, performance_comparison_arm_release_master_head_3_3]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
