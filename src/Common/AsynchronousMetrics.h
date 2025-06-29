@@ -139,6 +139,8 @@ private:
     std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
 
+    std::unordered_map<String /* stall type */, uint64_t> previous_pressure_values TSA_GUARDED_BY(data_mutex);
+
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);

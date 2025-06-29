@@ -747,7 +747,8 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "non-uniform, and still get the average resource utilization metric."};
 }
 void readPressureFile(
-    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in)
+    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
+    std::unordered_map<String, uint64_t> & previous_pressure_values, bool first_run)
 {
     in.rewind();
     // The shape of this file is:
@@ -778,9 +779,22 @@ void readPressureFile(
 
         uint64_t counter;
         readText(counter, in);
-        new_values[fmt::format("PSI_{}_{}", type, stall_type)] = AsynchronousMetricValue(counter,
-            "Total microseconds of stall time."
-            "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
+        
+        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
+        
+        if (!first_run)
+        {
+            auto it = previous_pressure_values.find(metric_key);
+            if (it != previous_pressure_values.end())
+            {
+                uint64_t delta = counter - it->second;
+                new_values[metric_key] = AsynchronousMetricValue(delta,
+                    "Microseconds of stall time since last measurement."
+                    "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
+            }
+        }
+        
+        previous_pressure_values[metric_key] = counter;
         skipToNextLineOrEOF(in);
     }
 }
@@ -1426,7 +1440,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "CPU", cpu_pressure.value());
+            readPressureFile(new_values, "CPU", cpu_pressure.value(), previous_pressure_values, first_run);
         }
         catch (...)
         {
@@ -1439,7 +1453,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "MEM", memory_pressure.value());
+            readPressureFile(new_values, "MEM", memory_pressure.value(), previous_pressure_values, first_run);
         }
         catch (...)
         {
@@ -1452,7 +1466,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "IO", io_pressure.value());
+            readPressureFile(new_values, "IO", io_pressure.value(), previous_pressure_values, first_run);
         }
         catch (...)
         {
