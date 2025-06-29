@@ -106,6 +106,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_schema;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
+    extern const KafkaSettingsString kafka_partitions_for_replica;
 }
 
 namespace fs = std::filesystem;
@@ -142,6 +143,7 @@ StorageKafka2::StorageKafka2(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
+    , sticky_topic_partitions(StorageKafkaUtils::parseTopicPartitions(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
@@ -414,7 +416,11 @@ void StorageKafka2::startup()
     {
         try
         {
-            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = getZooKeeper()});
+            ConsumerAndAssignmentInfo consumer_info;
+            consumer_info.consumer = createConsumer(i);
+            consumer_info.keeper =  getZooKeeper();
+            consumer_info.sticky_locks = initializeStickyLocks(*consumer_info.keeper, consumer_info.consumer->getAllTopicPartitions(true));
+            consumers.push_back(std::move(consumer_info));
             LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
             ++num_created_consumers;
         }
@@ -857,6 +863,27 @@ std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLock
         }
         throw;
     }
+}
+
+StorageKafka2::TopicPartitionLocks StorageKafka2::initializeStickyLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions)
+{
+    TopicPartitions sticky_locks_result;
+    std::set_intersection(
+        all_topic_partitions.begin(),  all_topic_partitions.end(),
+        sticky_topic_partitions.begin(), sticky_topic_partitions.end(),
+        std::back_inserter(sticky_locks_result)
+    );
+
+    TopicPartitionLocks sticky_locks;
+    for (const auto & tp : sticky_locks_result)
+    {
+        auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
+        if (!maybe_lock.has_value())
+            continue;
+        sticky_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
+    }
+
+    return sticky_locks;
 }
 
 void StorageKafka2::lockTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & available_topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota, const bool has_replica_without_locks)

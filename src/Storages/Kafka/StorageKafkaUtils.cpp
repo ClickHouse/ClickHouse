@@ -34,9 +34,11 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include "Storages/Kafka/KafkaConsumer2.h"
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
@@ -75,6 +77,7 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;
+    extern const KafkaSettingsString kafka_partitions_for_replica;
     extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
@@ -93,6 +96,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+// bool compareTopicPartition(const KafkaConsumer2::TopicPartition & first, const KafkaConsumer2::TopicPartition & second)
+// {
+//     return std::tie(first.topic, first.partition_id, first.offset) < std::tie(second.topic, second.partition_id, second.offset);
+// }
 
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -238,8 +245,8 @@ void registerStorageKafka(StorageFactory & factory)
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
         const auto has_replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].changed && !(*kafka_settings)[KafkaSetting::kafka_replica_name].value.empty();
-
-        if (!has_keeper_path && !has_replica_name)
+        const auto has_partitions_for_replica = (*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].changed && !(*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value.empty();
+        if (!has_keeper_path && !has_replica_name && !has_partitions_for_replica)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
@@ -285,7 +292,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         settings_query->changes.setSetting("kafka_keeper_path", (*kafka_settings)[KafkaSetting::kafka_keeper_path].value);
         settings_query->changes.setSetting("kafka_replica_name", (*kafka_settings)[KafkaSetting::kafka_replica_name].value);
-
+        settings_query->changes.setSetting("kafka_partitions_for_replica", (*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value);
         // Expand other macros (such as {replica}). We do not expand them on previous step to make possible copying metadata files between replicas.
         // Disable expanding {shard} macro, because it can lead to incorrect behavior and it doesn't make sense to shard Kafka tables.
         Macros::MacroExpansionInfo info;
@@ -362,6 +369,46 @@ Names parseTopics(String topic_list)
     boost::split(result, topic_list, [](char c) { return c == ','; });
     for (String & topic : result)
         boost::trim(topic);
+    return result;
+}
+
+KafkaConsumer2::TopicPartitions parseTopicPartitions(String topic_partitions_list)
+{
+    KafkaConsumer2::TopicPartitions result;
+    std::vector<std::string> parts;
+    boost::split(parts, topic_partitions_list, boost::is_any_of(","), boost::token_compress_on);
+
+    for (auto& part : parts)
+    {
+        boost::algorithm::trim(part);
+        if (part.front() == '[' && part.back() == ']')
+        {
+            part = part.substr(1, part.size() - 2);
+        }
+        else
+        {
+            continue;
+        }
+        std::vector<std::string> fields;
+        boost::split(fields, part, boost::is_any_of(":"), boost::token_compress_on);
+        if (fields.size() == 2)
+        {
+            KafkaConsumer2::TopicPartition tp;
+            tp.topic = fields[0];
+            boost::algorithm::trim(tp.topic);
+            try
+            {
+                tp.partition_id = boost::lexical_cast<int>(fields[1]);
+            }
+            catch (...)
+            {
+                continue;
+            }
+            result.push_back(tp);
+        }
+    }
+
+    std::sort(result.begin(), result.end());
     return result;
 }
 

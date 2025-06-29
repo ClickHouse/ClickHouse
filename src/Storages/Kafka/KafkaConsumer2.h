@@ -103,7 +103,7 @@ public:
     String currentPayload() const { return current[-1].get_payload(); }
 
     // Build the full list of partitions for our subscribed topics.
-    TopicPartitions getAllTopicPartitions() const;
+    TopicPartitions getAllTopicPartitions(bool need_sort = false) const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;

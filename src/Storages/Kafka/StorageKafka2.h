@@ -133,17 +133,21 @@ private:
         zkutil::ZooKeeperPtr keeper;
         Stopwatch watch{CLOCK_MONOTONIC_COARSE};
         size_t poll_count = 0;
+        TopicPartitionLocks sticky_locks{};
         TopicPartitionLocks permanent_locks{};
         TopicPartitionLocks tmp_locks{};
 
         // Quota, how many temporary locks can be taken in current round
         size_t tmp_locks_quota{};
 
-        // Searches first in permanent_locks, then in tmp_locks.
+        // Searches first in sticky_locks, then in permanent_locks, then in tmp_locks.
         // Returns a pointer to the lock if found; otherwise, returns nullptr.
         LockedTopicPartitionInfo * findTopicPartitionLock(const TopicPartition & topic_partition)
         {
-            auto locks_it = permanent_locks.find(topic_partition);
+            auto locks_it = sticky_locks.find(topic_partition);
+            if (locks_it != sticky_locks.end())
+                return &locks_it->second;
+            locks_it = permanent_locks.find(topic_partition);
             if (locks_it != permanent_locks.end())
                 return &locks_it->second;
             locks_it = tmp_locks.find(topic_partition);
@@ -190,6 +194,7 @@ private:
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
     const Names topics;
+    const TopicPartitions sticky_topic_partitions;
     const String brokers;
     const String group;
     const String client_id;
@@ -272,6 +277,11 @@ private:
 
     std::optional<LockedTopicPartitionInfo>
     createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & partition_to_lock);
+
+    TopicPartitionLocks initializeStickyLocks(
+        zkutil::ZooKeeper & keeper_to_use,
+        const TopicPartitions & all_topic_partitions
+    );
 
     void lockTemporaryLocks(
         zkutil::ZooKeeper & keeper_to_use,
