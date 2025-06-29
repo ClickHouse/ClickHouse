@@ -9,7 +9,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -41,7 +46,19 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
+    extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsString query_cache_tag;
+}
+
+namespace ErrorCodes
+{
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
 
 namespace
@@ -166,6 +183,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
@@ -173,11 +191,43 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     return finder_data.has_non_deterministic_functions;
 }
 
+/// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
+}
+
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    if (context->getCanUseQueryResultCache() && settings[Setting::enable_writes_to_query_cache])
+    {
+        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
+
+        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
+            = settings[Setting::query_cache_nondeterministic_function_handling];
+        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
+
+        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                "The query result was not cached because the query contains a non-deterministic function."
+                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
+            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                "The query result was not cached because the query contains a system table."
+                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
+            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
+            return true;
+    }
+
+    return false;
 }
 
 namespace
@@ -186,6 +236,13 @@ namespace
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+}
+
+/// Some additional settings are set for subqueries, they don't affect the result of SELECT queries,
+/// however with them similar subqueries can sometimes mismatch, so ignore this settings.
+bool isSubquerySpecificSetting(const String & setting_name)
+{
+    return setting_name == "use_structure_from_insertion_table_in_table_functions";
 }
 
 class RemoveQueryResultCacheSettingsMatcher
@@ -197,7 +254,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * set_clause = ast->as<ASTSetQuery>())
+        auto remove_query_cache_settings = [](ASTSetQuery * set_clause)
         {
             chassert(!set_clause->is_standalone);
 
@@ -207,13 +264,27 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+        };
+
+        if (auto * select_clause = ast->as<ASTSelectQuery>())
+        {
+            if (auto select_settings = select_clause->settings())
+            {
+                auto* set_clause = select_settings->as<ASTSetQuery>();
+
+                remove_query_cache_settings(set_clause);
+
+                /// Remove SETTINGS clause completely if it is empty
+                /// E.g. SELECT 1 SETTINGS use_query_cache = true
+                /// and SET use_query_cache = true; SELECT 1;
+                /// will match.
+                if (set_clause->changes.empty())
+                    select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
         }
     }
 
-    /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
-    /// E.g. SELECT 1 SETTINGS use_query_cache = true
-    /// and  SELECT 1;
-    /// currently don't match.
+
 };
 
 using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
@@ -231,17 +302,57 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
-    ASTPtr transformed_ast = ast->clone();
-
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(ast);
 
-    return transformed_ast;
+    return ast;
 }
 
-IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+class RemoveTableAliasMatcher
 {
+public:
+    struct Data {};
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(ASTPtr & ast, Data &)
+    {
+        if (auto * table_identifier = ast->as<ASTTableIdentifier>())
+        {
+            if (table_identifier->alias.starts_with("__table"))
+                table_identifier->setAlias("");
+        }
+        else if (auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (identifier->compound() && identifier->name_parts[0].starts_with("__table"))
+                identifier->setShortName(identifier->name_parts[1]);
+        }
+        else if (auto * function = ast->as<ASTFunction>())
+        {
+            if (function->alias.starts_with("__table"))
+                function->setAlias("");
+        }
+    }
+};
+
+using RemoveTableAliasVisitor = InDepthNodeVisitor<RemoveTableAliasMatcher, true>;
+
+/// QueryTree is used for caching subqueries, therefore ast has unnecessary aliases (__table1, __table2, ...)
+/// Remove these aliases from ast before using it for caching.
+ASTPtr removeTableAliases(ASTPtr ast)
+{
+    RemoveTableAliasVisitor::Data visitor_data;
+    RemoveTableAliasVisitor(visitor_data).visit(ast);
+
+    return ast;
+}
+
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery)
+{
+    ast = ast->clone();
     ast = removeQueryResultCacheSettings(ast);
+    if (is_subquery)
+        ast = removeTableAliases(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -253,15 +364,29 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
-    ///       Therefore, collect and sort the settings first, then hash them.
+    /// Therefore, collect and sort the settings first, then hash them.
     auto changed_settings = settings.changes();
     std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        if (!isQueryResultCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
+
+    /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
+    /// however non subqueries don't have this settings in settings.changes() and therefore don't match in cache.
+    /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings.
+
+    if (!changed_settings.tryGet("extremes"))
+        changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
+
+    if (!changed_settings.tryGet("max_result_bytes"))
+        changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
+
+    if (!changed_settings.tryGet("max_result_rows"))
+        changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
+
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
@@ -289,17 +414,20 @@ QueryResultCache::Key::Key(
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings))
+    bool is_compressed_,
+    bool is_subquery_)
+    : ast_hash(calculateAstHash(ast_, current_database, settings, is_subquery_))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(queryStringFromAST(ast_))
+    , query_string(is_subquery_ ? queryStringFromAST(removeTableAliases(ast_->clone())) : queryStringFromAST(ast_))
+    /// ^^ if subquery, remove unnecessary aliases first for more convenient display in system.query_cache
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
+    , is_subquery(is_subquery_)
 {
 }
 
@@ -309,8 +437,9 @@ QueryResultCache::Key::Key(
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    const std::vector<UUID> & current_user_roles_,
+    bool is_subquery_)
+    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false, is_subquery_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
@@ -422,9 +551,10 @@ void QueryResultCacheWriter::finalizeWrite()
     if (skip_insert)
         return;
 
-    std::lock_guard lock(mutex);
+    if (was_finalized.exchange(true))
+        return;
 
-    chassert(!was_finalized);
+    std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
 
@@ -529,8 +659,6 @@ void QueryResultCacheWriter::finalizeWrite()
     cache.set(key, query_result);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
-
-    was_finalized = true;
 }
 
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
