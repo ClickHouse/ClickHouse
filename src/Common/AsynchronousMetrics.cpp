@@ -776,6 +776,95 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
 }
 
+void AsynchronousMetrics::processWarningForCPUUsage(const AsynchronousMetricValues & new_values) const
+{
+    /// 90% cpu utilization threshold over 60 seconds duration
+    /// TODO: make configurable
+    constexpr double CPU_OVERLOAD_THRESHOLD = 0.9;
+    constexpr size_t CPU_OVERLOAD_DURATION_SECONDS = 60;
+
+    auto cpu_usage = tryGetMetricValue(new_values, "OSCPUVirtualTimeMicroseconds");
+    auto cpu_wait = tryGetMetricValue(new_values, "OSCPUWaitMicroseconds");
+    auto cpu_utilization = (cpu_usage > 0) ? (cpu_usage / (cpu_usage + cpu_wait)) : 0.0;
+
+    if (cpu_utilization > CPU_OVERLOAD_THRESHOLD)
+    {
+        if (cpu_overload_start_time == std::chrono::steady_clock::time_point{})
+            cpu_overload_start_time = std::chrono::steady_clock::now();
+
+        auto duration
+            = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - cpu_overload_start_time).count();
+
+        if (duration >= static_cast<double>(CPU_OVERLOAD_DURATION_SECONDS))
+        {
+            context->addOrUpdateWarningMessage(
+                Context::WarningType::SERVER_CPU_OVERLOAD,
+                PreformattedMessage::create(
+                    "Server CPU utilization is high ({:.1f}%) for {} seconds. "
+                    "Consider reducing query load or scaling resources.",
+                    cpu_utilization * 100,
+                    duration));
+            cpu_overload_warning_active = true;
+        }
+    }
+    else
+    {
+        cpu_overload_start_time = std::chrono::steady_clock::time_point{};
+        if (cpu_overload_warning_active)
+        {
+            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
+            cpu_overload_warning_active = false;
+        }
+    }
+}
+
+void AsynchronousMetrics::processWarningForMemoryUsage(const AsynchronousMetricValues & new_values) const
+{
+
+    /// 90% memory utilization threshold over 60 seconds duration
+    /// TODO: make configurable
+    constexpr double MEMORY_OVERLOAD_THRESHOLD = 0.9;
+    constexpr size_t MEMORY_OVERLOAD_DURATION_SECONDS = 30;
+
+    auto memory_resident = tryGetMetricValue(new_values, "MemoryResident");
+    auto system_memory_total = tryGetMetricValue(new_values, "OSMemoryTotal");
+
+    if (system_memory_total > 0 && memory_resident > 0)
+    {
+        double memory_utilization = static_cast<double>(memory_resident) / system_memory_total;
+        
+        if (memory_utilization > static_cast<double>(MEMORY_OVERLOAD_THRESHOLD))
+        {
+            if (memory_overload_start_time == std::chrono::steady_clock::time_point{})
+                memory_overload_start_time = std::chrono::steady_clock::now();
+
+            auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - memory_overload_start_time).count();
+
+            if (duration >= static_cast<double>(MEMORY_OVERLOAD_DURATION_SECONDS)   )
+            {
+                context->addOrUpdateWarningMessage(
+                    Context::WarningType::SERVER_MEMORY_OVERLOAD,
+                    PreformattedMessage::create(
+                        "Server memory usage is high ({:.1f}%) for {} seconds. "
+                        "Current: {} bytes, Total: {} bytes. "
+                        "Consider optimizing queries or increasing memory.",
+                        memory_utilization * 100, duration, memory_resident, system_memory_total));
+                memory_overload_warning_active = true;
+            }
+        }
+        else
+        {
+            memory_overload_start_time = std::chrono::steady_clock::time_point{};
+            if (memory_overload_warning_active)
+            {
+                context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
+                memory_overload_warning_active = false;
+            }
+        }
+    }
+}
+
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
     Stopwatch watch;
@@ -2009,6 +2098,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // These methods look at Asynchronous metrics and add,update or remove warnings
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
+        processWarningForCPUUsage(new_values);
+        processWarningForMemoryUsage(new_values);
     }
 }
 
