@@ -5,6 +5,8 @@
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
+#include "Common/Exception.h"
+#include "Interpreters/Context_fwd.h"
 
 class SipHash;
 
@@ -17,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 /**
@@ -96,6 +99,11 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
+    virtual void setDimensions(const std::vector<size_t> & /*dimensions*/)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions to non-vector codec");
+    }
+
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
 
@@ -126,6 +134,8 @@ public:
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
+
+    virtual bool isVectorCodec() const { return false; }
 
     // Returns a string with a high level codec description.
     virtual std::string getDescription() const = 0;
