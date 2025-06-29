@@ -13,13 +13,13 @@ namespace DB
  *
  * Used in clickhouse-local to combine DatabaseFileSystem and DatabaseMemory
  */
-class DatabasesOverlay : public IDatabase, protected WithContext
+class DatabaseOverlay : public IDatabase, protected WithContext
 {
 public:
-    DatabasesOverlay(const String & name_, ContextPtr context_);
+    DatabaseOverlay(const String & name_, ContextPtr context_);
 
     /// Not thread-safe. Use only as factory to initialize database
-    DatabasesOverlay & registerNextDatabase(DatabasePtr database);
+    DatabaseOverlay & registerNextDatabase(DatabasePtr database);
 
     String getEngineName() const override { return "Overlay"; }
 

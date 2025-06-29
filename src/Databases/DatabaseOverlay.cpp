@@ -1,4 +1,4 @@
-#include <Databases/DatabasesOverlay.h>
+#include <Databases/DatabaseOverlay.h>
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -19,18 +19,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
+DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
 {
 }
 
-DatabasesOverlay & DatabasesOverlay::registerNextDatabase(DatabasePtr database)
+DatabaseOverlay & DatabaseOverlay::registerNextDatabase(DatabasePtr database)
 {
     databases.push_back(std::move(database));
     return *this;
 }
 
-bool DatabasesOverlay::isTableExist(const String & table_name, ContextPtr context_) const
+bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context_) const
 {
     for (const auto & db : databases)
     {
@@ -40,7 +40,7 @@ bool DatabasesOverlay::isTableExist(const String & table_name, ContextPtr contex
     return false;
 }
 
-StoragePtr DatabasesOverlay::tryGetTable(const String & table_name, ContextPtr context_) const
+StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr context_) const
 {
     StoragePtr result = nullptr;
     for (const auto & db : databases)
@@ -52,7 +52,7 @@ StoragePtr DatabasesOverlay::tryGetTable(const String & table_name, ContextPtr c
     return result;
 }
 
-void DatabasesOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     for (auto & db : databases)
     {
@@ -70,7 +70,7 @@ void DatabasesOverlay::createTable(ContextPtr context_, const String & table_nam
         getEngineName());
 }
 
-void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
+void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
 {
     for (auto & db : databases)
     {
@@ -88,7 +88,7 @@ void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name,
         getEngineName());
 }
 
-void DatabasesOverlay::attachTable(
+void DatabaseOverlay::attachTable(
     ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
     for (auto & db : databases)
@@ -111,7 +111,7 @@ void DatabasesOverlay::attachTable(
         getEngineName());
 }
 
-StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & table_name)
+StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & table_name)
 {
     StoragePtr result = nullptr;
     for (auto & db : databases)
@@ -127,7 +127,7 @@ StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & tab
         getEngineName());
 }
 
-void DatabasesOverlay::renameTable(
+void DatabaseOverlay::renameTable(
     ContextPtr current_context,
     const String & name,
     IDatabase & to_database,
@@ -139,7 +139,7 @@ void DatabasesOverlay::renameTable(
     {
         if (db->isTableExist(name, current_context))
         {
-            if (DatabasesOverlay * to_overlay_database = typeid_cast<DatabasesOverlay *>(&to_database))
+            if (DatabaseOverlay * to_overlay_database = typeid_cast<DatabaseOverlay *>(&to_database))
             {
                 /// Renaming from Overlay database inside itself or into another Overlay database.
                 /// Just use the first database in the overlay as a destination.
@@ -160,7 +160,7 @@ void DatabasesOverlay::renameTable(
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(name));
 }
 
-ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
+ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
     ASTPtr result = nullptr;
     for (const auto & db : databases)
@@ -183,14 +183,14 @@ ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr
  * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
  * To use DatabaseOverlay, it must be constructed programmatically in code
  */
-ASTPtr DatabasesOverlay::getCreateDatabaseQuery() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(getDatabaseName());
     return query;
 }
 
-String DatabasesOverlay::getTableDataPath(const String & table_name) const
+String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
     String result;
     for (const auto & db : databases)
@@ -202,7 +202,7 @@ String DatabasesOverlay::getTableDataPath(const String & table_name) const
     return result;
 }
 
-String DatabasesOverlay::getTableDataPath(const ASTCreateQuery & query) const
+String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
     String result;
     for (const auto & db : databases)
@@ -214,7 +214,7 @@ String DatabasesOverlay::getTableDataPath(const ASTCreateQuery & query) const
     return result;
 }
 
-UUID DatabasesOverlay::getUUID() const
+UUID DatabaseOverlay::getUUID() const
 {
     UUID result = UUIDHelpers::Nil;
     for (const auto & db : databases)
@@ -226,7 +226,7 @@ UUID DatabasesOverlay::getUUID() const
     return result;
 }
 
-UUID DatabasesOverlay::tryGetTableUUID(const String & table_name) const
+UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
     for (const auto & db : databases)
@@ -238,13 +238,13 @@ UUID DatabasesOverlay::tryGetTableUUID(const String & table_name) const
     return result;
 }
 
-void DatabasesOverlay::drop(ContextPtr context_)
+void DatabaseOverlay::drop(ContextPtr context_)
 {
     for (auto & db : databases)
         db->drop(context_);
 }
 
-void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     for (auto & db : databases)
     {
@@ -263,7 +263,7 @@ void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & ta
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>>
-DatabasesOverlay::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
+DatabaseOverlay::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
 {
     std::vector<std::pair<ASTPtr, StoragePtr>> result;
     for (const auto & db : databases)
@@ -274,7 +274,7 @@ DatabasesOverlay::getTablesForBackup(const FilterByNameFunction & filter, const 
     return result;
 }
 
-void DatabasesOverlay::createTableRestoredFromBackup(
+void DatabaseOverlay::createTableRestoredFromBackup(
     const ASTPtr & create_table_query,
     ContextMutablePtr local_context,
     std::shared_ptr<IRestoreCoordination> /*restore_coordination*/,
@@ -287,7 +287,7 @@ void DatabasesOverlay::createTableRestoredFromBackup(
     interpreter.execute();
 }
 
-bool DatabasesOverlay::empty() const
+bool DatabaseOverlay::empty() const
 {
     for (const auto & db : databases)
     {
@@ -297,13 +297,13 @@ bool DatabasesOverlay::empty() const
     return true;
 }
 
-void DatabasesOverlay::shutdown()
+void DatabaseOverlay::shutdown()
 {
     for (auto & db : databases)
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
 {
     Tables tables;
     for (const auto & db : databases)
@@ -314,7 +314,7 @@ DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
-bool DatabasesOverlay::canContainMergeTreeTables() const
+bool DatabaseOverlay::canContainMergeTreeTables() const
 {
     for (const auto & db : databases)
         if (db->canContainMergeTreeTables())
@@ -322,7 +322,7 @@ bool DatabasesOverlay::canContainMergeTreeTables() const
     return false;
 }
 
-bool DatabasesOverlay::canContainDistributedTables() const
+bool DatabaseOverlay::canContainDistributedTables() const
 {
     for (const auto & db : databases)
         if (db->canContainDistributedTables())
@@ -330,7 +330,7 @@ bool DatabasesOverlay::canContainDistributedTables() const
     return false;
 }
 
-bool DatabasesOverlay::canContainRocksDBTables() const
+bool DatabaseOverlay::canContainRocksDBTables() const
 {
     for (const auto & db : databases)
         if (db->canContainRocksDBTables())
@@ -338,14 +338,14 @@ bool DatabasesOverlay::canContainRocksDBTables() const
     return false;
 }
 
-void DatabasesOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     for (auto & db : databases)
         if (!db->isReadOnly())
             db->loadStoredObjects(local_context, mode);
 }
 
-bool DatabasesOverlay::supportsLoadingInTopologicalOrder() const
+bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 {
     for (const auto & db : databases)
         if (db->supportsLoadingInTopologicalOrder())
@@ -353,21 +353,21 @@ bool DatabasesOverlay::supportsLoadingInTopologicalOrder() const
     return false;
 }
 
-void DatabasesOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     for (auto & db : databases)
         if (!db->isReadOnly())
             db->beforeLoadingMetadata(local_context, mode);
 }
 
-void DatabasesOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+void DatabaseOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     for (auto & db : databases)
         if (!db->isReadOnly())
             db->loadTablesMetadata(local_context, metadata, is_startup);
 }
 
-void DatabasesOverlay::loadTableFromMetadata(
+void DatabaseOverlay::loadTableFromMetadata(
     ContextMutablePtr local_context,
     const String & file_path,
     const QualifiedTableName & name,
@@ -398,7 +398,7 @@ void DatabasesOverlay::loadTableFromMetadata(
         getEngineName());
 }
 
-LoadTaskPtr DatabasesOverlay::loadTableFromMetadataAsync(
+LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
     AsyncLoader & async_loader,
     LoadJobSet load_after,
     ContextMutablePtr local_context,
@@ -430,7 +430,7 @@ LoadTaskPtr DatabasesOverlay::loadTableFromMetadataAsync(
         getEngineName());
 }
 
-LoadTaskPtr DatabasesOverlay::startupTableAsync(
+LoadTaskPtr DatabaseOverlay::startupTableAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
     const QualifiedTableName & name,
@@ -458,7 +458,7 @@ LoadTaskPtr DatabasesOverlay::startupTableAsync(
         getEngineName());
 }
 
-LoadTaskPtr DatabasesOverlay::startupDatabaseAsync(
+LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
     LoadingStrictnessLevel mode)
@@ -484,7 +484,7 @@ LoadTaskPtr DatabasesOverlay::startupDatabaseAsync(
         getEngineName());
 }
 
-void DatabasesOverlay::waitTableStarted(const String & name) const
+void DatabaseOverlay::waitTableStarted(const String & name) const
 {
     for (const auto & db : databases)
     {
@@ -509,7 +509,7 @@ void DatabasesOverlay::waitTableStarted(const String & name) const
         getEngineName());
 }
 
-void DatabasesOverlay::waitDatabaseStarted() const
+void DatabaseOverlay::waitDatabaseStarted() const
 {
     for (const auto & db : databases)
     {
@@ -533,7 +533,7 @@ void DatabasesOverlay::waitDatabaseStarted() const
         getEngineName());
 }
 
-void DatabasesOverlay::stopLoading()
+void DatabaseOverlay::stopLoading()
 {
     for (auto & db : databases)
     {
@@ -557,7 +557,7 @@ void DatabasesOverlay::stopLoading()
         getEngineName());
 }
 
-void DatabasesOverlay::checkMetadataFilenameAvailability(const String & table_name) const
+void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_name) const
 {
     for (const auto & db : databases)
     {
