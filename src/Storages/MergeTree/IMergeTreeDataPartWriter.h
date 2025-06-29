@@ -16,7 +16,7 @@
 namespace DB
 {
 
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
