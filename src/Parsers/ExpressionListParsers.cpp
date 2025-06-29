@@ -2328,7 +2328,22 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
-    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    if (!ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+        return false;
+
+    /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
+    /// does not expect an alias after the expression. However, in certain cases,
+    /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
+    /// This is the case when it parses a single expression in parentheses, e.g.,
+    /// it does not allow
+    /// 1 AS x
+    /// but it can parse
+    /// (1 AS x)
+    /// which we should not allow as well.
+    if (!node->tryGetAlias().empty())
+        return false;
+
+    return true;
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
