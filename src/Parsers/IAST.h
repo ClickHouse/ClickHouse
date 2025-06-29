@@ -236,9 +236,8 @@ public:
           * It is necessary that when the node has met again, output only the alias.
           */
         std::set<std::tuple<
-            const IAST * /* SELECT query node */,
-            std::string /* alias */,
-            IASTHash /* printed content */>> printed_asts_with_alias;
+            const IAST * /* node */,
+            std::string /* alias */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
@@ -249,11 +248,9 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
-        bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
         std::string create_engine_name;
-        const IAST * current_select = nullptr;
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const

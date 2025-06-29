@@ -127,7 +127,6 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 
 void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.current_select = this;
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (database_and_table_name)
@@ -251,10 +250,6 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         ostr << "(";
-        /// We should always print alias for 'USING (a AS b)' syntax (supported with analyzer only).
-        /// Otherwise query like 'SELECT a AS b FROM t1 JOIN t2 USING (a AS b)' will be broken.
-        /// See 03448_analyzer_array_join_alias_in_join_using_bug.sql
-        frame.ignore_printed_asts_with_alias = true;
         using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
