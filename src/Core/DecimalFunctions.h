@@ -17,7 +17,6 @@ class DataTypeNumber;
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
