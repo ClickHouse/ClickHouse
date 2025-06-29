@@ -127,6 +127,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
+            {"optimize_empty_string_comparisons", true, true, "A new setting."},
+            {"data_type_string_use_size_stream", false, false, "A new setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

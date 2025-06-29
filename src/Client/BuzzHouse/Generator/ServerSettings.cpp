@@ -316,6 +316,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"database_replicated_always_detach_permanently", trueOrFalseSettingNoOracle},
     {"database_replicated_enforce_synchronous_settings", trueOrFalseSettingNoOracle},
     {"data_type_default_nullable", trueOrFalseSettingNoOracle},
+    {"data_type_string_use_size_stream", trueOrFalseSettingNoOracle},
     {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", trueOrFalseSettingNoOracle},
     {"date_time_output_format",
      CHSetting(
