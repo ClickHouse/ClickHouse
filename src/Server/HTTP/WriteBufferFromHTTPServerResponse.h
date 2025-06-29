@@ -80,7 +80,7 @@ private:
     void startSendHeaders();
 
     /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
-    void writeHeaderProgressImpl(const char * header_name);
+    void writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode);
     /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
     /// Used to write the header X-ClickHouse-Summary
