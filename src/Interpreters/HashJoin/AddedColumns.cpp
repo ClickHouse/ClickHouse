@@ -59,7 +59,7 @@ void AddedColumns<true>::buildOutputFromRowRefLists()
     {
         auto & col = columns[i];
         col->reserve(col->size() + output_row_count);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
+        col->fillFromRowRefs(right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
     }
 }
 
@@ -92,10 +92,12 @@ void AddedColumns<true>::buildOutputFromBlocks()
 {
     if (this->size() == 0)
         return;
-    std::vector<const Columns *> many_columns;
-    std::vector<UInt32> row_nums;
-    many_columns.reserve(lazy_output.getRowCount());
-    row_nums.reserve(lazy_output.getRowCount());
+    PaddedPODArray<const Columns *> many_columns;
+    PaddedPODArray<UInt32> row_nums;
+
+    size_t rows = lazy_output.getRowCount();
+    many_columns.reserve(rows);
+    row_nums.reserve(rows);
     for (auto row_ref_i : lazy_output.getRowRefs())
     {
         if (row_ref_i)
@@ -122,9 +124,16 @@ void AddedColumns<true>::buildOutputFromBlocks()
             row_nums.emplace_back(0);
         }
     }
+
+    rows = many_columns.size();
+    PaddedPODArray<const IColumn *> column_ptrs(rows, nullptr);
     for (size_t i = 0; i < this->size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
+        for (size_t row = 0; row < rows; ++row)
+            if (many_columns[row])
+                column_ptrs[row] = (*many_columns[row])[right_indexes[i]].get();
+
+        columns[i]->gather(column_ptrs, row_nums);
     }
 }
 
