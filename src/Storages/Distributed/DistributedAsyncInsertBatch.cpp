@@ -283,6 +283,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                     distributed_header.insert_query,
                     insert_settings,
                     distributed_header.client_info);
+                remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
@@ -336,6 +337,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 distributed_header.insert_query,
                 insert_settings,
                 distributed_header.client_info);
+            remote.initialize();
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
             remote.onFinish();

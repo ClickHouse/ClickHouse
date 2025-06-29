@@ -448,6 +448,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             distributed_header.insert_query,
             insert_settings,
             distributed_header.client_info};
+        remote.initialize();
+
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
