@@ -3682,6 +3682,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
                      rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=5,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
