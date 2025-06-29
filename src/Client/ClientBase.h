@@ -271,10 +271,10 @@ protected:
     static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
+    void adjustSettings(ContextMutablePtr context);
 
     /// Initializes the client context.
-    void initClientContext();
+    void initClientContext(ContextMutablePtr context);
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
@@ -288,8 +288,6 @@ protected:
     /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
 
     String default_database;
@@ -344,10 +342,6 @@ protected:
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
-    /// thread status should be destructed before shared context because it relies on process list.
-    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
-    std::optional<ThreadStatus> thread_status;
-
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 
@@ -375,8 +369,6 @@ protected:
     String home_path;
     String history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
-
-    String current_profile;
 
     UInt64 server_revision = 0;
     String server_version;
