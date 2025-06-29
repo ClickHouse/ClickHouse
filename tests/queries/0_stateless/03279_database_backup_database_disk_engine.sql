@@ -4,10 +4,10 @@
 DROP DATABASE IF EXISTS 03279_test_database;
 CREATE DATABASE 03279_test_database;
 
-CREATE TABLE 03279_test_database.test_table_1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE 03279_test_database.test_table_1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'nonencrypted';
 INSERT INTO 03279_test_database.test_table_1 SELECT number, number FROM numbers(15000);
 
-CREATE TABLE 03279_test_database.test_table_2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE 03279_test_database.test_table_2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'nonencrypted';
 INSERT INTO 03279_test_database.test_table_2 SELECT number, number FROM numbers(15000);
 
 SELECT (id % 10) AS key, count() FROM 03279_test_database.test_table_1 GROUP BY key ORDER BY key;

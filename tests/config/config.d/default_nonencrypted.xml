@@ -3,12 +3,9 @@
         <policies>
             <nonencrypted>
                 <volumes>
-                    <main><disk>cached_azure_encrypted</disk></main>
+                    <main><disk>default</disk></main>
                 </volumes>
             </nonencrypted>
         </policies>
     </storage_configuration>
-    <merge_tree>
-        <storage_policy>azure</storage_policy>
-    </merge_tree>
 </clickhouse>
