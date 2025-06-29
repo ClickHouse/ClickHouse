@@ -353,13 +353,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
-    if (!serialization_infos.empty())
+    write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
     {
-        write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
-        {
-            serialization_infos.writeJSON(buffer);
-        });
-    }
+        serialization_infos.writeJSON(buffer);
+    });
 
     write_plain_file("columns.txt", [&](auto & buffer)
     {
