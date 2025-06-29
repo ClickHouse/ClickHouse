@@ -10,7 +10,7 @@ LZ4	130	1	1	0	0	0	Extremely fast; good compression; balanced speed and efficienc
 LZ4HC	130	1	1	0	0	0	LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.
 Multiple	145	0	0	0	0	0	Apply multiple codecs consecutively defined by user.
 NONE	2	0	0	0	0	0	No compression at all. Can be used on the columns that can not be compressed anyway.
-SZ3	156	1	1	0	0	1	SZ3 is a lossy compressor for floating-point data with error bounds
+SZ3	156	1	1	0	0	1	SZ3 is a lossy compressor for floating-point data with error bounds.
 T64	147	1	0	0	0	0	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
 ZSTD	144	1	1	0	0	0	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.
 ZSTD_QAT	144	1	1	0	0	0	Requires hardware support for QuickAssist Technology (QAT) hardware; provides accelerated compression tasks.
