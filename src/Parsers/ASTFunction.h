@@ -21,10 +21,11 @@ public:
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
 
+    /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
+    bool is_operator = false;
+
     bool is_window_function = false;
-
     bool compute_after_window_functions = false;
-
     bool is_lambda_function = false;
 
     /// This field is updated in executeTableFunction if its a parameterized_view
