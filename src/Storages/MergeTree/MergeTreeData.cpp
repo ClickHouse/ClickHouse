@@ -10,26 +10,12 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/Config/ConfigHelper.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Increment.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/escapeForFileName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -48,48 +34,64 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTHelpers.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Freeze.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <base/sleep.h>
+#include <Common/Config/ConfigHelper.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/Increment.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/escapeForFileName.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -165,6 +167,11 @@ namespace
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char load_data_part_delay[];
+}
 
 namespace Setting
 {
@@ -1908,6 +1915,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
         runner(
             [&, part = std::move(current_part)]()
             {
+                fiu_do_on(FailPoints::load_data_part_delay, { sleepForMilliseconds(thread_local_rng() % 3000); });
                 /// Pass a separate mutex to guard the set of parts, because this lambda
                 /// is called concurrently but with already locked @data_parts_mutex.
                 auto res = loadDataPartWithRetries(
@@ -1931,7 +1939,8 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                     std::lock_guard lock(part_loading_mutex);
                     loaded_parts.push_back(std::move(res));
                 }
-            }, Priority{0});
+            },
+            Priority{0});
     }
 
     return loaded_parts;

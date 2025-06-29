@@ -92,7 +92,8 @@ static struct InitFiu
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
-    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
+    REGULAR(load_data_part_delay)
 
 
 namespace FailPoints
