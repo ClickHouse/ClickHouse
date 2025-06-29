@@ -306,6 +306,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -901,6 +902,7 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
 RawSum
 RawWithNames
@@ -1205,6 +1207,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1480,6 +1484,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1829,6 +1835,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -2075,6 +2085,7 @@ isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2083,7 +2094,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2261,6 +2271,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2269,7 +2280,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
