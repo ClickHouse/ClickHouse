@@ -15,6 +15,12 @@ if (SANITIZE STREQUAL undefined)
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
+include (cmake/libllvmlibc.cmake)
+
+if (EXISTS "${LLVM_LIBC_DIR}")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+endif()
+
 if (NOT EXISTS "${BUILTINS_LIBRARY}")
     set (BUILTINS_LIBRARY "-lgcc")
 endif ()
