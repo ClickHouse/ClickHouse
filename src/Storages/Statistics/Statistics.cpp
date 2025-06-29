@@ -1,4 +1,5 @@
 #include <Storages/Statistics/Statistics.h>
+
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,11 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
 
+Float64 IStatistics::estimateRange(const Range & /*range*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
+}
+
 /// Notes:
 /// - Statistics object usually only support estimation for certain types of predicates, e.g.
 ///    - TDigest: '< X' (less-than predicates)
@@ -133,6 +139,28 @@ Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
+}
+
+Float64 ColumnPartStatistics::estimateRange(const Range & range) const
+{
+    if (range.empty())
+        return 0;
+
+    if (range.isInfinite())
+        return rows;
+
+    if (range.left == range.right)
+        return estimateEqual(range.left);
+
+    if (range.left.isNegativeInfinity())
+        return estimateLess(range.right);
+
+    if (range.right.isPositiveInfinity())
+        return estimateGreater(range.left);
+
+    Float64 right_count = estimateLess(range.right);
+    Float64 left_count = estimateLess(range.left);
+    return right_count - left_count;
 }
 
 /// -------------------------------------
