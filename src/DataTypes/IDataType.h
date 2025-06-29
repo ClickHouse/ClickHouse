@@ -150,9 +150,13 @@ public:
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
+    SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings);
 
     static SerializationPtr getSerialization(const NameAndTypePair & column);
 

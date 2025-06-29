@@ -18,6 +18,7 @@ CREATE TABLE ttt (id Int32, value String)
 Engine=MergeTree()
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
+         serialize_string_with_size_stream = 0,
          disk = disk(
             type = cache,
             max_size = '128Mi',

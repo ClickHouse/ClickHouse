@@ -120,6 +120,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
+    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
 }
 
 namespace ErrorCodes
@@ -567,6 +568,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         .ratio_of_defaults_for_sparse = (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         .choose_kind = true,
+        .string_with_size_stream = (*merge_tree_settings)[MergeTreeSetting::serialize_string_with_size_stream],
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);

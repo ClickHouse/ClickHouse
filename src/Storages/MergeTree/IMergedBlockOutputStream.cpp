@@ -10,6 +10,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -22,17 +23,16 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(data_part_storage_)
     , reset_columns(reset_columns_)
+    , info_settings
+    {
+        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = false,
+        .string_with_size_stream = (*storage_settings)[MergeTreeSetting::serialize_string_with_size_stream],
+    }
+    , new_serialization_infos(info_settings)
 {
     if (reset_columns)
-    {
-        SerializationInfo::Settings info_settings =
-        {
-            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-            .choose_kind = false,
-        };
-
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
-    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
