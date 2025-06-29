@@ -16,7 +16,6 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
@@ -45,7 +44,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -724,142 +722,7 @@ struct ImplXXH3
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-DECLARE_MULTITARGET_CODE(
-
-template <typename Impl, typename Name>
-class FunctionIntHash : public IFunction
-{
-public:
-    static constexpr auto name = Name::name;
-
-private:
-    using ToType = typename Impl::ReturnType;
-
-    template <typename FromType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
-    {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
-
-        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
-        {
-            auto col_to = ColumnVector<ToType>::create();
-
-            const typename ColVecType::Container & vec_from = col_from->getData();
-            typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-
-            size_t size = vec_from.size();
-            vec_to.resize(size);
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = Impl::apply(vec_from[i]);
-
-            return col_to;
-        }
-
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), Name::name);
-    }
-
-public:
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        const IDataType * from_type = arguments[0].type.get();
-        WhichDataType which(from_type);
-
-        if (which.isUInt8())
-            return executeType<UInt8>(arguments);
-        if (which.isUInt16())
-            return executeType<UInt16>(arguments);
-        if (which.isUInt32())
-            return executeType<UInt32>(arguments);
-        if (which.isUInt64())
-            return executeType<UInt64>(arguments);
-        if (which.isInt8())
-            return executeType<Int8>(arguments);
-        if (which.isInt16())
-            return executeType<Int16>(arguments);
-        if (which.isInt32())
-            return executeType<Int32>(arguments);
-        if (which.isInt64())
-            return executeType<Int64>(arguments);
-        if (which.isDate())
-            return executeType<UInt16>(arguments);
-        if (which.isDate32())
-            return executeType<Int32>(arguments);
-        if (which.isDateTime())
-            return executeType<UInt32>(arguments);
-        if (which.isDecimal32())
-            return executeType<Decimal32>(arguments);
-        if (which.isDecimal64())
-            return executeType<Decimal64>(arguments);
-        if (which.isIPv4())
-            return executeType<IPv4>(arguments);
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(), getName());
-    }
-};
-
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Impl, typename Name>
-class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
-{
-public:
-    explicit FunctionIntHash(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionIntHash>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
-DECLARE_MULTITARGET_CODE(
-
-template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
+template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
 class FunctionAnyHash : public IFunction
 {
 public:
@@ -872,6 +735,50 @@ public:
 private:
     using ToType = typename Impl::ReturnType;
 
+    MULTITARGET_FUNCTION_AVX512F_AVX2(
+    MULTITARGET_FUNCTION_HEADER(template <typename FromType, bool first> static void),
+    executeManyIntTypeImpl,
+    MULTITARGET_FUNCTION_BODY((const KeyColumnsType & key_cols, const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to) /// NOLINT
+    {
+        KeyType key{};
+        if constexpr (Keyed)
+            key = Impl::getKey(key_cols, 0);
+        const size_t size = vec_from.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            ToType hash;
+
+            if constexpr (Keyed)
+                if (!key_cols.is_const && i != 0)
+                    key = Impl::getKey(key_cols, i);
+
+            if constexpr (Impl::use_int_hash_for_pods)
+            {
+                if constexpr (std::is_same_v<ToType, UInt64>)
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                else
+                    hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+            }
+            else
+            {
+                if constexpr (std::is_same_v<Impl, JavaHashImpl>)
+                    hash = JavaHashImpl::apply(vec_from[i]);
+                else
+                {
+                    auto value = vec_from[i];
+                    transformEndianness<std::endian::little>(value);
+                    hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                }
+            }
+
+            if constexpr (first)
+                vec_to[i] = hash;
+            else
+                vec_to[i] = combineHashes(key, vec_to[i], hash);
+        }
+    })
+    )
+
     template <typename FromType, bool first>
     void executeIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
@@ -883,38 +790,15 @@ private:
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
-            const size_t size = vec_from.size();
-            for (size_t i = 0; i < size; ++i)
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::AVX512F))
+                executeManyIntTypeImplAVX512F<FromType, first>(key_cols, vec_from, vec_to);
+            else if (isArchSupported(TargetArch::AVX2))
+                executeManyIntTypeImplAVX2<FromType, first>(key_cols, vec_from, vec_to);
+            else
+#endif
             {
-                ToType hash;
-
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-
-                if constexpr (Impl::use_int_hash_for_pods)
-                {
-                    if constexpr (std::is_same_v<ToType, UInt64>)
-                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
-                    else
-                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
-                }
-                else
-                {
-                    if constexpr (std::is_same_v<Impl, JavaHashImpl>)
-                        hash = JavaHashImpl::apply(vec_from[i]);
-                    else
-                    {
-                        auto value = vec_from[i];
-                        transformEndianness<std::endian::little>(value);
-                        hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-                    }
-                }
-
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                executeManyIntTypeImpl<FromType, first>(key_cols, vec_from, vec_to);
             }
         }
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
@@ -967,6 +851,50 @@ private:
                 column->getName(), getName());
     }
 
+    template <typename FromType>
+    static void ALWAYS_INLINE toLittleEndian(FromType & value)
+    {
+        // IPv6 addresses are parsed into four 32-bit components in big-endian ordering on both platforms, so no change is necessary.
+        // Reference: `parseIPv6orIPv4` in src/Common/formatIPv6.h.
+        if constexpr (std::endian::native == std::endian::big && std::is_same_v<std::remove_reference_t<decltype(value)>, IPv6>)
+            return;
+
+        transformEndianness<std::endian::little>(value);
+    }
+
+    MULTITARGET_FUNCTION_AVX512F_AVX2(
+    MULTITARGET_FUNCTION_HEADER(template <typename FromType, bool first> static void),
+    executeManyBigIntTypeImpl,
+    MULTITARGET_FUNCTION_BODY((const KeyColumnsType & key_cols, const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to) /// NOLINT
+    {
+        KeyType key{};
+        if constexpr (Keyed)
+            key = Impl::getKey(key_cols, 0);
+        const size_t size = vec_from.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            ToType hash;
+            if constexpr (Keyed)
+                if (!key_cols.is_const && i != 0)
+                    key = Impl::getKey(key_cols, i);
+            if constexpr (std::endian::native == std::endian::little)
+                hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+            else
+            {
+                auto value = vec_from[i];
+                toLittleEndian(value);
+
+                hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+            }
+            if constexpr (first)
+                vec_to[i] = hash;
+            else
+                vec_to[i] = combineHashes(key, vec_to[i], hash);
+        }
+    })
+    )
+
+
     template <typename FromType, bool first>
     void executeBigIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
@@ -975,39 +903,18 @@ private:
         if constexpr (Keyed)
             key = Impl::getKey(key_cols, 0);
 
-        static const auto to_little_endian = [](auto & value)
-        {
-            // IPv6 addresses are parsed into four 32-bit components in big-endian ordering on both platforms, so no change is necessary.
-            // Reference: `parseIPv6orIPv4` in src/Common/formatIPv6.h.
-            if constexpr (std::endian::native == std::endian::big && std::is_same_v<std::remove_reference_t<decltype(value)>, IPv6>)
-                return;
-
-            transformEndianness<std::endian::little>(value);
-        };
-
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            for (size_t i = 0; i < size; ++i)
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::AVX512F))
+                executeManyBigIntTypeImplAVX512F<FromType, first>(key_cols, vec_from, vec_to);
+            else if (isArchSupported(TargetArch::AVX2))
+                executeManyBigIntTypeImplAVX2<FromType, first>(key_cols, vec_from, vec_to);
+            else
+#endif
             {
-                ToType hash;
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-                if constexpr (std::endian::native == std::endian::little)
-                    hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
-                else
-                {
-                    auto value = vec_from[i];
-                    to_little_endian(value);
-
-                    hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-                }
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                executeManyBigIntTypeImpl<FromType, first>(key_cols, vec_from, vec_to);
             }
         }
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
@@ -1021,7 +928,7 @@ private:
                 }
             }
             auto value = col_from_const->template getValue<FromType>();
-            to_little_endian(value);
+            toLittleEndian(value);
 
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
             const size_t size = vec_to.size();
@@ -1467,7 +1374,7 @@ public:
         return col_to;
     }
 
-    static ToType apply(const KeyType & key, const char * begin, size_t size)
+    static inline ALWAYS_INLINE ToType apply(const KeyType & key, const char * begin, size_t size)
     {
         if constexpr (Keyed)
             return Impl::applyKeyed(key, begin, size);
@@ -1475,45 +1382,15 @@ public:
             return Impl::apply(begin, size);
     }
 
-    static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
+    static inline ALWAYS_INLINE ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
     {
         if constexpr (Keyed)
             return Impl::combineHashesKeyed(key, h1, h2);
         else
             return Impl::combineHashes(h1, h2);
     }
-};
 
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
-class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
-{
-public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
-    {
-        selector
-            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector
-            .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionAnyHash>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyHash>(); }
 };
 
 
@@ -1729,13 +1606,8 @@ struct ImplWyHash64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct NameIntHash32 { static constexpr auto name = "intHash32"; };
-struct NameIntHash64 { static constexpr auto name = "intHash64"; };
-
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionSipHash64Keyed = FunctionAnyHash<SipHash64KeyedImpl, true, SipHash64KeyedImpl::Key, SipHash64KeyedImpl::KeyColumns>;
-using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
-using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
 #endif
