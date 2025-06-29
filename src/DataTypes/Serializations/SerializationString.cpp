@@ -1,20 +1,20 @@
-#include <DataTypes/Serializations/SerializationString.h>
-
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-
+#include <Columns/ColumnStringAndSize.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
-
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationStringInlineSize.h>
 #include <Formats/FormatSettings.h>
-
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
-
+#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
 #include <base/unit.h>
+#include <Common/assert_cast.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -265,6 +265,111 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
         deserializeBinarySSE2<1>(data, offsets, istr, limit);
 }
 
+void SerializationString::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+{
+    /// Regular stream
+    settings.path.push_back(Substream::Regular);
+    settings.path.back().data = data;
+    callback(settings.path);
+
+    const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
+
+    const ColumnString * column_string = nullptr;
+    ColumnPtr sparse_offsets;
+    if (data.column)
+    {
+        if (const auto * sparse = typeid_cast<const ColumnSparse *>(data.column.get()))
+        {
+            column_string = typeid_cast<const ColumnString *>(sparse->getValuesPtr().get());
+            sparse_offsets = sparse->getOffsetsPtr();
+        }
+        else
+        {
+            column_string = typeid_cast<const ColumnString *>(data.column.get());
+        }
+    }
+
+    ColumnPtr sizes_column;
+    if (column_string)
+        sizes_column = column_string->createSizeSubcolumn();
+
+    if (sparse_offsets && sizes_column)
+        sizes_column = ColumnSparse::create(sizes_column->assumeMutable(), IColumn::mutate(sparse_offsets), data.column->size());
+
+    auto sizes_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationStringInlineSize>(), "size", SubstreamType::InlinedStringSizes);
+
+    settings.path.back() = Substream::InlinedStringSizes;
+    settings.path.back().data = SubstreamData(sizes_serialization)
+                                    .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                                    .withColumn(std::move(sizes_column))
+                                    .withSerializationInfo(data.serialization_info);
+
+    callback(settings.path);
+    settings.path.pop_back();
+}
+
+void SerializationString::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & /* state */) const
+{
+    settings.path.push_back(Substream::Regular);
+    if (WriteBuffer * stream = settings.getter(settings.path))
+        serializeBinaryBulk(column, *stream, offset, limit);
+    settings.path.pop_back();
+}
+
+void SerializationString::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */,
+    SubstreamsCache * cache) const
+{
+    settings.path.push_back(Substream::Regular);
+
+    /// cache_path {InlinedStringSizes(size), Regular}
+    auto cache_path = settings.path;
+    cache_path.back() = Substream::InlinedStringSizes;
+    cache_path.back().name_of_substream = "size";
+    cache_path.push_back(Substream::Regular);
+    auto cached_column = getFromSubstreamsCache(cache, cache_path);
+    ColumnPtr column_string;
+    ColumnPtr column_partial_string;
+    if (cached_column)
+    {
+        const auto & column_string_and_size = assert_cast<const ColumnStringAndSize &>(*cached_column);
+        column_string = column_string_and_size.getDataPtr();
+        column_partial_string = column_string_and_size.getPartialDataPtr();
+    }
+
+    if (column_string)
+    {
+        column = column_string;
+    }
+    else if (column_partial_string)
+    {
+        chassert(column_partial_string->size() <= limit);
+        auto mutable_column = column->assumeMutable();
+        assert_cast<ColumnString &>(*mutable_column).insertRangeFrom(*column_partial_string, 0, column_partial_string->size());
+        column = std::move(mutable_column);
+        addToOrUpdateSubstreamsCache(cache, cache_path, ColumnStringAndSize::create(column));
+    }
+    else if (ReadBuffer * stream = settings.getter(settings.path))
+    {
+        auto mutable_column = column->assumeMutable();
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
+        column = std::move(mutable_column);
+        addToOrUpdateSubstreamsCache(cache, cache_path, ColumnStringAndSize::create(column));
+    }
+
+    settings.path.pop_back();
+}
 
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {

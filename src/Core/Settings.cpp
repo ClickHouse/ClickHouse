@@ -4351,6 +4351,22 @@ Possible values:
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
+    DECLARE(Bool, data_type_string_use_size_stream, false, R"(
+Transforms `String` columns in table definitions into `StringWithSizeStream` during `CREATE TABLE`.
+
+When enabled, columns defined as `String` at the top level of a table schema
+will be interpreted and stored as `StringWithSizeStream`, which separates string lengths into
+a dedicated stream. This supports real `.size` subcolumns and may improve compression efficiency.
+
+Nested `String` types (e.g., in `Nullable`, `LowCardinality`, `Array`, `Tuple`, or `Map`) are not affected.
+
+Possible values:
+
+- 1 — Top-level `String` columns are converted to `StringWithSizeStream`.
+- 0 — `String` columns use the standard format with inlined sizes.
+
+Note: Ensure all nodes support `StringWithSizeStream` when using this setting.
+)", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
 Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#cast) operations.
 
@@ -4976,6 +4992,10 @@ Possible values:
 )", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
+)", 0) \
+    DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
+Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
+only when col is of String or FixedString type.
 )", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.

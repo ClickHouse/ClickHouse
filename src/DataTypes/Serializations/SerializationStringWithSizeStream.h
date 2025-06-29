@@ -1,11 +1,11 @@
 #pragma once
 
-#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationString.h>
 
 namespace DB
 {
 
-class SerializationString final : public ISerialization
+class SerializationStringWithSizeStream final : public ISerialization
 {
 public:
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -56,6 +56,9 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
+private:
+    SerializationString serialization_string;
 };
 
 }

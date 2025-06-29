@@ -71,7 +71,11 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+    static DataTypePtr getColumnType(
+        const ASTColumnDeclaration & col_decl,
+        LoadingStrictnessLevel mode,
+        bool make_columns_nullable,
+        bool make_string_columns_with_size_stream);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
