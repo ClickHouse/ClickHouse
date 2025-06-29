@@ -947,6 +947,7 @@ class FailureReason(enum.Enum):
     NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
+    NO_OPENSSL_FIPS = "no-openssl-fips"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1612,6 +1613,8 @@ class TestCase:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
             return FailureReason.NO_STATELESS
+        if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
+            return FailureReason.NO_OPENSSL_FIPS
 
         if tags:
             for build_flag in args.build_flags:
@@ -3947,6 +3950,12 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
         help="Replace *Log and Memory engines with MergeTree",
+    )
+    parser.add_argument(
+        "--openssl-fips",
+        action="store_true",
+        default=False,
+        help="Do not include tests that fail in OpenSSL FIPS mode",
     )
 
     parser.add_argument(
