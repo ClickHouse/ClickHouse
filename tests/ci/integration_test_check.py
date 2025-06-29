@@ -32,6 +32,7 @@ from report import (
 from stopwatch import Stopwatch
 
 
+
 def get_json_params_dict(
     check_name: str,
     pr_info: PRInfo,
