@@ -6878,6 +6878,31 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    /** Experimental index advisor section */ \
+    DECLARE(Bool, collect_workload, false, R"(
+        Allow to collect workload for the specified query.
+
+        0 - collect workload for all queries disabled
+        1 - collect workload for all queries enabled
+    )", EXPERIMENTAL) \
+    DECLARE(String, collection_file_path, "/tmp/workload_collection.txt", R"(
+The path to the file where the workload will be collected.
+)", EXPERIMENTAL) \
+    DECLARE(Double, index_advisor_sampling_proportion, 0.01, R"(
+Proportion of data to sample for analysis (0.0 to 1.0). This setting controls how much data is used for sampling operations.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_index_advisor_pk_columns_count, 5, R"(
+The maximum number of columns that can be used in the primary key.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_index_advise_index_columns_count, 3, R"(
+The number of columns that will be advised for the index.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, index_advisor_find_best_pk, false, R"(
+Find the best primary key for the table for saved workload.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, index_advisor_find_best_index, false, R"(
+Find the best columns for the index for the table for saved workload.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

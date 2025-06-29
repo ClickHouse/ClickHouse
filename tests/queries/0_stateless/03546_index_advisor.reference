@@ -1,0 +1,13 @@
+1	Hello, world
+2	Hello, world 2
+4	Goodbye, Goodbye 4
+1	Hello, world
+2	Hello, world 2
+test03546	primary_key	(s)
+test03546	minmax	i
+test03546	set(256)	i
+test03546	minmax	s
+test03546	set(256)	s
+SELECT * FROM test03546 WHERE i < 3;
+SELECT * FROM test03546 WHERE i > 3;
+SELECT * FROM test03546 WHERE s LIKE 'Hello, world%';
