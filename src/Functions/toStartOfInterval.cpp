@@ -195,24 +195,19 @@ public:
             }
             case ResultType::DateTime64:
             {
-                UInt32 scale = 0;
-                if (isDateTime64(arguments[0].type) && overload == Overload::Origin)
+                if (!isDateTime64(arguments[0].type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Input must be DateTime64 for subsecond intervals");
+
+                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
+
+                if (overload == Overload::Origin)
                 {
-                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
                     if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
                         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
                 }
-                else
-                {
-                    if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
-                        scale = 9;
-                    else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
-                        scale = 6;
-                    else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
-                        scale = 3;
-                }
-
+                
                 const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
             }
         }

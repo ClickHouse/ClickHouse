@@ -595,14 +595,22 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> /* origin */ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        Int128 interval_ticks = Int128(milliseconds) * scale_multiplier / 1000;
-        if (t >= 0)
-            return (t / interval_ticks) * interval_ticks;
-        else
-            return ((t + 1) / interval_ticks - 1) * interval_ticks;
+    // Calculate scale from scale_multiplier (should be 1,000,000 for scale=6)
+        int scale = 0;
+        for (Int64 sm = scale_multiplier; sm > 1; sm /= 10)
+            ++scale;
+
+        // Calculate interval_ticks: milliseconds * 10^(scale-3)
+        Int64 interval_ticks = milliseconds;
+        for (int i = 0; i < scale - 3; ++i)
+            interval_ticks *= 10;
+
+        Int64 base = origin.value_or(0);
+        return ((t - base) / interval_ticks) * interval_ticks + base;
     }
+
 };
 
 template <>
