@@ -748,16 +748,16 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
 }
 void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
-    std::unordered_map<String, uint64_t> & previous_pressure_values, bool first_run)
+    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
 {
     in.rewind();
-    // The shape of this file is:
-    // some avg10=0.00 avg60=0.00 avg300=0.00 total=0
-    // full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+    /// The shape of this file is:
+    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 
-    // We need the first field to capture whether it's a partial or total stall.
-    // We also ignore the time averages as well. Recording the counter (the last field)
-    // lets us recreate any average, with better identification of any short spikes
+    /// We need the first field to capture whether it's a partial or total stall.
+    /// We also ignore the time averages as well. Recording the counter (the last field)
+    /// lets us recreate any average, with better identification of any short spikes
     while (!in.eof())
     {
         String stall_type;
@@ -779,22 +779,20 @@ void readPressureFile(
 
         uint64_t counter;
         readText(counter, in);
-        
+
         String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
-        
+
         if (!first_run)
         {
-            auto it = previous_pressure_values.find(metric_key);
-            if (it != previous_pressure_values.end())
-            {
-                uint64_t delta = counter - it->second;
+            uint64_t prev = prev_pressure_vals[metric_key];
+
+                uint64_t delta = counter - prev;
                 new_values[metric_key] = AsynchronousMetricValue(delta,
                     "Microseconds of stall time since last measurement."
                     "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
-            }
         }
-        
-        previous_pressure_values[metric_key] = counter;
+
+        prev_pressure_vals[metric_key] = counter;
         skipToNextLineOrEOF(in);
     }
 }
@@ -1440,7 +1438,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "CPU", cpu_pressure.value(), previous_pressure_values, first_run);
+            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
@@ -1453,7 +1451,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "MEM", memory_pressure.value(), previous_pressure_values, first_run);
+            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
@@ -1466,7 +1464,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         try
         {
-            readPressureFile(new_values, "IO", io_pressure.value(), previous_pressure_values, first_run);
+            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
         }
         catch (...)
         {
