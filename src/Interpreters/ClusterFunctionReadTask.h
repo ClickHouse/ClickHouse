@@ -14,7 +14,7 @@ struct ClusterFunctionReadTaskResponse
 {
     ClusterFunctionReadTaskResponse() = default;
     explicit ClusterFunctionReadTaskResponse(const std::string & path_);
-    explicit ClusterFunctionReadTaskResponse(ObjectInfoPtr object);
+    explicit ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context);
 
     /// Data path (object path, in case of object storage).
     String path;

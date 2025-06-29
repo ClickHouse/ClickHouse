@@ -1,6 +1,7 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -15,8 +16,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
     extern const int LOGICAL_ERROR;
 }
+namespace Setting
+{
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+}
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object)
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -24,16 +29,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
-    if (auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object);
-        archive_object_info != nullptr)
-    {
-        path = archive_object_info->getPathToArchive();
-    }
-    else
-    {
-        path = object->getPath();
-    }
-
+    const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
+    path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
