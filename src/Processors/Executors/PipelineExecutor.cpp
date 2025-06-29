@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -41,6 +42,7 @@ namespace Setting
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -174,7 +176,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
             return true;
     }
 
-    executeStepImpl(0, yield_flag);
+    executeStepImpl(0, single_thread_cpu_slot.get(), yield_flag);
 
     if (!tasks.isFinished())
         return true;
@@ -271,9 +273,9 @@ void PipelineExecutor::finalizeExecution()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
 }
 
-void PipelineExecutor::executeSingleThread(size_t thread_num)
+void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot)
 {
-    executeStepImpl(thread_num);
+    executeStepImpl(thread_num, cpu_slot);
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
@@ -286,11 +288,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
 #endif
 }
 
-void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag)
+void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
 #endif
+
+    ISlotLease * cpu_lease = dynamic_cast<ISlotLease*>(cpu_slot);
+    if (cpu_lease)
+        cpu_lease->startConsumption();
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
@@ -336,20 +342,19 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
+            try
             {
-                try
-                {
-                    /// Upscale if possible.
-                    spawnThreads();
-                }
-                catch (...)
-                {
-                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                    /// We should cancel execution properly before rethrow.
-                    cancel(ExecutionStatus::Exception);
-                    throw;
-                }
+                /// Communicate with resource scheduler or ConcurrencyControl
+                /// Do upscaling, downscaling, or sleep for preemption
+                if (!controlConcurrency(cpu_lease, spawn_status == ExecutorTasks::SHOULD_SPAWN))
+                    break;
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel(ExecutionStatus::Exception);
+                throw;
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -364,19 +369,32 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 }
 
-// This function properly allocates CPU slots for the thread pool
-// There are a few possible modes of concurrency control.
-// 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
-//    all thread should be allocated through scheduler using the same resource link
-// 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
-//    the first (master) thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
-// 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
-//    all thread should be allocated through scheduler using different resource links
-// 4) If we have no cpu-related resources:
-//    the ConcurrencyControl class is used instead of resource scheduler
-// NOTE: With enabled workload CPU scheduling, both links could be empty in case of unknown workload.
-static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_control)
+/// Properly allocate CPU slots or lease for the thread pool
+static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control)
 {
+    // The first thread is called master thread.
+    // It is NOT the thread that handles async tasks.
+    // Master thread is different from other threads due to special role in scheduling:
+    //  1. During query start, master thread spawns worker threads, so starting it fast is important.
+    //  2. It should never be downscaled to avoid query deadlock (0 threads to process tasks), although it can be preempted.
+    //  3. When using ConcurrencyControl, master thread is granted immediately and may not request CPU slot (see 'fair_round_robin').
+    //  4. When using resource scheduler, master thread may use different resource link than worker threads.
+    const auto master_threads = 1uz;
+
+    // Other threads are called worker threads.
+    // They are competing for CPU slots with other queries and may not start or can be preempted and downscaled after they start.
+    // Worker threads are spawned by master thread or other worker threads.
+    const auto worker_threads = num_threads - master_threads;
+
+    // There are a few possible modes of concurrency control.
+    // 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
+    //    all thread should be allocated through scheduler using the same resource link
+    // 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
+    //    master thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
+    // 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
+    //    all thread should be allocated through scheduler using different resource links
+    // 4) If we have no cpu-related resources:
+    //    the ConcurrencyControl class is used instead of resource scheduler
     if (concurrency_control)
     {
         auto query_context = CurrentThread::getQueryContext();
@@ -397,23 +415,37 @@ static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_c
 
         if (workload_cpu_scheduling_is_enabled)
         {
-            /// Allocate CPU slots through resource scheduler
-            constexpr size_t master_threads = 1uz;
-            return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
+            {
+                /// Allocate CPU slots through resource scheduler
+                if (query_context->getCPUSlotPreemption())
+                {
+                    auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
+                    return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
+                        CPULeaseSettings
+                        {
+                            .quantum_ns = static_cast<ResourceCost>(quantum_ns),
+                            .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
+                            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                            .workload = query_context->getSettingsRef()[Setting::workload],
+                        });
+                }
+                else
+                {
+                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
+                }
+            }
         }
         else
         {
-            /// Allocate CPU slots from concurrency control
-            constexpr size_t min_threads = 1uz; // Number of threads that should be granted to every query no matter how many threads are already running in other queries
-            return ConcurrencyControl::instance().allocate(min_threads, num_threads);
+            /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
+            return ConcurrencyControl::instance().allocate(master_threads, num_threads);
         }
     }
-    else
-    {
-        /// If concurrency control is not used we should not even count threads as competing.
-        /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
-        return std::make_shared<GrantedAllocation>(num_threads);
-    }
+
+    /// If concurrency control is not used we should not even count threads as competing.
+    /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
+    return std::make_shared<GrantedAllocation>(num_threads);
 }
 
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
@@ -421,7 +453,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCPUSlots(num_threads, concurrency_control);
+    cpu_slots = allocateCPU(num_threads, concurrency_control);
 
     Queue queue;
     Queue async_queue;
@@ -437,17 +469,30 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
-void PipelineExecutor::spawnThreads()
+bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_spawn)
 {
     /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
-    if (spawn_mutex.try_lock())
+    if (should_spawn && spawn_mutex.try_lock())
     {
         std::lock_guard lock(spawn_mutex, std::adopt_lock);
-        spawnThreadsImpl({});
+        spawnThreads({});
     }
+
+    if (cpu_lease) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
+    {
+        // Preemption point. Renewal could block execution due to CPU overload.
+        if (!cpu_lease->renew())
+        {
+            size_t slot_id = cpu_lease->slot_id;
+            tasks.downscale(slot_id);
+            return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+        }
+    }
+
+    return true;
 }
 
-void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
+void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 {
     while (cpu_slots)
     {
@@ -456,11 +501,10 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
         if (!slot)
             return;
 
-        size_t thread_num = threads.fetch_add(1);
+        size_t thread_num = slot->slot_id;
 
         /// Count of threads in use should be updated for proper finish() condition.
-        /// NOTE: this will not decrease `use_threads` below initially granted count
-        const auto spawn_status = tasks.upscale(thread_num + 1);
+        const auto spawn_status = tasks.upscale(thread_num);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
@@ -469,7 +513,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 
             try
             {
-                executeSingleThread(thread_num);
+                executeSingleThread(thread_num, my_slot.get());
             }
             catch (...)
             {
@@ -497,7 +541,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             {
                 std::lock_guard lock(spawn_mutex);
                 // Start at least one thread, could block to acquire the first CPU slot
-                spawnThreadsImpl(cpu_slots->acquire());
+                spawnThreads(cpu_slots->acquire());
             }
             tasks.processAsyncTasks();
             pool->wait();
