@@ -42,7 +42,7 @@ public:
 
     bool isVectorCodec() const override { return true; }
 
-    String getDescription() const override { return "SZ3"; }
+    String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
 
 protected:
     bool isCompression() const override { return true; }
@@ -185,41 +185,34 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     ++source;
 
     SZ3::Config config;
-    try
+    switch (width)
     {
-        switch (width)
-        {
-            case 4: {
-                try
-                {
-                    float * dest_typed = reinterpret_cast<float *>(dest);
-                    SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
-                }
-                catch (...)
-                {
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
-                }
-                break;
+        case 4: {
+            try
+            {
+                float * dest_typed = reinterpret_cast<float *>(dest);
+                SZ_decompress<float>(config, const_cast<char *>(source), source_size, dest_typed);
             }
-            case 8: {
-                try
-                {
-                    double * dest_typed = reinterpret_cast<double *>(dest);
-                    SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
-                }
-                catch (...)
-                {
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
-                }
-                break;
+            catch (...)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
             }
-            default:
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected float width in SZ3 compressed data");
+            break;
         }
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid data to decompress with SZ3 codec");
+        case 8: {
+            try
+            {
+                double * dest_typed = reinterpret_cast<double *>(dest);
+                SZ_decompress<double>(config, const_cast<char *>(source), source_size, dest_typed);
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+            }
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected float width in SZ3 compressed data");
     }
 }
 
