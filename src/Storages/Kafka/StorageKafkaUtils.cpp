@@ -96,10 +96,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-// bool compareTopicPartition(const KafkaConsumer2::TopicPartition & first, const KafkaConsumer2::TopicPartition & second)
-// {
-//     return std::tie(first.topic, first.partition_id, first.offset) < std::tie(second.topic, second.partition_id, second.offset);
-// }
 
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -293,6 +289,7 @@ void registerStorageKafka(StorageFactory & factory)
         settings_query->changes.setSetting("kafka_keeper_path", (*kafka_settings)[KafkaSetting::kafka_keeper_path].value);
         settings_query->changes.setSetting("kafka_replica_name", (*kafka_settings)[KafkaSetting::kafka_replica_name].value);
         settings_query->changes.setSetting("kafka_partitions_for_replica", (*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value);
+
         // Expand other macros (such as {replica}). We do not expand them on previous step to make possible copying metadata files between replicas.
         // Disable expanding {shard} macro, because it can lead to incorrect behavior and it doesn't make sense to shard Kafka tables.
         Macros::MacroExpansionInfo info;
