@@ -42,7 +42,7 @@ Query:
 
 ```sql
 SELECT maxMap(a, b)
-FROM values('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
+FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
 ```
 
 Result:

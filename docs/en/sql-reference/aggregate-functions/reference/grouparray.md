@@ -34,7 +34,7 @@ SELECT * FROM default.ck;
 Query:
 
 ```sql
-select id, groupArray(10)(name) from default.ck group by id;
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
 ```
 
 Result:

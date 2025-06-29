@@ -554,7 +554,7 @@ FROM
     FROM employees
     WINDOW wndw AS (
         PARTITION BY department
-        rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
     )
     ORDER BY
         department ASC,
@@ -668,7 +668,7 @@ SELECT
     ts,
     value,
     avg(value) OVER (PARTITION BY metric ORDER BY ts
-      Range BETWEEN 10 PRECEDING AND CURRENT ROW) AS moving_avg_10_seconds_temp
+      RANGE BETWEEN 10 PRECEDING AND CURRENT ROW) AS moving_avg_10_seconds_temp
 FROM sensors
 ORDER BY
     metric ASC,
@@ -719,7 +719,7 @@ SELECT
     ts,
     value,
     round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
-       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
+       RANGE BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
 FROM sensors
 ORDER BY
     metric ASC,

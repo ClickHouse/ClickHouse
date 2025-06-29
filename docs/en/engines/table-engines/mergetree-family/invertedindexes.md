@@ -104,12 +104,12 @@ To use the index, no special functions or syntax are required. Typical string se
 examples, consider:
 
 ```sql
-INSERT INTO tab(key, str) values (1, 'Hello World');
-SELECT * from tab WHERE str == 'Hello World';
-SELECT * from tab WHERE str IN ('Hello', 'World');
-SELECT * from tab WHERE str LIKE '%Hello%';
-SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
-SELECT * from tab WHERE hasToken(str, 'Hello');
+INSERT INTO tab(key, str) VALUES (1, 'Hello World');
+SELECT * FROM tab WHERE str == 'Hello World';
+SELECT * FROM tab WHERE str IN ('Hello', 'World');
+SELECT * FROM tab WHERE str LIKE '%Hello%';
+SELECT * FROM tab WHERE multiSearchAny(str, ['Hello', 'World']);
+SELECT * FROM tab WHERE hasToken(str, 'Hello');
 ```
 
 The full-text index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.

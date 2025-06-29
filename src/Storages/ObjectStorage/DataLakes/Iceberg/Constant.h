@@ -39,6 +39,7 @@ DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
 DEFINE_ICEBERG_FIELD(type)
+DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
@@ -51,14 +52,11 @@ DEFINE_ICEBERG_FIELD_ALIAS(schema_id, schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(current_schema_id, current-schema-id);
 DEFINE_ICEBERG_FIELD_ALIAS(table_uuid, table-uuid);
 DEFINE_ICEBERG_FIELD_ALIAS(total_records, total-records);
-DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
-DEFINE_ICEBERG_FIELD_ALIAS(partition_transform, transform);
-DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
@@ -68,5 +66,4 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, null_value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
-DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 }

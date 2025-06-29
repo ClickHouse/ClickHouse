@@ -74,7 +74,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
 /* 4. checking a very large block overrides all */
 INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
 
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
 ```
 
 ```text
@@ -100,7 +100,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 rows
 /* 4. checking a very large block overrides all */
 INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 rows
 
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
 ```
 
 ```text

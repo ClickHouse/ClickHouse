@@ -115,24 +115,6 @@ public:
         return current_metadata->getSchemaTransformer(local_context, data_path);
     }
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const Block & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        if (!current_metadata)
-            return {};
-        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
-    }
-
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();

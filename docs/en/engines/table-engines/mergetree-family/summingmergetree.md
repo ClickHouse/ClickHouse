@@ -83,7 +83,7 @@ ORDER BY key
 Insert data to it:
 
 ```sql
-INSERT INTO summtt Values(1,1),(1,2),(2,1)
+INSERT INTO summtt VALUES(1,1),(1,2),(2,1)
 ```
 
 ClickHouse may sum all the rows not completely ([see below](#data-processing)), so we use an aggregate function `sum` and `GROUP BY` clause in the query.

@@ -92,7 +92,7 @@ CREATE TABLE nestedt
 ENGINE = TinyLog
 ```
 ```sql
-INSERT INTO nestedt Values ( 1, [1], ['a'])
+INSERT INTO nestedt VALUES ( 1, [1], ['a'])
 ```
 ```sql
 SELECT * FROM nestedt FORMAT TSV

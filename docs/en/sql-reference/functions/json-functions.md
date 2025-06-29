@@ -530,7 +530,7 @@ JSONExtractUInt(json [, indices_or_keys]...)
 Query:
 
 ```sql
-SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) as x, toTypeName(x);
+SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) AS x, toTypeName(x);
 ```
 
 Result:
@@ -570,7 +570,7 @@ JSONExtractInt(json [, indices_or_keys]...)
 Query:
 
 ```sql
-SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) as x, toTypeName(x);
+SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) AS x, toTypeName(x);
 ```
 
 Result:
@@ -610,7 +610,7 @@ JSONExtractFloat(json [, indices_or_keys]...)
 Query:
 
 ```sql
-SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) as x, toTypeName(x);
+SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) AS x, toTypeName(x);
 ```
 
 Result:
@@ -1050,8 +1050,8 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
-select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
+SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
+SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:

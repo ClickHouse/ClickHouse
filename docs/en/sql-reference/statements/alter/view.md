@@ -27,7 +27,7 @@ FROM events
 GROUP BY ts, event_type;
 
 INSERT INTO events
-SELECT Date '2020-01-01' + interval number * 900 second,
+SELECT DATE '2020-01-01' + interval number * 900 second,
        ['imp', 'click'][number%2+1]
 FROM numbers(100);
 

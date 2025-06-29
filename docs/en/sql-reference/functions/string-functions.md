@@ -632,7 +632,7 @@ lowerUTF8(input)
 Query:
 
 ```sql
-SELECT lowerUTF8('MÜNCHEN') as Lowerutf8;
+SELECT lowerUTF8('MÜNCHEN') AS Lowerutf8;
 ```
 
 Result:
@@ -670,7 +670,7 @@ upperUTF8(input)
 Query:
 
 ```sql
-SELECT upperUTF8('München') as Upperutf8;
+SELECT upperUTF8('München') AS Upperutf8;
 ```
 
 Result:
@@ -1227,7 +1227,7 @@ tryBase32Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase32Decode('IVXGG33EMVSA====') as res, tryBase32Decode('invalid') as res_invalid;
+SELECT tryBase32Decode('IVXGG33EMVSA====') AS res, tryBase32Decode('invalid') AS res_invalid;
 ```
 
 ```response
@@ -1323,7 +1323,7 @@ tryBase58Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
+SELECT tryBase58Decode('3dc8KtHrwM') AS res, tryBase58Decode('invalid') AS res_invalid;
 ```
 
 ```response
@@ -1487,7 +1487,7 @@ tryBase64Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
+SELECT tryBase64Decode('RW5jb2RlZA==') AS res, tryBase64Decode('invalid') AS res_invalid;
 ```
 
 ```response
@@ -1519,7 +1519,7 @@ tryBase64URLDecode(encodedUrl)
 Query:
 
 ```sql
-SELECT tryBase64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t') as res, tryBase64Decode('aHR0cHM6Ly9jbGlja') as res_invalid;
+SELECT tryBase64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t') AS res, tryBase64Decode('aHR0cHM6Ly9jbGlja') AS res_invalid;
 ```
 
 ```response
@@ -2082,7 +2082,7 @@ soundex(val)
 **Example**
 
 ```sql
-select soundex('aksel');
+SELECT soundex('aksel');
 ```
 
 Result:
@@ -2115,7 +2115,7 @@ punycodeEncode(val)
 **Example**
 
 ```sql
-select punycodeEncode('München');
+SELECT punycodeEncode('München');
 ```
 
 Result:
@@ -2148,7 +2148,7 @@ punycodeEncode(val)
 **Example**
 
 ```sql
-select punycodeDecode('Mnchen-3ya');
+SELECT punycodeDecode('Mnchen-3ya');
 ```
 
 Result:
@@ -2186,7 +2186,7 @@ idnaEncode(val)
 **Example**
 
 ```sql
-select idnaEncode('straße.münchen.de');
+SELECT idnaEncode('straße.münchen.de');
 ```
 
 Result:
@@ -2224,7 +2224,7 @@ idnaDecode(val)
 **Example**
 
 ```sql
-select idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
+SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
 ```
 
 Result:
@@ -2527,7 +2527,7 @@ firstLine(val)
 **Example**
 
 ```sql
-select firstLine('foo\nbar\nbaz');
+SELECT firstLine('foo\nbar\nbaz');
 ```
 
 Result:
@@ -2569,9 +2569,9 @@ If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
 
 ```sql
 SELECT
-    stringCompare('alice', 'bob', 0, 0, 3) as result1,
-    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
-    stringCompare('bob', 'alice', 0, 0, 3) as result3
+    stringCompare('alice', 'bob', 0, 0, 3) AS result1,
+    stringCompare('alice', 'alicia', 0, 0, 3) AS result2,
+    stringCompare('bob', 'alice', 0, 0, 3) AS result3
 ```
 Result:
 ```result
@@ -2582,9 +2582,9 @@ Result:
 
 ```sql
 SELECT
-    stringCompare('alice', 'alicia') as result2,
-    stringCompare('alice', 'alice') as result1,
-    stringCompare('bob', 'alice') as result3
+    stringCompare('alice', 'alicia') AS result2,
+    stringCompare('alice', 'alice') AS result1,
+    stringCompare('bob', 'alice') AS result3
 ```
 Result:
 ```result

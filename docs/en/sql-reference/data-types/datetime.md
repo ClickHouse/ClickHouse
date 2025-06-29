@@ -115,8 +115,8 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 
 ```sql
 SELECT
-toDateTime(timestamp, 'Europe/London') as lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') as mos_time
+toDateTime(timestamp, 'Europe/London') AS lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') AS mos_time
 FROM dt
 ```
 

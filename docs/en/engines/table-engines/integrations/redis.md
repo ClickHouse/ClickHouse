@@ -84,7 +84,7 @@ ENGINE = Redis(redis_creds) PRIMARY KEY(key);
 Insert:
 
 ```sql
-INSERT INTO redis_table Values('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 ```
 
 Query:

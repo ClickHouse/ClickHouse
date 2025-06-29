@@ -232,7 +232,7 @@ Alias: `TIMESTAMP`
 **Examples**
 
 ```sql
-SELECT timestamp('2023-12-31') as ts;
+SELECT timestamp('2023-12-31') AS ts;
 ```
 
 Result:
@@ -244,7 +244,7 @@ Result:
 ```
 
 ```sql
-SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 ```
 
 Result:
@@ -1998,8 +1998,8 @@ Query:
 
 ```sql
 SELECT
-  toISOYear(toDate('2024/10/02')) as year1,
-  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
+  toISOYear(toDate('2024/10/02')) AS year1,
+  toISOYear(toDateTime('2024-10-02 01:30:00')) AS year2
 ```
 
 Result:
@@ -2633,7 +2633,7 @@ Date or date with time with the specified `value` expressed in `unit` added to `
 **Example**
 
 ```sql
-select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
+SELECT timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 ```
 
 Result:
@@ -2682,7 +2682,7 @@ Date or date with time obtained by subtracting `value`, expressed in `unit`, fro
 **Example**
 
 ```sql
-select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
+SELECT timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
 ```
 
 Result:

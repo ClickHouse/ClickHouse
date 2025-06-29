@@ -43,7 +43,7 @@ Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobS
 Select the count for the file `test_cluster_*.csv`, using all the nodes in the `cluster_simple` cluster:
 
 ```sql
-SELECT count(*) from azureBlobStorageCluster(
+SELECT count(*) FROM azureBlobStorageCluster(
         'cluster_simple', 'http://azurite1:10000/devstoreaccount1', 'testcontainer', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')
