@@ -25,4 +25,3 @@ do
     $CLICKHOUSE_CLIENT -q "select * from test"
     $CLICKHOUSE_CLIENT -q "truncate table test"
 done
-
