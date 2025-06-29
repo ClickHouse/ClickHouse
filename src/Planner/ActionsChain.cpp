@@ -6,6 +6,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -86,6 +87,11 @@ void ActionsChainStep::initialize()
 {
     auto required_columns_names = actions->dag.getRequiredColumnsNames();
     input_columns_names = NameSet(required_columns_names.begin(), required_columns_names.end());
+
+    /// Treat constants as input columns so they could propagate to previous steps as required
+    for (const auto & node : actions->dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::COLUMN && node.column && isColumnConst(*node.column))
+            input_columns_names.insert(node.result_name);
 
     available_output_columns.clear();
 
