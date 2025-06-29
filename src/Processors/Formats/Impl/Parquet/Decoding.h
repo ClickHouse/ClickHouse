@@ -64,7 +64,7 @@ struct PageDecoder
     const char * data = nullptr;
     const char * end = nullptr;
 
-    void requireRemainingBytes(size_t n)
+    void requireRemainingBytes(size_t n) const
     {
         if (size_t(end - data) < n)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");

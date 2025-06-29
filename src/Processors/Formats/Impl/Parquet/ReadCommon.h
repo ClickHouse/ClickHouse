@@ -187,7 +187,7 @@ public:
         return *this;
     }
 
-    operator bool() const { return alloc_stage != ReadStage::Deallocated; }
+    explicit operator bool() const { return alloc_stage != ReadStage::Deallocated; }
 
     void reset(MemoryUsageDiff * diff)
     {

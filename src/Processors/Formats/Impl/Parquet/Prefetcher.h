@@ -207,7 +207,7 @@ public:
     /// otherwise use reset(diff).
     ~PrefetchHandle();
 
-    operator bool() const { return request != nullptr; }
+    explicit operator bool() const { return request != nullptr; }
 
     void reset(MemoryUsageDiff * diff);
 
