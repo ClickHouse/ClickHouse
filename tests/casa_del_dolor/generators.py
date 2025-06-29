@@ -16,10 +16,10 @@ from integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(self, binary: pathlib.Path, config: pathlib.Path):
+    def __init__(self, binary: pathlib.Path, config: pathlib.Path, _suffix: str):
         self.binary: pathlib.Path = binary
         self.config: pathlib.Path = config
-        self.temp = tempfile.NamedTemporaryFile()
+        self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
 
     @abstractmethod
     def run_generator(self) -> CommandRequest:
@@ -28,7 +28,7 @@ class Generator:
 
 class BuzzHouseGenerator(Generator):
     def __init__(self, args, cluster):
-        super().__init__(args.client_binary, args.client_config)
+        super().__init__(args.client_binary, args.client_config, ".json")
 
         # Load configuration
         buzz_config = {}
@@ -38,11 +38,15 @@ class BuzzHouseGenerator(Generator):
 
         buzz_config["seed"] = random.randint(1, 18446744073709551615)
 
+        # Connect back to peer ClickHouse server running in the host machine
+        if "clickhouse" in buzz_config:
+            buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
+
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
                 "database": "/" + cluster.minio_bucket,
-                "hostname": cluster.minio_host,
+                "server_hostname": cluster.minio_host,
                 "port": cluster.minio_port,
                 "user": "minio",
                 "password": minio_secret_key,
@@ -51,7 +55,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["postgresql"] = {
                 "query_log_file": "/tmp/postgresql.sql",
                 "database": "test",
-                "hostname": cluster.postgres_ip,
+                "server_hostname": cluster.postgres_ip,
                 "port": cluster.postgres_port,
                 "user": "postgres",
                 "password": pg_pass,
@@ -60,7 +64,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["mysql"] = {
                 "query_log_file": "/tmp/mysql.sql",
                 "database": "test",
-                "hostname": cluster.mysql8_ip,
+                "server_hostname": cluster.mysql8_ip,
                 "port": cluster.mysql8_port,
                 "user": "root",
                 "password": mysql_pass,
@@ -73,26 +77,26 @@ class BuzzHouseGenerator(Generator):
             buzz_config["mongodb"] = {
                 "query_log_file": "/tmp/mongodb.doc",
                 "database": "test",
-                "hostname": "localhost",
+                "server_hostname": "localhost",
                 "port": 27017,
                 "user": "root",
                 "password": urllib.parse.quote_plus(mongo_pass),
             }
         if args.with_redis:
             buzz_config["redis"] = {
-                "hostname": cluster.redis_host,
+                "server_hostname": cluster.redis_host,
                 "port": 6379,
                 "user": "",
                 "password": "clickhouse",
             }
         if args.with_nginx:
             buzz_config["http"] = {
-                "hostname": cluster.nginx_host,
+                "server_hostname": cluster.nginx_host,
                 "port": cluster.nginx_port,
             }
         if args.with_azurite:
             buzz_config["azurite"] = {
-                "hostname": cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"],
+                "server_hostname": cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"],
                 "database": cluster.env_variables[
                     "AZURITE_CONNECTION_STRING"
                 ],  # it's hacking a little

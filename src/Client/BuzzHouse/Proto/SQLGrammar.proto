@@ -2751,7 +2751,7 @@ message SetQuery {
     }
     required ExplainQuery sel1 = 1;
     required SetOp set_op = 2;
-    required AllOrDistinct s_or_d = 3;
+    optional AllOrDistinct s_or_d = 3;
     required ExplainQuery sel2 = 4;
 }
 

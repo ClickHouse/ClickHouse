@@ -459,11 +459,9 @@ SQLType * StringType::typeDeepCopy() const
     return new StringType(precision);
 }
 
-String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
+String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    std::uniform_int_distribution<uint32_t> strlens(0, gen.fc.max_string_length);
-
-    return rg.nextString("'", true, precision.value_or(strlens(rg.generator)));
+    return rg.nextString("'", true, precision.value_or(rg.nextStrlen()));
 }
 
 String UUIDType::typeName(const bool) const
@@ -1462,9 +1460,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> strlens(1, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> fwidth(1, fc.max_string_length);
 
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : strlens(rg.generator));
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : fwidth(rg.generator));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());
@@ -2090,13 +2088,10 @@ String strBuildJSONElement(RandomGenerator & rg)
         break;
         case 11:
         case 12:
-        case 13: {
+        case 13:
             /// String
-            std::uniform_int_distribution<uint32_t> strlens(0, 1009);
-
-            ret = rg.nextString("\"", false, strlens(rg.generator));
-        }
-        break;
+            ret = rg.nextString("\"", false, rg.nextStrlen());
+            break;
         case 14:
             /// Date
             ret = '"' + rg.nextDate() + '"';

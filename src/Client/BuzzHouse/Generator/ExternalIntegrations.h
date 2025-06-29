@@ -323,7 +323,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
@@ -361,7 +361,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 

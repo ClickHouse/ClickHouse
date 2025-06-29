@@ -137,7 +137,7 @@ parser.add_argument(
     "-l",
     "--log-path",
     type=pathlib.Path,
-    default=tempfile.NamedTemporaryFile(),
+    default=tempfile.NamedTemporaryFile(suffix=".log"),
     help="Log path",
 )
 parser.add_argument(
@@ -234,7 +234,13 @@ parser.add_argument(
     "--add-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
-    help="Add 'add_distributed_ddl' settings",
+    help="Add 'distributed_ddl' settings",
+)
+parser.add_argument(
+    "--add-shared-catalog",
+    action="store_false",
+    dest="add_shared_catalog",
+    help="Add 'shared_database_catalog' settings",
 )
 args = parser.parse_args()
 
@@ -482,25 +488,18 @@ while all_running:
         # Restart any other integration
         next_pick = random.choice(integrations)
         choosen_instances = []
-        restart_choices = []
+        available_options = {
+            "zookeeper": list(ZOOKEEPER_CONTAINERS),
+            "minio": ["minio1"],
+            "nginx": ["nginx"],
+            "azurite": ["azurite1"],
+            "postgres": ["postgres1"],
+            "mysql8": ["mysql80"],
+            "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
+            "redis": ["redis1"],
+        }
 
-        if next_pick == "zookeeper":
-            restart_choices = list(ZOOKEEPER_CONTAINERS)
-        elif next_pick == "minio":
-            restart_choices = ["minio1"]
-        elif next_pick == "nginx":
-            restart_choices = ["nginx"]
-        elif next_pick == "azurite":
-            restart_choices = ["azurite1"]
-        elif next_pick == "postgres":
-            restart_choices = ["postgres1"]
-        elif next_pick == "mysql8":
-            restart_choices = ["mysql80"]
-        elif next_pick == "mongo":
-            restart_choices = ["mongo1", "mongo_no_cred", "mongo_secure"]
-        elif next_pick == "redis":
-            restart_choices = ["redis1"]
-
+        restart_choices = list(available_options[next_pick])
         random.shuffle(restart_choices)
         for i in range(0, random.randint(1, len(restart_choices))):
             choosen_instances.append(restart_choices[i])
