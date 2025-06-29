@@ -145,13 +145,13 @@ public:
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
 
         size_t scale = 0;
-        if (datepart_kind == IntervalKind::Kind::Millisecond)
-            scale = 3;
-        else if (datepart_kind == IntervalKind::Kind::Microsecond)
-            scale = 6;
-        else if (datepart_kind == IntervalKind::Kind::Nanosecond)
-            scale = 9;
+        if (isDateTime64(arguments[1].type)) scale = assert_cast<const DataTypeDateTime64 &>(*arguments[1].type).getScale();
+        else if (datepart_kind == IntervalKind::Kind::Millisecond) scale = 3;
+        else if (datepart_kind == IntervalKind::Kind::Microsecond) scale = 6;
+        else if (datepart_kind == IntervalKind::Kind::Nanosecond) scale = 9;
+        
         return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
+            
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

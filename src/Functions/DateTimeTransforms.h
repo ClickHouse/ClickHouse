@@ -595,32 +595,22 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
     {
         throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
     }
-    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        if (scale_multiplier < 1000)
-        {
-            Int64 t_milliseconds = 0;
-            if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            if (t >= 0) [[likely]]
-                return t_milliseconds / milliseconds * milliseconds;
-            else
-                return ((t_milliseconds + 1) / milliseconds - 1) * milliseconds;
-        }
-        else if (scale_multiplier > 1000)
-        {
-            Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-            if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
-            else
-                return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
-        }
-        else
-            if (t >= 0) [[likely]]
-                return t / milliseconds * milliseconds;
-            else
-                return ((t + 1) / milliseconds - 1) * milliseconds;
+    // Calculate scale from scale_multiplier (should be 1,000,000 for scale=6)
+        int scale = 0;
+        for (Int64 sm = scale_multiplier; sm > 1; sm /= 10)
+            ++scale;
+
+        // Calculate interval_ticks: milliseconds * 10^(scale-3)
+        Int64 interval_ticks = milliseconds;
+        for (int i = 0; i < scale - 3; ++i)
+            interval_ticks *= 10;
+
+        Int64 base = origin.value_or(0);
+        return ((t - base) / interval_ticks) * interval_ticks + base;
     }
+
 };
 
 template <>
