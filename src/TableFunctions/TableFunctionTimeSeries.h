@@ -10,13 +10,13 @@ namespace DB
 
 /// Table functions timeSeriesData('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetrics('mydb', 'my_ts_table')
 /// return the data table, the tags table, and the metrics table respectively associated with any TimeSeries table mydb.my_ts_table
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 class TableFunctionTimeSeriesTarget : public ITableFunction
 {
 public:
-    static constexpr auto name = (target_kind == ViewTarget::Data)
+    static constexpr auto name = (target_kind == ASTViewTarget::Kind::Data)
         ? "timeSeriesData"
-        : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags" : "timeSeriesMetrics");
+        : ((target_kind == ASTViewTarget::Kind::Tags) ? "timeSeriesTags" : "timeSeriesMetrics");
 
     String getName() const override { return name; }
 

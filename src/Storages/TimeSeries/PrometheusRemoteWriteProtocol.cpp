@@ -196,7 +196,7 @@ namespace
 
     struct BlocksToInsert
     {
-        std::vector<std::pair<ViewTarget::Kind, Block>> blocks;
+        std::vector<std::pair<ASTViewTarget::Kind, Block>> blocks;
     };
 
     /// Converts time series from the protobuf format to prepared blocks for inserting into target tables.
@@ -421,8 +421,8 @@ namespace
 
         /// A block to the "tags" table should be inserted first.
         /// (Because any INSERT can fail and we don't want to have rows in the data table with no corresponding "id" written to the "tags" table.)
-        res.blocks.emplace_back(ViewTarget::Tags, std::move(tags_block));
-        res.blocks.emplace_back(ViewTarget::Data, std::move(data_block));
+        res.blocks.emplace_back(ASTViewTarget::Kind::Tags, std::move(tags_block));
+        res.blocks.emplace_back(ASTViewTarget::Kind::Data, std::move(data_block));
 
         return res;
     }
@@ -515,7 +515,7 @@ namespace
 
         /// Prepare a result.
         BlocksToInsert res;
-        res.blocks.emplace_back(ViewTarget::Metrics, std::move(block));
+        res.blocks.emplace_back(ASTViewTarget::Kind::Metrics, std::move(block));
         return res;
     }
 

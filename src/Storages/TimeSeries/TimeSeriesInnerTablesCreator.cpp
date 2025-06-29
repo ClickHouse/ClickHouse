@@ -44,13 +44,13 @@ TimeSeriesInnerTablesCreator::TimeSeriesInnerTablesCreator(ContextPtr context_,
 TimeSeriesInnerTablesCreator::~TimeSeriesInnerTablesCreator() = default;
 
 
-ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription(ViewTarget::Kind inner_table_kind) const
+ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription(ASTViewTarget::Kind inner_table_kind) const
 {
     ColumnsDescription columns;
 
     switch (inner_table_kind)
     {
-        case ViewTarget::Data:
+        case ASTViewTarget::Kind::Data:
         {
             /// Column "id".
             {
@@ -69,7 +69,7 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             break;
         }
 
-        case ViewTarget::Tags:
+        case ASTViewTarget::Kind::Tags:
         {
             /// Column "id".
             columns.add(time_series_columns.get(TimeSeriesColumnNames::ID));
@@ -126,7 +126,7 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
             break;
         }
 
-        case ViewTarget::Metrics:
+        case ASTViewTarget::Kind::Metrics:
         {
             columns.add(time_series_columns.get(TimeSeriesColumnNames::MetricFamilyName));
             columns.add(time_series_columns.get(TimeSeriesColumnNames::Type));
@@ -143,7 +143,7 @@ ColumnsDescription TimeSeriesInnerTablesCreator::getInnerTableColumnsDescription
 }
 
 
-StorageID TimeSeriesInnerTablesCreator::getInnerTableID(ViewTarget::Kind inner_table_kind, const UUID & inner_table_uuid) const
+StorageID TimeSeriesInnerTablesCreator::getInnerTableID(ASTViewTarget::Kind inner_table_kind, const UUID & inner_table_uuid) const
 {
     StorageID res = time_series_storage_id;
     if (time_series_storage_id.hasUUID())
@@ -156,7 +156,7 @@ StorageID TimeSeriesInnerTablesCreator::getInnerTableID(ViewTarget::Kind inner_t
 
 
 std::shared_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTableCreateQuery(
-    ViewTarget::Kind inner_table_kind,
+    ASTViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
     const std::shared_ptr<ASTStorage> & inner_storage_def) const
 {
@@ -179,7 +179,7 @@ std::shared_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTableCreat
 }
 
 StorageID TimeSeriesInnerTablesCreator::createInnerTable(
-    ViewTarget::Kind inner_table_kind,
+    ASTViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
     const std::shared_ptr<ASTStorage> & inner_storage_def) const
 {
