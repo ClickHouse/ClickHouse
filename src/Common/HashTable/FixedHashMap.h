@@ -109,6 +109,9 @@ public:
 
     using Base::Base;
 
+    static constexpr size_t BUCKET_SIZE = (1ULL << (sizeof(Key) * 8)) > 256 ? 256 : 16;
+    static constexpr size_t BUCKET_NUM = Base::NUM_CELLS / BUCKET_SIZE;
+
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
@@ -116,6 +119,18 @@ public:
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            typename Self::LookupResult res_it;
+            bool inserted;
+            that.emplace(it->getKey(), res_it, inserted, it.getHash());
+            func(res_it->getMapped(), it->getMapped(), inserted);
+        }
+    }
+
+    template <typename Func, bool>
+    void ALWAYS_INLINE mergeToViaEmplaceInRange(auto begin, auto end, Self & that, Func && func)
+    {
+        for (auto it = begin; it < end; it = it.nextCellBeforeLimit(end))
         {
             typename Self::LookupResult res_it;
             bool inserted;
