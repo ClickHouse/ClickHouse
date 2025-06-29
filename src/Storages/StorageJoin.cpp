@@ -629,7 +629,7 @@ private:
     case HashJoin::Type::TYPE:                                \
         rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, mut_columns); \
         break;
-            APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
+            APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
 
             default:
