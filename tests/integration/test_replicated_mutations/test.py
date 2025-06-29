@@ -188,6 +188,16 @@ def wait_for_mutations(nodes, number_of_mutations):
     for i in range(100):  # wait for replication 80 seconds max
         time.sleep(0.8)
 
+        def healthcheck(node):
+            return int(
+                node.query(
+                    "SELECT sum(if(is_done, finish_time < create_time, 0)) FROM system.mutations WHERE table = 'test_mutations'"
+                )
+            )
+
+        assert all([healthcheck(n) == 0 for n in nodes])
+            
+
         def get_done_mutations(node):
             return int(
                 node.query(
