@@ -46,7 +46,7 @@ protected:
         size_t rows_offset,
         size_t from_mark,
         MergeTreeReaderStream & stream,
-        ISerialization::SubstreamsCache & columns_cache,
+        std::unordered_map<String, ColumnPtr> & columns_cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);

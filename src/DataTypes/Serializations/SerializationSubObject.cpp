@@ -139,7 +139,7 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     }
 
-    for (const auto & dynamic_path : checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(structure_state)->sorted_dynamic_paths)
+    for (const auto & dynamic_path : *checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(structure_state)->sorted_dynamic_paths)
     {
         /// Save only dynamic paths with requested prefix.
         if (dynamic_path.starts_with(path_prefix))

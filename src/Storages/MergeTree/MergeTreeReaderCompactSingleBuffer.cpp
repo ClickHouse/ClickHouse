@@ -41,7 +41,7 @@ try
 
         /// Use cache to avoid reading the column with the same name twice.
         /// It may happen if there are empty array Nested in the part.
-        ISerialization::SubstreamsCache cache;
+        std::unordered_map<String, ColumnPtr> columns_cache;
         std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
 
         /// If we need to read multiple subcolumns from a single column in storage,
@@ -64,9 +64,17 @@ try
                 stream->seekToMarkAndColumn(from_mark, have_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
+            auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+            readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
 
-            readPrefix(pos, from_mark, *stream, &deserialize_states_caches[columns_to_read[pos].getNameInStorage()]);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, cache, cache_for_subcolumns);
+            /// Subcolumns of the same column might share the same states inside deserialization state.
+            /// But in Compact part we can't use substreams cache during serialization so we read every substream independently
+            /// for subcolumns of the same column. And because of this the states should be empty and not shared.
+            /// To avoid sharing of the same state we clone deserialization states.
+            for (auto & [_, state] : deserialize_states_cache)
+                state = state ? state->clone() : nullptr;
+
+            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, cache_for_subcolumns);
         }
 
         ++from_mark;

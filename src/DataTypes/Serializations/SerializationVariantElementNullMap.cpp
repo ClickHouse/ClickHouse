@@ -43,7 +43,7 @@ void SerializationVariantElementNullMap::enumerateStreams(
     const DB::ISerialization::SubstreamData &) const
 {
     /// We will need stream for discriminators during deserialization.
-    if (settings.use_specialized_prefixes_substreams)
+    if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {
         settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
         callback(settings.path);
@@ -101,7 +101,7 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
 
     DeserializeBinaryBulkStateVariantElementNullMap * variant_element_null_map_state = nullptr;
     std::optional<size_t> variant_limit;
-    if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
+    if (auto cached_discriminators = getColumnFromSubstreamsCache(cache, settings.path))
     {
         variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
         variant_element_null_map_state->discriminators = cached_discriminators;
@@ -137,7 +137,7 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
             variant_limit = variant_pair.second;
         }
 
-        addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
+        addColumnToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
     }
     else
     {

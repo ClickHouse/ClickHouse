@@ -11,6 +11,8 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct Settings;
+class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
@@ -67,6 +69,7 @@ struct MergeTreeWriterSettings
         const Settings & global_settings,
         const WriteSettings & query_write_settings_,
         const MergeTreeSettingsPtr & storage_settings,
+        const MergeTreeDataPartPtr & data_part,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
@@ -93,7 +96,9 @@ struct MergeTreeWriterSettings
     size_t low_cardinality_max_dictionary_size;
     bool low_cardinality_use_single_dictionary_for_part;
     bool use_compact_variant_discriminators_serialization;
-    bool use_v1_object_and_dynamic_serialization;
+    MergeTreeDynamicSerializationVersion dynamic_serialization_version;
+    MergeTreeObjectSerializationVersion object_serialization_version;
+    size_t object_shared_data_buckets = 1;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t adaptive_write_buffer_initial_size;
 };
