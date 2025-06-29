@@ -17,6 +17,9 @@
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include "Core/ColumnsWithTypeAndName.h"
+#include "Core/Field.h"
+#include "Processors/Chunk.h"
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
@@ -251,6 +254,9 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Returns true if the storage supports get method.
+    virtual bool supportsGetRequests() const { return false; }
+
     /// Return true if storage has any projection.
     virtual bool hasProjection() const { return false; }
 
@@ -478,6 +484,11 @@ public:
     {
         renameInMemory(new_table_id);
     }
+
+    /** Gets chunk with values by keys.
+      * Need to support redis protocol and key-value semantics
+      */
+    virtual Chunk getChunkByKeys(const std::vector<Field> & /*keys*/, const Names & /*key and value columns names*/, ContextPtr /*context*/) { return {}; }
 
     /**
      * Just updates names of database and table without moving any data on disk

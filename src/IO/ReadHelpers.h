@@ -623,6 +623,8 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
+void readStringUntilCR(String & s, ReadBuffer & buf);
+
 // Reads the line until EOL, unescaping backslash escape sequences.
 // Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
@@ -2219,6 +2221,9 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);
+
+/// Skip to next character after next \r\n. If no \r\n in stream, skip to end.
+void skipToCRLFOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
