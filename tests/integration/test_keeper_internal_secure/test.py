@@ -72,7 +72,7 @@ def get_zk_client(nodename, timeout=30.0):
     return KeeperClient(
         cluster.server_bin_path,
         cluster.get_instance_ip(nodename),
-        cluster.zookeeper_port,
+        port=9181,
         connection_timeout=timeout, secure=True,
     )
 
