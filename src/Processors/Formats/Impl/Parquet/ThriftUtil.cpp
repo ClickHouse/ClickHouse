@@ -38,7 +38,7 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
     limit = std::min(limit, size_t(UINT32_MAX));
     /// TMemoryBuffer promises to not write to the buffer (in OBSERVE mode),
     /// so it should be ok to const_cast.
-    auto cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
+    uint8_t * cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
     auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit));
     apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
     uint32_t bytes_read = out.read(&proto);
