@@ -37,7 +37,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include "base/defines.h"
 
 
 namespace DB
@@ -77,7 +76,6 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace DistributedSetting
@@ -207,20 +205,20 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = true;
-        for (const auto & shard : cluster.getShardsInfo())
+        bool disable_parallel_replicas = is_remote_function; // disable parallel replicas with remote() table functions
+        if (!disable_parallel_replicas)
         {
-            if (shard.getAllNodeCount() > 1)
+            for (const auto & shard : cluster.getShardsInfo())
             {
-                disable_parallel_replicas = false;
-                break;
+                if (shard.getAllNodeCount() > 1)
+                {
+                    disable_parallel_replicas = false;
+                    break;
+                }
             }
         }
-        if (disable_parallel_replicas)
-            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
 
-        // disable parallel replicas with remote() table functions
-        if (is_remote_function)
+        if (disable_parallel_replicas)
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
@@ -870,7 +868,6 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     if (!context->canUseParallelReplicasOnInitiator())
         return false;
 
-    /// check cluster for parallel replicas
     auto cluster = context->getClusterForParallelReplicas();
     if (cluster->getShardCount() == 1)
         return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
