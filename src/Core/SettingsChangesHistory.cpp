@@ -76,6 +76,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
+            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
+            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_fuzz", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

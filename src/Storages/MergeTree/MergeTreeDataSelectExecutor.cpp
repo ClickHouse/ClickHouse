@@ -1266,13 +1266,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    const auto & key_indices = key_condition.getKeyIndices();
+    size_t num_key_columns = key_condition.getNumKeyColumns();
     DataTypes key_types;
-    if (!key_indices.empty())
+    if (num_key_columns > 0)
     {
         const auto index = part->getIndex();
 
-        for (size_t i : key_indices)
+        for (size_t i = 0; i < num_key_columns; ++i)
         {
             if (i < index->size())
             {
@@ -1314,7 +1314,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = key_indices.size();
+    size_t used_key_size = num_key_columns;
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 

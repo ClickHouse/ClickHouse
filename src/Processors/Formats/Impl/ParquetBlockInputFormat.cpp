@@ -2,7 +2,6 @@
 
 #if USE_PARQUET
 
-#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -32,6 +31,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <IO/SharedThreadPools.h>
 
 #include <shared_mutex>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -469,7 +470,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
 
         if (always_null)
         {
-            /// Single-point range containing either the default value of one of the infinities.
+            /// Single-point range containing either the default value or one of the infinities.
             if (null_as_default)
                 hyperrectangle[idx].right = hyperrectangle[idx].left = default_value;
             else
@@ -623,7 +624,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
-    const bool prefetch_group = io_pool != nullptr;
+    const bool prefetch_group = io_pool != nullptr && !format_settings.parquet.use_native_reader_with_filter_push_down;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -706,14 +707,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     return std::nullopt;
                 }
 
-                auto nested_column = column;
-
-                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
-                {
-                    nested_column = nullable_column->getNestedColumnPtr();
-                }
-
-                return parquetTryHashColumn(nested_column.get(), parquet_column_descriptor);
+                return parquetTryHashColumn(column.get(), parquet_column_descriptor);
             };
 
             key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);
@@ -933,6 +927,8 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 
         if (row_group_batch.status == RowGroupBatchState::Status::Done)
             return;
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
     }
 }
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
@@ -1172,12 +1168,12 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-void ParquetSchemaReader::initializeIfNeeded()
+void ArrowParquetSchemaReader::initializeIfNeeded()
 {
     if (arrow_file)
         return;
@@ -1187,7 +1183,7 @@ void ParquetSchemaReader::initializeIfNeeded()
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
-NamesAndTypesList ParquetSchemaReader::readSchema()
+NamesAndTypesList ArrowParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
@@ -1233,7 +1229,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
     return metadata->num_rows();
@@ -1251,24 +1247,42 @@ void registerInputFormatParquet(FormatFactory & factory)
                FormatParserGroupPtr parser_group) -> InputFormatPtr
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                auto ptr = std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    sample,
-                    settings,
-                    std::move(parser_group),
-                    min_bytes_for_seek);
-                return ptr;
+                if (settings.parquet.use_native_reader_v3)
+                {
+                    return std::make_shared<ParquetV3BlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        parser_group,
+                        min_bytes_for_seek);
+                }
+                else
+                {
+                    return std::make_shared<ParquetBlockInputFormat>(
+                        buf,
+                        sample,
+                        settings,
+                        std::move(parser_group),
+                        min_bytes_for_seek);
+                }
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
+    factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
+    {
+        return settings.parquet.use_native_reader_v3;
+    });
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
-            return std::make_shared<ParquetSchemaReader>(buf, settings);
+            if (settings.parquet.use_native_reader_v3)
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            else
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
         }
         );
 
@@ -1277,9 +1291,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};enable_json_parsing={};use_native_reader_v3={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.parquet.enable_json_parsing,
+                settings.parquet.use_native_reader_v3);
         });
 }
 
