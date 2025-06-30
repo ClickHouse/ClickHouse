@@ -257,7 +257,7 @@ void Reader::prefilterAndInitRowGroups()
             parser_group->columns_used_by_key_condition.contains(*output_column.idx_in_output_block))
         {
             key_condition_columns[*output_column.idx_in_output_block] = output_column.primitive_start;
-            primitive_columns[output_column.primitive_start].used_by_key_condition = *output_column.idx_in_output_block;
+            primitive_columns[output_column.primitive_start].used_by_key_condition = output_column.idx_in_output_block;
         }
     }
 
@@ -915,10 +915,11 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     /// Validate.
 
     const auto & meta = column.meta->meta_data;
-    int64_t end_offset = std::min(meta.data_page_offset, std::min(
-        meta.__isset.dictionary_page_offset ? meta.dictionary_page_offset : INT64_MAX,
-        meta.__isset.index_page_offset ? meta.index_page_offset : INT64_MAX))
-        + meta.total_compressed_size;
+    int64_t end_offset = std::min({
+            meta.data_page_offset,
+            meta.__isset.dictionary_page_offset ? meta.dictionary_page_offset : INT64_MAX,
+            meta.__isset.index_page_offset ? meta.index_page_offset : INT64_MAX
+        }) + meta.total_compressed_size;
     int64_t num_rows = row_group.meta->num_rows;
 
     int64_t prev_offset = meta.data_page_offset;

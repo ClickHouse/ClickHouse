@@ -61,10 +61,10 @@ void ReadManager::init(FormatParserGroupPtr parser_group_)
     }
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
-    for (size_t i = 0; i < stages.size(); ++i)
-        sum += stages[i].memory_target_fraction;
-    for (size_t i = 0; i < stages.size(); ++i)
-        stages[i].memory_target_fraction /= sum;
+    for (const Stage & stage : stages)
+        sum += stage.memory_target_fraction;
+    for (Stage & stage : stages)
+        stage.memory_target_fraction /= sum;
 
     /// The NotStarted stage completed for all row groups, transition to next stage.
     MemoryUsageDiff diff(ReadStage::NotStarted);
@@ -469,7 +469,7 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
         if (d != 0)
             stages[i].memory_usage.fetch_add(d, std::memory_order_relaxed);
 
-        bool should_schedule = (diff.stages_to_schedule & (1ul << size_t(i))) != 0;
+        bool should_schedule = (diff.stages_to_schedule & (1ul << i)) != 0;
         if (!should_schedule && d < 0)
         {
             const auto & stage = stages[i];
@@ -700,7 +700,6 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
 void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
-    RowSubgroup * row_subgroup = task.row_subgroup_idx == UINT64_MAX ? nullptr : &row_group.subgroups.at(task.row_subgroup_idx);
     if (task.column_idx != UINT64_MAX)
     {
         ColumnChunk & column = row_group.columns.at(task.column_idx);
@@ -734,9 +733,11 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                     reader.decodeDictionaryPage(column, column_info);
                 size_t prev_page_idx = column.data_pages_idx;
 
+                chassert(task.row_subgroup_idx != UINT64_MAX);
+                RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 reader.decodePrimitiveColumn(
-                    column, column_info, row_subgroup->columns.at(task.column_idx),
-                    row_group, *row_subgroup);
+                    column, column_info, row_subgroup.columns.at(task.column_idx),
+                    row_group, row_subgroup);
 
                 for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
                     column.data_pages.at(i).prefetch.reset(&diff);
@@ -758,9 +759,9 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
         diff.scheduleStage(task.stage);
     }
 
-    if (row_subgroup)
+    if (task.row_subgroup_idx != UINT64_MAX)
     {
-        size_t remaining = row_subgroup->stage_tasks_remaining.fetch_sub(1);
+        size_t remaining = row_group.subgroups.at(task.row_subgroup_idx).stage_tasks_remaining.fetch_sub(1);
         chassert(remaining > 0);
         if (remaining == 1)
             finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, diff);
@@ -813,7 +814,7 @@ Chunk ReadManager::read()
         while (true)
         {
             if (exception)
-                std::rethrow_exception(std::move(exception));
+                std::rethrow_exception(exception);
 
             if (!delivery_queue.empty())
             {

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -108,7 +107,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
     if (context == SchemaContext::None)
     {
-        if (name != "")
+        if (!name.empty())
             name += ".";
         name += element.name;
 
@@ -132,7 +131,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 {
                     if (levels[i].is_array)
                     {
-                        auto array = typeid_cast<const DataTypeArray *>(type_hint.get());
+                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type_hint.get());
                         if (!array)
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of nested column {} doesn't match parquet schema: parquet type is Array, requested type is {}", name, type_hint->getName());
                         type_hint = array->getNestedType();
@@ -155,7 +154,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
     if (element.repetition_type != parq::FieldRepetitionType::REQUIRED)
     {
-        auto prev = levels.back();
+        LevelInfo prev = levels.back();
         if (prev.def == UINT8_MAX)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Parquet column {} has extremely deeply nested (>255 levels) arrays or nullables", name);
         auto level = LevelInfo {.def = UInt8(prev.def + 1), .rep = prev.rep};
@@ -167,7 +166,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             /// We'll first process schema for array element type, then wrap it in Array type.
             if (type_hint)
             {
-                auto array_type = typeid_cast<const DataTypeArray *>(type_hint.get());
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(type_hint.get());
                 if (!array_type)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Array, requested type is {}", name, type_hint->getName());
                 type_hint = array_type->getNestedType();
@@ -246,9 +245,9 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         primitive.schema_idx = schema_idx - 1;
         primitive.name = name;
         primitive.levels = levels;
-        for (size_t i = 0; i < levels.size(); ++i)
-            if (levels[i].is_array)
-                primitive.max_array_def = levels[i].def;
+        for (const auto & level : levels)
+            if (level.is_array)
+                primitive.max_array_def = level.def;
 
         output_idx = output_columns.size();
         OutputColumnInfo & output = output_columns.emplace_back();
@@ -302,7 +301,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         DataTypePtr array_type_hint;
         if (type_hint)
         {
-            auto map_type = typeid_cast<const DataTypeMap *>(type_hint.get());
+            const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(type_hint.get());
             if (!map_type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", name, type_hint->getName());
             array_type_hint = map_type->getNestedType();
@@ -348,7 +347,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     else
     {
         /// Tuple. (Possibly a Map key_value tuple.)
-        auto tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
+        const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
         if (type_hint && !tuple_type_hint)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
 
@@ -513,8 +512,8 @@ void SchemaConverter::processPrimitiveColumn(
     /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
 
     parq::Type::type type = element.type;
-    parq::ConvertedType::type converted =
-        element.__isset.converted_type ? element.converted_type : parq::ConvertedType::type(-1);
+    std::optional<parq::ConvertedType::type> converted =
+        element.__isset.converted_type ? std::make_optional(element.converted_type) : std::nullopt;
     const parq::LogicalType & logical = element.logicalType;
     using CONV = parq::ConvertedType;
     chassert(!out_inferred_type && !out_decoded_type);
@@ -588,7 +587,7 @@ void SchemaConverter::processPrimitiveColumn(
     auto is_output_type_fixed_string = [&](size_t expected_size) -> bool
     {
         const IDataType * output_type = type_hint ? type_hint : out_inferred_type.get();
-        auto fixed_string_type = typeid_cast<const DataTypeFixedString *>(output_type);
+        const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(output_type);
         return fixed_string_type && fixed_string_type->getN() == expected_size;
     };
 
@@ -608,10 +607,10 @@ void SchemaConverter::processPrimitiveColumn(
     else if (logical.__isset.INTEGER || (converted >= CONV::UINT_8 && converted <= CONV::INT_64))
     {
         bool is_signed = logical.INTEGER.isSigned;
-        size_t bits = logical.INTEGER.bitWidth;
+        size_t bits = size_t(logical.INTEGER.bitWidth);
         if (!logical.__isset.INTEGER)
         {
-            switch (converted)
+            switch (converted.value())
             {
                 case CONV::UINT_8: is_signed = false; bits = 8; break;
                 case CONV::UINT_16: is_signed = false; bits = 16; break;

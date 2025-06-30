@@ -32,7 +32,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
-#include <IO/SharedThreadPools.h>
 
 #include <shared_mutex>
 #include <boost/algorithm/string/case_conv.hpp>

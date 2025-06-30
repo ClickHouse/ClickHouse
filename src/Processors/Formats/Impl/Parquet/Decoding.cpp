@@ -26,13 +26,13 @@ struct BitPackedRLEDecoder : public PageDecoder
     BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte)
         : PageDecoder(data_), limit(limit_)
     {
-        static_assert(sizeof(T) <= 4, "");
+        static_assert(sizeof(T) <= 4);
         chassert(limit <= std::numeric_limits<T>::max());
 
         if (has_header_byte)
         {
             requireRemainingBytes(1);
-            bit_width = *data;
+            bit_width = size_t(*data);
             data += 1;
             if (bit_width < 1 || bit_width > 8 * sizeof(T))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
@@ -641,7 +641,7 @@ T byteswap(T x)
         }
         else
         {
-            static_assert(sizeof(T) == 32, "");
+            static_assert(sizeof(T) == 32);
             x.items[2] = std::byteswap(x.items[2]);
             x.items[3] = std::byteswap(x.items[3]);
             std::swap(x.items[0], x.items[3]);

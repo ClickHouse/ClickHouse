@@ -14,7 +14,7 @@ ParserGroupExt::Limits ParserGroupExt::getLimitsPerReader(const FormatParserGrou
     return Limits {
         .memory_low_watermark = size_t(ext.total_memory_low_watermark * fraction),
         .memory_high_watermark = size_t(ext.total_memory_high_watermark * fraction),
-        .parsing_threads = std::max(size_t(parser_group.parsing_runner.getMaxThreads() * fraction + .5), size_t(1))};
+        .parsing_threads = size_t(std::max(std::lround(parser_group.parsing_runner.getMaxThreads() * fraction + .5), 1l))};
 }
 
 #ifdef OS_LINUX

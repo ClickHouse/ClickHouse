@@ -179,69 +179,69 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
     chassert(!request.memory); // prefetch not requested
 
     RequestState * parent_req = request.request;
-
-    std::unique_lock lock(mutex);
-
-    /// Allocate RequestState-s.
     std::vector<PrefetchHandle> out_handles;
-    out_handles.reserve(subranges.size());
-    for (size_t i = 0; i < subranges.size(); ++i)
-        out_handles.push_back(PrefetchHandle(&requests.emplace_back()));
 
-    if (parent_req->state.load(std::memory_order_relaxed) == RequestState::State::HasRange)
     {
-        auto & ranges = range_sets[parent_req->range_set_idx].ranges;
-        const auto & range = ranges.at(parent_req->range_idx);
+        std::unique_lock lock(mutex);
 
-        size_t subrange_start = UINT64_MAX;
-        size_t subrange_end = 0;
-        for (const auto & [start, length] : subranges)
-        {
-            if (start < range.start || length > range.end - start)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in [{}, {})", start, start + length, range.start, range.end);
-            subrange_start = std::min(subrange_start, start);
-            subrange_end = std::max(subrange_end, start + length);
-        }
+        /// Allocate RequestState-s.
+        out_handles.reserve(subranges.size());
+        for (size_t i = 0; i < subranges.size(); ++i)
+            out_handles.push_back(PrefetchHandle(&requests.emplace_back()));
 
-        /// If the request is already short, don't split it, and try to coalesce with other ranges.
-        if (range.length() < min_bytes_for_seek)
+        if (parent_req->state.load(std::memory_order_relaxed) == RequestState::State::HasRange)
         {
-            pickRangesAndCreateTaskIfNotExists(parent_req, request, /*splitting=*/ true, subrange_start, subrange_end, std::move(lock));
-        }
-        else
-        {
-            /// Normal case: actually split the range.
-            ///
-            /// We put the split ranges into a new universe instead of inserting into the middle
-            /// of the existing RangeSet. This allows us to use a sorted array instead of a slow
-            /// tree (e.g. std::map), but introduces a limitation: ranges produced by a split can only
-            /// be coalesced among each other, not with other ranges (non-split ranges or ranges from
-            /// other splits). (I just guessed that this would be a better tradeoff, didn't benchmark it.)
-            size_t new_range_set_idx = range_sets.size();
-            auto & new_ranges = range_sets.emplace_back().ranges;
-            new_ranges.reserve(subranges.size());
-            for (size_t i = 0; i < subranges.size(); ++i)
+            auto & ranges = range_sets[parent_req->range_set_idx].ranges;
+            const auto & range = ranges.at(parent_req->range_idx);
+
+            size_t subrange_start = UINT64_MAX;
+            size_t subrange_end = 0;
+            for (const auto & [start, length] : subranges)
             {
-                const auto [start, length] = subranges[i];
-                RequestState * req = out_handles[i].request;
-                req->state.store(RequestState::State::HasRange, std::memory_order_relaxed);
-                req->allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek);
-                req->range_set_idx = new_range_set_idx;
-                req->range_idx = i;
-                req->length = length;
-
-                RangeState & r = new_ranges.emplace_back();
-                r.start = start;
-                r.end = start + length;
-                r.request = req;
+                if (start < range.start || length > range.end - start)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in [{}, {})", start, start + length, range.start, range.end);
+                subrange_start = std::min(subrange_start, start);
+                subrange_end = std::max(subrange_end, start + length);
             }
 
-            request.reset(/*diff=*/ nullptr);
-            return out_handles;
-        }
-    }
+            /// If the request is already short, don't split it, and try to coalesce with other ranges.
+            if (range.length() < min_bytes_for_seek)
+            {
+                pickRangesAndCreateTaskIfNotExists(parent_req, request, /*splitting=*/ true, subrange_start, subrange_end, std::move(lock));
+            }
+            else
+            {
+                /// Normal case: actually split the range.
+                ///
+                /// We put the split ranges into a new universe instead of inserting into the middle
+                /// of the existing RangeSet. This allows us to use a sorted array instead of a slow
+                /// tree (e.g. std::map), but introduces a limitation: ranges produced by a split can only
+                /// be coalesced among each other, not with other ranges (non-split ranges or ranges from
+                /// other splits). (I just guessed that this would be a better tradeoff, didn't benchmark it.)
+                size_t new_range_set_idx = range_sets.size();
+                auto & new_ranges = range_sets.emplace_back().ranges;
+                new_ranges.reserve(subranges.size());
+                for (size_t i = 0; i < subranges.size(); ++i)
+                {
+                    const auto [start, length] = subranges[i];
+                    RequestState * req = out_handles[i].request;
+                    req->state.store(RequestState::State::HasRange, std::memory_order_relaxed);
+                    req->allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek);
+                    req->range_set_idx = new_range_set_idx;
+                    req->range_idx = i;
+                    req->length = length;
 
-    lock.unlock();
+                    RangeState & r = new_ranges.emplace_back();
+                    r.start = start;
+                    r.end = start + length;
+                    r.request = req;
+                }
+
+                request.reset(/*diff=*/ nullptr);
+                return out_handles;
+            }
+        }
+    } // unlock mutex
 
     chassert(parent_req->state.load(std::memory_order_relaxed) == RequestState::State::HasTask);
     Task * task = parent_req->task;
@@ -463,7 +463,7 @@ void Prefetcher::rethrowException(Task * task)
 {
     std::lock_guard lock(exception_mutex);
     if (task->exception)
-        std::rethrow_exception(std::move(task->exception));
+        std::rethrow_exception(task->exception);
     else
         /// exception_ptr is not copyable, so we rethrow the correct exception only the first time,
         /// then throw uninformative exceptions if called again (e.g. for multiple requests covered
