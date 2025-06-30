@@ -14,7 +14,7 @@
 # limitations under the License.
 # ~~~
 
-# File copied from google-cloud-cpp/google-cloud-cpp/google_cloud_cpp_common.cmake with minor modifications.
+# File copied from google-cloud-cpp/google/cloud/google_cloud_cpp_common.cmake with minor modifications.
 
 set(GOOGLE_CLOUD_CPP_COMMON_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud")
 
