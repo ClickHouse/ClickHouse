@@ -31,6 +31,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -47,8 +48,6 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(IPv4); }
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
-
-    void updateHashImpl(SipHash & hash) const override;
 
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv4>>(); }
 };
@@ -74,6 +73,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -87,8 +87,6 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(IPv6); }
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
-
-    void updateHashImpl(SipHash & hash) const override;
 
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv6>>(); }
 };

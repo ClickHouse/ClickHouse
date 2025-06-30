@@ -7,12 +7,6 @@
 namespace DB
 {
 
-void DataTypeIPv6::updateHashImpl(SipHash & hash) const
-{
-    IDataType::updateHash(hash);
-    // For IPv6 type, the type ID is sufficient
-}
-
 void registerDataTypeIPv4andIPv6(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("IPv4", [] { return DataTypePtr(std::make_shared<DataTypeIPv4>()); });
