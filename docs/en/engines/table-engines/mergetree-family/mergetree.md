@@ -403,7 +403,7 @@ For example, if there 4300 ngrams in the granule and we expect false positives t
 
 ```sql
 --- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_of_bloom_filter_in_bytes;
 
 ┌─size_of_bloom_filter_in_bytes─┐
 │                         10304 │
@@ -430,7 +430,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 #### Special-purpose {#special-purpose}
 
 - An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
-- An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
+- An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
 

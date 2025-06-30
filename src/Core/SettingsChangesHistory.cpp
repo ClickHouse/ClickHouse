@@ -71,7 +71,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
+            {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
+            {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
+            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
+            {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -80,10 +84,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
+            {"distributed_cache_credentials_refresh_period_seconds", 5, 5, "New private setting"},
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
             {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},
             {"enable_job_stack_trace", false, false, "The setting was disabled by default to avoid performance overhead."},
-            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
+            {"use_legacy_to_time", true, true, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"allow_experimental_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
             {"enable_time_time64_type", false, false, "New settings. Allows to use a new experimental Time and Time64 data types."},
             {"optimize_use_projection_filtering", false, true, "New setting"},
@@ -94,6 +99,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            {"format_schema_source", "file", "file", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -166,6 +173,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",

@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 namespace
@@ -91,13 +92,15 @@ DatabaseDataLake::DatabaseDataLake(
     const std::string & url_,
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
-    ASTPtr table_engine_definition_)
+    ASTPtr table_engine_definition_,
+    UUID uuid)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
+    , db_uuid(uuid)
 {
     validateSettings();
 }
@@ -596,7 +599,12 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+    }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     auto table_storage_define = table_engine_definition->clone();
@@ -759,7 +767,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url,
             database_settings,
             database_engine_define->clone(),
-            std::move(engine_for_tables));
+            std::move(engine_for_tables),
+            args.uuid);
     };
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }

@@ -79,9 +79,10 @@ bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     int64_t session_id,
     const UncommittedState & uncommitted_state,
+    bool block_acl,
     std::vector<Coordination::ACL> & result_acls)
 {
-    if (request_acls.empty())
+    if (block_acl || request_acls.empty())
         return true;
 
     bool valid_found = false;
@@ -1644,7 +1645,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, node_acls))
+    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     if (zk_request.is_ephemeral)
@@ -2912,7 +2913,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(zk_request.acls, session_id, uncommitted_state, node_acls))
+    if (!fixupACL(zk_request.acls, session_id, uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     UpdateNodeStatDelta update_stat_delta(*node);

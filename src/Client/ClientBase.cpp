@@ -70,9 +70,11 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
@@ -3208,12 +3210,12 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_t highlight_callback{};
+    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context);
+            highlight(query, colors, *client_context, pos);
         };
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.

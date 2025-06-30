@@ -200,6 +200,7 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
+    static String appendDecimalValue(RandomGenerator & rg, bool use_func, const DecimalType * dt);
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DECIMAL; }

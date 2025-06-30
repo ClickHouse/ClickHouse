@@ -19,8 +19,8 @@ REGISTER_FUNCTION(TryBase64Decode)
 {
     FunctionDocumentation::Description description = R"(Decodes a String or FixedString from base64, like base64Decode but returns an empty string in case of an error.)";
     FunctionDocumentation::Syntax syntax = "tryBase64Decode(encoded)";
-    FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, returns an empty string."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
+    FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, returns an empty string.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
     FunctionDocumentation::Examples examples = {{"valid", "SELECT tryBase64Decode('Y2xpY2tob3VzZQ==')", "clickhouse"}, {"invalid", "SELECT tryBase64Decode('invalid')", ""}};
     FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;

@@ -16,11 +16,12 @@ Subtracts a specified number of days from a date, a date with time or a string-e
     FunctionDocumentation::Syntax syntax = R"(
 subtractDays(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date or date with time to subtract specified number of days from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of days to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"datetime", "Date or date with time to subtract specified number of days from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of days to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` minus `num` days. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` days", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Subtract days from different date types", R"(
 WITH
