@@ -467,7 +467,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### SZ3 {#sz3}
 
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec for columns of type Float32 or Float64. See [SZ3 Lossy Compressor](https://szcompressor.org/) for details. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'errror_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec for columns of type Float32 or Float64. See [SZ3 Lossy Compressor](https://szcompressor.org/) for details. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
 
 #### T64 {#t64}
 

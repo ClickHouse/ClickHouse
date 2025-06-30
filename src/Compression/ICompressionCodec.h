@@ -5,7 +5,7 @@
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 class SipHash;
 
