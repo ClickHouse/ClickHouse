@@ -1,5 +1,5 @@
 #include <AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/Helpers.h"
+#include <AggregateFunctions/Helpers.h>
 #include <Core/Types.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
@@ -257,7 +257,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        return sizeof(Data); 
+        return sizeof(Data);
     }
 
     size_t alignOfData() const override
