@@ -68,6 +68,7 @@ const char * analyzeImpl(
     const char * pos,
     Literal & required_substring,
     bool & is_trivial,
+    bool & has_capture,
     Literals & global_alternatives)
 {
     checkStackSize();
@@ -85,6 +86,7 @@ const char * analyzeImpl(
     bool is_first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
+    has_capture = false;
     bool is_prefix = true;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
@@ -244,6 +246,8 @@ const char * analyzeImpl(
                 is_trivial = false;
                 if (!in_square_braces)
                 {
+                    bool is_non_capturing_group = false;
+
                     /// it means flag negation
                     /// there are various possible flags
                     /// actually only imsU are supported by re2
@@ -271,6 +275,7 @@ const char * analyzeImpl(
                         /// if this group only contains flags, we have nothing to do.
                         if (*pos == ')')
                         {
+                            has_capture = true;
                             ++pos;
                             break;
                         }
@@ -278,19 +283,24 @@ const char * analyzeImpl(
                     /// (?:regex) means non-capturing parentheses group
                     else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
+                        is_non_capturing_group = true;
                         pos += 2;
                     }
                     else if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
                     {
+                        has_capture = true;
                         pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
+                    bool group_has_capture;
                     Literals group_alters;
-                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_alters);
+                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
                     /// pos should be ')', if not, then it is not a valid regular expression
                     if (pos == end)
                         return pos;
+
+                    has_capture = !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
@@ -423,10 +433,14 @@ finish:
         /// compare the quality of required substring and alternatives and choose the better one.
         if (shortest_literal_length(global_alternatives) < required_substring.literal.size())
             global_alternatives = {required_substring};
-        Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
+        Literals next_alternatives;
         bool next_is_trivial = true;
-        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
+        bool next_has_capture;
+        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
+
+        /// has_capture is true when all alternatives have captures
+        has_capture &= next_has_capture;
         /// For xxx|xxx|xxx, we only combine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
@@ -451,16 +465,17 @@ finish:
 }
 
 void OptimizedRegularExpression::analyze(
-        std::string_view regexp_,
-        std::string & required_substring,
-        bool & is_trivial,
-        bool & required_substring_is_prefix,
-        std::vector<std::string> & alternatives)
+    std::string_view regexp_,
+    std::string & required_substring,
+    bool & is_trivial,
+    bool & has_capture,
+    bool & required_substring_is_prefix,
+    std::vector<std::string> & alternatives)
 try
 {
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals); // NOLINT
+    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, has_capture, alternative_literals); // NOLINT
     required_substring = std::move(required_literal.literal);
     required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
@@ -478,8 +493,7 @@ catch (...)
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
     std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
-
+    analyze(regexp_, required_substring, is_trivial, has_capture, required_substring_is_prefix, alternatives_dummy);
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
