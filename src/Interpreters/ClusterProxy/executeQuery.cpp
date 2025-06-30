@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace DistributedSetting
@@ -679,6 +680,8 @@ void executeQueryWithParallelReplicas(
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
         auto stub_local_plan = std::make_unique<QueryPlan>();
+        if (settings[Setting::parallel_replicas_support_projection])
+            read_from_local->setOptimized(true);
         stub_local_plan->addStep(std::move(read_from_local));
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());

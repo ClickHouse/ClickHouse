@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace MergeTreeSetting
@@ -685,11 +686,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 {
     const Settings & settings = context->getSettingsRef();
 
+    /// If parallel_replicas_support_projection is enabled, the selected_marks will be used to select the best projection.
+    /// So we cannot just return parts with all marks
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
+        && !settings[Setting::parallel_replicas_support_projection])
     {
         // Skip index analysis and return parts with all marks
-        // The coordinator will chose ranges to read for workers based on index analysis on its side
+        // The coordinator will choose ranges to read for workers based on index analysis on its side
         return parts_with_ranges;
     }
 

@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -466,7 +467,11 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_coordinator)
 {
     if (node.children.size() != 1)
         return {};
@@ -733,6 +738,19 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         chassert(exact_count > 0);
         chassert(inexact_ranges_select_result);
 
+        /// When using parallel replicas, avoid reading the exact count on remote replicas to prevent duplicate data.
+        /// The exact count optimization may modify the `ReadFromMergeTree` to use `ReadFromPreparedSource`.
+        /// -------------------------------------------------------------------------------------------
+        ///                                             AggregatingProjection
+        ///                                                 Expression
+        ///  ReadFromMergeTree  ---is replaced by--->           Filter
+        ///                                                         ReadFromMergeTree
+        ///                                                 ReadFromPreparedSource (_exact_count_projection)
+        /// -------------------------------------------------------------------------------------------
+        /// If remote replicas also read from `ReadFromPreparedSource`, it can lead to data duplication.
+        if (reading->isParallelReadingEnabled() && !is_parallel_replicas_coordinator)
+            return {};
+
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
         std::vector<char> state(agg_count->sizeOfData());
@@ -756,6 +774,13 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
         if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+        {
+            /// On the coordinator of parallel replicas, if all results are available in `EXACT_COUNT_PROJECTION_NAME`,
+            /// Fall back to local execution to avoid unnecessary remote reads.
+            if (is_parallel_replicas_coordinator)
+                reading->setAnalyzedResult(nullptr);
+        }
     }
     else
     {

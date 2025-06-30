@@ -157,7 +157,11 @@ std::optional<UInt64> optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nod
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
+std::optional<String> optimizeUseAggregateProjections(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_coordinator = false);
 std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);

@@ -39,6 +39,8 @@ SELECT number,
     'test'
 FROM numbers(100, 500);"
 
+$CLICKHOUSE_CLIENT -q "SET enable_analyzer = 1, parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;"
+
 $CLICKHOUSE_CLIENT --query_id 02907_test_$CLICKHOUSE_DATABASE -q "
 SELECT test_string
 FROM test_opt_proj

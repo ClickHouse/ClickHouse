@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"parallel_replicas_support_projection", "false", "false", "New setting.Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
