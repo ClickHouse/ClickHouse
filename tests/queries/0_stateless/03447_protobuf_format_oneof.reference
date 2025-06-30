@@ -1,0 +1,63 @@
+>> string_or_string
+   ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃ string1 ┃ string2 ┃ string_oneof_presence ┃
+   ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+1. │         │ string2 │ world                 │
+   ├─────────┼─────────┼───────────────────────┤
+2. │ string1 │         │ hello                 │
+   └─────────┴─────────┴───────────────────────┘
+>> inner_string_or_string
+   ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃ outer_string  ┃ inner_string1 ┃ inner_string2 ┃ inner_string_oneof_presence ┃
+   ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+1. │ outer_string1 │ string1       │               │ hello                       │
+   ├───────────────┼───────────────┼───────────────┼─────────────────────────────┤
+2. │ outer_string2 │               │ string2       │ world                       │
+   ├───────────────┼───────────────┼───────────────┼─────────────────────────────┤
+3. │ string1       │               │               │ no                          │
+   └───────────────┴───────────────┴───────────────┴─────────────────────────────┘
+>> oneof_transaction
+Row 1:
+──────
+date:                        10.10.2025
+buy_payment_cash_value:      0
+buy_payment_card_value:      0
+buy_vendor_name:             
+buy_items_bought:            0
+sell_payment_cash_value:     10
+sell_payment_card_value:     0
+sell_customer_name:          bas&friends
+sell_items_sold:             2
+payment_details_presence:    sell
+buy_payment_value_presence:  ommited
+sell_payment_value_presence: cash_value
+
+Row 2:
+──────
+date:                        10.10.2025
+buy_payment_cash_value:      10
+buy_payment_card_value:      0
+buy_vendor_name:             dell
+buy_items_bought:            1
+sell_payment_cash_value:     0
+sell_payment_card_value:     0
+sell_customer_name:          
+sell_items_sold:             0
+payment_details_presence:    buy
+buy_payment_value_presence:  cash_value
+sell_payment_value_presence: ommited
+
+Row 3:
+──────
+date:                        2024-06-01
+buy_payment_cash_value:      0
+buy_payment_card_value:      0
+buy_vendor_name:             
+buy_items_bought:            0
+sell_payment_cash_value:     0
+sell_payment_card_value:     0
+sell_customer_name:          
+sell_items_sold:             0
+payment_details_presence:    sell
+buy_payment_value_presence:  ommited
+sell_payment_value_presence: ommited

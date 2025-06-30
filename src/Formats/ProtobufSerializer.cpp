@@ -3245,7 +3245,7 @@ namespace
             if (!with_envelope)
             {
                 *root_serializer_ptr = message_serializer.get();
-#if 1
+#if 0
                 LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
 #endif
                 return message_serializer;
