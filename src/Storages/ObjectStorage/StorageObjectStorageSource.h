@@ -1,8 +1,6 @@
 #pragma once
-#include <optional>
 #include <Common/re2.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -15,6 +13,8 @@ namespace DB
 {
 
 class SchemaCache;
+
+using ReadTaskCallback = std::function<String()>;
 
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
@@ -56,7 +56,7 @@ public:
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
-        const ActionsDAG * filter_actions_dag,
+        const std::optional<ActionsDAG> & filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
@@ -72,9 +72,7 @@ public:
         ObjectInfo & object_info,
         const ObjectStoragePtr & object_storage,
         const ContextPtr & context_,
-        const LoggerPtr & log,
-        const std::optional<ReadSettings> & read_settings = std::nullopt);
-
+        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
@@ -150,32 +148,20 @@ protected:
     void lazyInitialize();
 };
 
-class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator, private WithContext
+class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
 {
 public:
-    ReadTaskIterator(
-        const ClusterFunctionReadTaskCallback & callback_,
-        size_t max_threads_count,
-        bool is_archive_,
-        ObjectStoragePtr object_storage_,
-        ContextPtr context_);
+    ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
-    ClusterFunctionReadTaskCallback callback;
+    ReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
-    bool is_archive;
-    ObjectStoragePtr object_storage;
-    /// path_to_archive -> archive reader.
-    std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
-    std::mutex archive_readers_mutex;
-    LoggerPtr log = getLogger("ReadTaskIterator");
 };
 
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext

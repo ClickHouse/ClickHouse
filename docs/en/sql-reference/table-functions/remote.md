@@ -117,9 +117,9 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 - Get the CREATE TABLE statement from the source:
 
 ```sql
-  SELECT create_table_query
-  FROM system.tables
-  WHERE database = 'imdb' AND table = 'actors'
+  select create_table_query
+  from system.tables
+  where database = 'imdb' and table = 'actors'
   ```
 
   Response

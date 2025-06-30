@@ -54,8 +54,6 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
 bool HiveCatalog::empty() const
 {
     std::vector<std::string> result;
-
-    std::lock_guard lock(client_mutex);
     client.get_all_databases(result);
     return result.empty();
 }
@@ -64,18 +62,11 @@ DB::Names HiveCatalog::getTables() const
 {
     DB::Names result;
     DB::Names databases;
-    {
-        std::lock_guard lock(client_mutex);
-        client.get_all_databases(databases);
-    }
-
+    client.get_all_databases(databases);
     for (const auto & db : databases)
     {
         DB::Names current_tables;
-        {
-            std::lock_guard lock(client_mutex);
-            client.get_all_tables(current_tables, db);
-        }
+        client.get_all_tables(current_tables, db);
         for (const auto & table : current_tables)
             result.push_back(db + "." + table);
     }
@@ -85,10 +76,7 @@ DB::Names HiveCatalog::getTables() const
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;
-    {
-        std::lock_guard lock(client_mutex);
-        client.get_table(table, namespace_name, table_name);
-    }
+    client.get_table(table, namespace_name, table_name);
 
     if (table.tableName.empty())
         return false;
@@ -106,10 +94,7 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 {
     Apache::Hadoop::Hive::Table table;
 
-    {
-        std::lock_guard lock(client_mutex);
-        client.get_table(table, namespace_name, table_name);
-    }
+    client.get_table(table, namespace_name, table_name);
 
     if (table.tableName.empty())
         return false;

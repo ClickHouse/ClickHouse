@@ -67,7 +67,6 @@ namespace FailPoints
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 keeper_multiread_batch_size;
-    extern const ServerSettingsBool s3queue_disable_streaming;
 }
 
 namespace ObjectStorageQueueSetting
@@ -506,55 +505,41 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    const auto & settings = getContext()->getServerSettings();
-
-    if (settings[ServerSetting::s3queue_disable_streaming])
+    try
     {
-        static constexpr auto disabled_streaming_reschedule_period = 5000;
-
-        LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
-
-        std::lock_guard lock(mutex);
-        reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
-    }
-    else
-    {
-        try
+        const size_t dependencies_count = getDependencies();
+        if (dependencies_count)
         {
-            const size_t dependencies_count = getDependencies();
-            if (dependencies_count)
+            mv_attached.store(true);
+            SCOPE_EXIT({ mv_attached.store(false); });
+
+            LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+            files_metadata->registerIfNot(storage_id, /* active */true);
+
+            if (streamToViews(streaming_tasks_index))
             {
-                mv_attached.store(true);
-                SCOPE_EXIT({ mv_attached.store(false); });
-
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-                files_metadata->registerIfNot(storage_id, /* active */true);
-
-                if (streamToViews(streaming_tasks_index))
-                {
-                    /// Reset the reschedule interval.
-                    std::lock_guard lock(mutex);
-                    reschedule_processing_interval_ms = polling_min_timeout_ms;
-                }
-                else
-                {
-                    /// Increase the reschedule interval.
-                    std::lock_guard lock(mutex);
-                    reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
-                }
-
-                LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
+                /// Reset the reschedule interval.
+                std::lock_guard lock(mutex);
+                reschedule_processing_interval_ms = polling_min_timeout_ms;
             }
             else
             {
-                LOG_TEST(log, "No attached dependencies");
+                /// Increase the reschedule interval.
+                std::lock_guard lock(mutex);
+                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
             }
+
+            LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
         }
-        catch (...)
+        else
         {
-            LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
+            LOG_TEST(log, "No attached dependencies");
         }
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)

@@ -803,11 +803,8 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                   const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)
         {
             if (response->getOpNum() != Coordination::OpNum::SessionID)
-            {
                 promise->set_exception(std::make_exception_ptr(Exception(
                     ErrorCodes::LOGICAL_ERROR, "Incorrect response of type {} instead of SessionID response", response->getOpNum())));
-                return;
-            }
 
             auto session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
             if (session_id_response.internal_id != internal_id)
@@ -817,15 +814,11 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                     "Incorrect response with internal id {} instead of {}",
                     session_id_response.internal_id,
                     internal_id)));
-                return;
             }
 
             if (response->error != Coordination::Error::ZOK)
-            {
                 promise->set_exception(
                     std::make_exception_ptr(zkutil::KeeperException::fromMessage(response->error, "SessionID request failed with error")));
-                return;
-            }
 
             promise->set_value(session_id_response.session_id);
         };

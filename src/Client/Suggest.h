@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Client/ConnectionParameters.h>
+#include "ConnectionParameters.h"
 
 #include <Client/Connection.h>
 #include <Client/IServerConnection.h>

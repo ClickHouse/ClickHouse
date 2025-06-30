@@ -117,9 +117,13 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
-        const auto& tokens = getTokens(data, length);
-        for (const auto& token : tokens)
-            gin_filter.addTerm(token.data(), token.size());
+
+        size_t cur = 0;
+        size_t token_start = 0;
+        size_t token_len = 0;
+
+        while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
+            gin_filter.addTerm(data + token_start, token_len);
     }
 
     void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
@@ -166,7 +170,7 @@ private:
 };
 
 /// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
-struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
+struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "default"; }
@@ -180,11 +184,11 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
 
 /// Parser extracting tokens which are separated by certain strings.
 /// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
-struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
+struct StringTokenExtractor final : public ITokenExtractorHelper<StringTokenExtractor>
 {
-    explicit SplitTokenExtractor(const std::vector<String> & separators_);
+    explicit StringTokenExtractor(const std::vector<String> & separators_);
 
-    static const char * getName() { return "split"; }
+    static const char * getName() { return "string"; }
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
