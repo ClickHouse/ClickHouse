@@ -2,9 +2,9 @@
 [0,1,2]
 [0,1,2]
 [0,1,2]
-Expression ((Project names + (Projection + )))
+Expression ((Project names + (Projection + WHERE [split])))
   ArrayJoin (ARRAY JOIN)
-    Expression
+    Expression (((WHERE [split] + WHERE) + (DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers))))
       ReadFromMergeTree (default.test)
       Indexes:
         Skip
