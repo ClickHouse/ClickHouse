@@ -32,7 +32,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         if (has_header_byte)
         {
             requireRemainingBytes(1);
-            bit_width = size_t(*data);
+            bit_width = size_t(UInt8(*data));
             data += 1;
             if (bit_width < 1 || bit_width > 8 * sizeof(T))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);

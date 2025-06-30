@@ -607,7 +607,7 @@ void SchemaConverter::processPrimitiveColumn(
     else if (logical.__isset.INTEGER || (converted >= CONV::UINT_8 && converted <= CONV::INT_64))
     {
         bool is_signed = logical.INTEGER.isSigned;
-        size_t bits = size_t(logical.INTEGER.bitWidth);
+        size_t bits = size_t(UInt8(logical.INTEGER.bitWidth));
         if (!logical.__isset.INTEGER)
         {
             switch (converted.value())
