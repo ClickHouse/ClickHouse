@@ -11,6 +11,7 @@ SELECT 'Negative tests';
 -- SZ3 can only be created on Float* and Array(Float*) columns
 CREATE TABLE tab (compressed String CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (compressed UInt64 CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (compressed BFloat16 CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (compressed Array(UInt64) CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
 
 -- SZ3 requires 0 or 3 arguments
