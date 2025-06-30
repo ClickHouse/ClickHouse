@@ -148,6 +148,10 @@ In the example, only `clickhouse` is a complete token.
 As `support` is followed by a `%`, it could match `support`, `supports`, `supporting` etc.
 As a result, the lookup in the text index will only consider token `clickhouse`.
 
+:::note
+Currently, these functions use `text` index for filtering when the tokenizer is either `default` or `ngram`.
+:::
+
 #### startsWith and endsWith {#functions-example-startswith-endswith}
 
 Similar to `like`, the search term should be in a way that complete tokens can be extracted from it.

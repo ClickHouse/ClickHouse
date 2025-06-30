@@ -582,24 +582,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "like")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
-    if (function_name == "notLike")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
     if (function_name == "searchAny" || function_name == "searchAll")
     {
         {
@@ -683,7 +665,26 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.set_gin_filters = std::move(gin_filters);
         return true;
     }
-    if (function_name == "match")
+    /// Currently, not all token extractors support LIKE-style matching.
+    if (function_name == "like" && token_extractor->supportsStringLike())
+    {
+        out.key_column = key_column_num;
+        out.function = RPNElement::FUNCTION_EQUALS;
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "notLike" && token_extractor->supportsStringLike())
+    {
+        out.key_column = key_column_num;
+        out.function = RPNElement::FUNCTION_NOT_EQUALS;
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "match" && token_extractor->supportsStringLike())
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
