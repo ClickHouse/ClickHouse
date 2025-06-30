@@ -1212,7 +1212,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1256,7 +1256,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     }
 
     if (!source)
-        return nullptr;
+        return {};
 
     return source->detachFilterActionsDAG();
 }
@@ -1302,7 +1302,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, number_of_replicas);
+        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
