@@ -132,6 +132,46 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     return std::pair(cache, file_cache_settings);
 }
 
+std::pair<FileCachePtr, FileCacheSettings> getSplitCache(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & cache_name,
+    const std::string & cache_path_prefix_if_relative,
+    const FileCacheSettings & base_cache_settings,
+    const SplitCacheType cache_type)
+{
+    FileCacheSettings subcache_settings;
+    auto subcache_config_prefix = config_prefix;
+    auto subcache_name = cache_name;
+    auto subcache_path = base_cache_settings[FileCacheSetting::path].value;
+    switch (cache_type)
+    {
+        case SplitCacheType::DataCache:
+            subcache_config_prefix += ".data_cache_settings";
+            subcache_name += "_data";
+            subcache_path += "/data";
+            break;
+        case SplitCacheType::SystemCache:
+            subcache_config_prefix += ".system_cache_settings";
+            subcache_name += "_system";
+            subcache_path += "/system";
+            break;
+        default:
+            chassert(false);
+    }
+    subcache_settings.loadFromConfigsWithPriority(
+        config,
+        {config_prefix, subcache_config_prefix},
+        cache_path_prefix_if_relative,
+        /*default_cache_path*/"");
+    if (subcache_settings[FileCacheSetting::path].value == base_cache_settings[FileCacheSetting::path].value)
+    {
+        subcache_settings[FileCacheSetting::path].value = subcache_path;
+    }
+    auto subcache = FileCacheFactory::instance().getOrCreate(subcache_name, subcache_settings, subcache_config_prefix);
+    return {subcache, subcache_settings};
+}
+
 FileCachesHolder getSplittedCaches(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
@@ -141,36 +181,31 @@ FileCachesHolder getSplittedCaches(
     bool is_custom_disk)
 {
     auto [cache_path_prefix_if_relative, cache_path_prefix_if_absolute] = getFileCachePrefix(context, is_attach, is_custom_disk);
-
-    FileCacheSettings system_cache_settings;
-    FileCacheSettings data_cache_settings;
-    auto system_config_prefix = config_prefix + ".system_cache_settings";
-    auto data_config_prefix = config_prefix + ".data_cache_settings";
-    system_cache_settings.loadFromConfigsWithPriority(
+    FileCacheSettings cache_settings;
+    cache_settings.loadFromConfigNoPathCheck(
         config,
-        /* config_prefixes */{config_prefix, system_config_prefix},
-        cache_path_prefix_if_relative,
-        /* default_cache_path */"");
+        config_prefix);
 
-    data_cache_settings.loadFromConfigsWithPriority(
+    auto [system_cache, system_cache_settings] = getSplitCache(
         config,
-        /* config_prefixes */{config_prefix, data_config_prefix},
+        config_prefix,
+        cache_name,
         cache_path_prefix_if_relative,
-        /* default_cache_path */"");
-
-    auto system_cache = FileCacheFactory::instance().getOrCreate(
+        cache_settings,
+        SplitCacheType::SystemCache
+    );
+    auto [data_cache, data_cache_settings] = getSplitCache(
+        config,
+        config_prefix,
         cache_name,
-        system_cache_settings,
-        system_config_prefix);
-
-    auto data_cache = FileCacheFactory::instance().getOrCreate(
-        cache_name,
-        data_cache_settings,
-        data_config_prefix);
+        cache_path_prefix_if_relative,
+        cache_settings,
+        SplitCacheType::DataCache
+    );
 
     return {
-        {CacheType::SystemCache, std::move(system_cache), std::move(system_cache_settings)},
-        {CacheType::DataCache, std::move(data_cache), std::move(data_cache_settings)}
+        {SplitCacheType::SystemCache, std::move(system_cache), std::move(system_cache_settings)},
+        {SplitCacheType::DataCache, std::move(data_cache), std::move(data_cache_settings)}
     };
 }
 
@@ -212,7 +247,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         else
         {
             auto [cache, cache_settings] = getCache(config, config_prefix, context, name, attach, custom_disk);
-            caches_holder.setCache(CacheType::GeneralCache, cache, std::move(cache_settings));
+            caches_holder.setCache(SplitCacheType::GeneralCache, cache, std::move(cache_settings));
         }
 
         auto disk_object_storage = disk->createDiskObjectStorage();

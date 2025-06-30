@@ -118,7 +118,7 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    const FileCacheSettings & getCacheSettings(CacheType cache_type) const { return holder.getCacheSetting(cache_type); }
+    const FileCacheSettings & getCacheSettings(SplitCacheType cache_type) const { return holder.getCacheSetting(cache_type); }
 
 #if USE_AZURE_BLOB_STORAGE
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override

@@ -692,6 +692,48 @@ Cache profile events:
 
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
 
+### Split local cache {#split-local-cache}
+It is possible to split local cache into two parts: system cache(stores system information: metadata, index, marks, etc.) and data cache(stores table data information). The settings of both caches could be independently defined.
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <cache_policy>LRU</cache_policy>
+                <split_cache>1</split_cache>
+                <system_cache_settings>
+                    <max_size>1Gi</max_size>
+                    ... other settings ...
+                </system_cache_settings>
+                <data_cache_settings>
+                    <max_size>9Gi</max_size>
+                    <cache_policy>SLRU</cache_policy>
+                    ... other settings ...
+                </data_cache_settings>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+In the example above there are two caches `cache_system` and `cache_data`(the name of the cache is `base_cache_name` + "_system"/"_data"). System cache has the `max_size` 1Gi and data cache has 9Gi. By default settings in each cache are taken from base cache settings. So system cache would have LRU cache policy and data cache would have SLRU cache policy. 
+
+
 ### Using static Web storage (read-only) {#web-storage}
 
 This is a read-only disk. Its data is only read and never modified. A new table is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk is not actually used, each `SELECT` query will result in a `http` request to fetch required data. All modification of the table data will result in an exception, i.e. the following types of queries are not allowed: [CREATE TABLE](/sql-reference/statements/create/table.md), [ALTER TABLE](/sql-reference/statements/alter/index.md), [RENAME TABLE](/sql-reference/statements/rename#rename-table), [DETACH TABLE](/sql-reference/statements/detach.md) and [TRUNCATE TABLE](/sql-reference/statements/truncate.md).

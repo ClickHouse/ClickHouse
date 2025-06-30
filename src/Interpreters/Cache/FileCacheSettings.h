@@ -37,11 +37,14 @@ struct FileCacheSettings
 
     FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
+
     void loadFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const std::string & cache_path_prefix_if_relative,
         const std::string & default_cache_path = "");
+    void loadFromConfigNoPathCheck(const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix);
 
     // load settings from mupltiple config prefixes
     // last element of config_prefixes has the most priority
@@ -65,6 +68,8 @@ struct FileCacheSettings
     bool isPathRelativeInConfig() const { return is_path_relative_in_config; }
 
 private:
+    void checkPath(const std::string & cache_path_prefix_if_relative,
+        const std::string & default_cache_path = "");
     std::unique_ptr<FileCacheSettingsImpl> impl;
     bool is_path_relative_in_config = false;
 };

@@ -79,7 +79,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     if (read_settings.enable_filesystem_cache)
     {
 
-        auto cache = holder.getCache(defineCacheType(object.remote_path));
+        auto cache = holder.getCache(defineCacheType(object.local_path));
         if (cache->isInitialized())
         {
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
@@ -121,7 +121,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    auto cache = holder.getCache(defineCacheType(object.remote_path));
+    auto cache = holder.getCache(defineCacheType(object.local_path));
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);

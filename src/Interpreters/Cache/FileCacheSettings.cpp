@@ -164,11 +164,9 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(cache->getFileSegmentsNum());
 }
 
-void FileCacheSettings::loadFromConfig(
+void FileCacheSettings::loadFromConfigNoPathCheck(
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const std::string & cache_path_prefix_if_relative,
-    const std::string & default_cache_path)
+    const std::string & config_prefix)
 {
     if (!config.has(config_prefix))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", config_prefix);
@@ -183,7 +181,12 @@ void FileCacheSettings::loadFromConfig(
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
+}
 
+void FileCacheSettings::checkPath(
+    const std::string & cache_path_prefix_if_relative,
+    const std::string & default_cache_path)
+{
     if ((*this)[FileCacheSetting::path].changed)
     {
         if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
@@ -203,6 +206,16 @@ void FileCacheSettings::loadFromConfig(
     validate();
 }
 
+void FileCacheSettings::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & cache_path_prefix_if_relative,
+    const std::string & default_cache_path)
+{
+    loadFromConfigNoPathCheck(config, config_prefix);
+    checkPath(cache_path_prefix_if_relative, default_cache_path);
+}
+
 void FileCacheSettings::loadFromConfigsWithPriority(
     const Poco::Util::AbstractConfiguration & config,
     const std::vector<std::string> & config_prefixes,
@@ -210,8 +223,9 @@ void FileCacheSettings::loadFromConfigsWithPriority(
     const std::string & default_cache_path)
 {
     for (auto&& config_prefix : config_prefixes) {
-        loadFromConfig(config, config_prefix, cache_path_prefix_if_relative, default_cache_path);
+        loadFromConfigNoPathCheck(config, config_prefix);
     }
+    checkPath(cache_path_prefix_if_relative, default_cache_path);
 }
 
 void FileCacheSettings::loadFromCollection(
