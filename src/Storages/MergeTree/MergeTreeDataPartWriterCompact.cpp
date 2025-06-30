@@ -73,6 +73,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc)
 {
+    CompressedStreamPtr prev_stream;
+
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
@@ -91,13 +93,17 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
+        /// If previous stream is not null it means it was offsets. We don't use vector codecs for offsets.
+        if (prev_stream && prev_stream->compressed_buf.getCodec()->isVectorCodec())
+            prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
+
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
             stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
         compressed_streams.emplace(stream_name, stream);
-        compressed_codecs.emplace(stream_name, compression_codec);
+        prev_stream = stream;
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -265,7 +271,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// For 1D arrays, it's simply the length.
                 /// For multidimensional arrays, the dimensions vector contains the lengths of nested arrays at each level,
                 /// as long as the elements remain arrays.
-                auto compression_codec = compressed_codecs[stream_name];
+                auto compression_codec = result_stream->compressed_buf.getCodec();
                 if (compression_codec->isVectorCodec())
                 {
                     std::vector<size_t> dimensions;
