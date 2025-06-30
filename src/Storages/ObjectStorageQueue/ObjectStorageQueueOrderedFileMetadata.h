@@ -98,7 +98,7 @@ private:
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client,
-        const std::string file_path = "",
+        const std::string & file_path,
         std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
         std::optional<std::string> failed_node_path = std::nullopt);
 

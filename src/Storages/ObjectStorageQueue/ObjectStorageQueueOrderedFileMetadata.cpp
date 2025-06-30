@@ -202,7 +202,7 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
     const zkutil::ZooKeeperPtr & zk_client,
-    const std::string file_path,
+    const std::string & file_path,
     std::optional<std::string> processed_node_hive_partitioning_path,
     std::optional<std::string> failed_node_path_)
 {
@@ -730,7 +730,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         }
         else
         {
-            auto processed_file_info = getLastProcessedFile({}, processed_node_path, zk_client);
+            auto processed_file_info = getLastProcessedFile({}, processed_node_path, zk_client, "");
             if (processed_file_info.file_path.has_value())
                 max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(*processed_file_info.file_path);
         }
