@@ -10,7 +10,7 @@ endif()
 
 # File contrib/sz3-cmake/SZ3/version.hpp was statically generated from version.hpp.in in contrib/sz3.
 # It must be updated when the library is updated. Refer to contrib/sz3/README.md for that (section #Installation).
-
+set(SZ3_USE_SKA_HASH OFF)
 set(SZ3_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/sz3")
 set(SZ3_SOURCE_DIR "${SZ3_PROJECT_DIR}/include")
 set(SZ3_VERSION_DIR "${ClickHouse_SOURCE_DIR}/contrib/sz3-cmake")

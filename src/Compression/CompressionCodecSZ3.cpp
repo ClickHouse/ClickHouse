@@ -231,22 +231,12 @@ UInt8 getFloatByteSize(const IDataType & column_type)
 
 SZ3::ALGO getAlgorithm(const String & algorithm)
 {
-    for (size_t i = 0; i < std::size(SZ3::ALGO_STR); ++i)
-    {
-        if (SZ3::ALGO_STR[i] == algorithm)
-            return SZ3::ALGO_OPTIONS[i];
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect algorithm for codec 'sz3' {}", algorithm);
+    return SZ3::ALGO_MAP.at(algorithm);
 }
 
 SZ3::EB getErrorBoundMode(const String & error_bound_mode)
 {
-    for (size_t i = 0; i < std::size(SZ3::EB_STR); ++i)
-    {
-        if (SZ3::EB_STR[i] == error_bound_mode)
-            return SZ3::EB_OPTIONS[i];
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect error bound mode for codec 'sz3' {}", error_bound_mode);
+    return SZ3::EB_MAP.at(error_bound_mode);
 }
 
 void registerCodecSZ3(CompressionCodecFactory & factory)
