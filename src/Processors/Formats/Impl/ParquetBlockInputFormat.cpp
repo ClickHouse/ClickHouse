@@ -607,7 +607,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (std::exchange(is_initialized, true))
         return;
 
-    std::call_once(parser_group->init_flag, [&]
+    parser_group->initOnce([&]
         {
             parser_group->initKeyCondition(getPort().getHeader());
 

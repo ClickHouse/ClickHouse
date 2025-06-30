@@ -41,10 +41,12 @@ struct FormatParserGroup
     /// IInputFormat implementation may put arbitrary state here.
     std::shared_ptr<void> opaque;
 
+private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
+    std::exception_ptr init_exception;
 
-
+public:
     FormatParserGroup(const Settings & settings, size_t num_streams_, std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_);
 
     static FormatParserGroupPtr singleThreaded(const Settings & settings);
@@ -58,6 +60,10 @@ struct FormatParserGroup
 
     /// Creates `key_condition`. Call inside call_once(init_flag, ...).
     void initKeyCondition(const Block & keys);
+
+    /// Does std::call_once(init_flag, ...).
+    /// If a previous init attempt threw exception, rethrows it instead retrying.
+    void initOnce(std::function<void()> f);
 };
 
 }
