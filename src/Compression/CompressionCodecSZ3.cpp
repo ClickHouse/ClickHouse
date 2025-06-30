@@ -65,6 +65,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String getSZ3AlgorithmString(SZ3::ALGO algorithm)
+{
+    for (const auto & [algorithm_string, algorithm_id] : SZ3::ALGO_MAP)
+    {
+        if (algorithm_id == algorithm)
+            return algorithm_string;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid algorithm");
+}
+
+String getSZ3ErrorBoundModeString(SZ3::EB error_bound_mode)
+{
+    for (const auto & [error_bound_string, error_bound_mode_id] : SZ3::EB_MAP)
+    {
+        if (error_bound_mode_id == error_bound_mode)
+            return error_bound_string;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid error bound mode");
+}
+
 CompressionCodecSZ3::CompressionCodecSZ3(
     UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_)
     : float_width(float_size_)
@@ -72,7 +92,10 @@ CompressionCodecSZ3::CompressionCodecSZ3(
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
 {
-    setCodecDescription("SZ3");
+    setCodecDescription(
+        "SZ3", {std::make_shared<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
+                std::make_shared<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),
+                std::make_shared<ASTLiteral>(error_value)});
 }
 
 uint8_t CompressionCodecSZ3::getMethodByte() const
@@ -88,7 +111,7 @@ void CompressionCodecSZ3::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return uncompressed_size + sizeof(UInt8);
+    return sizeof(UInt8) + uncompressed_size;
 }
 
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -219,12 +242,12 @@ UInt8 getFloatByteWidth(const IDataType & column_type)
     return column_type.getSizeOfValueInMemory();
 }
 
-SZ3::ALGO getAlgorithm(const String & algorithm)
+SZ3::ALGO getSZ3Algorithm(const String & algorithm)
 {
     return SZ3::ALGO_MAP.at(algorithm);
 }
 
-SZ3::EB getErrorBoundMode(const String & error_bound_mode)
+SZ3::EB getSZ3ErrorBoundMode(const String & error_bound_mode)
 {
     return SZ3::EB_MAP.at(error_bound_mode);
 }
@@ -254,19 +277,19 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             const auto & children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::Which::String)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec 'SZ3' argument 0 must be a String");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "1st argument of codec 'SZ3' must be a String");
             auto algorithm_string = static_cast<String>(literal->value.safeGet<String>());
-            auto algorithm = getAlgorithm(algorithm_string);
+            auto algorithm = getSZ3Algorithm(algorithm_string);
 
             literal = children[1]->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::Which::String)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec 'SZ3' argument 1 must be a String");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "2nd argument of codec 'SZ3' be a String");
             auto error_bound_mode_string = static_cast<String>(literal->value.safeGet<String>());
-            auto error_bound_mode = getErrorBoundMode(error_bound_mode_string);
+            auto error_bound_mode = getSZ3ErrorBoundMode(error_bound_mode_string);
 
             literal = children[2]->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::Which::Float64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec 'SZ3' argument 2 must be a Float64");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "3rd argument of codec 'SZ3' be a Float64");
             auto error_value = static_cast<double>(literal->value.safeGet<Float64>());
 
             return std::make_shared<CompressionCodecSZ3>(float_width, algorithm, error_bound_mode, use_zero_error_bound ? 0 : error_value);

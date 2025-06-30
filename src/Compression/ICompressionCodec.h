@@ -5,7 +5,6 @@
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
-#include <Common/Exception.h>
 
 class SipHash;
 
@@ -16,7 +15,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
 }
@@ -98,11 +96,8 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
-    /// Setting dimensions is useful for vector codecs. Currently it is useful only for SZ3 codec.
-    virtual void setDimensions(const std::vector<size_t> & /*dimensions*/)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
-    }
+    /// Setting dimensions is useful for vector codecs (only SZ3 codec at the moment).
+    virtual void setDimensions(const std::vector<size_t> & /*dimensions*/);
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
@@ -135,7 +130,7 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
-    /// Is the main purpose of this codec is to compress Array<Float>?
+    /// Is the main purpose of this codec compressing Array<Float>?
     virtual bool isVectorCodec() const { return false; }
 
     // Returns a string with a high level codec description.

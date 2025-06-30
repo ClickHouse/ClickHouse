@@ -1,7 +1,10 @@
-F64
-F32
-F64
-F32
-TEST 1D ARRAY
-F64: summed relative error
-F32: summed relative error
+Negative tests
+Test with default settings
+-- Test F64
+-- Test F32
+Test with custom settings
+-- Test F64
+-- Test F32
+Test 1d array
+-- Test F64: summed relative error
+-- Test F32: summed relative error
