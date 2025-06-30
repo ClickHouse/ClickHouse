@@ -14,6 +14,9 @@ class AbstractConfiguration;
 
 namespace DB
 {
+
+class JwtProvider;
+
 struct ConnectionParameters
 {
     String host;
@@ -26,6 +29,7 @@ struct ConnectionParameters
     std::string quota_key;
     SSHKey ssh_private_key;
     std::string jwt;
+    std::shared_ptr<JwtProvider> jwt_provider;
     Protocol::Secure security = Protocol::Secure::Disable;
     std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;

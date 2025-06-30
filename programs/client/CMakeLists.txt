@@ -11,7 +11,14 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_common_io
         clickhouse_functions
         clickhouse_parsers
+        Poco::JSON
+        Poco::Net
+        Poco::Net::SSL
 )
+
+if (TARGET ch_contrib::jwt-cpp)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PUBLIC ch_contrib::jwt-cpp)
+endif()
 
 if (ENABLE_BUZZHOUSE)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)

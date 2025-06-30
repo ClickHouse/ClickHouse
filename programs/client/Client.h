@@ -32,6 +32,8 @@ protected:
     bool buzzHouse() override;
     bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
+    void login();
+
     void connect() override;
 
     void processError(std::string_view query) const override;
@@ -69,5 +71,9 @@ private:
 #endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
+
+#if USE_JWT_CPP && USE_SSL
+    std::shared_ptr<JwtProvider> jwt_provider;
+#endif
 };
 }

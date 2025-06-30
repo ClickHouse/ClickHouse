@@ -39,6 +39,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
+#include <Client/JwtProvider.h>
 
 #include <Common/config_version.h>
 #include <Common/scope_guard_safe.h>
@@ -108,7 +109,8 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
-    const String & bind_host_)
+    const String & bind_host_,
+    std::shared_ptr<JwtProvider> jwt_provider_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
@@ -118,6 +120,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , quota_key(quota_key_)
 #if USE_JWT_CPP && USE_SSL
     , jwt(jwt_)
+    , jwt_provider(jwt_provider_)
 #endif
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
@@ -820,6 +823,23 @@ void Connection::sendQuery(
 
         client_info = &new_client_info;
     }
+
+#if USE_JWT_CPP && USE_SSL
+    if (jwt_provider && !jwt.empty())
+    {
+        if (JwtProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
+        {
+            String new_jwt = jwt_provider->getJWT();
+            if (!new_jwt.empty())
+            {
+                jwt = new_jwt;
+                // We have a new token, so we need to reconnect.
+                // The current connection is still using the old token.
+                disconnect();
+            }
+        }
+    }
+#endif
 
     if (!connected)
         connect(timeouts);
@@ -1558,7 +1578,8 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
-        parameters.bind_host);
+        parameters.bind_host,
+        parameters.jwt_provider);
 }
 
 }
