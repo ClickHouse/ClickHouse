@@ -203,6 +203,121 @@ private:
     NameToNameVector files_to_rename;
 };
 
+struct AlteredColumns
+{
+    explicit AlteredColumns(const IMergeTreeDataPart & part)
+        : columns(part.getColumnsDescription())
+        , serialization_infos(part.getSerializationInfos())
+    {
+        serialization_settings = SerializationInfo::Settings
+        {
+            .ratio_of_defaults_for_sparse = (*part.storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .choose_kind = false,
+        };
+    }
+
+    AlteredColumns() = default;
+
+    const ColumnsDescription & getColumns() const { return columns; }
+    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+
+    void clear()
+    {
+        columns = {};
+        serialization_infos = {};
+    }
+
+    void add(const String & column_name, const DataTypePtr & type)
+    {
+        if (columns.has(column_name))
+            return;
+
+        columns.add(ColumnDescription(column_name, type));
+
+        if (type->supportsSparseSerialization() && !serialization_settings.isAlwaysDefault())
+        {
+            auto new_info = type->createSerializationInfo(serialization_settings);
+            serialization_infos.emplace(column_name, std::move(new_info));
+        }
+    }
+
+    void drop(const String & column_name)
+    {
+        columns.remove(column_name);
+        serialization_infos.erase(column_name);
+    }
+
+    void modify(const String & column_name, const DataTypePtr & new_type)
+    {
+        auto old_type = columns.getPhysical(column_name).type;
+        columns.modify(column_name, [&](auto & column) { column.type = new_type; });
+
+        auto it = serialization_infos.find(column_name);
+        if (it == serialization_infos.end())
+            return;
+
+        auto old_info = it->second;
+        serialization_infos.erase(it);
+
+        if (!new_type->supportsSparseSerialization() || serialization_settings.isAlwaysDefault())
+            return;
+
+        auto new_info = new_type->createSerializationInfo(serialization_settings);
+
+        if (!old_info->structureEquals(*new_info))
+        {
+            serialization_infos.emplace(column_name, std::move(new_info));
+        }
+        else
+        {
+            new_info = old_info->createWithType(*old_type, *new_type, serialization_settings);
+            serialization_infos.emplace(column_name, std::move(new_info));
+        }
+    }
+
+    void rename(const String & rename_from, const String & rename_to)
+    {
+        columns.rename(rename_from, rename_to);
+
+        auto it = serialization_infos.find(rename_from);
+        if (it != serialization_infos.end())
+        {
+            auto new_info = it->second;
+            serialization_infos.erase(it);
+            serialization_infos.emplace(rename_to, std::move(new_info));
+        }
+    }
+
+    void updateFromResultHeader(const Block & header)
+    {
+        for (const auto & column : header)
+        {
+            const auto new_column = columns.tryGetColumn(GetColumnsOptions::All, column.name);
+
+            if (!new_column.has_value())
+                add(column.name, column.type);
+            else if (!new_column->type->equals(*column.type))
+                modify(column.name, column.type);
+        }
+
+        Names removed_columns;
+
+        for (const auto & column : columns)
+        {
+            if (!header.has(column.name))
+                removed_columns.push_back(column.name);
+        }
+
+        for (const auto & column : removed_columns)
+            drop(column);
+    }
+
+private:
+    ColumnsDescription columns;
+    SerializationInfoByName serialization_infos;
+    SerializationInfo::Settings serialization_settings;
+};
+
 struct MutationContext
 {
     MergeTreeData * data;
@@ -259,8 +374,7 @@ struct MutationContext
     NameSet statistics_to_drop;
     std::set<ColumnStatisticsPartPtr> statistics_to_build;
 
-    ColumnsDescription new_part_columns;
-    SerializationInfoByName new_serialization_infos;
+    AlteredColumns new_part_columns;
 
     NameSet ttls_to_calculate;
     NameSet ttls_to_materialize;
@@ -637,35 +751,6 @@ static void analyzeTTLCommands(MutationContext & ctx)
     }
 }
 
-static void addColumn(MutationContext & ctx, const String & column_name, const DataTypePtr & type)
-{
-    if (ctx.new_part_columns.has(column_name))
-        return;
-
-    ctx.new_part_columns.add(ColumnDescription(column_name, type));
-
-    if (!type->supportsSparseSerialization())
-        return;
-
-    SerializationInfo::Settings settings
-    {
-        .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false
-    };
-
-    if (settings.isAlwaysDefault())
-        return;
-
-    auto new_info = type->createSerializationInfo(settings);
-    ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
-}
-
-static void dropColumn(MutationContext & ctx, const String & column_name)
-{
-    ctx.new_part_columns.remove(column_name);
-    ctx.new_serialization_infos.erase(column_name);
-}
-
 MutatedData analyzeDataCommands(MutationContext & ctx)
 {
     const auto & table_columns = ctx.metadata_snapshot->getColumns();
@@ -710,12 +795,13 @@ MutatedData analyzeDataCommands(MutationContext & ctx)
     for (const auto & column : ctx.mutated_data.updated_columns)
     {
         auto type = ctx.storage_snapshot->getColumn(options, column).type;
-        addColumn(ctx, column, type);
+        ctx.new_part_columns.add(column, type);
     }
 
-    if (ctx.mutated_data.affects_all_columns && !ctx.mutated_data.has_lightweight_delete && ctx.new_part_columns.has(RowExistsColumn::name))
+    if (ctx.mutated_data.affects_all_columns && !ctx.mutated_data.has_lightweight_delete)
     {
-        dropColumn(ctx, RowExistsColumn::name);
+        if (ctx.new_part_columns.getColumns().has(RowExistsColumn::name))
+            ctx.new_part_columns.drop(RowExistsColumn::name);
     }
 
     return ctx.mutated_data;
@@ -740,59 +826,12 @@ void addColumnsRequiredForDependencies(MutationContext & ctx)
     }
 }
 
-static void modifyColumn(MutationContext & ctx, const String & column_name, const DataTypePtr & new_type)
-{
-    auto old_type = ctx.new_part_columns.getPhysical(column_name).type;
-    ctx.new_part_columns.modify(column_name, [&](auto & column) { column.type = new_type; });
-
-    auto it = ctx.new_serialization_infos.find(column_name);
-    if (it == ctx.new_serialization_infos.end())
-        return;
-
-    SerializationInfo::Settings settings
-    {
-        .ratio_of_defaults_for_sparse = (*ctx.data->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        .choose_kind = false
-    };
-
-    auto old_info = it->second;
-    ctx.new_serialization_infos.erase(it);
-
-    if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
-        return;
-
-    auto new_info = new_type->createSerializationInfo(settings);
-
-    if (!old_info->structureEquals(*new_info))
-    {
-        ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
-    }
-    else
-    {
-        new_info = old_info->createWithType(*old_type, *new_type, settings);
-        ctx.new_serialization_infos.emplace(column_name, std::move(new_info));
-    }
-}
-
-static void renameColumn(MutationContext & ctx, const String & rename_from, const String & rename_to)
-{
-    ctx.new_part_columns.rename(rename_from, rename_to);
-
-    auto it = ctx.new_serialization_infos.find(rename_from);
-    if (it == ctx.new_serialization_infos.end())
-        return;
-
-    auto new_info = it->second;
-    ctx.new_serialization_infos.erase(it);
-    ctx.new_serialization_infos.emplace(rename_to, std::move(new_info));
-}
-
 void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const AlterConversionsPtr & alter_conversions)
 {
     for (const auto & command : ctx.commands_for_part)
     {
         /// If we don't have this column in source part, we don't need to materialize it.
-        if (!ctx.new_part_columns.has(command.column_name))
+        if (!ctx.new_part_columns.getColumns().has(command.column_name))
         {
             continue;
         }
@@ -802,18 +841,13 @@ void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const Alte
             ctx.for_file_renames.push_back(command);
 
             if (command.data_type)
-                modifyColumn(ctx, command.column_name, command.data_type);
+                ctx.new_part_columns.modify(command.column_name, command.data_type);
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
             ctx.for_file_renames.push_back(command);
-            dropColumn(ctx, command.column_name);
+            ctx.new_part_columns.drop(command.column_name);
         }
-        // else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        // {
-        //     ctx.for_file_renames.push_back(command);
-        //     renameColumn(ctx, command.column_name, command.rename_to);
-        // }
     }
 
     /// We don't add renames from commands, instead we take them from rename_map.
@@ -822,8 +856,8 @@ void analyzeMetadataCommandsForSomeColumnsMode(MutationContext & ctx, const Alte
     /// can be deduced based on difference between part's schema and table schema.
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
     {
-        if (ctx.new_part_columns.has(rename_from))
-            renameColumn(ctx, rename_from, rename_to);
+        if (ctx.new_part_columns.getColumns().has(rename_from))
+            ctx.new_part_columns.rename(rename_from, rename_to);
 
         ctx.for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
     }
@@ -834,8 +868,7 @@ static void analyzeCommandsForSomeColumnsMode(MutationContext & ctx, const Alter
     ctx.execution_mode = MutationContext::Mode::SomeColumns;
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
     ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
-    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
-    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
+    ctx.new_part_columns = AlteredColumns(*ctx.source_part);
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -854,8 +887,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     ctx.execution_mode = MutationContext::Mode::AllColumns;
     ctx.mutated_data = MutatedData(ctx.data->getSettings());
     ctx.files_to_rename = FilesToRename(ctx.source_part->checksums.getAllFiles());
-    ctx.new_part_columns = ctx.source_part->getColumnsDescription();
-    ctx.new_serialization_infos = ctx.source_part->getSerializationInfos();
+    ctx.new_part_columns = AlteredColumns(*ctx.source_part);
 
     analyzeDataCommands(ctx);
     analyzeTTLCommands(ctx);
@@ -869,8 +901,8 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
 
     for (const auto & command : ctx.commands_for_part)
     {
-        bool has_column = ctx.new_part_columns.has(command.column_name);
-        bool has_nested_column = ctx.new_part_columns.hasNested(command.column_name);
+        bool has_column = ctx.new_part_columns.getColumns().has(command.column_name);
+        bool has_nested_column = ctx.new_part_columns.getColumns().hasNested(command.column_name);
 
         if (!has_column && !has_nested_column)
             continue;
@@ -881,13 +913,13 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             ctx.for_interpreter.push_back(command);
 
             if (command.data_type)
-                modifyColumn(ctx, command.column_name, command.data_type);
+                ctx.new_part_columns.modify(command.column_name, command.data_type);
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
             if (has_nested_column)
             {
-                const auto & nested = ctx.new_part_columns.getNested(command.column_name);
+                const auto & nested = ctx.new_part_columns.getColumns().getNested(command.column_name);
                 chassert(!nested.empty());
 
                 for (const auto & nested_column : nested)
@@ -899,7 +931,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
             }
 
             need_mutate_columns = true;
-            dropColumn(ctx, command.column_name);
+            ctx.new_part_columns.drop(command.column_name);
         }
     }
 
@@ -909,7 +941,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     /// can be deduced based on difference between part's schema and table schema.
     for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
     {
-        if (ctx.new_part_columns.has(rename_from))
+        if (ctx.new_part_columns.getColumns().has(rename_from))
         {
             /// Actual rename
             ctx.for_interpreter.push_back(
@@ -918,7 +950,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
                 .column_name = rename_to,
             });
 
-            renameColumn(ctx, rename_from, rename_to);
+            ctx.new_part_columns.rename(rename_from, rename_to);
             need_mutate_columns = true;
         }
     }
@@ -926,7 +958,7 @@ static void analyzeCommandsForAllColumnsMode(MutationContext & ctx, const AlterC
     UNUSED(need_mutate_columns);
 
     /// If it's compact part, then we don't need to actually remove files from disk we just don't read dropped columns
-    for (const auto & column : ctx.new_part_columns)
+    for (const auto & column : ctx.new_part_columns.getColumns())
     {
         const auto & part = ctx.source_part;
         const auto & metadata_snapshot = ctx.metadata_snapshot;
@@ -2413,13 +2445,7 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
 
         if (ctx->execution_mode == MutationContext::Mode::AllColumns)
-        {
-            ctx->new_part_columns = {};
-            ctx->new_serialization_infos = {};
-
-            for (const auto & column : ctx->updated_header)
-                MutationHelpers::addColumn(*ctx, column.name, column.type);
-        }
+            ctx->new_part_columns.updateFromResultHeader(ctx->updated_header);
 
         ctx->progress_callback = MergeProgressCallback(
             (*ctx->mutate_entry)->ptr(),
@@ -2449,8 +2475,8 @@ bool MutateTask::prepare()
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     ctx->new_data_part->setColumns(
-        ctx->new_part_columns.getAllPhysical(),
-        ctx->new_serialization_infos,
+        ctx->new_part_columns.getColumns().getAllPhysical(),
+        ctx->new_part_columns.getSerializationInfos(),
         ctx->metadata_snapshot->getMetadataVersion());
 
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
