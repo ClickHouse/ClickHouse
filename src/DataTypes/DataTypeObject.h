@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
-#include <Common/SipHash.h>
 
 
 namespace DB

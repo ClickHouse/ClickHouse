@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -46,7 +45,7 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
 
-    void updateHashImpl(SipHash & hash) const override { hash.update(max_dynamic_types); }
+    void updateHashImpl(SipHash & hash) const override;
 
 private:
     SerializationPtr doGetDefaultSerialization() const override;

@@ -4,8 +4,6 @@
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
-#include <vector>
 
 
 namespace DB

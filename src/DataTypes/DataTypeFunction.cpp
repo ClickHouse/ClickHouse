@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 
 
 namespace DB

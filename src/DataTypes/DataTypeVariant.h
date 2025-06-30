@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnVariant.h>
-#include <Common/SipHash.h>
 #include <optional>
 
 

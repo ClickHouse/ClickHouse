@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <Common/SipHash.h>
 
 constexpr size_t MAX_FIXEDSTRING_SIZE = 0xFFFFFF;
 constexpr size_t MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS = 256;

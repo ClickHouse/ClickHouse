@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
-#include <Common/SipHash.h>
 
 
 namespace DB

@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/Field.h>
-#include <Common/SipHash.h>
 
 
 namespace DB

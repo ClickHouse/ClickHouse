@@ -4,7 +4,6 @@
 #include <Columns/ColumnVector.h>
 #include <base/IPv4andIPv6.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
-#include <Common/SipHash.h>
 
 
 namespace DB

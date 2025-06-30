@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataTypeDummy.h>
-#include <Common/SipHash.h>
 
 
 namespace DB

@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnVector.h>
 #include <Core/UUID.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
