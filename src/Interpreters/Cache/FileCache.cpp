@@ -1107,6 +1107,12 @@ bool FileCache::tryReserve(
 
     {
         auto cache_write_lock = cache_guard.writeLock();
+
+        /// Release hold space,
+        /// as we will not fill it with new entry or entry size increment.
+        main_eviction_info.hold_space.reset();
+        query_eviction_info.hold_space.reset();
+
         if (do_evict)
         {
             ///// Invalidate and remove queue entries and execute finalize func.
