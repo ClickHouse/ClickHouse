@@ -98,6 +98,7 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
+    /// Setting dimensions is useful for vector codecs. Currently it is useful only for SZ3 codec.
     virtual void setDimensions(const std::vector<size_t> & /*dimensions*/)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
@@ -134,6 +135,7 @@ public:
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
+    /// Is the main purpose of this codec is to compress Array<Float>?
     virtual bool isVectorCodec() const { return false; }
 
     // Returns a string with a high level codec description.

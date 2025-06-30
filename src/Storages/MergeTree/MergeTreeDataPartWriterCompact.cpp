@@ -259,6 +259,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
+
+                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+                /// require specifying the array dimensions before compression starts.
+                /// For 1D arrays, it's simply the length.
+                /// For multidimensional arrays, the dimensions vector contains the lengths of nested arrays at each level,
+                /// as long as the elements remain arrays.
                 auto compression_codec = compressed_codecs[stream_name];
                 if (compression_codec->isVectorCodec())
                 {
@@ -271,7 +277,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     {
                         if (sample_field.getType() != Field::Types::Array)
                         {
-                            continue;
+                            break;
                         }
                         dimensions.push_back(sample_field.safeGet<Array>().size());
                         Field child_field = sample_field.safeGet<Array>()[0];

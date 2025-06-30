@@ -96,11 +96,11 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     SZ3::Config config;
 
     std::vector<size_t> result_dimensions;
-    size_t floats = source_size / float_width;
+    size_t num_floats = source_size / float_width;
     for (auto dimension : dimensions)
-        floats /= dimension;
+        num_floats /= dimension;
 
-    result_dimensions.push_back(floats);
+    result_dimensions.push_back(num_floats);
     for (auto dimension : dimensions)
         result_dimensions.push_back(dimension);
 
@@ -127,14 +127,14 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid error bound mode");
     }
 
-    char * compressed;
+    std::unique_ptr<char[]> compressed;
     size_t compressed_size;
     switch (float_width)
     {
         case 4: {
             try
             {
-                compressed = SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size);
+                compressed.reset(SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size));
             }
             catch (...)
             {
@@ -145,7 +145,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
         case 8: {
             try
             {
-                compressed = SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size);
+                compressed.reset(SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size));
             }
             catch (...)
             {
@@ -161,8 +161,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     memcpy(dest + offset, &float_width, sizeof(UInt8));
     offset += sizeof(UInt8);
 
-    memcpy(dest + offset, compressed, compressed_size);
-    delete[] compressed;
+    memcpy(dest + offset, compressed.get(), compressed_size);
     return static_cast<UInt32>(offset + compressed_size);
 }
 
