@@ -35,7 +35,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="25.5.3.75"
+ARG VERSION="25.6.2.5"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 ARG DIRECT_DOWNLOAD_URLS=""
 

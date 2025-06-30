@@ -44,13 +44,13 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     socketSendBytes(header_str.data(), header_str.size());
 }
 
-void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode)
 {
     if (is_http_method_head || headers_finished_sending || !headers_started_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer, mode);
     progress_string_writer.finalize();
 
     socketSendBytes(header_name, strlen(header_name));
@@ -61,12 +61,14 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
     accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
-    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
+    /// Write the verbose summary with all the zero values included, if any.
+    /// This is needed for compatibility with an old version of the third-party ClickHouse driver for Elixir.
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ", Progress::DisplayMode::Verbose);
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ", Progress::DisplayMode::Minimal);
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()

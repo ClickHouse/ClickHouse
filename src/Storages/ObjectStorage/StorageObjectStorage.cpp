@@ -36,7 +36,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
 }

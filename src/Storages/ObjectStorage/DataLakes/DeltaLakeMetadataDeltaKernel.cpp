@@ -3,15 +3,11 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <fmt/ranges.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
@@ -76,31 +72,11 @@ DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// Partition values will be added to result data right after data is read.
 
     const auto & physical_names_map = table_snapshot->getPhysicalNamesMap();
-    auto get_physical_name = [&](const std::string & column_name)
-    {
-        if (physical_names_map.empty())
-            return column_name;
-        auto it = physical_names_map.find(column_name);
-        if (it == physical_names_map.end())
-        {
-            Names keys;
-            keys.reserve(physical_names_map.size());
-            for (const auto & [key, _] : physical_names_map)
-                keys.push_back(key);
-
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Not found column {} in physical names map. There are only columns: {}",
-                column_name, fmt::join(keys, ", "));
-        }
-        return it->second;
-    };
-
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())
     {
         for (auto & [column_name, _] : info.requested_columns)
-            column_name = get_physical_name(column_name);
+            column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
     }
     return info;
 }
