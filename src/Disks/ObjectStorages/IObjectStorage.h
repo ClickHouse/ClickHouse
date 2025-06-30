@@ -109,6 +109,7 @@ struct RelativePathWithMetadata
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
 };
 
 struct ObjectKeyWithMetadata
@@ -300,12 +301,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
-
-
-private:
-    mutable std::mutex throttlers_mutex;
-    ThrottlerPtr remote_read_throttler;
-    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
