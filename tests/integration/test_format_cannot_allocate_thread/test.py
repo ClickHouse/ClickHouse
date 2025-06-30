@@ -52,6 +52,8 @@ def test_it(started_cluster):
                 errors += 1
             else:
                 raise
+    # (As of the time of writing, this reports ~48 successes on average, suggesting that
+    #  cannot_allocate_thread_fault_injection_probability is actually checked 10 times by the query.)
     logging.info(f"{successes} successes, {errors} errors")
     assert successes > 0
     assert errors > 0
