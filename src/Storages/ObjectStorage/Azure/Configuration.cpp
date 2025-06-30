@@ -84,6 +84,29 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 {
     assertInitialized();
 
+    if (connection_params.endpoint.storage_account_url.starts_with("abfss"))
+    {
+        auto url = connection_params.endpoint.storage_account_url;
+        auto pos_slash = url.find("://");
+        auto pos_at = url.find("@");
+        auto pos_dot = url.find(".");
+        auto pos_net = url.find(".net");
+
+        if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", url);
+        }
+        auto container = url.substr(pos_slash+3, pos_at-pos_slash-3);
+        auto account_name = url.substr(pos_at+1, pos_dot-pos_at-1);
+
+        connection_params.endpoint.storage_account_url = "https://" + account_name + ".blob.core.net";
+
+        if (!connection_params.endpoint.container_name.empty())
+            connection_params.endpoint.prefix = connection_params.endpoint.container_name + connection_params.endpoint.prefix;
+
+        connection_params.endpoint.container_name = container;
+    }
+
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
@@ -193,6 +216,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         blobs_paths = {blob_path};
         connection_params = getConnectionParams(connection_url+"?"+sas_token, container_name, account_name, account_key, context);
         connection_params.endpoint.sas_auth = sas_token;
+        connection_params.endpoint.prefix = blob_path;
 
         return;
     }
