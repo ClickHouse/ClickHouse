@@ -159,7 +159,7 @@ public:
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
         , log(getLogger("Changelog"))
-        , move_changelog_cb(move_changelog_cb_)
+        , move_changelog_cb(std::move(move_changelog_cb_))
     {
     }
 

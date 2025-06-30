@@ -165,7 +165,7 @@ def test_logs_with_disks(started_cluster):
             look_behind_lines=2000,
         )
 
-        def get_local_log_files():
+        def get_single_local_log_file():
             local_log_files = get_local_logs(node_logs)
             start_time = time.time()
             while len(local_log_files) != 1:
@@ -177,7 +177,7 @@ def test_logs_with_disks(started_cluster):
             return local_log_files
 
         # all but the latest log should be on S3
-        local_log_files = get_local_log_files()
+        local_log_files = get_single_local_log_file()
         assert local_log_files[0] == previous_log_files[-1]
         s3_log_files = list_s3_objects(started_cluster, "logs/")
         assert set(s3_log_files) == set(previous_log_files[:-1])
