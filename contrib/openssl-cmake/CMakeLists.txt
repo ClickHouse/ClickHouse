@@ -117,6 +117,8 @@ set(CRYPTO_SRC
     der_rsa_gen.c
     der_wrap_gen.c
     der_sm2_gen.c
+    der_ml_dsa_gen.c
+    der_slh_dsa_gen.c
 
     ${PLATFORM_DIRECTORY}/params_idx.c
 
@@ -891,9 +893,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/providers/common/der/der_sm2_sig.c
     ${OPENSSL_SOURCE_DIR}/providers/common/der/der_slh_dsa_key.c
     ${OPENSSL_SOURCE_DIR}/providers/common/der/der_ml_dsa_key.c
-    ${OPENSSL_SOURCE_DIR}/providers/common/der/der_ml_dsa_gen.c
     ${OPENSSL_SOURCE_DIR}/providers/common/der/der_slh_dsa_key.c
-    ${OPENSSL_SOURCE_DIR}/providers/common/der/der_slh_dsa_gen.c
     ${OPENSSL_SOURCE_DIR}/providers/common/digest_to_nid.c
     ${OPENSSL_SOURCE_DIR}/providers/common/provider_ctx.c
     ${OPENSSL_SOURCE_DIR}/providers/common/provider_err.c
