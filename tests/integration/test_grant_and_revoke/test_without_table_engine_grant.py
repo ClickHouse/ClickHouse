@@ -62,7 +62,7 @@ def test_table_engine_and_source_grant():
 
     # expecting grant POSTGRES instead of grant PostgreSQL due to discrepancy between source access type and table engine
     # similarily, other sources should also use their own defined name instead of the name of table engine
-    assert "grant PostgreSQL ON *.*" in instance.query_and_get_error(
+    assert "grant TABLE ENGINE ON PostgreSQL" in instance.query_and_get_error(
         """
         CREATE TABLE test.table1(a Integer)
         engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
