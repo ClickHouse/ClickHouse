@@ -456,7 +456,7 @@ DataPartsLock::~DataPartsLock()
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
-static Int64 extractVersion(const PartitionIdToMaxBlockPtr & versions, const String & partition_id, Int64 default_value)
+static Int64 extractVersion(const MergeTreeData::PartitionIdToMinBlockPtr & versions, const String & partition_id, Int64 default_value)
 {
     if (!versions)
         return default_value;
@@ -9271,9 +9271,9 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
-PartitionIdToMaxBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
+MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
 {
-    PartitionIdToMaxBlock partition_to_min_data_version;
+    PartitionIdToMinBlock partition_to_min_data_version;
 
     for (const auto & part : parts)
     {
@@ -9286,7 +9286,7 @@ PartitionIdToMaxBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const 
             partition_to_min_data_version.emplace(partition_id, data_version);
     }
 
-    return std::make_shared<PartitionIdToMaxBlock>(std::move(partition_to_min_data_version));
+    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
 StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const

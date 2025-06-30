@@ -32,7 +32,6 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -166,6 +165,9 @@ public:
     using DataPartStateVector = std::vector<DataPartState>;
 
     using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
+
+    using PartitionIdToMinBlock = std::unordered_map<String, Int64>;
+    using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
@@ -485,7 +487,7 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
-            PartitionIdToMaxBlockPtr min_part_data_versions = nullptr;
+            PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
         };
@@ -1052,7 +1054,7 @@ public:
     static Int64 getMinMetadataVersion(const DataPartsVector & parts);
 
     /// Returns minimum data version among parts inside each of the partitions.
-    static PartitionIdToMaxBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
+    static PartitionIdToMinBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
