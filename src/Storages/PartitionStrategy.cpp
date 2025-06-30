@@ -119,13 +119,13 @@ namespace
             }
 
             const auto & type = partition_expression_column.type;
-            const bool is_type_supported = isInteger(type) || isDate(type) || isDateTime(type) || isStringOrFixedString(type);
+            const bool is_type_supported = isInteger(type) || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type) || isStringOrFixedString(type);
 
             if (!is_type_supported)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Hive partitioning supports only partition columns of types: Integer, Date, DateTime and String/FixedString. Found '{}'",
+                    "Hive partitioning supports only partition columns of types: Integer, Date, Time, DateTime and String/FixedString. Found '{}'",
                     type->getName());
             }
         }
