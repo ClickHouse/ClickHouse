@@ -292,7 +292,7 @@ protected:
 class ParserStringLiteral : public IParserBase
 {
 public:
-    ParserStringLiteral(Highlight color_ = Highlight::string) : color(color_) {}
+    explicit ParserStringLiteral(Highlight color_ = Highlight::string) : color(color_) {}
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
