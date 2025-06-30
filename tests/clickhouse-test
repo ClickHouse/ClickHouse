@@ -69,8 +69,9 @@ MESSAGES_TO_RETRY = [
 ]
 
 IGNORED_SANITIZER_ERRORS = [
-    "LLVM ERROR: IO failure on output stream: Broken pipe",
     "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+    # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
+    #"LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
 
 MAX_RETRIES = 3
