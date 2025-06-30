@@ -208,6 +208,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         bool disable_parallel_replicas = is_remote_function; // disable parallel replicas with remote() table functions
         if (!disable_parallel_replicas)
         {
+            disable_parallel_replicas = true;
             for (const auto & shard : cluster.getShardsInfo())
             {
                 if (shard.getAllNodeCount() > 1)
