@@ -64,6 +64,12 @@ public:
             size_t buck = getBucketFromHash(hash_value);
             impls[buck].m3.insertUniqueNonZero(&v, hash_value);
         }
+        for (auto & v : src.mh)
+        {
+            size_t hash_value = v.getHash(src.mh);
+            size_t buck = getBucketFromHash(hash_value);
+            impls[buck].mh.insertUniqueNonZero(&v, hash_value);
+        }
         for (auto & v : src.ms)
         {
             size_t hash_value = v.getHash(src.ms);
@@ -163,9 +169,36 @@ public:
             }
             default:
             {
-                auto res = hash(x);
-                auto buck = getBucketFromHash(res);
-                return func(self.impls[buck].ms, std::forward<KeyHolder>(key_holder), res);
+                if (x.size <= std::numeric_limits<UInt32>::max()) [[likely]]
+                {
+                    StringRefWithInlineHash str_inlined_hash{
+                        x.data, (x.size << StringRefWithInlineHash::SHIFT) | (hash(x) & StringRefWithInlineHash::MASK)};
+                    auto buck = getBucketFromHash(str_inlined_hash.size);
+                    if constexpr (std::is_same_v<DB::ArenaKeyHolder, std::decay_t<KeyHolder>>)
+                    {
+                        return func(
+                            self.impls[buck].mh,
+                            DB::ArenaKeyHolderWithInlineHash{str_inlined_hash, key_holder.pool},
+                            str_inlined_hash.size);
+                    }
+                    else if constexpr (std::is_same_v<DB::SerializedKeyHolder, std::decay_t<KeyHolder>>)
+                    {
+                        return func(
+                            self.impls[buck].mh,
+                            DB::SerializedKeyHolderWithInlineHash(str_inlined_hash, key_holder.pool),
+                            str_inlined_hash.size);
+                    }
+                    else
+                    {
+                        return func(self.impls[buck].mh, str_inlined_hash, str_inlined_hash.size);
+                    }
+                }
+                else
+                {
+                    auto res = hash(x);
+                    auto buck = getBucketFromHash(res);
+                    return func(self.impls[buck].ms, std::forward<KeyHolder>(key_holder), res);
+                }
             }
         }
     }

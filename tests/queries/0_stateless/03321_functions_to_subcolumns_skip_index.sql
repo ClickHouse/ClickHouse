@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
 
+SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS bloom_filter_test;
 
 CREATE TABLE bloom_filter_test

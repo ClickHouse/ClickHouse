@@ -5,6 +5,8 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
+#include <Common/HashTable/Prefetching.h>
+#include <Interpreters/AggregationCommon.h>
 
 namespace DB
 {
@@ -210,8 +212,40 @@ public:
             }
         }
 
-        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data);
+        auto & derived = static_cast<Derived &>(*this);
+        if constexpr (Derived::has_pre_computed_hashes)
+        {
+            auto key_holder = derived.getKeyHolder(row, pool);
+            if (row == PrefetchingHelper::iterationsToMeasure())
+                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+            const auto & hashes = derived.hashes.getData();
+            size_t len = 0;
+            size_t hash = hashes[row];
+            if constexpr (Derived::use_string_hash_table)
+            {
+                len = derived.row_sizes[row];
+                hash = (len << StringRefWithInlineHash::SHIFT) | hash;
+            }
+
+            if (row + derived.prefetch_look_ahead < hashes.size())
+            {
+                size_t next_hash = hashes[row + derived.prefetch_look_ahead];
+                size_t next_len = 0;
+                if constexpr (Derived::use_string_hash_table)
+                {
+                    next_len = derived.row_sizes[row + derived.prefetch_look_ahead];
+                    next_hash = (next_len << StringRefWithInlineHash::SHIFT) | next_hash;
+                }
+
+                data.prefetchByHash(next_hash, next_len);
+            }
+            return emplaceImpl<false>(key_holder, data, hash);
+        }
+        else
+        {
+            auto key_holder = derived.getKeyHolder(row, pool);
+            return emplaceImpl<true>(key_holder, data, 0);
+        }
     }
 
     template <typename Data>
@@ -239,15 +273,63 @@ public:
             }
         }
 
-        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return findKeyImpl(keyHolderGetKey(key_holder), data);
+        auto & derived = static_cast<Derived &>(*this);
+        if constexpr (Derived::has_pre_computed_hashes)
+        {
+            if (row == PrefetchingHelper::iterationsToMeasure())
+                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+            const auto & hashes = derived.hashes.getData();
+            size_t len = 0;
+            size_t hash = hashes[row];
+            if constexpr (Derived::use_string_hash_table)
+            {
+                len = derived.row_sizes[row];
+                hash = (len << StringRefWithInlineHash::SHIFT) | hash;
+            }
+
+            if (row + derived.prefetch_look_ahead < hashes.size())
+            {
+                size_t next_hash = hashes[row + derived.prefetch_look_ahead];
+                size_t next_len = 0;
+                if constexpr (Derived::use_string_hash_table)
+                {
+                    next_len = derived.row_sizes[row + derived.prefetch_look_ahead];
+                    next_hash = (next_len << StringRefWithInlineHash::SHIFT) | next_hash;
+                }
+
+                data.prefetchByHash(next_hash, next_len);
+            }
+
+            if (data.isEmptyCell(hash, len))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(nullptr, false, 0);
+                else
+                    return FindResult(false, 0);
+            }
+
+            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+            return findKeyImpl<false>(keyHolderGetKey(key_holder), data, hash);
+        }
+        else
+        {
+            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+            return findKeyImpl<true>(keyHolderGetKey(key_holder), data, 0);
+        }
     }
 
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
-        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return data.hash(keyHolderGetKey(key_holder));
+        if constexpr (Derived::has_pre_computed_hashes)
+        {
+            return static_cast<Derived &>(*this).hashes.getData()[row];
+        }
+        else
+        {
+            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+            return data.hash(keyHolderGetKey(key_holder));
+        }
     }
 
     ALWAYS_INLINE void resetCache()
@@ -310,8 +392,8 @@ protected:
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
-    template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    template <bool compute_hash, typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -326,7 +408,11 @@ protected:
 
         typename Data::LookupResult it;
         bool inserted = false;
-        data.emplace(key_holder, it, inserted);
+
+        if constexpr (compute_hash)
+            data.emplace(key_holder, it, inserted);
+        else
+            data.emplace(key_holder, it, inserted, hash_value);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
@@ -365,8 +451,8 @@ protected:
             return EmplaceResult(inserted);
     }
 
-    template <typename Data, typename Key>
-    ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
+    template <bool compute_hash, typename Data, typename Key>
+    ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data, [[maybe_unused]] size_t hash_value)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -382,7 +468,15 @@ protected:
             }
         }
 
-        auto it = data.find(key);
+        auto find = [&]()
+        {
+            if constexpr (compute_hash)
+                return data.find(key);
+            else
+                return data.find(key, hash_value);
+        };
+
+        auto it = find();
 
         if constexpr (consecutive_keys_optimization)
         {

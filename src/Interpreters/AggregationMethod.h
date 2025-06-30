@@ -267,7 +267,7 @@ struct AggregationMethodKeysFixed
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename TData, bool nullable = false, bool prealloc = false>
+template <typename TData, bool nullable = false, bool prealloc = false, bool inline_hash = false>
 struct AggregationMethodSerialized
 {
     using Data = TData;
@@ -286,7 +286,7 @@ struct AggregationMethodSerialized
     }
 
     template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped, nullable, prealloc>;
+    using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped, nullable, prealloc, inline_hash>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
@@ -302,11 +302,11 @@ struct AggregationMethodSerialized
 template <typename TData>
 using AggregationMethodNullableSerialized = AggregationMethodSerialized<TData, true>;
 
-template <typename TData>
-using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, false, true>;
+template <typename TData, bool inline_hash = false>
+using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, false, true, inline_hash>;
 
-template <typename TData>
-using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true>;
+template <typename TData, bool inline_hash = false>
+using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true, inline_hash>;
 
 
 }

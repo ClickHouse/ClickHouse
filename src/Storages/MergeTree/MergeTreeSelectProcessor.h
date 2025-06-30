@@ -90,6 +90,8 @@ public:
 
     void onFinish() const;
 
+    PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+
 private:
     static void injectLazilyReadColumns(
         size_t rows,

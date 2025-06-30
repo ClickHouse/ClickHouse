@@ -76,6 +76,10 @@ String calculateActionNodeName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 
+/// Calculate action node name for column name in storage, resolving any aliases.
+/// Returns an empty string if the node does not correspond to a column in storage.
+String calculateActionNodeNameInStorage(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
+
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
 

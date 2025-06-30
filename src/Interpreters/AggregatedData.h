@@ -3,8 +3,10 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/SerializedHashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <Common/HashTable/TwoLevelSerializedHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
 
@@ -40,6 +42,10 @@ using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<
 
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
+// using AggregatedDataWithSerializedKey = SerializedHashMap<AggregateDataPtr>;
+using AggregatedDataWithSerializedKey
+    = HashMapTable<StringRefWithInlineHash, SerializedHashMapCell<StringRefWithInlineHash, AggregateDataPtr>, SerializedHashTableHash>;
+
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
@@ -51,6 +57,10 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
+// using AggregatedDataWithSerializedKeyTwoLevel = TwoLevelSerializedHashMap<AggregateDataPtr>;
+using AggregatedDataWithSerializedKeyTwoLevel
+    = TwoLevelHashMapTable<StringRefWithInlineHash, SerializedHashMapCell<StringRefWithInlineHash, AggregateDataPtr>, SerializedHashTableHash>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;

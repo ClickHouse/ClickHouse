@@ -58,6 +58,29 @@ struct StringHashSetCell<StringKey24> : public HashTableCell<StringKey24, String
 };
 
 template <>
+struct StringHashSetCell<StringRefWithInlineHash> : public HashTableCell<StringRefWithInlineHash, StringHashTableHash, HashTableNoState>
+{
+    using Base = HashTableCell<StringRefWithInlineHash, StringHashTableHash, HashTableNoState>;
+    using Base::Base;
+
+    VoidMapped void_map;
+    VoidMapped & getMapped() { return void_map; }
+    const VoidMapped & getMapped() const { return void_map; }
+
+    // external
+    StringRef getKey() const { return StringRef(this->key.data, this->key.size >> StringRefWithInlineHash::SHIFT); }
+
+    /// Get the key (internally).
+    static const StringRefWithInlineHash & getKey(const value_type & value_) { return value_; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
+
+    void setHash(size_t hash_value) { chassert(hash_value == (this->key.size & StringRefWithInlineHash::MASK)); }
+
+    size_t getHash(const StringHashTableHash & /*hash_function*/) const { return this->key.size; }
+
+    static constexpr bool need_zero_value_storage = false;
+};
+
+template <>
 struct StringHashSetCell<StringRef> : public HashSetCellWithSavedHash<StringRef, StringHashTableHash, HashTableNoState>
 {
     using Base = HashSetCellWithSavedHash<StringRef, StringHashTableHash, HashTableNoState>;
@@ -77,6 +100,12 @@ struct StringHashSetSubMaps
     using T1 = HashSetTable<StringKey8, StringHashSetCell<StringKey8>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashSetTable<StringKey16, StringHashSetCell<StringKey16>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T3 = HashSetTable<StringKey24, StringHashSetCell<StringKey24>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
+    using Th = HashSetTable<
+        StringRefWithInlineHash,
+        StringHashSetCell<StringRefWithInlineHash>,
+        StringHashTableHash,
+        StringHashTableGrower<>,
+        Allocator>;
     using Ts = HashSetTable<StringRef, StringHashSetCell<StringRef>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
 };
 
