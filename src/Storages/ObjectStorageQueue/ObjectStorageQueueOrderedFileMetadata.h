@@ -77,18 +77,32 @@ private:
     void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) override;
 
-    bool getMaxProcessedFile(
-        NodeMetadata & result,
-        Coordination::Stat * stat,
-        const zkutil::ZooKeeperPtr & zk_client);
-
-    static bool getMaxProcessedFile(
+    static bool getMaxProcessedNode(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client);
 
-    static bool getMaxProcessedFilesByHive(
+    struct LastProcessedInfo
+    {
+        std::optional<std::string> file_path;
+        bool is_failed = false;
+    };
+
+    LastProcessedInfo getLastProcessedFile(
+        Coordination::Stat * stat,
+        const zkutil::ZooKeeperPtr & zk_client,
+        bool check_failed = false);
+
+    static LastProcessedInfo getLastProcessedFile(
+        Coordination::Stat * stat,
+        const std::string & processed_node_path_,
+        const zkutil::ZooKeeperPtr & zk_client,
+        const std::string file_path = "",
+        std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
+        std::optional<std::string> failed_node_path = std::nullopt);
+
+    static bool getMaxProcessedFilesByHivePartition(
         std::unordered_map<std::string, std::string> & max_processed_files,
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client);

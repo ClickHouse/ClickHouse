@@ -135,7 +135,7 @@ public:
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
-        std::string file_path;
+        std::string file_path; /// Ignored in hive partitioning case, subnodes hive_path=>file_name used instead.
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
