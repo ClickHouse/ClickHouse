@@ -10,7 +10,6 @@
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
@@ -36,7 +35,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -414,13 +412,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     if (is_interactive)
     {
-        output_stream << std::endl;
-        WriteBufferFromOStream res_buf(output_stream, 4096);
+        WriteBufferFromOwnString res_buf;
         IAST::FormatSettings format_settings(/* one_line */ false);
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
         res->format(res_buf, format_settings);
         res_buf.finalize();
+
+        output_stream << std::endl;
+#if USE_REPLXX
+        output_stream << highlighted(res_buf.str(), *client_context);
+#else
+        output_stream << res_buf.str();
+#endif
         output_stream << std::endl << std::endl;
     }
 

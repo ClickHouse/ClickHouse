@@ -15,6 +15,9 @@
 #include <Poco/String.h>
 #include <string_view>
 
+#if USE_REPLXX
+namespace replxx { char const * ansi_color(Replxx::Color); }
+#endif
 
 namespace DB
 {
@@ -215,6 +218,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
+            while (char_pos < range.begin)
+            {
+                ++code_point_pos;
+                char_pos += UTF8::seqLength(*char_pos);
+            }
+
             bool escaped = false;
             while (char_pos < range.end)
             {
@@ -399,6 +408,38 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     {
         ReplxxLineReader::setLastIsDelimiter(false);
     }
+}
+
+String highlighted(const String & query, const Context & context)
+{
+    size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
+    highlight(query, colors, context, 0);
+
+    String res;
+    size_t query_size = query.size();
+    res.reserve(query_size * 2);
+
+    size_t byte_pos = 0;
+    size_t code_point_pos = 0;
+    replxx::Replxx::Color prev_color = replxx::Replxx::Color::DEFAULT;
+    while (byte_pos < query_size)
+    {
+        auto curr_color = colors[code_point_pos];
+        if (curr_color != prev_color)
+        {
+            res += replxx::ansi_color(curr_color);
+            prev_color = curr_color;
+        }
+        size_t code_point_length = UTF8::seqLength(query[byte_pos]);
+        res.append(query.data() + byte_pos, code_point_length);
+        byte_pos += code_point_length;
+        ++code_point_pos;
+    }
+    if (replxx::Replxx::Color::DEFAULT != prev_color)
+        res += replxx::ansi_color(replxx::Replxx::Color::DEFAULT);
+
+    return res;
 }
 #endif
 
