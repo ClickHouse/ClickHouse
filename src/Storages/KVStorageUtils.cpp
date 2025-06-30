@@ -126,7 +126,7 @@ bool traverseDAGFilter(
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ActionsDAG * filter_actions_dag, const ContextPtr & context)
+    const String & primary_key, const DataTypePtr & primary_key_type, const std::optional<ActionsDAG> & filter_actions_dag, const ContextPtr & context)
 {
     if (!filter_actions_dag)
         return {{}, true};
