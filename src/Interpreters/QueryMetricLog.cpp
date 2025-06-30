@@ -120,15 +120,14 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
     }
 
     auto & query_status = it->second;
-    if (!query_status.mutex)
+    UniqueLock query_lock(query_status.getMutex());
+    global_lock.unlock();
+
+    if (query_status.finished)
     {
-        global_lock.unlock();
         LOG_TEST(logger, "Query {} finished while this collecting task was running", query_id);
         return;
     }
-
-    UniqueLock query_lock(query_status.getMutex());
-    global_lock.unlock();
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
     if (elem)
@@ -170,14 +169,21 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         return;
 
     auto & query_status = it->second;
-    decltype(query_status.mutex) query_mutex;
     UniqueLock query_lock(query_status.getMutex());
-
-    /// Move the query mutex here so that we hold it until the end, after removing the query from queries.
-    query_mutex = std::move(query_status.mutex);
-    query_status.mutex = {};
-
     global_lock.unlock();
+
+    /// finishQuery may be called twice for the same query_id if a new query with the same query_id is attempted to run
+    /// in case replace_running_query=0 (the default). Make sure we only execute the finishQuery once.
+    auto thread_id = CurrentThread::get().thread_id;
+    if (thread_id != query_status.thread_id || query_status.finished)
+    {
+        LOG_TEST(logger, "Query {} finished from a different thread_id than the one it started it: "
+                         "original was {}, this one is {}. Ignoring this finishQuery",
+                         query_id, query_status.thread_id, thread_id);
+        return;
+    }
+
+    query_status.finished = true;
 
     if (query_info)
     {
