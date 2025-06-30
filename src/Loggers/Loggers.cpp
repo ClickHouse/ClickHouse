@@ -13,9 +13,7 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#ifndef WITHOUT_TEXT_LOG
-    #include <Interpreters/TextLog.h>
-#endif
+#include <Interpreters/TextLog.h>
 
 #include <filesystem>
 
@@ -67,7 +65,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
-    split = new DB::OwnSplitChannel();
+    if (config.getBool("logger.async", true))
+        split = new DB::OwnAsyncSplitChannel();
+    else
+        split = new DB::OwnSplitChannel();
 
     auto log_level_string = config.getString("logger.level", "trace");
 
@@ -218,6 +219,45 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log, "console");
     }
 
+    if (allowTextLog() && config.has("text_log"))
+    {
+        String text_log_level_str = config.getString("text_log.level", "trace");
+        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
+
+        DB::SystemLogQueueSettings log_settings;
+        log_settings.flush_interval_milliseconds
+            = config.getUInt64("text_log.flush_interval_milliseconds", DB::TextLog::getDefaultFlushIntervalMilliseconds());
+
+        log_settings.max_size_rows = config.getUInt64("text_log.max_size_rows", DB::TextLog::getDefaultMaxSize());
+
+        if (log_settings.max_size_rows < 1)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "text_log.max_size_rows {} should be 1 at least", log_settings.max_size_rows);
+
+        log_settings.reserved_size_rows = config.getUInt64("text_log.reserved_size_rows", DB::TextLog::getDefaultReservedSize());
+
+        if (log_settings.max_size_rows < log_settings.reserved_size_rows)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "text_log.max_size {0} should be greater or equal to text_log.reserved_size_rows {1}",
+                log_settings.max_size_rows,
+                log_settings.reserved_size_rows);
+        }
+
+        log_settings.buffer_size_rows_flush_threshold
+            = config.getUInt64("text_log.buffer_size_rows_flush_threshold", log_settings.max_size_rows / 2);
+
+        log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash", DB::TextLog::shouldNotifyFlushOnCrash());
+
+        log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
+
+        log_settings.database = config.getString("text_log.database", "system");
+        log_settings.table = config.getString("text_log.table", "text_log");
+
+        split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
+    }
+
     split->open();
     logger.close();
 
@@ -262,47 +302,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
-#ifndef WITHOUT_TEXT_LOG
-    if (allowTextLog() && config.has("text_log"))
-    {
-        String text_log_level_str = config.getString("text_log.level", "trace");
-        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
-
-        DB::SystemLogQueueSettings log_settings;
-        log_settings.flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
-                                                                    DB::TextLog::getDefaultFlushIntervalMilliseconds());
-
-        log_settings.max_size_rows = config.getUInt64("text_log.max_size_rows",
-                                                      DB::TextLog::getDefaultMaxSize());
-
-        if (log_settings.max_size_rows< 1)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "text_log.max_size_rows {} should be 1 at least",
-                                log_settings.max_size_rows);
-
-        log_settings.reserved_size_rows = config.getUInt64("text_log.reserved_size_rows", DB::TextLog::getDefaultReservedSize());
-
-        if (log_settings.max_size_rows < log_settings.reserved_size_rows)
-        {
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                                "text_log.max_size {0} should be greater or equal to text_log.reserved_size_rows {1}",
-                                log_settings.max_size_rows,
-                                log_settings.reserved_size_rows);
-        }
-
-        log_settings.buffer_size_rows_flush_threshold = config.getUInt64("text_log.buffer_size_rows_flush_threshold",
-                                                                         log_settings.max_size_rows / 2);
-
-        log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash",
-                                                            DB::TextLog::shouldNotifyFlushOnCrash());
-
-        log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
-
-        log_settings.database = config.getString("text_log.database", "system");
-        log_settings.table = config.getString("text_log.table", "text_log");
-
-        split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
-    }
-#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)
@@ -397,4 +396,17 @@ void Loggers::closeLogs(Poco::Logger & logger)
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");
+}
+
+void Loggers::flushTextLogs()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->flushTextLogs();
+}
+
+void Loggers::stopLogging()
+{
+    if (split)
+        split->close();
+    split.reset();
 }
