@@ -1,28 +1,22 @@
-#include <memory>
-#include "Common/Exception.h"
-#include "base/types.h"
-
 #include "config.h"
 
 #if USE_SZ3
-#    include <Compression/CompressionFactory.h>
-#    include <Compression/CompressionInfo.h>
-#    include <Compression/ICompressionCodec.h>
-#    include <Core/Settings.h>
-#    include <DataTypes/IDataType.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTIdentifier.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Parsers/IAST.h>
-#    include <Common/CurrentThread.h>
-#    include <Common/SipHash.h>
+#  include "base/types.h"
+#  include "Common/Exception.h"
+#  include <Common/SipHash.h>
+#  include <Compression/CompressionFactory.h>
+#  include <Compression/CompressionInfo.h>
+#  include <Compression/ICompressionCodec.h>
+#  include <DataTypes/IDataType.h>
+#  include <IO/BufferWithOwnMemory.h>
+#  include <IO/WriteBuffer.h>
+#  include <IO/WriteHelpers.h>
+#  include <Interpreters/Context.h>
+#  include <Parsers/ASTLiteral.h>
+#  include <Parsers/IAST.h>
 
-#    include <SZ3/api/sz.hpp>
-#    include <SZ3/utils/Config.hpp>
+#  include <SZ3/api/sz.hpp>
+#  include <SZ3/utils/Config.hpp>
 
 namespace DB
 {
@@ -30,7 +24,7 @@ namespace DB
 class CompressionCodecSZ3 : public ICompressionCodec
 {
 public:
-    explicit CompressionCodecSZ3(UInt8 float_size_, const SZ3::ALGO & algorithm_, const SZ3::EB & error_bound_mode_, double error_value_);
+    CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
     uint8_t getMethodByte() const override;
 
@@ -40,10 +34,6 @@ public:
 
     void setDimensions(const std::vector<size_t> & dimensions) override;
 
-    bool isVectorCodec() const override { return true; }
-
-    String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
-
 protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
@@ -51,6 +41,8 @@ protected:
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
     /// We mark it as experimental for now.
     bool isExperimental() const override { return true; }
+    bool isVectorCodec() const override { return true; }
+    String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
 
 private:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -59,7 +51,7 @@ private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     std::vector<size_t> dimensions;
-    const UInt8 float_size;
+    const UInt8 float_width;
     const SZ3::ALGO algorithm;
     const SZ3::EB error_bound_mode;
     const Float64 error_value;
@@ -67,15 +59,15 @@ private:
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int CORRUPTED_DATA;
-extern const int ILLEGAL_CODEC_PARAMETER;
-extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
+    extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 CompressionCodecSZ3::CompressionCodecSZ3(
-    UInt8 float_size_, const SZ3::ALGO & algorithm_, const SZ3::EB & error_bound_mode_, double error_value_)
-    : float_size(float_size_)
+    UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_)
+    : float_width(float_size_)
     , algorithm(algorithm_)
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
@@ -91,7 +83,7 @@ uint8_t CompressionCodecSZ3::getMethodByte() const
 void CompressionCodecSZ3::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, true);
-    hash.update(float_size);
+    hash.update(float_width);
 }
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -104,18 +96,19 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     SZ3::Config config;
 
     std::vector<size_t> result_dimensions;
-    size_t num_rows = source_size / float_size;
-    for (auto dim : dimensions)
-        num_rows /= dim;
+    size_t floats = source_size / float_width;
+    for (auto dimension : dimensions)
+        floats /= dimension;
 
-    result_dimensions.push_back(num_rows);
-    for (auto dim : dimensions)
-        result_dimensions.push_back(dim);
+    result_dimensions.push_back(floats);
+    for (auto dimension : dimensions)
+        result_dimensions.push_back(dimension);
 
     config.setDims(result_dimensions.begin(), result_dimensions.end());
 
     config.cmprAlgo = algorithm;
     config.errorBoundMode = error_bound_mode;
+
     switch (error_bound_mode)
     {
         case SZ3::EB_REL:
@@ -136,7 +129,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 
     char * compressed;
     size_t compressed_size;
-    switch (float_size)
+    switch (float_width)
     {
         case 4: {
             try
@@ -145,7 +138,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             }
             catch (...)
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data to compress");
             }
             break;
         }
@@ -156,7 +149,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             }
             catch (...)
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data to compress");
             }
             break;
         }
@@ -165,7 +158,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     }
 
     size_t offset = 0;
-    memcpy(dest + offset, &float_size, sizeof(UInt8));
+    memcpy(dest + offset, &float_width, sizeof(UInt8));
     offset += sizeof(UInt8);
 
     memcpy(dest + offset, compressed, compressed_size);
@@ -195,7 +188,7 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
             }
             catch (...)
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data to compress");
             }
             break;
         }
@@ -207,7 +200,7 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
             }
             catch (...)
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect data to compress");
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data to compress");
             }
             break;
         }
@@ -216,17 +209,15 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     }
 }
 
-UInt8 getFloatByteSize(const IDataType & column_type)
+UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (WhichDataType(column_type).isFloat32())
-        return 4;
-    else if (WhichDataType(column_type).isFloat64())
-        return 8;
-    else
+    if (!WhichDataType(column_type).isNativeFloat())
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Codec 'SZ3' can only be used for data types Float32 or Float64, given data type: {}",
-            column_type.getName());
+                ErrorCodes::BAD_ARGUMENTS,
+                "Codec 'SZ3' is not applicable for {} because the data type is not Float*",
+                column_type.getName());
+
+    return column_type.getSizeOfValueInMemory();
 }
 
 SZ3::ALGO getAlgorithm(const String & algorithm)
@@ -246,15 +237,16 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
     {
         UInt8 float_width = 4;
         if (column_type)
-            float_width = getFloatByteSize(*column_type);
+            float_width = getFloatByteWidth(*column_type);
 
         bool use_zero_error_bound = !column_type || WhichDataType(column_type).isUInt64();
 
         if (!arguments || arguments->children.empty())
         {
-            static constexpr SZ3::ALGO default_algorithm = SZ3::ALGO_INTERP_LORENZO;
-            static constexpr SZ3::EB default_error_bound_mode = SZ3::EB_REL;
-            static constexpr double default_error_bound = 1e-2;
+            static constexpr auto default_algorithm = SZ3::ALGO_INTERP_LORENZO;
+            static constexpr auto default_error_bound_mode = SZ3::EB_REL;
+            static constexpr auto default_error_bound = 1e-2;
+
             return std::make_shared<CompressionCodecSZ3>(
                 float_width, default_algorithm, default_error_bound_mode, use_zero_error_bound ? 0 : default_error_bound);
         }

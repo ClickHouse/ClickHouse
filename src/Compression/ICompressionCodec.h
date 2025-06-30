@@ -6,7 +6,6 @@
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include "Common/Exception.h"
-#include "Interpreters/Context_fwd.h"
 
 class SipHash;
 
@@ -17,9 +16,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
 }
 
 /**
@@ -101,7 +100,7 @@ public:
 
     virtual void setDimensions(const std::vector<size_t> & /*dimensions*/)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions to non-vector codec");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
     }
 
     /// Read method byte from compressed source
@@ -138,7 +137,7 @@ public:
     virtual bool isVectorCodec() const { return false; }
 
     // Returns a string with a high level codec description.
-    virtual std::string getDescription() const = 0;
+    virtual String getDescription() const = 0;
 
 protected:
     /// This is used for fuzz testing
