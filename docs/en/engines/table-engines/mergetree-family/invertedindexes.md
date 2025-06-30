@@ -241,24 +241,55 @@ is performance. In practice, users often search for multiple terms at once. For 
 ### Functions Support {#functions-support}
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. 
-ClickHouse supports different subsets of functions for the `text` index and supported functions are as follows:
+ClickHouse supports different subsets of functions for the `text` index. You can refer [functions support](/engines/table-engines/mergetree-family/mergetree.md/#functions-support) to see the list of the available functions for the `text` index.
 
-| Function (operator)                                                                         |
-|---------------------------------------------------------------------------------------------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                  |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)      |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                           |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                     |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                         |
-| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                      |
-| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                          |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)       |
-| [in](/sql-reference/functions/in-functions)                                                 |
-| [notIn](/sql-reference/functions/in-functions)                                              |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken)                   |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)       |
-| [searchAny](/sql-reference/functions/string-search-functions.md/#searchany)                 |
-| [searchAll](/sql-reference/functions/string-search-functions.md/#searchall)                 |
+### Functions Example {#functions-example}
+
+#### equals and notEquals {#functions-example-equals-notequals}
+
+Since `equals` and `notEquals` functions check against the whole column value, they are useful to use with the `no_op` tokenizer.
+
+#### like, notLike and match {#functions-example-like-notlike-match}
+
+In order to use `like`, `notLike`, and `match` functions with the `text` index, the input should be in a way that complete tokens can be extracted from the input needle.
+
+Let's have a look at following example:
+
+```sql
+SELECT count() FROM hackernews WHERE like(lower(comment), '% clickhouse support%');
+```
+
+In this case, the `text` index will only use a token `clickhouse` for filtering, because only `clickhouse` is a complete token.
+On the other hand, `support` could be either `support` or `supports`.
+
+#### startsWith and endsWith {#functions-example-startswith-endswith}
+
+Similar to `like` that to use these functions with the `text` index, the input should be in a way that complete tokens can be extracted from the input needle.
+
+Let's have a look at following examples:
+
+```sql
+SELECT count() FROM hackernews WHERE startsWith(lower(comment), 'clickhouse support');
+```
+
+Same as `like` example, `text` index will only use a token `clickhouse` for filtering, because `support` could be either `support` or `supports`.
+If you want to search a column value starts with `clickhouse supports`, the syntax should be `startsWith(lower(comment), 'clickhouse supports ')`. Be aware of a space at the end.
+
+
+```sql
+SELECT count() FROM hackernews WHERE endsWith(lower(comment), 'olap engine');
+```
+
+If you want to search a column value ends with `olap engine`, the syntax should be `endsWith(lower(comment), ' olap engine')`. Be aware of a space at the beginning.
+
+#### multiSearchAny {#functions-example-multisearchany}
+
+Since `multiSearchAny` function search the provided input needle as a substring in the column value. The input needle should be a complete token to use with the `text` index.
+This can be achieved by putting a space before and after the input needle. The syntax would be as follows:
+
+```sql
+SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
+```
 
 ## Related Content {#related-content}
 
