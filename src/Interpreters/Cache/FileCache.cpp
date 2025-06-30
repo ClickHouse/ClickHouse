@@ -1728,194 +1728,309 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
     }
 
-    const bool cache_size_changed = new_settings[FileCacheSetting::max_size] != actual_settings[FileCacheSetting::max_size]
-        || new_settings[FileCacheSetting::max_elements] != actual_settings[FileCacheSetting::max_elements];
-
-    if (allow_dynamic_cache_resize && cache_size_changed)
     {
-        EvictionCandidates eviction_candidates;
-        bool modified_size_limit = false;
+        SizeLimits desired_limits{
+            .max_size = new_settings[FileCacheSetting::max_size],
+            .max_elements = new_settings[FileCacheSetting::max_elements],
+            .slru_size_ratio = new_settings[FileCacheSetting::slru_size_ratio]
+        };
+        SizeLimits current_limits{
+            .max_size = actual_settings[FileCacheSetting::max_size],
+            .max_elements = actual_settings[FileCacheSetting::max_elements],
+            .slru_size_ratio = actual_settings[FileCacheSetting::slru_size_ratio]
+        };
 
-        /// In order to not block cache for the duration of cache resize,
-        /// we do:
-        /// a. Take a cache lock.
-        ///     1. Collect eviction candidates,
-        ///     2. Remove queue entries of eviction candidates.
-        ///        This will release space we consider to be hold for them,
-        ///        so that we can safely modify size limits.
-        ///     3. Modify size limits of cache.
-        /// b. Release a cache lock.
-        ///     1. Do actual eviction from filesystem.
+        const bool max_size_changed = desired_limits.max_size != current_limits.max_size;
+        const bool max_elements_changed = desired_limits.max_elements != current_limits.max_elements;
+        const bool slru_ratio_changed = desired_limits.slru_size_ratio != current_limits.slru_size_ratio;
+
+        const bool do_dynamic_resize = (max_size_changed || max_elements_changed) && !slru_ratio_changed;
+
+        if (allow_dynamic_cache_resize && do_dynamic_resize)
         {
-            cache_is_being_resized.store(true, std::memory_order_relaxed);
-            SCOPE_EXIT({
-                cache_is_being_resized.store(false, std::memory_order_relaxed);
-            });
+            auto result_limits = doDynamicResize(current_limits, desired_limits);
 
-            auto cache_lock = lockCache();
-
-            FileCacheReserveStat stat;
-            if (main_priority->collectCandidatesForEviction(
-                    new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements], 0/* max_candidates_to_evict */,
-                    stat, eviction_candidates, cache_lock) == IFileCachePriority::CollectStatus::SUCCESS)
-            {
-                if (eviction_candidates.size() == 0)
-                {
-                    main_priority->modifySizeLimits(
-                        new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
-                        new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
-
-                    actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
-                    actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
-                }
-                else
-                {
-                    /// Remove only queue entries of eviction candidates.
-                    eviction_candidates.removeQueueEntries(cache_lock);
-                    /// Note that (in-memory) metadata about corresponding file segments
-                    /// (e.g. file segment info in CacheMetadata) will be removed
-                    /// only after eviction from filesystem. This is needed to avoid
-                    /// a race on removal of file from filesystsem and
-                    /// addition of the same file as part of a newly cached file segment.
-
-                    /// Modify cache size limits.
-                    /// From this point cache eviction will follow them.
-                    main_priority->modifySizeLimits(
-                        new_settings[FileCacheSetting::max_size],
-                        new_settings[FileCacheSetting::max_elements],
-                        new_settings[FileCacheSetting::slru_size_ratio],
-                        cache_lock);
-
-                    cache_lock.unlock();
-
-                    SCOPE_EXIT({
-                        try
-                        {
-                            if (eviction_candidates.needFinalize())
-                            {
-                                cache_lock.lock();
-                                eviction_candidates.finalize(nullptr, cache_lock);
-                            }
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
-                            chassert(false);
-                        }
-                    });
-
-                    /// Do actual eviction from filesystem.
-                    eviction_candidates.evict();
-
-                    auto failed_candidates = eviction_candidates.getFailedCandidates();
-                    if (failed_candidates.total_cache_size)
-                    {
-                        actual_settings[FileCacheSetting::max_size] = std::min<size_t>(
-                            actual_settings[FileCacheSetting::max_size].value,
-                            new_settings[FileCacheSetting::max_size] + failed_candidates.total_cache_size);
-
-                        actual_settings[FileCacheSetting::max_elements] = std::min<size_t>(
-                            actual_settings[FileCacheSetting::max_elements].value,
-                            new_settings[FileCacheSetting::max_elements] + failed_candidates.total_cache_elements);
-
-                        cache_lock.lock();
-
-                        /// Increase the max size and max elements
-                        /// to the size and number of failed candidates.
-                        main_priority->modifySizeLimits(
-                            actual_settings[FileCacheSetting::max_size],
-                            actual_settings[FileCacheSetting::max_elements],
-                            new_settings[FileCacheSetting::slru_size_ratio],
-                            cache_lock);
-
-                        LOG_TRACE(
-                            log, "Having {} failed candidates with total size {}",
-                            failed_candidates.total_cache_elements, failed_candidates.total_cache_size);
-
-                        /// Add failed candidates back to queue.
-                        for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
-                        {
-                            chassert(!key_candidates.empty());
-
-                            auto locked_key = key_metadata->tryLock();
-                            if (!locked_key)
-                            {
-                                /// Key cannot be removed,
-                                /// because if we failed to remove something from it above,
-                                /// then we did not remove it from key metadata,
-                                /// so key lock must remain valid.
-                                chassert(false);
-                                continue;
-                            }
-
-                            for (const auto & candidate : key_candidates)
-                            {
-                                const auto & file_segment = candidate->file_segment;
-
-                                LOG_TRACE(log, "Adding back file segment after failed eviction: {}:{}",
-                                          file_segment->key(), file_segment->offset());
-
-                                auto queue_iterator = main_priority->add(
-                                    key_metadata,
-                                    file_segment->offset(),
-                                    file_segment->getDownloadedSize(),
-                                    getCommonUser(),
-                                    cache_lock,
-                                    false);
-                                file_segment->setQueueIterator(queue_iterator);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
-                        actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
-                    }
-                }
-
-                modified_size_limit = true;
-            }
+            actual_settings[FileCacheSetting::max_size] = result_limits.max_size;
+            actual_settings[FileCacheSetting::max_elements] = result_limits.max_elements;
         }
-
-        if (modified_size_limit)
+        else if (do_dynamic_resize)
         {
-            LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
-                    actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
+            LOG_WARNING(
+                log, "Filesystem cache size was modified, "
+                "but dynamic cache resize is disabled, "
+                "therefore cache size will not be changed without server restart. "
+                "To enable dynamic cache resize, "
+                "add `allow_dynamic_cache_resize` to cache configuration");
         }
         else
         {
-            LOG_WARNING(
-                log, "Unable to modify size limit from {} to {}, elements limit from {} to {}. "
-                "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
-                "Next attempt to update them will happen on the next config reload. "
-                "You can trigger it with SYSTEM RELOAD CONFIG.",
-                actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
-                actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
+            LOG_DEBUG(
+                log, "Nothing to resize in filesystem cache. "
+                "Current max size: {}, max_elements: {}, slru ratio: {}",
+                current_limits.max_size, current_limits.max_elements, current_limits.slru_size_ratio);
         }
-
-        chassert(main_priority->getSizeApprox() <= actual_settings[FileCacheSetting::max_size]);
-        chassert(main_priority->getElementsCountApprox() <= actual_settings[FileCacheSetting::max_elements]);
-
-        chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
-        chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        assertCacheCorrectness();
-#endif
-    }
-    else if (cache_size_changed)
-    {
-        LOG_WARNING(
-            log, "Filesystem cache size was modified, "
-            "but dynamic cache resize is disabled, therefore cache size will not be changed without server restart. "
-            "To enable dynamic cache resize, add `allow_dynamic_cache_resize` to cache configuration");
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
     {
         max_file_segment_size = actual_settings[FileCacheSetting::max_file_segment_size] = new_settings[FileCacheSetting::max_file_segment_size];
     }
+}
+
+FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits)
+{
+    if (current_limits.slru_size_ratio != desired_limits.slru_size_ratio)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic resize of size ratio is not allowed");
+
+    struct ResizeHolder
+    {
+        std::atomic_bool & hold;
+        explicit ResizeHolder(std::atomic_bool & hold_) : hold(hold_) { hold.store(true, std::memory_order_relaxed); }
+        ~ResizeHolder() { hold.store(false, std::memory_order_relaxed); }
+    };
+
+    SizeLimits result_limits;
+    bool modified_size_limit = false;
+    {
+        ResizeHolder hold(cache_is_being_resized);
+        auto cache_lock = lockCache();
+
+        if (current_limits.max_size != main_priority->getSizeLimit(cache_lock))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in size");
+
+        if (current_limits.max_elements != main_priority->getElementsLimit(cache_lock))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Current limits inconsistency in elements number");
+
+        try
+        {
+            modified_size_limit = doDynamicResizeImpl(current_limits, desired_limits, result_limits, cache_lock);
+        }
+        catch (...)
+        {
+            LOG_ERROR(
+                log, "Unexpected error during dynamic cache resize: {}",
+                getCurrentExceptionMessage(true));
+
+            if (!cache_lock.owns_lock())
+                cache_lock.lock();
+
+            size_t max_size = main_priority->getSizeLimit(cache_lock);
+            size_t max_elements = main_priority->getElementsLimit(cache_lock);
+
+            if (result_limits.max_size != max_size || result_limits.max_elements != max_elements)
+            {
+                LOG_DEBUG(
+                    log, "Resetting max size from {} to {}, max elements from {} to {}",
+                    result_limits.max_size, max_size, result_limits.max_elements, max_elements);
+
+                result_limits.max_size = max_size;
+                result_limits.max_elements = max_elements;
+            }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            cache_lock.unlock();
+            assertCacheCorrectness();
+#endif
+            throw;
+        }
+    }
+
+    if (modified_size_limit)
+    {
+        LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
+                 current_limits.max_size, result_limits.max_size,
+                 current_limits.max_elements, result_limits.max_elements);
+    }
+    else
+    {
+        LOG_WARNING(
+            log, "Unable to modify size limit from {} to {}, elements limit from {} to {}. "
+            "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
+            "Next attempt to update them will happen on the next config reload. "
+            "You can trigger it with SYSTEM RELOAD CONFIG.",
+            current_limits.max_size, desired_limits.max_size,
+            current_limits.max_elements, desired_limits.max_elements);
+    }
+
+    chassert(main_priority->getSizeApprox() <= result_limits.max_size);
+    chassert(main_priority->getElementsCountApprox() <= result_limits.max_elements);
+
+    chassert(main_priority->getSizeLimit(lockCache()) == result_limits.max_size);
+    chassert(main_priority->getElementsLimit(lockCache()) == result_limits.max_elements);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    assertCacheCorrectness();
+#endif
+
+    return result_limits;
+}
+
+bool FileCache::doDynamicResizeImpl(
+    const SizeLimits & current_limits,
+    const SizeLimits & desired_limits,
+    SizeLimits & result_limits,
+    CachePriorityGuard::Lock & cache_lock)
+{
+    /// In order to not block cache for the duration of cache resize,
+    /// we do:
+    /// a. Take a cache lock.
+    ///     1. Collect eviction candidates,
+    ///     2. If eviction candidates size is non-zero,
+    ///        remove their queue entries.
+    ///        This will release space we consider to be hold for them,
+    ///        so that we can safely modify size limits.
+    ///     3. Modify size limits of cache.
+    /// b. Release a cache lock.
+    ///     1. Do actual eviction from filesystem.
+
+    EvictionCandidates eviction_candidates;
+    FileCacheReserveStat stat;
+
+    const auto status = main_priority->collectCandidatesForEviction(
+            desired_limits.max_size,
+            desired_limits.max_elements,
+            0/* max_candidates_to_evict */,
+            stat,
+            eviction_candidates,
+            cache_lock);
+
+    if (status != IFileCachePriority::CollectStatus::SUCCESS)
+    {
+        result_limits = current_limits;
+        LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
+        return false;
+    }
+
+    if (eviction_candidates.size() == 0)
+    {
+        /// Nothing needs to be evicted,
+        /// just modify the limits and we are done.
+
+        main_priority->modifySizeLimits(
+            desired_limits.max_size,
+            desired_limits.max_elements,
+            desired_limits.slru_size_ratio,
+            cache_lock);
+
+        result_limits = desired_limits;
+
+        LOG_INFO(log, "Nothing needs to be evicted for new size limits");
+        return true;
+    }
+
+    /// Remove only queue entries of eviction candidates.
+    eviction_candidates.removeQueueEntries(cache_lock);
+
+    /// Note that (in-memory) metadata about corresponding file segments
+    /// (e.g. file segment info in CacheMetadata) will be removed
+    /// only after eviction from filesystem. This is needed to avoid
+    /// a race on removal of file from filesystsem and
+    /// addition of the same file as part of a newly cached file segment.
+
+    /// Modify cache size limits.
+    /// From this point cache eviction will follow them.
+    main_priority->modifySizeLimits(
+        desired_limits.max_size,
+        desired_limits.max_elements,
+        desired_limits.slru_size_ratio,
+        cache_lock);
+
+    cache_lock.unlock();
+
+    SCOPE_EXIT({
+        try
+        {
+            if (eviction_candidates.needFinalize())
+            {
+                cache_lock.lock();
+                eviction_candidates.finalize(nullptr, cache_lock);
+            }
+        }
+        catch (...)
+        {
+            LOG_ERROR(
+                log, "Failed to finalize eviction candidates states: {}",
+                getCurrentExceptionMessage(true));
+            chassert(false);
+        }
+    });
+
+    /// Do actual eviction from filesystem.
+    eviction_candidates.evict();
+
+    auto failed_candidates = eviction_candidates.getFailedCandidates();
+    if (failed_candidates.total_cache_size == 0)
+    {
+        LOG_INFO(
+            log, "Successfully evicted {} cache elements needed for resize",
+            eviction_candidates.size());
+
+        result_limits = desired_limits;
+        return true;
+    }
+
+    result_limits.max_size = std::min(
+        current_limits.max_size,
+        desired_limits.max_size + failed_candidates.total_cache_size);
+
+    result_limits.max_elements = std::min(
+        current_limits.max_elements,
+        desired_limits.max_elements + failed_candidates.total_cache_elements);
+
+    LOG_INFO(
+        log, "Having {} failed candidates with total size {}. "
+        "Will set current limits as {} in size and {} in elements number",
+        failed_candidates.total_cache_elements, failed_candidates.total_cache_size,
+        result_limits.max_size, result_limits.max_elements);
+
+    cache_lock.lock();
+
+    /// Increase the max size and max elements
+    /// to the size and number of failed candidates.
+    main_priority->modifySizeLimits(
+        result_limits.max_size,
+        result_limits.max_elements,
+        result_limits.slru_size_ratio,
+        cache_lock);
+
+    /// Add failed candidates back to queue.
+    for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
+    {
+        chassert(!key_candidates.empty());
+
+        auto locked_key = key_metadata->tryLock();
+        if (!locked_key)
+        {
+            /// Key cannot be removed,
+            /// because if we failed to remove something from it above,
+            /// then we did not remove it from key metadata,
+            /// so key lock must remain valid.
+            LOG_ERROR(log, "Unexpected state: key {} does not exist", key_metadata->key);
+            chassert(false);
+            continue;
+        }
+
+        for (const auto & candidate : key_candidates)
+        {
+            const auto & file_segment = candidate->file_segment;
+
+            LOG_DEBUG(
+                log, "Adding back file segment after failed eviction: {}:{}, size: {}",
+                file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
+
+            auto queue_iterator = main_priority->add(
+                key_metadata,
+                file_segment->offset(),
+                file_segment->getDownloadedSize(),
+                getCommonUser(),
+                cache_lock,
+                false);
+
+            file_segment->setQueueIterator(queue_iterator);
+        }
+    }
+
+    return true;
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
