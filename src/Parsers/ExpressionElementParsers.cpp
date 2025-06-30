@@ -125,6 +125,11 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
+        if (ASTPtr explained_query = explain_query.getExplainedQuery())
+            if (const auto * explained_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(explained_query.get()))
+                if (explained_query_with_output->hasOutputOptions())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
+
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
