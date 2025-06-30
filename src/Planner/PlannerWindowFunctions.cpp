@@ -140,7 +140,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
 void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions)
 {
-    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs)
+    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs) -> bool
     {
         const auto & left = lhs.full_sort_description;
         const auto & right = rhs.full_sort_description;
@@ -151,15 +151,6 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
                 return true;
             if (left[i].column_name > right[i].column_name)
                 return false;
-
-            if (left[i].collator || right[i].collator)
-                if (!left[i].collator || !right[i].collator || *left[i].collator != *right[i].collator)
-                    throw DB::Exception(DB::ErrorCodes::BAD_COLLATION,
-                        "Cannot compare or sort WindowDescriptions with different collators ('{}' vs '{}') for the same column '{}'",
-                        left[i].collator ? left[i].collator->getLocale() : "null",
-                        right[i].collator ? right[i].collator->getLocale() : "null",
-                        left[i].column_name);
-
             if (left[i].direction < right[i].direction)
                 return true;
             if (left[i].direction > right[i].direction)
@@ -168,6 +159,18 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
                 return true;
             if (left[i].nulls_direction > right[i].nulls_direction)
                 return false;
+
+            if (left[i].collator || right[i].collator)
+            {
+                if (!left[i].collator)
+                    return true;
+                if (!right[i].collator)
+                    return false;
+                if (left[i].collator->getLocale() < right[i].collator->getLocale())
+                    return true;
+                if (left[i].collator->getLocale() > right[i].collator->getLocale())
+                    return false;
+            }
 
             assert(left[i] == right[i]);
         }
