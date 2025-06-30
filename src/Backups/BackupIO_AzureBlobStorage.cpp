@@ -46,26 +46,33 @@ static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, Azure
         return (shared_key_a->get()->AccountName == shared_key_b->get()->AccountName);
     }
 
-    const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
-    const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
-
-    if (workload_identity_a && workload_identity_b)
+    try
     {
-        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-        return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
+        const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
+
+        if (workload_identity_a && workload_identity_b)
+        {
+            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        }
+
+        const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
+        const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
+
+        if (managed_identity_a && managed_identity_b)
+        {
+            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+            return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        }
     }
-
-    const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
-    const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
-
-    if (managed_identity_a && managed_identity_b)
+    catch (const Azure::Core::Credentials::AuthenticationException & e)
     {
-        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-        return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+        /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
+        LOG_DEBUG(getLogger("compareAuthMethod"), "Exception caught while comparing credentials, error = {}", e.what());
+        return false;
     }
-
     return false;
-
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
