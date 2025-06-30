@@ -16,9 +16,12 @@ class JoinUsedFlags
     using RawColumnsPtr = const Columns *;
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
-    /// For multiple dijuncts each empty in hashmap stores flags for particular block
-    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
+    /// For multiple disjuncts each entry in hashmap stores flags for particular block
     std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> flags;
+
+    /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
+    /// Index is the offset in FindResult
+    UsedFlagsForColumns plain_flags;
 
     bool need_flags;
 
@@ -31,15 +34,13 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(flags[nullptr].size() <= size);
+            assert(plain_flags.size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
             // So we reinit only when the hash table is rehashed to a larger size.
-            if (flags.empty() || flags[nullptr].size() < size) [[unlikely]]
-            {
-                flags[nullptr] = std::vector<std::atomic_bool>(size);
-            }
+            if (plain_flags.size() < size) [[unlikely]]
+                plain_flags = std::vector<std::atomic_bool>(size);
         }
     }
 
@@ -54,10 +55,8 @@ public:
         }
     }
 
-    bool getUsedSafe(size_t i) const
-    {
-        return getUsedSafe(nullptr, i);
-    }
+    bool getUsedSafe(size_t i) const { return plain_flags[i].load(); }
+
     bool getUsedSafe(const Columns * columns, size_t row_idx) const
     {
         if (auto it = flags.find(columns); it != flags.end())
@@ -85,7 +84,7 @@ public:
         }
         else
         {
-            flags[nullptr][f.getOffset()].store(true, std::memory_order_relaxed);
+            plain_flags[f.getOffset()].store(true, std::memory_order_relaxed);
         }
     }
 
@@ -102,7 +101,7 @@ public:
         }
         else
         {
-            flags[nullptr][offset].store(true, std::memory_order_relaxed);
+            plain_flags[offset].store(true, std::memory_order_relaxed);
         }
     }
 
@@ -119,7 +118,7 @@ public:
         }
         else
         {
-            return flags[nullptr][f.getOffset()].load();
+            return plain_flags[f.getOffset()].load();
         }
 
     }
@@ -146,11 +145,11 @@ public:
             auto off = f.getOffset();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[nullptr][off].load(std::memory_order_relaxed))
+            if (plain_flags[off].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flags[nullptr][off].compare_exchange_strong(expected, true);
+            return plain_flags[off].compare_exchange_strong(expected, true);
         }
 
     }
@@ -172,11 +171,11 @@ public:
         else
         {
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[nullptr][offset].load(std::memory_order_relaxed))
+            if (plain_flags[offset].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flags[nullptr][offset].compare_exchange_strong(expected, true);
+            return plain_flags[offset].compare_exchange_strong(expected, true);
         }
     }
 };
