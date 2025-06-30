@@ -12,6 +12,7 @@
 #include <fmt/ostream.h>
 #include <librdkafka/rdkafka.h>
 #include <Common/SettingsChanges.h>
+#include "Storages/Kafka/KafkaConsumer2.h"
 
 namespace Poco
 {
@@ -30,6 +31,7 @@ struct KafkaSettings;
 namespace StorageKafkaUtils
 {
 Names parseTopics(String topic_list);
+KafkaConsumer2::TopicPartitions parseTopicPartitions(String topic_partitions_list);
 String getDefaultClientId(const StorageID & table_id);
 
 using ErrorHandler = std::function<void(const cppkafka::Error &)>;

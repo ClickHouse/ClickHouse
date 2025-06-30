@@ -233,7 +233,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     }
 }
 
-KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
+KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions(bool need_sort) const
 {
     std::unordered_set<String> topics_set;
     topics_set.insert(topics.begin(), topics.end());
@@ -264,6 +264,10 @@ KafkaConsumer2::TopicPartitions KafkaConsumer2::getAllTopicPartitions() const
         LOG_ERROR(log, "Exception during get topic partitions from Kafka: {}", e.what());
     }
 
+    if (need_sort)
+    {
+        std::sort(topic_partitions.begin(), topic_partitions.end());
+    }
     return topic_partitions;
 }
 

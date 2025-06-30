@@ -21,6 +21,7 @@ namespace ErrorCodes
 #define KAFKA_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
     DECLARE(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
+    DECLARE(String, kafka_partitions_for_replica, "", "A list of sticky partitions.", 0) \
     DECLARE(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
     /* those are mapped to format factory settings */ \
     DECLARE(String, kafka_format, "", "The message format for Kafka engine.", 0) \
