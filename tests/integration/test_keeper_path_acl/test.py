@@ -22,7 +22,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_path_acl_functionality(started_cluster):
+def test_path_acl(started_cluster):
     """Test path_acl configuration parsing and ACL application"""
     node.query(
         "CREATE TABLE test_table (id UInt64) ENGINE = ReplicatedMergeTree('/test_path', 'replica1') ORDER BY id"
@@ -34,7 +34,7 @@ def test_path_acl_functionality(started_cluster):
 
     try:
         # Check /test_path created by ReplicatedMergeTree
-        # This path should have path_acl
+        # This path should have path_acls
         acls_test_path, stat = zk.get_acls("/test_path")
 
         expected_acls = [

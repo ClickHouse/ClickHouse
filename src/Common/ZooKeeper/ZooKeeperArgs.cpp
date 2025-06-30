@@ -1,3 +1,5 @@
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
+
 #include <IO/S3/Credentials.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/find_symbols.h>
@@ -6,7 +8,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/isLocalAddress.h>
 #include <Common/thread_local_rng.h>
 
@@ -267,11 +268,11 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             if (password.size() > Coordination::PASSWORD_LENGTH)
                 throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
         }
-        else if (key == "path_acl")
+        else if (key == "path_acls")
         {
-            Poco::Util::AbstractConfiguration::Keys path_acl_keys;
-            config.keys(config_name + "." + key, path_acl_keys);
-            for (const auto & path_key : path_acl_keys)
+            Poco::Util::AbstractConfiguration::Keys path_acls_keys;
+            config.keys(config_name + "." + key, path_acls_keys);
+            for (const auto & path_key : path_acls_keys)
             {
                 String path = config.getString(config_name + "." + key + "." + path_key + ".path");
                 String scheme = config.getString(config_name + "." + key + "." + path_key + ".scheme");
@@ -300,22 +301,14 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                     else if (perm == "all")
                         permissions = Coordination::ACL::All;
                     else if (!perm.empty())
-                        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown permission '{}' in path_acl configuration", perm);
+                        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown permission '{}' in path_acls configuration", perm);
                 }
                 Coordination::ACL acl;
                 acl.scheme = scheme;
                 acl.id = id;
                 acl.permissions = permissions;
 
-                LOG_TEST(
-                    getLogger("ZooKeeperArgs"),
-                    "Adding ACL for path '{}': scheme='{}', id='{}', permissions={}",
-                    path,
-                    scheme,
-                    id,
-                    permissions);
-
-                path_acl[path] = std::move(acl);
+                path_acls[path] = std::move(acl);
             }
         }
         else
