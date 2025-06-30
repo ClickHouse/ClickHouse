@@ -76,11 +76,8 @@ def test_simple_select(started_cluster):
         == f"{hex(42 * 42)}\n"
     )
 
-    system_warnings_query = "SELECT count() >= 1 FROM system.warnings WHERE message LIKE '%MongoDB%path%ignored%'"
-
-    # Need to restart to clear system.warning from previous run in flaky check
-    # FIXME: we can do `TRUNCATE` after https://github.com/ClickHouse/ClickHouse/pull/82087
-    node.restart_clickhouse()
+    system_warnings_query = "SELECT count() >= 1 FROM system.warnings WHERE message ILIKE '%MongoDB%path%ignored%' OR message ILIKE '%error%parsing%uri%MongoDB%'"
+    node.query("TRUNCATE TABLE system.warnings")
 
     assert node.query(system_warnings_query) == "0\n"
     node.stop_clickhouse()
@@ -91,6 +88,7 @@ def test_simple_select(started_cluster):
     assert node.query(system_warnings_query) == "1\n"
 
     node.query("DROP TABLE simple_mongo_table")
+    node.query("TRUNCATE TABLE system.warnings")
     simple_mongo_table.drop()
 
 
