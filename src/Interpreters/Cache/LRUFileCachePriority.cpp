@@ -282,7 +282,7 @@ IFileCachePriority::EvictionInfo LRUFileCachePriority::checkEvictionInfo(
     if (available_elements < elements)
         info.elements_to_evict = elements - available_elements;
 
-    if (info.size_to_evict || info.elements_to_evict)
+    if ((info.size_to_evict && available_size) || (info.elements_to_evict && available_elements))
     {
         /// As eviction is done without a cache priority lock,
         /// then if some space was partially available and some needed

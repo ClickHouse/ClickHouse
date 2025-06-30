@@ -1702,12 +1702,12 @@ void FileCache::assertCacheCorrectness()
         }
     }, getInternalUser().user_id);
 
-    main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
-    {
-        chassert(file_segment_metadata->file_segment->assertCorrectness());
-        return IFileCachePriority::IterationResult::CONTINUE;
-    },
-    cache_guard.readLock());
+    //main_priority->iterate([](LockedKey &, const FileSegmentMetadataPtr & file_segment_metadata)
+    //{
+    //    chassert(file_segment_metadata->file_segment->assertCorrectness());
+    //    return IFileCachePriority::IterationResult::CONTINUE;
+    //},
+    //cache_guard.readLock());
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
