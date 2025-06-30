@@ -350,7 +350,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeYear('2024-01-01'::DateTime, 2023)", "2023-01-01 00:00:00"}
         };
@@ -366,7 +366,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified month component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified month component.", {"Date", "Date32", "DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeMonth('2024-01-01'::DateTime, 12)", "2024-12-01 00:00:00"}
         };
@@ -382,7 +382,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified day component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified day component.", {"Date", "Date32", "DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeDay('2024-01-31'::DateTime, 15)", "2024-01-15 00:00:00"}
         };
@@ -398,7 +398,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified hours component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified hour component.", {"DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeHour('2024-01-01 12:00:00'::DateTime, 5)", "2024-01-01 05:00:00"}
         };
@@ -414,7 +414,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified minutes component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified minute component.", {"DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeMinute('2024-01-01 12:30:00'::DateTime, 45)", "2024-01-01 12:45:00"}
         };
@@ -430,7 +430,7 @@ REGISTER_FUNCTION(ChangeDate)
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns date time with modified seconds component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified seconds component.", {"DateTime", "DateTime64"}};
         FunctionDocumentation::Examples example = {
             {"Usage example", "SELECT changeSecond('2024-01-01 12:30:45'::DateTime, 15)", "2024-01-01 12:30:15"}
         };
