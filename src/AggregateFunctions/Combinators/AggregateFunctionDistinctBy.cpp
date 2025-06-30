@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include "base/types.h"
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
@@ -42,8 +43,12 @@ namespace
 
         void merge(const Self & rhs, Arena *)
         {
-            for (const auto & [key, value] : rhs.map)
-                map[key] += value;
+            auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
+            mutable_rhs_map.mergeToViaEmplace(map,[&](UInt64 & dst, UInt64 & src, bool found)
+            {
+                if (!found)
+                    dst = src;
+            });
         }
 
         void serialize(WriteBuffer & buf) const
@@ -91,8 +96,12 @@ namespace
 
         void merge(const Self & rhs, Arena *)
         {
-            for (const auto & [key, value] : rhs.map)
-                map[key] += value;
+            auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
+            mutable_rhs_map.mergeToViaEmplace(map,[&](T & dst, T & src, bool found)
+            {
+                if (!found)
+                    dst = src;
+            });
         }
 
         void serialize(WriteBuffer & buf) const
@@ -149,24 +158,11 @@ struct AggregateFunctionDistinctByGenericData
     void merge(const Self & rhs, Arena * arena)
     {
         auto & mutable_rhs_map = const_cast<Map &>(rhs.map);
-        map.mergeToViaEmplace(mutable_rhs_map,[&](StringRef dst, StringRef src, bool found)
+        mutable_rhs_map.mergeToViaEmplace(map,[&](StringRef dst, StringRef src, bool found)
         {
             if (!found)
                 dst = StringRef(arena->insert(src.data, src.size));
         });
-        /*
-        for (const auto & elem : rhs.map)
-        {
-            typename Map::LookupResult it;
-            bool inserted;
-            map.emplace(ArenaKeyHolder{elem.getKey(), *arena}, it, inserted);
-            if (inserted)
-            {
-                it->getMapped() = StringRef(arena->insert(elem.getMapped().data, elem.getMapped().size), elem.getMapped().size);
-                nested_func->add(nested_place, columns, row_num, arena);
-            }
-        }
-        */
     }
 
     void serialize(WriteBuffer & buf) const
