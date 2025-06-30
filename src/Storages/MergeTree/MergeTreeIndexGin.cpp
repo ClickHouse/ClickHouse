@@ -546,7 +546,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (!key_exists && !map_key_exists)
         return false;
 
-    if (map_key_exists && (function_name == "has" || function_name == "mapContainsKey"))
+    if (map_key_exists && function_name == "mapContainsKey")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
@@ -564,7 +564,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-
     if (function_name == "notEquals")
     {
         out.key_column = key_column_num;
