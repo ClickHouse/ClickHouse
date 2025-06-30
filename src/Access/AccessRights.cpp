@@ -42,8 +42,8 @@ namespace
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            /// Grants with grant option after other grants.
-            /// Revoke grant option after normal revokes.
+            /// Grants with a grant option after other grants.
+            /// Revoke the grant option after normal revokes.
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
@@ -252,7 +252,7 @@ namespace
   * node3: GRANT ON db.table*  (matches db.table, db.table1)
   * node4: GRANT ON db.table   (matches db.table)
   *
-  * If too paths have the same prefix, the tree splits in between:
+  * If two paths have the same prefix, the tree splits in between:
   *
   * GRANT ON team.*
   * GRANT ON test.table
@@ -558,7 +558,7 @@ public:
 
     void makeUnion(const Node & other)
     {
-        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
+        /// We need these tmp nodes because union/intersect operations use the `getLeaf` function, which can't be made const.
         /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
         ///
         /// Tree1:
