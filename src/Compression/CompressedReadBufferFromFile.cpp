@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "CompressedReadBufferFromFile.h"
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Common/logger_useful.h>
 #include <Compression/LZ4_decompress_faster.h>
