@@ -66,5 +66,38 @@ SELECT id1, id2, id3 FROM tab2 FINAL WHERE v = rand() % 10000;
 SELECT id1, id2, id3 FROM tab2 FINAL WHERE v = rand() % 10000;
 SELECT id1, id2, id3 FROM tab2 FINAL WHERE v = rand() % 10000;
 
+-- Tests with single range parts (https://github.com/ClickHouse/ClickHouse/issues/82792)
+DROP TABLE IF EXISTS tab3;
+
+CREATE TABLE tab3(
+    key Int,
+    value Int,
+    INDEX idx value TYPE minmax GRANULARITY 1
+)
+Engine=ReplacingMergeTree()
+ORDER BY key
+PARTITION BY key;
+
+SYSTEM STOP MERGES tab3;
+
+INSERT INTO tab3 SELECT number, number FROM numbers(10); -- 10 parts
+
+SELECT key, value FROM tab3 FINAL WHERE value = 1 SETTINGS max_rows_to_read = 1; -- 1,1
+
+INSERT INTO tab3 VALUES (0, 100), (1, 101), (2, 102), (3, 103), (4, 104), (5, 105), (6, 106), (7, 107), (8, 108), (9, 109); -- 10 more parts
+
+-- Next statements return 0 rows. Read 1 range each from 2 parts
+SELECT key, value FROM tab3 FINAL WHERE value = 0 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 1 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 2 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 3 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 4 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 5 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 6 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 7 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 8 SETTINGS max_rows_to_read = 2;
+SELECT key, value FROM tab3 FINAL WHERE value = 9 SETTINGS max_rows_to_read = 2;
+
 DROP TABLE tab1;
 DROP TABLE tab2;
+DROP TABLE tab3;
