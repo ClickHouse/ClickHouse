@@ -131,18 +131,6 @@ namespace Protocol
                 ? data[packet]
                 : "Unknown packet";
         }
-
-        inline size_t stringsInMessage(UInt64 msg_type)
-        {
-            switch (msg_type)
-            {
-                case TableColumns:
-                    return 2;
-                default:
-                    break;
-            }
-            return 0;
-        }
     }
 
     /// Packet types that client transmits.
