@@ -153,7 +153,7 @@ Our implementation will always assume the latter.
 For example:
 
 ```sql
-SELECT CAST('{"a.b.c" : 42}', 'JSON') as json
+SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 ```
 
 will return:
@@ -593,7 +593,7 @@ Let's see an example of such a merge.
 First, let's create a table with a `JSON` column, set the limit of dynamic paths to `3` and then insert values with `5` different paths:
 
 ```sql title="Query"
-CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree ORDER BY id;
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
@@ -791,7 +791,7 @@ It's possible to alter an existing table and change the type of the column to th
 **Example**
 
 ```sql title="Query"
-CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
+CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
 INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
 ALTER TABLE test MODIFY COLUMN json JSON;
 SELECT json, json.a, json.b, json.c FROM test;
