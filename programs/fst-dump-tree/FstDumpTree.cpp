@@ -49,11 +49,12 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
     {
         boost::program_options::options_description desc("Allowed options");
         desc.add_options()
-            ("help,h", "produce help message")
-            ("debug,d", "print debug logs")
-            ("print,p", "print dotgraph")
             ("input,i", boost::program_options::value<std::string>(), "FST input path")
             ("output,o", boost::program_options::value<std::string>(), "Dotgraph output path")
+            ("help,h", "produce help message")
+            ("states,s", "print states information")
+            ("dot,d", "print dotgraph")
+            ("labels,l", "print output labels")
         ;
 
         boost::program_options::variables_map options;
@@ -90,8 +91,9 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 printAndExit("Output path '{}' must be to a directory", output_path.value());
         }
 
-        bool debug_enabled = options.contains("debug");
-        bool print_dotgraph = options.contains("print");
+        bool print_states = options.contains("states");
+        bool print_dotgraph = options.contains("dot");
+        bool print_labels = options.contains("labels");
 
 
         fmt::println("Reading FST index files from '{}'", input_path);
@@ -333,8 +335,25 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
                         auto state_end_pos = read_buffer.getPosition();
 
-                        if (debug_enabled)
-                            fmt::println("[Segment {}][State off {}]: size = {} | labels = {} | encoding = '{}'{}", segment_id, state_id, formatReadableSizeWithBinarySuffix(state_end_pos - state_start_pos), std::to_string(number_of_labels), encoding, empty_labels_info);
+                        DB::WriteBufferFromOwnString output_labels;
+                        if (print_labels)
+                        {
+                            output_labels << "[";
+                            for (char label : labels)
+                                output_labels << label << ",";
+                            output_labels << "] ";
+                        }
+
+                        if (print_states)
+                            fmt::println(
+                                "[Segment {}][State off {}]: size = {} | labels = {} {}| encoding = '{}'{}",
+                                segment_id,
+                                state_id,
+                                formatReadableSizeWithBinarySuffix(state_end_pos - state_start_pos),
+                                std::to_string(number_of_labels),
+                                output_labels.str(),
+                                encoding,
+                                empty_labels_info);
 
                         state_id = state_end_pos;
                     }
@@ -345,7 +364,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 UInt64 state_index = 0;
                 readVarUInt(state_index, read_buffer);
 
-                if (debug_enabled)
+                if (print_states)
                     fmt::println("[Segment {}]: FST start state offset = {}", segment_id, state_index);
 
                 std::string dotgraph;
@@ -364,8 +383,6 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 {
                     std::string file_path = fmt::format("{}/segment_{}.dot", output_path.value(), segment_id);
                     DB::WriteBufferFromFile write_buffer(file_path);
-                    if (debug_enabled)
-                        fmt::println("Saving dotgraph into '{}'", file_path);
                     DB::writeText(dotgraph, write_buffer);
                     write_buffer.finalize();
                     fmt::println("[Segment {}]: FST as dotgraph saved into {}", segment_id, file_path);
