@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
+#include <iostream>
+
 namespace DB
 {
 namespace Setting
@@ -1415,6 +1417,8 @@ private:
         if (!child_function || !isBooleanFunction(child_function->getFunctionName()))
             return;
 
+        auto function_node_type = function_node.getResultType();
+
         // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
         if (constant_value == 0)
         {
@@ -1429,13 +1433,13 @@ private:
         else
             node = replacement_function;
 
-        if (!function_node.getResultType()->equals(*node->getResultType()))
+        if (!function_node_type->equals(*node->getResultType()))
         {
             /// Result of replacement_function can be low cardinality, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            chassert(function_node.getResultType()->equals(*removeLowCardinality(node->getResultType())));
-            node = createCastFunction(node, function_node.getResultType(), getContext());
+            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
+            node = createCastFunction(node, function_node_type, getContext());
         }
     }
 };
