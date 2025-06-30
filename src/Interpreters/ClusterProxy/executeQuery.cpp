@@ -218,6 +218,10 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         }
         if (disable_parallel_replicas)
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
+        // disable parallel replicas with remote() table functions
+        if (is_remote_function)
+            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
     if (settings[Setting::max_execution_time_leaf].value > 0)
@@ -234,6 +238,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         new_settings[Setting::load_balancing] = LoadBalancing::ROUND_ROBIN;
     }
+
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
@@ -378,7 +383,7 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
+            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
 
             stream_factory.createForShard(
                 shard_info,
@@ -863,11 +868,6 @@ void executeQueryWithParallelReplicasCustomKey(
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 {
     if (!context->canUseParallelReplicasOnInitiator())
-        return false;
-
-    const auto & settings_ref = context->getSettingsRef();
-
-    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
         return false;
 
     /// check cluster for parallel replicas
