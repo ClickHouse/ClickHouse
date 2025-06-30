@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace DistributedSetting
@@ -864,6 +865,12 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     if (!context->canUseParallelReplicasOnInitiator())
         return false;
 
+    const auto & settings_ref = context->getSettingsRef();
+
+    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
+        return false;
+
+    /// check cluster for parallel replicas
     auto cluster = context->getClusterForParallelReplicas();
     if (cluster->getShardCount() == 1)
         return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
