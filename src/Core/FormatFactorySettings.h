@@ -891,6 +891,16 @@ When enabled, values of complex data types like Tuple/Array/Map in JSON output f
 
 Enabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_map_as_array_of_tuples, false, R"(
+Serialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_json_map_as_array_of_tuples, false, R"(
+Deserialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
