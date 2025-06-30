@@ -6,7 +6,6 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <IO/MySQLPacketPayloadReadBuffer.h>
-#include <IO/MySQLPacketPayloadReadBuffer.h>
 
 namespace DB
 {
