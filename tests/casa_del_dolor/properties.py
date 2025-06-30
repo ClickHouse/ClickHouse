@@ -1,3 +1,4 @@
+from abc import abstractmethod
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
@@ -382,7 +383,23 @@ backup_properties = {
 }
 
 
-Parameter = typing.Callable[[], int | float]
+class PropertiesGroup:
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        pass
+
+
+Parameter = typing.Callable[[], int | float] | PropertiesGroup
 
 
 def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
@@ -403,6 +420,8 @@ def apply_properties_recursively(
             new_element = ET.SubElement(next_root, setting)
             if isinstance(next_child, dict):
                 apply_properties_recursively(new_element, next_child, min_values)
+            elif isinstance(next_child, PropertiesGroup):
+                raise Exception("Can't use Properties Group here")
             else:
                 new_element.text = str(next_child())
     return is_modified
@@ -450,6 +469,35 @@ def add_single_cluster(
             next_port_xml.text = "9440"
         else:
             next_port_xml.text = "9000"
+
+
+class ClusterPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        # remote_server_config = ET.SubElement(root, "remote_servers")
+        existing_nodes = [f"node{i}" for i in range(0, len(args.replica_values))]
+
+        # Remove default cluster
+        if random.randint(1, 2) == 1:
+            default_cluster = ET.SubElement(
+                property_element, "default", attrib={"remove": "remove"}
+            )
+            default_cluster.text = ""
+
+        lower_bound, upper_bound = args.number_servers
+        number_clusters = random.randint(lower_bound, upper_bound)
+        for i in range(0, number_clusters):
+            add_single_cluster(
+                existing_nodes,
+                ET.SubElement(property_element, f"cluster{i}"),
+            )
 
 
 def add_single_disk(
@@ -607,6 +655,112 @@ def add_single_disk(
     return (prev_disk, final_type)
 
 
+class DiskPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        disk_element = ET.SubElement(property_element, "disks")
+        backups_element = ET.SubElement(top_root, "backups")
+        lower_bound, upper_bound = args.number_disks
+        number_disks = random.randint(lower_bound, upper_bound)
+        number_policies = 0
+
+        allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
+        allowed_disk_xml.text = "default"
+        created_disks_types = []
+        created_cache_disks = []
+
+        for i in range(0, number_disks):
+            possible_types = (
+                ["object_storage"]
+                if i == 0
+                else ["object_storage", "object_storage", "cache", "encrypted"]
+            )
+            next_created_disk_pair = add_single_disk(
+                i,
+                args,
+                cluster,
+                ET.SubElement(disk_element, f"disk{i}"),
+                backups_element,
+                random.choice(possible_types),
+                created_disks_types,
+                is_private_binary,
+            )
+            created_disks_types.append(next_created_disk_pair)
+            if next_created_disk_pair[1] == "cache":
+                created_cache_disks.append(i)
+        # Add policies sometimes
+        if random.randint(1, 100) <= args.add_policy_settings_prob:
+            j = 0
+            bottom_disks = []
+            for val in created_disks_types:
+                if val[1] not in ("cache", "encrypted"):
+                    bottom_disks.append(j)
+                j += 1
+            number_bottom_disks = len(bottom_disks)
+            policies_element = ET.SubElement(property_element, "policies")
+            lower_bound, upper_bound = args.number_disks
+            number_policies = random.randint(lower_bound, upper_bound)
+
+            for i in range(0, number_policies):
+                next_policy_xml = ET.SubElement(policies_element, f"policy{i}")
+                volumes_xml = ET.SubElement(next_policy_xml, "volumes")
+                main_xml = None
+                volume_counter = 0
+
+                number_elements = (
+                    1
+                    if random.randint(1, 2) == 1
+                    else random.randint(1, number_bottom_disks)
+                )
+                input_disks = list(bottom_disks)  # Do copy
+                random.shuffle(input_disks)
+                for i in range(0, number_elements):
+                    if main_xml is None or random.randint(1, 3) == 1:
+                        if main_xml is not None and random.randint(1, 100) <= 70:
+                            apply_properties_recursively(main_xml, policy_properties)
+                        main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
+                        volume_counter += 1
+                    disk_xml = ET.SubElement(main_xml, "disk")
+                    disk_xml.text = f"disk{input_disks[i]}"
+                if main_xml is not None and random.randint(1, 100) <= 70:
+                    apply_properties_recursively(main_xml, policy_properties)
+                if random.randint(1, 100) <= 70:
+                    apply_properties_recursively(next_policy_xml, policy_properties)
+
+        allowed_path_xml1 = ET.SubElement(backups_element, "allowed_path")
+        allowed_path_xml1.text = "/var/lib/clickhouse/"
+        allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
+        allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+        if random.randint(1, 100) <= 70:
+            apply_properties_recursively(backups_element, backup_properties)
+
+        if (
+            top_root.find("temporary_data_in_cache") is None
+            and top_root.find("tmp_policy") is None
+            and top_root.find("tmp_path") is None
+        ):
+            next_opt = random.randint(1, 100)
+
+            if len(created_cache_disks) > 0 and next_opt <= 40:
+                temporary_cache_xml = ET.SubElement(top_root, "temporary_data_in_cache")
+                temporary_cache_xml.text = f"disk{random.choice(created_cache_disks)}"
+            # elif number_policies > 0 and next_opt <= 70: the disks must be local
+            #    tmp_policy_xml = ET.SubElement(root, "tmp_policy")
+            #    tmp_policy_xml.text = (
+            #        f"policy{random.choice(range(0, number_policies))}"
+            #    )
+            else:
+                tmp_path_xml = ET.SubElement(top_root, "tmp_path")
+                tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
+
+
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
     max_size_xml.text = file_size_value(10)()
@@ -616,6 +770,100 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
+
+
+class CachePropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        # filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
+        lower_bound, upper_bound = args.number_caches
+        number_caches = random.randint(lower_bound, upper_bound)
+        for i in range(0, number_caches):
+            add_single_cache(i, ET.SubElement(property_element, f"fcache{i}"))
+
+
+class KeeperMapPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        property_element.text = "/keeper_map_tables"
+
+
+class TransactionsPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        property_element.text = "1"
+
+
+class DistributedDDLPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        path_xml = ET.SubElement(property_element, "path")
+        path_xml.text = "/clickhouse/task_queue/ddl"
+        replicas_path_xml = ET.SubElement(property_element, "replicas_path")
+        replicas_path_xml.text = "/clickhouse/task_queue/replicas"
+        apply_properties_recursively(property_element, distributed_properties, 0)
+
+
+class SharedCatalogPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        number_clusters = 0
+        shared_settings = {
+            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_local_thread_pool_size": threads_lambda,
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_zookeeper_thread_pool_size": threads_lambda,
+            # "migration_from_database_replicated": true_false_lambda, not suitable for testing
+            "state_application_thread_pool_size": threads_lambda,
+        }
+        remote_servers = top_root.find("remote_servers")
+        if remote_servers is not None:
+            number_clusters = len(list(remote_servers))
+        if number_clusters > 0 and random.randint(1, 100) <= 75:
+            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
+            if remote_servers is None or remote_servers.find("default") is None:
+                # The default cluster was not removed
+                cluster_name_choices.append("default")
+            shared_settings["cluster_name"] = lambda: random.choice(
+                cluster_name_choices
+            )
+        apply_properties_recursively(property_element, shared_settings, 0)
 
 
 def add_ssl_settings(next_ssl: ET.Element):
@@ -660,13 +908,11 @@ def add_ssl_settings(next_ssl: ET.Element):
 def modify_server_settings(
     args,
     cluster: ClickHouseCluster,
-    number_replicas: int,
     is_private_binary: bool,
     input_config_path: str,
 ) -> tuple[bool, str, int]:
     modified = False
     number_clusters = 0
-    removed_default_cluster = False
 
     # Parse the existing XML file
     tree = ET.parse(input_config_path)
@@ -697,31 +943,19 @@ def modify_server_settings(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
 
+    selected_properties = {}
+    # Select random properties to the XML
+    if random.randint(1, 100) <= args.server_settings_prob:
+        selected_properties = sample_from_dict(
+            possible_properties, random.randint(0, len(possible_properties))
+        )
+
     # Add remote server configurations
     if (
         root.find("remote_servers") is None
         and random.randint(1, 100) <= args.add_remote_server_settings_prob
     ):
-        modified = True
-
-        existing_nodes = [f"node{i}" for i in range(0, number_replicas)]
-        remote_server_config = ET.SubElement(root, "remote_servers")
-
-        # Remove default cluster
-        if random.randint(1, 2) == 1:
-            removed_default_cluster = True
-            default_cluster = ET.SubElement(
-                remote_server_config, "default", attrib={"remove": "remove"}
-            )
-            default_cluster.text = ""
-
-        lower_bound, upper_bound = args.number_servers
-        number_clusters = random.randint(lower_bound, upper_bound)
-        for i in range(0, number_clusters):
-            add_single_cluster(
-                existing_nodes,
-                ET.SubElement(remote_server_config, f"cluster{i}"),
-            )
+        selected_properties["remote_servers"] = ClusterPropertiesGroup()
 
     # Add disk configurations
     if (
@@ -729,191 +963,73 @@ def modify_server_settings(
         and root.find("backups") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
-        modified = True
-
-        storage_config = ET.SubElement(root, "storage_configuration")
-        disk_element = ET.SubElement(storage_config, "disks")
-        backups_element = ET.SubElement(root, "backups")
-        lower_bound, upper_bound = args.number_disks
-        number_disks = random.randint(lower_bound, upper_bound)
-        number_policies = 0
-
-        allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
-        allowed_disk_xml.text = "default"
-        created_disks_types = []
-        created_cache_disks = []
-
-        for i in range(0, number_disks):
-            possible_types = (
-                ["object_storage"]
-                if i == 0
-                else ["object_storage", "object_storage", "cache", "encrypted"]
-            )
-            next_created_disk_pair = add_single_disk(
-                i,
-                args,
-                cluster,
-                ET.SubElement(disk_element, f"disk{i}"),
-                backups_element,
-                random.choice(possible_types),
-                created_disks_types,
-                is_private_binary,
-            )
-            created_disks_types.append(next_created_disk_pair)
-            if next_created_disk_pair[1] == "cache":
-                created_cache_disks.append(i)
-        # Add policies sometimes
-        if random.randint(1, 100) <= args.add_policy_settings_prob:
-            j = 0
-            bottom_disks = []
-            for val in created_disks_types:
-                if val[1] not in ("cache", "encrypted"):
-                    bottom_disks.append(j)
-                j += 1
-            number_bottom_disks = len(bottom_disks)
-            policies_element = ET.SubElement(storage_config, "policies")
-            lower_bound, upper_bound = args.number_disks
-            number_policies = random.randint(lower_bound, upper_bound)
-
-            for i in range(0, number_policies):
-                next_policy_xml = ET.SubElement(policies_element, f"policy{i}")
-                volumes_xml = ET.SubElement(next_policy_xml, "volumes")
-                main_xml = None
-                volume_counter = 0
-
-                number_elements = (
-                    1
-                    if random.randint(1, 2) == 1
-                    else random.randint(1, number_bottom_disks)
-                )
-                input_disks = list(bottom_disks)  # Do copy
-                random.shuffle(input_disks)
-                for i in range(0, number_elements):
-                    if main_xml is None or random.randint(1, 3) == 1:
-                        if main_xml is not None and random.randint(1, 100) <= 70:
-                            apply_properties_recursively(main_xml, policy_properties)
-                        main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
-                        volume_counter += 1
-                    disk_xml = ET.SubElement(main_xml, "disk")
-                    disk_xml.text = f"disk{input_disks[i]}"
-                if main_xml is not None and random.randint(1, 100) <= 70:
-                    apply_properties_recursively(main_xml, policy_properties)
-                if random.randint(1, 100) <= 70:
-                    apply_properties_recursively(next_policy_xml, policy_properties)
-
-        allowed_path_xml1 = ET.SubElement(backups_element, "allowed_path")
-        allowed_path_xml1.text = "/var/lib/clickhouse/"
-        allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
-        allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
-        if random.randint(1, 100) <= 70:
-            apply_properties_recursively(backups_element, backup_properties)
-
-        if (
-            root.find("temporary_data_in_cache") is None
-            and root.find("tmp_policy") is None
-            and root.find("tmp_path") is None
-        ):
-            next_opt = random.randint(1, 100)
-
-            if len(created_cache_disks) > 0 and next_opt <= 40:
-                temporary_cache_xml = ET.SubElement(root, "temporary_data_in_cache")
-                temporary_cache_xml.text = f"disk{random.choice(created_cache_disks)}"
-            # elif number_policies > 0 and next_opt <= 70: the disks must be local
-            #    tmp_policy_xml = ET.SubElement(root, "tmp_policy")
-            #    tmp_policy_xml.text = (
-            #        f"policy{random.choice(range(0, number_policies))}"
-            #    )
-            else:
-                tmp_path_xml = ET.SubElement(root, "tmp_path")
-                tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
+        selected_properties["storage_configuration"] = DiskPropertiesGroup()
 
     # Add filesystem caches
     if (
         root.find("filesystem_caches") is None
         and random.randint(1, 100) <= args.add_filesystem_caches_prob
     ):
-        modified = True
-        filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
-
-        lower_bound, upper_bound = args.number_caches
-        number_caches = random.randint(lower_bound, upper_bound)
-        for i in range(0, number_caches):
-            add_single_cache(i, ET.SubElement(filesystem_caches_config, f"fcache{i}"))
+        selected_properties["filesystem_caches"] = CachePropertiesGroup()
 
     # Add keeper_map_path_prefix
     if args.add_keeper_map_prefix and root.find("keeper_map_path_prefix") is None:
-        modified = True
-        new_element = ET.SubElement(root, "keeper_map_path_prefix")
-        new_element.text = "/keeper_map_tables"
+        selected_properties["keeper_map_path_prefix"] = KeeperMapPropertiesGroup()
+
     # Add experimental transactions
     if args.add_transactions and root.find("allow_experimental_transactions") is None:
-        modified = True
-        new_element = ET.SubElement(root, "allow_experimental_transactions")
-        new_element.text = "1"
+        selected_properties["allow_experimental_transactions"] = (
+            TransactionsPropertiesGroup()
+        )
 
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
-        modified = True
-        distributed_xml = ET.SubElement(root, "distributed_ddl")
-        path_xml = ET.SubElement(distributed_xml, "path")
-        path_xml.text = "/clickhouse/task_queue/ddl"
-        replicas_path_xml = ET.SubElement(distributed_xml, "replicas_path")
-        replicas_path_xml.text = "/clickhouse/task_queue/replicas"
-        modified = (
-            apply_properties_recursively(distributed_xml, distributed_properties, 0)
-            or modified
-        )
+        selected_properties["distributed_ddl"] = DistributedDDLPropertiesGroup()
 
+    # Add shared_database_catalog settings, required for shared catalog to work
     if (
         args.add_shared_catalog
         and is_private_binary
         and root.find("shared_database_catalog") is None
     ):
-        # Add shared_database_catalog settings, required for shared catalog to work
-        modified = True
-        shared_xml = ET.SubElement(root, "shared_database_catalog")
-        shared_settings = {
-            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
-            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
-            "drop_local_thread_pool_size": threads_lambda,
-            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
-            "drop_zookeeper_thread_pool_size": threads_lambda,
-            # "migration_from_database_replicated": true_false_lambda, not suitable for testing
-            "state_application_thread_pool_size": threads_lambda,
-        }
-        if number_clusters > 0 and random.randint(1, 100) <= 75:
-            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
-            if not removed_default_cluster:
-                cluster_name_choices.append("default")
-            shared_settings["cluster_name"] = lambda: random.choice(
-                cluster_name_choices
-            )
-        modified = (
-            apply_properties_recursively(shared_xml, shared_settings, 0) or modified
-        )
+        selected_properties["shared_database_catalog"] = SharedCatalogPropertiesGroup()
 
-    # Select random properties to the XML
-    if random.randint(1, 100) <= args.server_settings_prob:
-        modified = apply_properties_recursively(root, possible_properties) or modified
-        if modified:
-            # Make sure `path` in distributed_ddl is set
-            distributed_ddl_xml = root.find("distributed_ddl")
-            if (
-                distributed_ddl_xml is not None
-                and distributed_ddl_xml.find("path") is None
-            ):
-                path_xml = ET.SubElement(distributed_ddl_xml, "path")
-                path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
-            # Make sure `zookeeper_path` in transaction_log is set
-            transaction_log_xml = root.find("transaction_log")
-            if (
-                transaction_log_xml is not None
-                and transaction_log_xml.find("zookeeper_path") is None
-            ):
-                zookeeper_path_xml = ET.SubElement(
-                    transaction_log_xml, "zookeeper_path"
+    # Shuffle selected properties and apply
+    selected_properties = dict(
+        random.sample(list(selected_properties.items()), len(selected_properties))
+    )
+    for setting, next_child in selected_properties.items():
+        if root.find(setting) is None:
+            modified = True
+            new_element = ET.SubElement(root, setting)
+            if isinstance(next_child, dict):
+                apply_properties_recursively(new_element, next_child, 0)
+            elif isinstance(next_child, PropertiesGroup):
+                next_child.apply_properties(
+                    root, new_element, args, cluster, is_private_binary
                 )
-                zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+            else:
+                new_element.text = str(next_child())
+
+    if modified:
+        # Make sure `path` in distributed_ddl is set
+        distributed_ddl_xml = root.find("distributed_ddl")
+        if distributed_ddl_xml is not None and distributed_ddl_xml.find("path") is None:
+            path_xml = ET.SubElement(distributed_ddl_xml, "path")
+            path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+        # Make sure `zookeeper_path` in transaction_log is set
+        transaction_log_xml = root.find("transaction_log")
+        if (
+            transaction_log_xml is not None
+            and transaction_log_xml.find("zookeeper_path") is None
+        ):
+            zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
+            zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+
+    # Get number of clusters if generated, to be used in `users.xml` if needed
+    remote_servers = root.find("remote_servers")
+    if remote_servers is not None:
+        number_clusters = len(list(remote_servers))
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree

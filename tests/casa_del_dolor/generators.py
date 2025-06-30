@@ -22,7 +22,7 @@ class Generator:
         self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
 
     @abstractmethod
-    def run_generator(self) -> CommandRequest:
+    def run_generator(self, server: ClickHouseInstance) -> CommandRequest:
         pass
 
 
