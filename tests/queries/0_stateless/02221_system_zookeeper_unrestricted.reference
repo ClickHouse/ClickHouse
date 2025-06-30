@@ -24,6 +24,8 @@ flags
 flags
 host
 host
+in_progress
+in_progress
 is_active
 is_active
 is_lost
@@ -34,6 +36,8 @@ leader_election
 leader_election
 leader_election-0
 leader_election-0
+lightweight_updates
+lightweight_updates
 log
 log
 log_pointer
