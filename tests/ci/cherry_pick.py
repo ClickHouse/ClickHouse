@@ -29,7 +29,7 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from ci_buddy import CIBuddy
 from ci_config import Labels
@@ -478,30 +478,49 @@ class BackportPRs:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def receive_prs_for_backport(self, reserve_search_days: int) -> None:
-        # The commits in the oldest open release branch
-        oldest_branch_commits = git_runner(
-            "git log --no-merges --format=%H --reverse "
-            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
-        )
-        # The first commit is the one we are looking for
-        since_commit = oldest_branch_commits.split("\n", 1)[0]
-        since_date = date.fromisoformat(
-            git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
-        ) - timedelta(days=reserve_search_days)
-        # To not have a possible TZ issues
-        tomorrow = date.today() + timedelta(days=1)
-        logging.info("Receive PRs supposed to be backported")
+    def oldest_commit_date(self) -> date:
+        # The dates of every commit in each release branche
+        commit_dates = [
+            commit
+            for branch in self.release_branches
+            for commit in git_runner(
+                "git log --no-merges --format=format:%cs --reverse "
+                f"{self.remote}/{self.default_branch}..{self.remote}/{branch}"
+            ).split("\n")
+        ]
+        return min(date.fromisoformat(c_date) for c_date in commit_dates)
 
+    def _get_backporting_prs(
+        self,
+        since_date: date,
+        labels_to_backport: Optional[Iterable[str]] = None,
+        backport_created_label: str = "",
+        repo: Optional[str] = None,
+    ) -> PullRequests:
+        """
+        Get PRs that are supposed to be backported.
+        """
+        repo = repo or self._fetch_from
+        labels_to_backport = (
+            labels_to_backport
+            or self.labels_to_backport + self.must_create_backport_labels
+        )
+        backport_created_label = backport_created_label or self.backport_created_label
+        tomorrow = date.today() + timedelta(days=1)
         query_args = {
-            "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
-            "label": ",".join(
-                self.labels_to_backport + self.must_create_backport_labels
-            ),
+            "query": f"type:pr repo:{repo} -label:{backport_created_label}",
+            "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
-        self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
+        return self.gh.get_pulls_from_search(**query_args)
+
+    def receive_prs_for_backport(self) -> None:
+        since_date = self.oldest_commit_date()
+        # To not have a possible TZ issues
+        logging.info("Receive PRs supposed to be backported")
+
+        self.prs_for_backport = self._get_backporting_prs(since_date)
         logging.info(
             "PRs to be backported:\n %s",
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
@@ -677,6 +696,9 @@ def parse_args():
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
 
+    # TODO: remove this after the labels will be synced to the Sync PRs
+    # The parameter looks like a workaround for the issue with a wrong first commit date
+    # logic
     parser.add_argument(
         "--reserve-search-days",
         default=0,
@@ -709,11 +731,11 @@ def main():
         args.from_repo,
         args.dry_run,
     )
-    # https://github.com/python/mypy/issues/3004
+
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
     bpp.update_local_release_branches()
-    bpp.receive_prs_for_backport(args.reserve_search_days)
+    bpp.receive_prs_for_backport()
     bpp.process_backports()
     cpp = CherryPickPRs(gh, args.repo, args.dry_run)
     cpp.ping_stale_cherry_pick_prs()
