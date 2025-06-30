@@ -172,8 +172,6 @@ def main():
             run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
         else:
             targets = "clickhouse-bundle"
-
-        targets += " gcs"
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
