@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -117,7 +118,6 @@ StorageObjectStorage::StorageObjectStorage(
                 context,
                 /* if_not_updated_before */is_table_function,
                 /* check_consistent_with_previous_metadata */true);
-
             updated_configuration = true;
         }
     }
@@ -393,6 +393,16 @@ SinkToStoragePtr StorageObjectStorage::write(
             return std::make_shared<PartitionedStorageObjectStorageSink>(
                 object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
         }
+    }
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        return std::make_shared<IcebergStorageSink>(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            local_context);
     }
 
     auto paths = configuration->getPaths();
