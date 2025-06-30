@@ -268,6 +268,7 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
+        nested_func->create(place);
     }
 
     void destroy(AggregateDataPtr place) const noexcept override
