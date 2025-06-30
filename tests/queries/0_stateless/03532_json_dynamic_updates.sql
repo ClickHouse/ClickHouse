@@ -1,3 +1,5 @@
+-- Tags: long
+
 set mutations_sync=1;
 
 drop table if exists test_updates;
