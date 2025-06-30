@@ -320,7 +320,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (DB::NetException & e)
     {
-        cancel();
+        disconnect();
 
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
