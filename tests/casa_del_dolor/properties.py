@@ -8,6 +8,35 @@ import typing
 from integration.helpers.cluster import ClickHouseCluster
 
 
+def generate_xml_safe_string(length: int = 10) -> str:
+    """
+    Generate a random string that is safe to use as XML value content.
+
+    Args:
+        length (int): Desired length of the string (default: 10)
+
+    Returns:
+        str: Random string containing only XML-safe characters
+    """
+    # XML 1.0 valid characters (excluding control chars except tab, LF, CR)
+    xml_safe_chars = (
+        "\t\n\r"  # allowed control chars
+        + string.ascii_letters
+        + string.digits
+        + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
+        + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
+    )
+    # For Python 3, we need to handle the Unicode ranges properly
+    # Create a list of valid characters
+    valid_chars = []
+    # Add basic ASCII characters
+    valid_chars.extend(c for c in xml_safe_chars if ord(c) < 0xD800)
+    # Add higher Unicode characters (avoid surrogates)
+    valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
+    # Generate the random string
+    return "".join(random.choice(valid_chars) for _ in range(length))
+
+
 def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     def gen():
         tmp = random.random()
@@ -49,9 +78,9 @@ possible_properties = {
     "async_insert_threads": threads_lambda,
     "async_load_databases": true_false_lambda,
     "async_load_system_database": true_false_lambda,
-    "asynchronous_heavy_metrics_update_period_s": threshold_generator(0.2, 0.2, 0, 60),
+    "asynchronous_heavy_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 60),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
-    "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 0, 30),
+    "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
     "background_distributed_schedule_pool_size": no_zero_threads_lambda,
@@ -146,7 +175,7 @@ possible_properties = {
     # "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
-    "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000),
+    # "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000), not worth to mess around
     "max_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
     "max_thread_pool_size": threshold_generator(0.2, 0.2, 700, 10000),
     "max_unexpected_parts_loading_thread_pool_size": threads_lambda,
@@ -198,7 +227,7 @@ possible_properties = {
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 0, 200),
+    "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "throw_on_unknown_workload": true_false_lambda,
     "transaction_log": {
@@ -230,7 +259,7 @@ possible_properties = {
     },
 }
 
-distributed_ddl_properties = {
+distributed_properties = {
     "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
     "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
     "pool_size": no_zero_threads_lambda,
@@ -240,13 +269,17 @@ distributed_ddl_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "objects_chunk_size_to_delete": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
         "s3_check_objects_after_upload": true_false_lambda,
         "s3_max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_get_burst": threshold_generator(0.2, 0.2, 0, 100),
@@ -257,12 +290,14 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
+        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
     },
     "azure": {
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -271,13 +306,24 @@ object_storages_properties = {
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "min_upload_part_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "objects_chunk_size_to_delete": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
+        "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
     },
     "web": {},
+}
+
+metadata_cleanup_properties = {
+    "enabled": lambda: 1 if random.randint(0, 9) < 9 else 0,
+    "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "old_transactions_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "interval_sec": threshold_generator(0.2, 0.2, 0, 60),
 }
 
 
@@ -308,6 +354,7 @@ cache_storage_properties = {
 
 
 policy_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
     "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -317,7 +364,21 @@ policy_properties = {
 
 
 all_disks_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "perform_ttl_move_on_insert": true_false_lambda,
+    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
+    "skip_access_check": true_false_lambda,
+}
+
+
+backup_properties = {
+    "allow_concurrent_backups": true_false_lambda,
+    "allow_concurrent_restores": true_false_lambda,
+    "remove_backup_files_after_failure": true_false_lambda,
+    "test_randomize_order": true_false_lambda,
+    "test_inject_sleep": true_false_lambda,
 }
 
 
@@ -329,56 +390,22 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
     return dict(items)
 
 
-def add_settings_from_dict(d: dict[str, Parameter], xml_element: ET.Element):
-    selected_props = sample_from_dict(d, random.randint(1, len(d)))
-    for setting, generator in selected_props.items():
-        new_element = ET.SubElement(xml_element, setting)
-        new_element.text = str(generator())
-
-
-def apply_properties_recursively(next_root: ET.Element, next_properties: dict):
+def apply_properties_recursively(
+    next_root: ET.Element, next_properties: dict[str, Parameter], min_values: int = 1
+):
     is_modified = False
     selected_props = sample_from_dict(
-        next_properties, random.randint(1, len(next_properties))
+        next_properties, random.randint(min_values, len(next_properties))
     )
     for setting, next_child in selected_props.items():
         if next_root.find(setting) is None:
             is_modified = True
             new_element = ET.SubElement(next_root, setting)
             if isinstance(next_child, dict):
-                apply_properties_recursively(new_element, next_child)
+                apply_properties_recursively(new_element, next_child, min_values)
             else:
                 new_element.text = str(next_child())
     return is_modified
-
-
-def generate_xml_safe_string(length: int = 10) -> str:
-    """
-    Generate a random string that is safe to use as XML value content.
-
-    Args:
-        length (int): Desired length of the string (default: 10)
-
-    Returns:
-        str: Random string containing only XML-safe characters
-    """
-    # XML 1.0 valid characters (excluding control chars except tab, LF, CR)
-    xml_safe_chars = (
-        "\t\n\r"  # allowed control chars
-        + string.ascii_letters
-        + string.digits
-        + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
-        + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
-    )
-    # For Python 3, we need to handle the Unicode ranges properly
-    # Create a list of valid characters
-    valid_chars = []
-    # Add basic ASCII characters
-    valid_chars.extend(c for c in xml_safe_chars if ord(c) < 0xD800)
-    # Add higher Unicode characters (avoid surrogates)
-    valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
-    # Generate the random string
-    return "".join(random.choice(valid_chars) for _ in range(length))
 
 
 def add_single_cluster(
@@ -532,7 +559,16 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            add_settings_from_dict(object_storages_properties[dict_entry], next_disk)
+            apply_properties_recursively(
+                next_disk, object_storages_properties[dict_entry]
+            )
+        if (
+            is_private_binary
+            and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
+            and random.randint(1, 100) <= 70
+        ):
+            metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
+            apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
@@ -548,7 +584,7 @@ def add_single_disk(
 
             # Add random settings
             if random.randint(1, 100) <= 70:
-                add_settings_from_dict(cache_storage_properties, next_disk)
+                apply_properties_recursively(next_disk, cache_storage_properties)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -567,7 +603,7 @@ def add_single_disk(
                 )
 
     if random.randint(1, 100) <= 50:
-        add_settings_from_dict(all_disks_properties, next_disk)
+        apply_properties_recursively(next_disk, all_disks_properties)
     return (prev_disk, final_type)
 
 
@@ -579,7 +615,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
 
     # Add random settings
     if random.randint(1, 100) <= 70:
-        add_settings_from_dict(cache_storage_properties, next_cache)
+        apply_properties_recursively(next_cache, cache_storage_properties)
 
 
 def add_ssl_settings(next_ssl: ET.Element):
@@ -690,6 +726,7 @@ def modify_server_settings(
     # Add disk configurations
     if (
         root.find("storage_configuration") is None
+        and root.find("backups") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         modified = True
@@ -754,20 +791,22 @@ def modify_server_settings(
                 for i in range(0, number_elements):
                     if main_xml is None or random.randint(1, 3) == 1:
                         if main_xml is not None and random.randint(1, 100) <= 70:
-                            add_settings_from_dict(policy_properties, main_xml)
+                            apply_properties_recursively(main_xml, policy_properties)
                         main_xml = ET.SubElement(volumes_xml, f"volume{volume_counter}")
                         volume_counter += 1
                     disk_xml = ET.SubElement(main_xml, "disk")
                     disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
-                    add_settings_from_dict(policy_properties, main_xml)
+                    apply_properties_recursively(main_xml, policy_properties)
                 if random.randint(1, 100) <= 70:
-                    add_settings_from_dict(policy_properties, next_policy_xml)
+                    apply_properties_recursively(next_policy_xml, policy_properties)
 
         allowed_path_xml1 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml1.text = "/var/lib/clickhouse/"
         allowed_path_xml2 = ET.SubElement(backups_element, "allowed_path")
         allowed_path_xml2.text = "/var/lib/clickhouse/user_files/"
+        if random.randint(1, 100) <= 70:
+            apply_properties_recursively(backups_element, backup_properties)
 
         if (
             root.find("temporary_data_in_cache") is None
@@ -815,42 +854,46 @@ def modify_server_settings(
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         modified = True
-        distributed_ddl_xml = ET.SubElement(root, "distributed_ddl")
-        path_xml = ET.SubElement(distributed_ddl_xml, "path")
+        distributed_xml = ET.SubElement(root, "distributed_ddl")
+        path_xml = ET.SubElement(distributed_xml, "path")
         path_xml.text = "/clickhouse/task_queue/ddl"
-        replicas_path_xml = ET.SubElement(distributed_ddl_xml, "replicas_path")
+        replicas_path_xml = ET.SubElement(distributed_xml, "replicas_path")
         replicas_path_xml.text = "/clickhouse/task_queue/replicas"
-        if random.randint(1, 100) <= 70:
-            modified = (
-                apply_properties_recursively(root, distributed_ddl_properties)
-                or modified
+        modified = (
+            apply_properties_recursively(distributed_xml, distributed_properties, 0)
+            or modified
+        )
+
+    if (
+        args.add_shared_catalog
+        and is_private_binary
+        and root.find("shared_database_catalog") is None
+    ):
+        # Add shared_database_catalog settings, required for shared catalog to work
+        modified = True
+        shared_xml = ET.SubElement(root, "shared_database_catalog")
+        shared_settings = {
+            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_local_thread_pool_size": threads_lambda,
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_zookeeper_thread_pool_size": threads_lambda,
+            # "migration_from_database_replicated": true_false_lambda, not suitable for testing
+            "state_application_thread_pool_size": threads_lambda,
+        }
+        if number_clusters > 0 and random.randint(1, 100) <= 75:
+            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
+            if not removed_default_cluster:
+                cluster_name_choices.append("default")
+            shared_settings["cluster_name"] = lambda: random.choice(
+                cluster_name_choices
             )
+        modified = (
+            apply_properties_recursively(shared_xml, shared_settings, 0) or modified
+        )
 
     # Select random properties to the XML
     if random.randint(1, 100) <= args.server_settings_prob:
-        if is_private_binary and "shared_database_catalog" not in possible_properties:
-            # Add shared_database_catalog settings
-            shared_settings = {
-                "delay_before_drop_intention_seconds": threshold_generator(
-                    0.2, 0.2, 0, 60
-                ),
-                "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
-                "drop_local_thread_pool_size": threads_lambda,
-                "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
-                "drop_zookeeper_thread_pool_size": threads_lambda,
-                "migration_from_database_replicated": true_false_lambda,
-                "state_application_thread_pool_size": threads_lambda,
-            }
-            if number_clusters > 0 and random.randint(1, 100) <= 75:
-                cluster_name_choices = [
-                    f"cluster{i}" for i in range(0, number_clusters)
-                ]
-                if not removed_default_cluster:
-                    cluster_name_choices.append("default")
-                shared_settings["cluster_name"] = lambda: random.choice(
-                    cluster_name_choices
-                )
-            possible_properties["shared_database_catalog"] = shared_settings
         modified = apply_properties_recursively(root, possible_properties) or modified
         if modified:
             # Make sure `path` in distributed_ddl is set

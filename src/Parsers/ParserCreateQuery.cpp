@@ -74,7 +74,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
                 is_definer_current_user = true;
-            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
+            else if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, definer, expected))
                 return false;
 
             continue;

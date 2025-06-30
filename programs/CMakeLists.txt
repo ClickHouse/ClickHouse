@@ -84,6 +84,7 @@ macro(clickhouse_program_add_library name)
         target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
     endif()
 
+    target_include_directories (clickhouse-${name}-lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
     if (_include)
         target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})

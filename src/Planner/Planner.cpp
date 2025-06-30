@@ -282,7 +282,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (auto filter_actions = read_from_dummy->detachFilterActionsDAG())
         {
             const auto & table_node = dummy_storage_to_table.at(&read_from_dummy->getStorage());
-            res[table_node] = FiltersForTableExpression{filter_actions, read_from_dummy->getPrewhereInfo()};
+            res[table_node] = FiltersForTableExpression{std::move(filter_actions), read_from_dummy->getPrewhereInfo()};
         }
     }
 
@@ -1068,6 +1068,16 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
+    }
+
+    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
+    /// as it may break `rows_before_limit_at_least` value during the second stage in
+    /// case it also contains LIMIT BY
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
+    {
+        return;
     }
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
