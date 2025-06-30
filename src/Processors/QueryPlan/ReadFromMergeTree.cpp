@@ -1873,15 +1873,14 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     if (!indexes)
     {
-        auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
-        filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
+        filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
 
         /// NOTE: Currently we store two DAGs for analysis:
-        /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure they are consistent.
+        /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure there are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
         /// parallel replicas and unused shards into optimization, similar to projection analysis.
         if (filter_actions_dag)
-            query_info.filter_actions_dag = filter_actions_dag;
+            query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
 
         buildIndexes(
             indexes,

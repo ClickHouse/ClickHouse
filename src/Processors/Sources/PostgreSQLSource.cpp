@@ -105,15 +105,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 
     auto status = ISource::prepare();
     if (status == Status::Finished)
-    {
-        if (stream)
-            stream->close();
-
-        if (tx && auto_commit)
-            tx->commit();
-
-        is_completed = true;
-    }
+        onFinish();
 
     return status;
 }
@@ -179,6 +171,18 @@ Chunk PostgreSQLSource<T>::generate()
     return Chunk(std::move(columns), num_rows);
 }
 
+
+template<typename T>
+void PostgreSQLSource<T>::onFinish()
+{
+    if (stream)
+        stream->close();
+
+    if (tx && auto_commit)
+        tx->commit();
+
+    is_completed = true;
+}
 
 template<typename T>
 PostgreSQLSource<T>::~PostgreSQLSource()
