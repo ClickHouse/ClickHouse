@@ -95,11 +95,13 @@ public:
         std::string_view regexp_,
         std::string & required_substring,
         bool & is_trivial,
+        bool & has_capture,
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives);
 
 private:
     bool is_trivial;
+    bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
     std::string required_substring;

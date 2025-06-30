@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -43,6 +44,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
+    static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
 
@@ -114,6 +116,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
@@ -173,6 +176,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
@@ -245,6 +249,9 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
+    // static constexpr bool has_pre_computed_hashes = sizeof(Key) >= 16;
+    static constexpr bool has_pre_computed_hashes = false;
+    static constexpr bool use_string_hash_table = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
@@ -257,6 +264,9 @@ struct HashMethodKeysFixed
 #endif
 
     PaddedPODArray<Key> prepared_keys;
+    WeakHash32 hashes{0};
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
@@ -294,6 +304,23 @@ struct HashMethodKeysFixed
         if (usePreparedKeys(key_sizes))
         {
             packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            if constexpr (has_pre_computed_hashes)
+            {
+                auto s = prepared_keys.size();
+                hashes.reset(s);
+                const Key * begin = prepared_keys.data();
+                const Key * end = begin + s;
+                UInt32 * hash_data = hashes.getData().data();
+
+                while (begin < end)
+                {
+                    *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
+                    ++begin;
+                    ++hash_data;
+                }
+
+                prefetching = std::make_unique<PrefetchingHelper>();
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -418,6 +445,7 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
 

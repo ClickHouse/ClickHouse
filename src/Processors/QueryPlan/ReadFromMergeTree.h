@@ -204,6 +204,7 @@ public:
     static AnalysisResultPtr selectRangesToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        std::optional<TopNFilterParameters> & top_n_filter_params,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -248,6 +249,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    void setTopNFilterParams(TopNFilterParameters top_n_filter_params_) { top_n_filter_params = std::move(top_n_filter_params_); }
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
 
 private:
@@ -282,6 +284,7 @@ private:
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
 
+    mutable std::optional<TopNFilterParameters> top_n_filter_params;
     std::optional<VectorSearchParameters> vector_search_parameters;
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;

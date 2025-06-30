@@ -30,6 +30,19 @@ IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storag
     return {0 /*unknown*/, ""};
 }
 
+TopNFilterParameters::TopNFilterParameters(String column_, DataTypePtr type_, size_t limit_)
+    : column(std::move(column_)), type(std::move(type_)), limit(limit_)
+{
+    SipHash hash;
+    hash.update(column.size());
+    hash.update(column);
+    String type_name = type->getName();
+    hash.update(type_name.size());
+    hash.update(type_name);
+    hash.update(limit);
+    condition_hash = hash.get64();
+}
+
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)

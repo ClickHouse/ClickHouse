@@ -125,6 +125,10 @@ struct StringHashTableHash
         return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 24);
     }
 #endif
+    size_t ALWAYS_INLINE operator()(StringRefWithInlineHash key) const
+    {
+        return key.size;
+    }
     size_t ALWAYS_INLINE operator()(StringRef key) const
     {
         return StringRefHash()(key);
@@ -233,7 +237,6 @@ template <typename SubMaps>
 class StringHashTable : private boost::noncopyable
 {
 protected:
-    static constexpr size_t NUM_MAPS = 5;
     // Map for storing empty string
     using T0 = typename SubMaps::T0;
 
@@ -241,6 +244,9 @@ protected:
     using T1 = typename SubMaps::T1;
     using T2 = typename SubMaps::T2;
     using T3 = typename SubMaps::T3;
+
+    // Medium-length strings (up to 65535 bytes) are stored as StringRefWithHash
+    using Th = typename SubMaps::Th;
 
     // Long strings are stored as StringRef along with saved hash
     using Ts = typename SubMaps::Ts;
@@ -253,6 +259,7 @@ protected:
     T1 m1;
     T2 m2;
     T3 m3;
+    Th mh;
     Ts ms;
 
 public:
@@ -268,10 +275,11 @@ public:
     StringHashTable() = default;
 
     explicit StringHashTable(size_t reserve_for_num_elements)
-        : m1{reserve_for_num_elements / 4}
-        , m2{reserve_for_num_elements / 4}
-        , m3{reserve_for_num_elements / 4}
-        , ms{reserve_for_num_elements / 4}
+        : m1{reserve_for_num_elements / 5}
+        , m2{reserve_for_num_elements / 5}
+        , m3{reserve_for_num_elements / 5}
+        , mh{reserve_for_num_elements / 5}
+        , ms{reserve_for_num_elements / 5}
     {
     }
 
@@ -279,6 +287,7 @@ public:
         : m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
+        , mh(std::move(rhs.mh))
         , ms(std::move(rhs.ms))
     {
     }
@@ -374,7 +383,33 @@ public:
             }
             default: // >= 25 bytes
             {
-                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+                if (x.size <= std::numeric_limits<UInt32>::max()) [[likely]]
+                {
+                    StringRefWithInlineHash str_inlined_hash{
+                        x.data, (x.size << StringRefWithInlineHash::SHIFT) | (hash(x) & StringRefWithInlineHash::MASK)};
+                    if constexpr (std::is_same_v<DB::ArenaKeyHolder, std::decay_t<KeyHolder>>)
+                    {
+                        return func(
+                            self.mh,
+                            DB::ArenaKeyHolderWithInlineHash{str_inlined_hash, key_holder.pool},
+                            str_inlined_hash.size);
+                    }
+                    else if constexpr (std::is_same_v<DB::SerializedKeyHolder, std::decay_t<KeyHolder>>)
+                    {
+                        return func(
+                            self.mh,
+                            DB::SerializedKeyHolderWithInlineHash(str_inlined_hash, key_holder.pool),
+                            str_inlined_hash.size);
+                    }
+                    else
+                    {
+                        return func(self.mh, str_inlined_hash, str_inlined_hash.size);
+                    }
+                }
+                else
+                {
+                    return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+                }
             }
         }
     }
@@ -438,6 +473,7 @@ public:
         m1.write(wb);
         m2.write(wb);
         m3.write(wb);
+        mh.write(wb);
         ms.write(wb);
     }
 
@@ -451,6 +487,8 @@ public:
         DB::writeChar(',', wb);
         m3.writeText(wb);
         DB::writeChar(',', wb);
+        mh.writeText(wb);
+        DB::writeChar(',', wb);
         ms.writeText(wb);
     }
 
@@ -460,6 +498,7 @@ public:
         m1.read(rb);
         m2.read(rb);
         m3.read(rb);
+        mh.read(rb);
         ms.read(rb);
     }
 
@@ -473,25 +512,28 @@ public:
         DB::assertChar(',', rb);
         m3.readText(rb);
         DB::assertChar(',', rb);
+        mh.readText(rb);
+        DB::assertChar(',', rb);
         ms.readText(rb);
     }
 
-    size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
+    size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + mh.size() + ms.size(); }
 
-    bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
+    bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && mh.empty() && ms.empty(); }
 
     size_t getBufferSizeInBytes() const
     {
         return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes() + m2.getBufferSizeInBytes() + m3.getBufferSizeInBytes()
-            + ms.getBufferSizeInBytes();
+            + mh.getBufferSizeInBytes() + +ms.getBufferSizeInBytes();
     }
 
     void clearAndShrink()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clearAndShrink();
         m2.clearAndShrink();
         m3.clearAndShrink();
+        mh.clearAndShrink();
         ms.clearAndShrink();
     }
 };

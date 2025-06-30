@@ -113,6 +113,7 @@ bool ActionsDAG::Node::isDeterministic() const
 {
     bool deterministic_if_func = type != ActionType::FUNCTION || function_base->isDeterministic();
     bool deterministic_if_const = type != ActionType::COLUMN || is_deterministic_constant;
+
     return deterministic_if_func && deterministic_if_const;
 }
 
