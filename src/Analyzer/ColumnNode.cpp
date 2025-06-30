@@ -89,11 +89,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compa
     hash_state.update(column.name);
 
     if (compare_options.compare_types)
-    {
-        const auto & column_type_name = column.type->getName();
-        hash_state.update(column_type_name.size());
-        hash_state.update(column_type_name);
-    }
+        updateHashForType(hash_state, column.type);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
