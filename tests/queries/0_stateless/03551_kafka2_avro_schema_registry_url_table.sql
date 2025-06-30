@@ -1,4 +1,5 @@
--- Tags: zookeeper
+-- Tags: no-fasttest, zookeeper
+-- Tag no-fasttest -- requires Kafka
 
 SET allow_experimental_kafka_offsets_storage_in_keeper = 1;
 

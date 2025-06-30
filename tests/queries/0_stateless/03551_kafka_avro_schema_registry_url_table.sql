@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest -- requires Kafka
+
 DROP TABLE IF EXISTS test.kafka_avro_confluent;
 CREATE TABLE test.kafka_avro_confluent (
     id UInt64,
