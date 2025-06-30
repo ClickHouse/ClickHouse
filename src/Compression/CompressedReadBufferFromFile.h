@@ -4,7 +4,7 @@
 #include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include "Common/LoggingFormatStringHelpers.h"
+#include <Common/LoggingFormatStringHelpers.h>
 
 
 namespace DB

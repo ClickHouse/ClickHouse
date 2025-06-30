@@ -150,21 +150,32 @@ protected:
     void lazyInitialize();
 };
 
-class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
+class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator, private WithContext
 {
 public:
     ReadTaskIterator(
         const ClusterFunctionReadTaskCallback & callback_,
-        size_t max_threads_count);
+        size_t max_threads_count,
+        bool is_archive_,
+        ObjectStoragePtr object_storage_,
+        ContextPtr context_);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
+    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
+
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
+    bool is_archive;
+    ObjectStoragePtr object_storage;
+    /// path_to_archive -> archive reader.
+    std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
+    std::mutex archive_readers_mutex;
+    LoggerPtr log = getLogger("ReadTaskIterator");
 };
 
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
