@@ -224,22 +224,24 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 char_pos += UTF8::seqLength(*char_pos);
             }
 
-            bool escaped = false;
+            int escaped = 0;
             while (char_pos < range.end)
             {
                 if (*char_pos == '\\')
                 {
-                    escaped = !escaped;
+                    ++escaped;
                     colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
                 }
-                else if (!escaped && nullptr != strchr(metacharacters, *char_pos))
+                /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
+                /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
+                else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
                 {
                     colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
                 }
                 else
                 {
                     colors[code_point_pos] = it->second;
-                    escaped = false;
+                    escaped = 0;
                 }
 
                 ++code_point_pos;
