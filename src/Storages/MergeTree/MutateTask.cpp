@@ -288,7 +288,7 @@ struct AlteredColumns
         }
     }
 
-    void updateFromResultHeader(const Block & header)
+    void setFromHeader(const Block & header)
     {
         for (const auto & column : header)
         {
@@ -310,6 +310,17 @@ struct AlteredColumns
 
         for (const auto & column : removed_columns)
             drop(column);
+    }
+
+    void modifyFromHeader(const Block & header)
+    {
+        for (const auto & column : header)
+        {
+            const auto new_column = columns.tryGetColumn(GetColumnsOptions::All, column.name);
+
+            if (new_column.has_value() && !new_column->type->equals(*column.type))
+                modify(column.name, column.type);
+        }
     }
 
 private:
@@ -2445,7 +2456,9 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
 
         if (ctx->execution_mode == MutationContext::Mode::AllColumns)
-            ctx->new_part_columns.updateFromResultHeader(ctx->updated_header);
+            ctx->new_part_columns.setFromHeader(ctx->updated_header);
+        else
+            ctx->new_part_columns.modifyFromHeader(ctx->updated_header);
 
         ctx->progress_callback = MergeProgressCallback(
             (*ctx->mutate_entry)->ptr(),
