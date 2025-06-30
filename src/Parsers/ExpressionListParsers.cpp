@@ -522,6 +522,7 @@ template <typename... Args>
 static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
     auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
+    ast_function->is_operator = true;
 
     if (op.type == OperatorType::Lambda)
     {
