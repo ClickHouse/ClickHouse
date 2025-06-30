@@ -18,7 +18,7 @@
 #include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 namespace ProfileEvents
 {
@@ -29,6 +29,70 @@ namespace ProfileEvents
     extern const Event CompressedReadBufferChecksumDoesntMatch;
     extern const Event CompressedReadBufferChecksumDoesntMatchSingleBitMismatch;
     extern const Event CompressedReadBufferChecksumDoesntMatchMicroseconds;
+}
+
+namespace
+{
+    /**
+     * Thread-local counter for accumulating compressed data statistics.
+     * Periodically flushes accumulated values to global ProfileEvents counters
+     * based on percentage-based heuristics.
+     */
+    struct ProfileCounter
+    {
+        size_t read_compressed_bytes = 0;
+        size_t compressed_blocks = 0;
+        size_t decompressed_bytes = 0;
+
+        static size_t getMaxStreams()
+        {
+            static size_t cpu_cores = getNumberOfCPUCoresToUse();
+            return cpu_cores;
+        }
+
+        /**
+         * Determines if the local counter should be flushed to global counter
+         * based on a percentage threshold (1% of global value).
+         * Flushes the accumulated local counter to the corresponding global counter
+         * and resets the local value to zero.
+         */
+        void flush(ProfileEvents::Event event)
+        {
+            UInt64 global_event = ProfileEvents::global_counters[event].load();
+            if (event == ProfileEvents::ReadCompressedBytes && read_compressed_bytes * getMaxStreams() * 100 > global_event)
+            {
+                ProfileEvents::increment(event, read_compressed_bytes);
+                read_compressed_bytes = 0;
+            }
+            else if (event == ProfileEvents::CompressedReadBufferBlocks && compressed_blocks * getMaxStreams() * 100 > global_event)
+            {
+                ProfileEvents::increment(event, compressed_blocks);
+                compressed_blocks = 0;
+            }
+            else if (event == ProfileEvents::CompressedReadBufferBytes && decompressed_bytes * getMaxStreams() * 100 > global_event)
+            {
+                ProfileEvents::increment(event, decompressed_bytes);
+                decompressed_bytes = 0;
+            }
+        }
+
+        /**
+         * Destructor ensures all accumulated data is flushed to global counters
+         * before the thread-local instance is destroyed.
+         */
+        ~ProfileCounter()
+        {
+            ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, read_compressed_bytes);
+            ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks, compressed_blocks);
+            ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, decompressed_bytes);
+            read_compressed_bytes = 0;
+            compressed_blocks = 0;
+            decompressed_bytes = 0;
+        }
+    };
+
+    // Thread-local instance of the profile counter
+    thread_local ProfileCounter profile_counters;
 }
 
 namespace DB
@@ -219,7 +283,10 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum, external_data);
     }
 
-    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
+    // Update read compressed bytes counter and flush if necessary
+    profile_counters.read_compressed_bytes += size_compressed_without_checksum + sizeof(Checksum);
+    profile_counters.flush(ProfileEvents::ReadCompressedBytes);
+
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
@@ -276,8 +343,11 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
                                   bool allow_different_codecs, bool external_data)
 {
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+    // Update blocks counter and decompressed bytes counter, flush if necessary
+    ++profile_counters.compressed_blocks;
+    profile_counters.decompressed_bytes += size_decompressed;
+    profile_counters.flush(ProfileEvents::CompressedReadBufferBlocks);
+    profile_counters.flush(ProfileEvents::CompressedReadBufferBytes);
 
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
