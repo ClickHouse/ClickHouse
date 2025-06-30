@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
+#include <Common/SipHash.h>
 
 
 namespace DB

@@ -45,11 +45,13 @@ public:
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override;
     bool isValueRepresentedByUnsignedInteger() const override;
-    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };

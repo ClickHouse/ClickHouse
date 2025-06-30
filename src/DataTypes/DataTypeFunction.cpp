@@ -33,4 +33,14 @@ bool DataTypeFunction::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
 }
 
+void DataTypeFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+
+    if (return_type)
+        return_type->updateHash(hash);
+}
+
 }

@@ -4,6 +4,7 @@
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
 #include <vector>
 
 
@@ -81,6 +82,8 @@ public:
     bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+    void updateHashImpl(SipHash & hash) const override;
 };
 
 

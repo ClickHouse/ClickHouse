@@ -1,10 +1,17 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
 {
+
+void DataTypeIPv6::updateHashImpl(SipHash & hash) const
+{
+    IDataType::updateHash(hash);
+    // For IPv6 type, the type ID is sufficient
+}
 
 void registerDataTypeIPv4andIPv6(DataTypeFactory & factory)
 {

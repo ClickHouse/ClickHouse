@@ -104,6 +104,11 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
 }
 
+template <typename Type>
+void DataTypeEnum<Type>::updateHashImpl(SipHash & hash) const
+{
+    hash.update(type_name);
+}
 
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const

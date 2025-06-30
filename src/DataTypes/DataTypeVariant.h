@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnVariant.h>
+#include <Common/SipHash.h>
 #include <optional>
 
 
@@ -48,6 +49,8 @@ public:
     bool haveMaximumSizeOfValue() const override;
     bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
+
+    void updateHashImpl(SipHash & hash) const override;
 
     const DataTypePtr & getVariant(size_t i) const { return variants[i]; }
     const DataTypes & getVariants() const { return variants; }

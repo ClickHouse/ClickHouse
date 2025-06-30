@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnVector.h>
 #include <Core/UUID.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -42,6 +43,8 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(UUID); }
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -48,6 +49,8 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
+
+    void updateHashImpl(SipHash & hash) const override;
 
     void forEachChild(const ChildCallback &) const override;
 

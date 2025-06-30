@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -49,6 +50,8 @@ public:
     }
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
+
+    void updateHashImpl(SipHash & hash) const override;
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
     const DataTypePtr & getNestedType() const { return nested; }
     DataTypePtr getNestedTypeWithUnnamedTuple() const;

@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/Field.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -43,6 +44,8 @@ public:
 
     bool haveSubtypes() const override { return false; }
     bool cannotBeStoredInTables() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override { throwNoSerialization(); }
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 
 constexpr size_t MAX_FIXEDSTRING_SIZE = 0xFFFFFF;
 constexpr size_t MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS = 256;
@@ -51,6 +52,8 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    void updateHashImpl(SipHash & hash) const override;
 };
 
 }

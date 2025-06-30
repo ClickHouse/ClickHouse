@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <base/IPv4andIPv6.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -47,6 +48,8 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
+    void updateHashImpl(SipHash & hash) const override;
+
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv4>>(); }
 };
 
@@ -84,6 +87,8 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(IPv6); }
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    void updateHashImpl(SipHash & hash) const override;
 
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationIP<IPv6>>(); }
 };

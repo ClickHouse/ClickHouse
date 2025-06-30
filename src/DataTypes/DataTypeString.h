@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -37,6 +38,8 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

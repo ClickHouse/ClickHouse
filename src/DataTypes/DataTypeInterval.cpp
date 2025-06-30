@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInterval.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -11,6 +12,11 @@ SerializationPtr DataTypeInterval::doGetDefaultSerialization() const { return st
 bool DataTypeInterval::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && kind == static_cast<const DataTypeInterval &>(rhs).kind;
+}
+
+void DataTypeInterval::updateHashImpl(SipHash & hash) const
+{
+    hash.update(kind);
 }
 
 void registerDataTypeInterval(DataTypeFactory & factory)

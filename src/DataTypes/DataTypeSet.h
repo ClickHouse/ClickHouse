@@ -25,6 +25,8 @@ public:
 
     // Used only for debugging, making it DUMPABLE
     Field getDefault() const override { return Tuple(); }
+
+    // For DataTypeSet, we rely on the base class implementation which includes the type ID
 };
 
 }

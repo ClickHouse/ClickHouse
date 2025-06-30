@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -44,6 +45,8 @@ public:
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+
+    void updateHashImpl(SipHash & hash) const override { hash.update(max_dynamic_types); }
 
 private:
     SerializationPtr doGetDefaultSerialization() const override;

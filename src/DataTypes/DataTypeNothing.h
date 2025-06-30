@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataTypeDummy.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -29,6 +30,8 @@ public:
     size_t getSizeOfValueInMemory() const override { return 0; }
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
+
+    void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override;
 };
