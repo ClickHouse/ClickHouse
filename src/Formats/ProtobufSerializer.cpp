@@ -1975,7 +1975,7 @@ namespace
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, const String & one_of_column_name_, size_t column_idx_, int field_tag_)
+        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view one_of_column_name_, size_t column_idx_, int field_tag_)
             : nested_serializer(std::move(nested_serializer_))
             , one_of_column_name(one_of_column_name_)
             , column_idx(column_idx_)
@@ -2049,7 +2049,7 @@ namespace
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         ColumnPtr column; // ???
-        String one_of_column_name;
+        std::string_view one_of_column_name;  // Is it safe?
         size_t column_idx;
         int field_tag;
         MutableColumnPtr presence_column;
@@ -3545,7 +3545,7 @@ namespace
             {
                 if (oneof_presence && serializer_ptr_ref && oneof_descriptor)
                 {
-                    String expected_name = oneof_descriptor->name() + "_presence";
+                    String expected_name = String(oneof_descriptor->name()) + "_presence";
                     LOG_DEBUG(
                         getLogger("ProtobufSerializer"),
                         "maybe_add_oneof_wrapper: expected name {}", expected_name);
@@ -4415,7 +4415,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
     NamesAndTypesList schema;
     NamesAndTypesList oneofs;
 
-    std::set<String> known_oneofs;
+    std::set<std::string_view> known_oneofs;
 
 
     for (int i = 0; i != message_descriptor->field_count(); ++i)
@@ -4437,7 +4437,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
                             values.emplace_back(field_descriptor->name(), field_descriptor->number());
                         }
                         // schema.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum<Int8>>(std::move(values)))});
-                        oneofs.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
+                        oneofs.push_back({String(oneof_descriptor->name()) + "_presence", std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
                         known_oneofs.insert(oneof_descriptor->name());
                     }
                 }
