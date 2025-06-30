@@ -121,6 +121,7 @@ public:
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     /// Process right stream to fill JoinPtr and then process left pipeline using it
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesRightLeft(
+        IQueryPlanStep * step,
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
