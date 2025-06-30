@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/RowRefs.h>
@@ -100,7 +101,7 @@ void addFoundRowAll(
     if constexpr (flag_per_row)
     {
         using Pair = typename KnownRowsHolder<flag_per_row>::Type;
-        std::unique_ptr<std::vector<Pair>> new_known_rows_ptr;
+        std::vector<Pair> new_known_rows_ptr;
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
@@ -108,11 +109,7 @@ void addFoundRowAll(
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
-                if (!new_known_rows_ptr)
-                {
-                    new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
-                }
-                new_known_rows_ptr->emplace_back(it->columns, it->row_num);
+                new_known_rows_ptr.emplace_back(it->columns, it->row_num);
 
                 if (used_flags)
                 {
@@ -122,10 +119,7 @@ void addFoundRowAll(
             }
         }
 
-        if (new_known_rows_ptr)
-        {
-            known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
-        }
+        known_rows.add(std::cbegin(new_known_rows_ptr), std::cend(new_known_rows_ptr));
     }
     else if constexpr (AddedColumns::isLazy())
     {
