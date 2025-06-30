@@ -79,7 +79,7 @@ void JSONCompactEachRowWithProgressRowOutputFormat::writeProgress(const Progress
     if (value.empty())
         return;
     writeCString("{\"progress\":", *ostr);
-    value.writeJSON(*ostr);
+    value.writeJSON(*ostr, Progress::DisplayMode::Minimal);
     writeCString("}\n", *ostr);
 }
 
