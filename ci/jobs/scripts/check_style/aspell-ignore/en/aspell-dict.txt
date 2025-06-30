@@ -1891,12 +1891,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro
