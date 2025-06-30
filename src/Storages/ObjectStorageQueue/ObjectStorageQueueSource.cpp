@@ -340,7 +340,12 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::Obje
     if (mode == ObjectStorageQueueMode::UNORDERED)
         ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
     else
-        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
+            paths,
+            metadata->getPath(),
+            metadata->getBucketsNum(),
+            metadata->isPathWithHivePartitioning(),
+            log);
 
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
@@ -1029,6 +1034,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
+    HiveLastProcessedFileInfoMap & file_map,
+    LastProcessedFileInfoMapPtr created_nodes,
     const std::string & exception_message,
     int error_code)
 {
@@ -1043,6 +1050,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = files_metadata->useBucketsForProcessing();
+    const bool is_path_with_hive_partitioning = files_metadata->isPathWithHivePartitioning();
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
@@ -1089,12 +1097,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
                         if (last_processed_file_idx_per_bucket[bucket] == i)
                         {
-                            file_metadata->prepareProcessedRequests(requests);
+                            file_metadata->prepareProcessedRequests(requests, created_nodes);
                         }
                         else
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
+                        if (is_path_with_hive_partitioning)
+                            file_metadata->prepareHiveProcessedMap(file_map);
                     }
                     else
                     {
@@ -1148,6 +1158,19 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 break;
             }
         }
+    }
+}
+
+void ObjectStorageQueueSource::prepareHiveProcessedRequests(
+    Coordination::Requests & requests,
+    const HiveLastProcessedFileInfoMap & file_map)
+{
+    for (const auto & [node_path, file_info] : file_map)
+    {
+        if (file_info.exists)
+            requests.push_back(zkutil::makeSetRequest(node_path, file_info.file_path, -1));
+        else
+            requests.push_back(zkutil::makeCreateRequest(node_path, file_info.file_path, zkutil::CreateMode::Persistent));
     }
 }
 
@@ -1207,7 +1230,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+    HiveLastProcessedFileInfoMap file_map;
+    prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, nullptr, exception_message);
+    prepareHiveProcessedRequests(requests, file_map);
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
