@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 
@@ -77,7 +82,26 @@ public:
 
 REGISTER_FUNCTION(Wkb)
 {
-    factory.registerFunction<FunctionWkb>();
+    factory.registerFunction<FunctionWkb>(FunctionDocumentation{
+        .description = R"(
+    Parses a Well-Known Binary (WKB) representation of a Point geometry and returns it in the internal ClickHouse format.
+    )",
+        .syntax = "wkb(geometry)",
+        .arguments{{"geometry", "The input geometry type to convert into WKB."}},
+        .examples{
+            {"first call",
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
+             "INSERT INTO geom1 VALUES((0, 0));"
+             "SELECT hex(wkb(a)) FROM geom1;",
+             R"(
+    ┌─hex(wkb(a))─-----------------------------------------┐
+    │ 010100000000000000000000000000000000003440           │
+    └──────────────────────────────────────────────────────┘
+                )"},
+        },
+        .introduced_in = {25, 6},
+        .category = FunctionDocumentation::Category::Geo,
+    });
 }
 
 }
