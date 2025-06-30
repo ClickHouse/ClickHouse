@@ -152,9 +152,8 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
             if (left[i].column_name > right[i].column_name)
                 return false;
 
-            if (
-                (left[i].collator && right[i].collator && *left[i].collator != *right[i].collator)
-                || left[i].collator || right[i].collator)
+            if (left[i].collator || right[i].collator)
+                if (!left[i].collator || !right[i].collator || *left[i].collator != *right[i].collator)
                     throw DB::Exception(DB::ErrorCodes::BAD_COLLATION,
                         "Cannot compare or sort WindowDescriptions with different collators ('{}' vs '{}') for the same column '{}'",
                         left[i].collator ? left[i].collator->getLocale() : "null",
