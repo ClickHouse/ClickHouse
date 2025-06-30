@@ -1620,6 +1620,10 @@ bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
 {
+    // It would be better to check the cross join first, as it has an empty disjunct list.
+    if (table_join_->kind() == JoinKind::Cross)
+        return false;
+
     if (!table_join_->oneDisjunct())
         return true;
     /// If it'a a all right join with inequal conditions, we need to mark each row
