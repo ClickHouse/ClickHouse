@@ -2729,13 +2729,11 @@ KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & d
     for (; it != deltas.end(); ++it)
     {
         if (std::holds_alternative<SubDeltaEnd>(it->operation))
-        {
-            ++it;
             break;
-        }
     }
 
     KeeperStorageBase::DeltaRange result{.begin_it = deltas.begin(), .end_it = it};
+    ++it;
     deltas.begin_it = it;
     return result;
 }
