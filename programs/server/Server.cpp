@@ -1963,7 +1963,6 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
  
             size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
