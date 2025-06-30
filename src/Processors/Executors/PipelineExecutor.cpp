@@ -16,6 +16,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -53,7 +54,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 {
     if (process_list_element)
     {
-        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles];
+        profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
+            && process_list_element->getContext()->getProcessorsProfileLog();
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
     }
     try
@@ -296,15 +298,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
-        /// Just traverse graph and prepare any processor.
         while (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 
-        while (context.hasTask() && !yield)
+        while (!tasks.isFinished() && context.hasTask() && !yield)
         {
-            if (tasks.isFinished())
-                break;
-
             if (!context.executeTask())
                 cancel(ExecutionStatus::Exception);
 
@@ -319,6 +317,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 
             /// Try to execute neighbour processor.
+            ExecutorTasks::SpawnStatus spawn_status = ExecutorTasks::DO_NOT_SPAWN;
             {
                 Queue queue;
                 Queue async_queue;
@@ -330,24 +329,27 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Push other tasks to global queue.
                 if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                    tasks.pushTasks(queue, async_queue, context);
+                    spawn_status = tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            try
+            if (spawn_status == ExecutorTasks::SHOULD_SPAWN)
             {
-                /// Upscale if possible.
-                spawnThreads();
-            }
-            catch (...)
-            {
-                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                /// We should cancel execution properly before rethrow.
-                cancel(ExecutionStatus::Exception);
-                throw;
+                try
+                {
+                    /// Upscale if possible.
+                    spawnThreads();
+                }
+                catch (...)
+                {
+                    /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                    /// We should cancel execution properly before rethrow.
+                    cancel(ExecutionStatus::Exception);
+                    throw;
+                }
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -449,7 +451,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 {
     while (cpu_slots)
     {
-        if (!slot && tasks.shouldSpawn())
+        if (!slot)
             slot = cpu_slots->tryAcquire();
         if (!slot)
             return;
@@ -458,7 +460,7 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
-        tasks.upscale(thread_num + 1);
+        const auto spawn_status = tasks.upscale(thread_num + 1);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
@@ -478,6 +480,9 @@ void PipelineExecutor::spawnThreadsImpl(AcquiredSlotPtr slot)
         });
 
         chassert(!slot); // Just to make sure. Slot should be empty after we moved it to the thread lambda
+
+        if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
+            return;
     }
 }
 

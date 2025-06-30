@@ -128,26 +128,4 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
         std::rethrow_exception(exception);
 }
 
-ExecutingGraph::Node * ExecutionThreadContext::tryPopAsyncTask()
-{
-    ExecutingGraph::Node * task = nullptr;
-
-    if (!async_tasks.empty())
-    {
-        task = async_tasks.front();
-        async_tasks.pop();
-
-        if (async_tasks.empty())
-            has_async_tasks = false;
-    }
-
-    return task;
-}
-
-void ExecutionThreadContext::pushAsyncTask(ExecutingGraph::Node * async_task)
-{
-    async_tasks.push(async_task);
-    has_async_tasks = true;
-}
-
 }

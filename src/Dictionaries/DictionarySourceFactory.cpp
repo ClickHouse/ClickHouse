@@ -99,7 +99,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+        return create_source(name, dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
     }
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,

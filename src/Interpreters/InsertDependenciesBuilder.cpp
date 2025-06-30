@@ -3,6 +3,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/LiveView/StorageLiveView.h>
@@ -111,7 +112,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
     extern const SettingsBool distributed_foreground_insert;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_concurrency_control;
@@ -233,12 +234,16 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
     }
     catch (DB::Exception & exception)
     {
-        exception.addMessage("while pushing to view {}", storage.getNameForLogs());
-        return std::current_exception();
+        // we have to make a copy of exception here,
+        // because the original exception is multiplied by CopyTransform
+        // it should not be modified anywhere to avoid concurrant modification
+        auto patch = DB::Exception(exception);
+        patch.addMessage("while pushing to view {}", storage.getNameForLogs());
+        return std::make_exception_ptr(std::move(patch));
     }
     catch (...)
     {
-        return std::current_exception();
+        return ptr;
     }
 }
 
@@ -488,9 +493,9 @@ private:
         {
             std::rethrow_exception(e);
         }
-        catch (BeginingViewsTransform::ExternalException & e)
+        catch (BeginingViewsTransform::ExternalException & wrapped)
         {
-            return {true, e.origin_exception};
+            return {true, wrapped.origin_exception};
         }
         catch (...)
         {
@@ -1164,6 +1169,9 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+
+    if (!inner_storage->supportsSparseSerialization())
+        result.addSink(std::make_shared<RemovingSparseTransform>(header));
 
     auto constraints = buildConstraints(inner_metadata, inner_storage);
     if (!constraints.empty())

@@ -7,23 +7,13 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace StorageObjectStorageSetting
-{
-extern const StorageObjectStorageSettingsBool delta_lake_read_schema_same_as_table_schema;
-}
-namespace Setting
-{
-extern const SettingsBool allow_experimental_delta_kernel_rs;
-}
 
 struct DeltaLakePartitionColumn
 {
@@ -60,31 +50,7 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context)
-    {
-#if USE_DELTA_KERNEL_RS
-        auto configuration_ptr = configuration.lock();
-
-        const auto & storage_settings_ref = configuration_ptr->getSettingsRef();
-        const auto & query_settings_ref = local_context->getSettingsRef();
-
-        const auto storage_type = configuration_ptr->getType();
-        const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
-
-        bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
-        if (supports_delta_kernel && enable_delta_kernel)
-        {
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(
-                object_storage,
-                configuration,
-                storage_settings_ref[StorageObjectStorageSetting::delta_lake_read_schema_same_as_table_schema]);
-        }
-        else
-            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#endif
-    }
+        ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
@@ -95,7 +61,8 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
     mutable Strings data_files;

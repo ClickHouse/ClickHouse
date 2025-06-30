@@ -64,6 +64,9 @@ ASTPtr processColumnTransformers(
         const ColumnsDescription & columns,
         ASTPtr query_columns)
 {
+    if (table_id.empty())
+        return processColumnTransformersImpl(columns, {}, query_columns, current_database, StorageID("", "dummy"));
+
     return processColumnTransformersImpl(columns, {}, query_columns, current_database, table_id);
 }
 

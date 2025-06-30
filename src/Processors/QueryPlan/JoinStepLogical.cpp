@@ -375,7 +375,7 @@ void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActi
             expression_actions.left_pre_join_actions);
     }
 
-    if (!join_context.prepared_join_storage && !right_type->equals(*common_type))
+    if (!right_type->equals(*common_type) && (!join_context.prepared_join_storage || join_context.prepared_join_storage->storage_key_value))
     {
         const std::string & result_name = join_context.is_using ? right_node.getColumnName() : "";
         right_node = addNewOutput(
@@ -887,6 +887,23 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
         use_nulls,
         std::move(join_settings),
         std::move(sort_settings));
+}
+
+QueryPlanStepPtr JoinStepLogical::clone() const
+{
+    auto new_expression_actions = expression_actions.clone();
+    auto new_join_info = join_info.clone(new_expression_actions);
+
+    auto result_step = std::make_unique<JoinStepLogical>(
+        getInputHeaders().front(), getInputHeaders().back(),
+        std::move(new_join_info),
+        std::move(new_expression_actions),
+        required_output_columns,
+        use_nulls,
+        join_settings,
+        sorting_settings);
+    result_step->setStepDescription(getStepDescription());
+    return result_step;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
