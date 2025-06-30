@@ -47,8 +47,8 @@ public:
         const KeyMetadataPtr key_metadata;
 
         /// While using `use_real_disk_size` the aligned (real) size could defer from filled size.
-	    /// This means that downloaded_size in FileSegment could defer from entry.getSize()
-	    /// (downloaded_size is non-aligned, while entry.getSize() is aligned in case of use_real_disk_size=1).
+        /// This means that downloaded_size in FileSegment could defer from entry.getSize()
+        /// (downloaded_size is non-aligned, while entry.getSize() is aligned in case of use_real_disk_size=1).
         /// `not_aligned` = true force to return not-aligned size
         /// `not_aligned` = false return the size depends on use_real_disk_size value
         size_t getSize(SizeAlignment alignment = SizeAlignment::DEFAULT_ALIGNMENT) const;
