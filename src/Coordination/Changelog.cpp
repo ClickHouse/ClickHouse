@@ -1767,7 +1767,7 @@ Changelog::Changelog(
             keeper_context,
             log_file_settings,
             /*move_changelog_cb=*/[&](ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
-            { Changelog::moveChangelogAsync(std::move(changelog), std::move(new_path), std::move(new_disk)); });
+            { moveChangelogAsync(std::move(changelog), std::move(new_path), std::move(new_disk)); });
     }
     catch (...)
     {
@@ -2590,7 +2590,6 @@ void Changelog::backgroundChangelogOperationsThread()
 
 void Changelog::modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation)
 {
-    /// If failed to push to queue for background removing, then we will remove it now
     if (!changelog_operation_queue.tryPush(changelog_operation, 60 * 1000))
     {
         throw DB::Exception(

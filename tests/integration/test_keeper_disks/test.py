@@ -169,6 +169,7 @@ def test_logs_with_disks(started_cluster):
             local_log_files = get_local_logs(node_logs)
             start_time = time.time()
             while len(local_log_files) != 1:
+                logging.debug(f"Local log files: {local_log_files}")
                 assert (
                     time.time() - start_time < 60
                 ), "local_log_files size is not equal to 1 after 60s"
@@ -191,7 +192,7 @@ def test_logs_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
-        local_log_files = get_local_log_files()
+        local_log_files = get_single_local_log_file()
         log_files = list_s3_objects(started_cluster, "logs/")
 
         log_files.extend(local_log_files)
