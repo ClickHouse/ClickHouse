@@ -1600,6 +1600,7 @@ public:
     ThrottlerPtr getMergesThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
