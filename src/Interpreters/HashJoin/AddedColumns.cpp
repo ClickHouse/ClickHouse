@@ -22,21 +22,7 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 {
 }
 
-template<>
-void AddedColumns<false>::buildOutput() {}
-
-template<>
-void AddedColumns<false>::buildJoinGetOutput() {}
-
-template<>
-template<bool from_row_list>
-void AddedColumns<false>::buildOutputFromBlocks() {}
-
-template<>
-void AddedColumns<true>::buildOutputFromRowRefLists();
-
-template<>
-void AddedColumns<true>::buildOutput()
+void LazyOutput::buildOutput()
 {
     if (!output_by_row_list)
         buildOutputFromBlocks<false>();
@@ -49,26 +35,24 @@ void AddedColumns<true>::buildOutput()
     }
 }
 
-template<>
-void AddedColumns<true>::buildOutputFromRowRefLists()
+void LazyOutput::buildOutputFromRowRefLists()
 {
-    const size_t output_row_count = lazy_output.getRowCount();
+    const size_t output_row_count = getRowCount();
 
-    for (size_t i = 0; i < this->size(); ++i)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         auto & col = columns[i];
         col->reserve(col->size() + output_row_count);
-        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
+        col->fillFromRowRefs(type_name[i].type, right_indexes[i], getRowRefs(), join_data_sorted);
     }
 }
 
-template<>
-void AddedColumns<true>::buildJoinGetOutput()
+void LazyOutput::buildJoinGetOutput()
 {
-    for (size_t i = 0; i < this->size(); ++i)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         auto & col = columns[i];
-        for (auto row_ref_i : lazy_output.getRowRefs())
+        for (auto row_ref_i : getRowRefs())
         {
             if (!row_ref_i)
             {
@@ -85,17 +69,16 @@ void AddedColumns<true>::buildJoinGetOutput()
     }
 }
 
-template<>
 template<bool from_row_list>
-void AddedColumns<true>::buildOutputFromBlocks()
+void LazyOutput::buildOutputFromBlocks()
 {
-    if (this->size() == 0)
+    if (columns.empty())
         return;
     std::vector<const Columns *> many_columns;
     std::vector<UInt32> row_nums;
-    many_columns.reserve(lazy_output.getRowCount());
-    row_nums.reserve(lazy_output.getRowCount());
-    for (auto row_ref_i : lazy_output.getRowRefs())
+    many_columns.reserve(getRowCount());
+    row_nums.reserve(getRowCount());
+    for (auto row_ref_i : getRowRefs())
     {
         if (row_ref_i)
         {
@@ -121,7 +104,7 @@ void AddedColumns<true>::buildOutputFromBlocks()
             row_nums.emplace_back(0);
         }
     }
-    for (size_t i = 0; i < this->size(); ++i)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
     }
@@ -132,8 +115,8 @@ void AddedColumns<false>::applyLazyDefaults()
 {
     if (lazy_defaults_count)
     {
-        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-            JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
+        for (size_t j = 0, size = lazy_output.right_indexes.size(); j < size; ++j)
+            JoinCommon::addDefaultValues(*lazy_output.columns[j], lazy_output.type_name[j].type, lazy_defaults_count);
         lazy_defaults_count = 0;
     }
 }
@@ -152,23 +135,23 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 #endif
     if (is_join_get)
     {
-        size_t right_indexes_size = right_indexes.size();
+        size_t right_indexes_size = lazy_output.right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = (*row_ref->columns)[right_indexes[j]];
+            const auto & column_from_block = (*row_ref->columns)[lazy_output.right_indexes[j]];
             if (auto * nullable_col = nullable_column_ptrs[j])
                 nullable_col->insertFromNotNullable(*column_from_block, row_ref->row_num);
             else
-                columns[j]->insertFrom(*column_from_block, row_ref->row_num);
+                lazy_output.columns[j]->insertFrom(*column_from_block, row_ref->row_num);
         }
     }
     else
     {
-        size_t right_indexes_size = right_indexes.size();
+        size_t right_indexes_size = lazy_output.right_indexes.size();
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
-            const auto & column_from_block = (*row_ref->columns)[right_indexes[j]];
-            columns[j]->insertFrom(*column_from_block, row_ref->row_num);
+            const auto & column_from_block = (*row_ref->columns)[lazy_output.right_indexes[j]];
+            lazy_output.columns[j]->insertFrom(*column_from_block, row_ref->row_num);
         }
     }
 }
