@@ -379,10 +379,6 @@ void AccessRightsElement::makeBackwardCompatible()
                     access_flags = it->second;
                     parameter.clear();
                 }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown parameter for sources grant: {}", parameter);
-                }
             }
         }
     }
