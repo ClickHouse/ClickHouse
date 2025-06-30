@@ -2032,7 +2032,7 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     MutationsSnapshot::MutationsByPartititon mutations_snapshot;
 
     std::lock_guard lock(state_mutex);
-    if (!MergeTreeData::IMutationsSnapshot::needCollectMutations(params))
+    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)

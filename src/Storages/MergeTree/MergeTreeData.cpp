@@ -473,11 +473,6 @@ Int64 MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(const
     return extractVersion(params.min_part_data_versions, partition_id, std::numeric_limits<Int64>::min());
 }
 
-bool MergeTreeData::IMutationsSnapshot::needCollectMutations(const Params & params)
-{
-    return params.need_data_mutations || params.need_alter_mutations || params.min_part_metadata_version < params.metadata_version;
-}
-
 bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands)
 {
     for (const auto & command : commands)

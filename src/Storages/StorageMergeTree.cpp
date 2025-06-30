@@ -2676,7 +2676,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     MutationsSnapshot::MutationsByVersion mutations_snapshot;
 
     std::lock_guard lock(currently_processing_in_background_mutex);
-    if (!MergeTreeData::IMutationsSnapshot::needCollectMutations(params))
+    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
 
     for (const auto & [version, entry] : current_mutations_by_version)

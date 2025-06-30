@@ -494,7 +494,6 @@ public:
 
         static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
 
-        static bool needCollectMutations(const Params & params);
         static bool needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands);
 
         virtual ~IMutationsSnapshot() = default;
