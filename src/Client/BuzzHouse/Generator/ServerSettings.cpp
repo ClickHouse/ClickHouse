@@ -143,6 +143,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"partial_merge_join_optimizations", trueOrFalseSetting},
        {"prefer_global_in_and_join", trueOrFalseSetting},
        {"prefer_localhost_replica", trueOrFalseSetting},
+       {"query_plan_rewrite_order_by_limit", trueOrFalseSetting},
        {"query_plan_aggregation_in_order", trueOrFalseSetting},
        {"query_plan_convert_join_to_in", trueOrFalseSetting},
        {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},

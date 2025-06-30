@@ -2,28 +2,29 @@
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/Passes/RewriteOrderByLimitPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
 
 namespace DB
@@ -36,6 +37,7 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool query_plan_rewrite_order_by_limit;
 }
 
 namespace ErrorCodes
@@ -458,6 +460,12 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::query_plan_rewrite_order_by_limit])
+    {
+        RewriteOrderByLimitPass rewrite_order_by_limit_pass;
+        rewrite_order_by_limit_pass.run(query_tree_to_modify, planner_context->getQueryContext());
+    }
 
     return query_tree_to_modify;
 }
