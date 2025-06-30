@@ -1954,7 +1954,7 @@ bool FileCache::doDynamicResizeImpl(
 
     if (status != IFileCachePriority::CollectStatus::SUCCESS)
     {
-        result_limits = desired_limits;
+        result_limits = current_limits;
         LOG_INFO(log, "Dynamic cache resize is not possible at the moment");
         return false;
     }

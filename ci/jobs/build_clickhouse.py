@@ -163,12 +163,10 @@ def main():
 
     if res and JobStages.BUILD in stages:
         run_shell("sccache stats", "sccache --show-stats")
-        if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
-            targets = "clickhouse-bundle"
+        if build_type == BuildTypes.AMD_DEBUG:
+            targets = "-k0 all"
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
-        elif build_type == BuildTypes.AMD_DEBUG:
-            targets = "-k0 all"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
             run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")

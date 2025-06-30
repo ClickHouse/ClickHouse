@@ -42,7 +42,7 @@ Positions: 0
             Strictness: ALL
             Algorithm: HashJoin
             Clauses: [(__table1.i1) = (__table4.i2)]
-              Expression (Change column names to column identifiers)
+              Expression (( + Change column names to column identifiers))
               Actions: INPUT : 0 -> i1 Int64 : 0
                        ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
               Positions: 1
