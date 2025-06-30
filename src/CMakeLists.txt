@@ -710,8 +710,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper
-        hilite_comparator)
+        clickhouse_common_zookeeper)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)

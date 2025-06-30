@@ -47,7 +47,7 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
+    ostr << "APPLY" << " ";
 
     if (!column_name_prefix.empty())
         ostr << "(";
@@ -166,7 +166,7 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 
 void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "EXCEPT" << (is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
         ostr << "(";
@@ -297,7 +297,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     assert(children.size() == 1);
 
     children[0]->format(ostr, settings, state, frame);
-    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
+    ostr << " AS " << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
@@ -321,7 +321,7 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 
 void ASTColumnsReplaceTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "REPLACE" << (is_strict ? " STRICT " : " ");
 
     ostr << "(";
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)

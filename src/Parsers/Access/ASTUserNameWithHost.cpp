@@ -142,7 +142,7 @@ String ASTUserNameWithHost::getStringFromAST(const ASTPtr & ast) const
             return getIdentifierName(identifier);
 
         WriteBufferFromOwnString buf;
-        FormatSettings settings(true, false);
+        FormatSettings settings(true);
 
         identifier->format(buf, settings);
         return buf.str();

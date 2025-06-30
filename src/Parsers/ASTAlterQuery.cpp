@@ -85,248 +85,248 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
         col_decl->format(ostr, settings, state, frame);
 
         if (first)
-            ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
+            ostr << " FIRST ";
         else if (column) /// AFTER
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
+            ostr << " AFTER ";
             column->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::DROP_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (clear_column ? "CLEAR " : "DROP ") << "COLUMN "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        ostr << (clear_column ? "CLEAR " : "DROP ") << "COLUMN "
+                      << (if_exists ? "IF EXISTS " : "");
         column->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MODIFY_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "")
+                     ;
         col_decl->format(ostr, settings, state, frame);
 
         if (!remove_property.empty())
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " REMOVE " << remove_property;
+            ostr << " REMOVE " << remove_property;
         }
         else if (settings_changes)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+            ostr << " MODIFY SETTING ";
             settings_changes->format(ostr, settings, state, frame);
         }
         else if (settings_resets)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " RESET SETTING " << (settings.hilite ? hilite_none : "");
+            ostr << " RESET SETTING ";
             settings_resets->format(ostr, settings, state, frame);
         }
         else
         {
             if (first)
-                ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
+                ostr << " FIRST ";
             else if (column) /// AFTER
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
+                ostr << " AFTER ";
                 column->format(ostr, settings, state, frame);
             }
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE COLUMN " << (settings.hilite ? hilite_none : "");
+        ostr << "MATERIALIZE COLUMN ";
         column->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "")
+                     ;
         column->format(ostr, settings, state, frame);
-        ostr << " " << (settings.hilite ? hilite_none : "");
+        ostr << " ";
         comment->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_COMMENT || type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY COMMENT" << (settings.hilite ? hilite_none : "");
-        ostr << " " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY COMMENT";
+        ostr << " ";
         comment->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY ORDER BY ";
         order_by->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_SAMPLE_BY)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY SAMPLE BY ";
         sample_by->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::REMOVE_SAMPLE_BY)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "REMOVE SAMPLE BY" << (settings.hilite ? hilite_none : "");
+        ostr << "REMOVE SAMPLE BY";
     }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
         index_decl->format(ostr, settings, state, frame);
 
         if (first)
-            ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
+            ostr << " FIRST ";
         else if (index) /// AFTER
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
+            ostr << " AFTER ";
             index->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (clear_index ? "CLEAR " : "DROP ") << "INDEX "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        ostr << (clear_index ? "CLEAR " : "DROP ") << "INDEX "
+                      << (if_exists ? "IF EXISTS " : "");
         index->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE INDEX " << (settings.hilite ? hilite_none : "");
+        ostr << "MATERIALIZE INDEX ";
         index->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::ADD_STATISTICS)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
         statistics_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_STATISTICS)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTICS "
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY STATISTICS "
+                     ;
         statistics_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_STATISTICS)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
+                      << (if_exists ? "IF EXISTS " : "");
         statistics_decl->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTICS " << (settings.hilite ? hilite_none : "");
+        ostr << "MATERIALIZE STATISTICS ";
         statistics_decl->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "UNLOCK SNAPSHOT " << (settings.hilite ? hilite_none : "");
+        ostr << "UNLOCK SNAPSHOT ";
         ostr << quoteString(snapshot_name);
-        ostr << (settings.hilite ? hilite_keyword : "") << "FROM " << (settings.hilite ? hilite_none : "");
+        ostr << "FROM ";
         snapshot_desc->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
         constraint_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_CONSTRAINT)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
+                     ;
         constraint->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_PROJECTION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ADD PROJECTION " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ADD PROJECTION " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
         projection_decl->format(ostr, settings, state, frame);
 
         if (first)
-            ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
+            ostr << " FIRST ";
         else if (projection)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
+            ostr << " AFTER ";
             projection->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::DROP_PROJECTION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (clear_projection ? "CLEAR " : "DROP ") << "PROJECTION "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        ostr << (clear_projection ? "CLEAR " : "DROP ") << "PROJECTION "
+                      << (if_exists ? "IF EXISTS " : "");
         projection->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE PROJECTION " << (settings.hilite ? hilite_none : "");
+        ostr << "MATERIALIZE PROJECTION ";
         projection->format(ostr, settings, state, frame);
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (detach ? "DETACH" : "DROP") << (part ? " PART " : " PARTITION ")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << (detach ? "DETACH" : "DROP") << (part ? " PART " : " PARTITION ")
+                     ;
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
+                     ;
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::FORGET_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FORGET PARTITION "
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "FORGET PARTITION "
+                     ;
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ATTACH_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH " << (part ? "PART " : "PARTITION ")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "ATTACH " << (part ? "PART " : "PARTITION ")
+                     ;
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MOVE " << (part ? "PART " : "PARTITION ")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "MOVE " << (part ? "PART " : "PARTITION ")
+                     ;
         partition->format(ostr, settings, state, frame);
         ostr << " TO ";
         switch (move_destination_type)
@@ -341,11 +341,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 ostr << "TABLE ";
                 if (!to_database.empty())
                 {
-                    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
-                                  << (settings.hilite ? hilite_none : "") << ".";
+                    ostr << backQuoteIfNeed(to_database)
+                                  << ".";
                 }
-                ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_table)
-                              << (settings.hilite ? hilite_none : "");
+                ostr << backQuoteIfNeed(to_table)
+                             ;
                 return;
             default:
                 break;
@@ -357,169 +357,169 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << (replace ? "REPLACE" : "ATTACH") << " PARTITION "
-                      << (settings.hilite ? hilite_none : "");
+        ostr << (replace ? "REPLACE" : "ATTACH") << " PARTITION "
+                     ;
         partition->format(ostr, settings, state, frame);
-        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+        ostr << " FROM ";
         if (!from_database.empty())
         {
-            ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
-                          << (settings.hilite ? hilite_none : "") << ".";
+            ostr << backQuoteIfNeed(from_database)
+                          << ".";
         }
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(from_table);
     }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FETCH " << (part ? "PART " : "PARTITION ")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "FETCH " << (part ? "PART " : "PARTITION ")
+                     ;
         partition->format(ostr, settings, state, frame);
-        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << DB::quote << from;
+        ostr << " FROM " << DB::quote << from;
     }
     else if (type == ASTAlterCommand::FREEZE_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE PARTITION " << (settings.hilite ? hilite_none : "");
+        ostr << "FREEZE PARTITION ";
         partition->format(ostr, settings, state, frame);
 
         if (!with_name.empty())
         {
-            ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "") << " "
+            ostr << " " << "WITH NAME" << " "
                           << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE" << (settings.hilite ? hilite_none : "");
+        ostr << "FREEZE";
 
         if (!with_name.empty())
         {
-            ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "") << " "
+            ostr << " " << "WITH NAME" << " "
                           << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::UNFREEZE_PARTITION)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE PARTITION " << (settings.hilite ? hilite_none : "");
+        ostr << "UNFREEZE PARTITION ";
         partition->format(ostr, settings, state, frame);
 
         if (!with_name.empty())
         {
-            ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "") << " "
+            ostr << " " << "WITH NAME" << " "
                           << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::UNFREEZE_ALL)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE" << (settings.hilite ? hilite_none : "");
+        ostr << "UNFREEZE";
 
         if (!with_name.empty())
         {
-            ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "") << " "
+            ostr << " " << "WITH NAME" << " "
                           << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::DELETE)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "DELETE" << (settings.hilite ? hilite_none : "");
+        ostr << "DELETE";
 
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
 
-        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        ostr << " WHERE ";
         predicate->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::UPDATE)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "UPDATE " << (settings.hilite ? hilite_none : "");
+        ostr << "UPDATE ";
         update_assignments->format(ostr, settings, state, frame);
 
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
 
-        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        ostr << " WHERE ";
         predicate->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY TTL ";
         ttl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::REMOVE_TTL)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "REMOVE TTL" << (settings.hilite ? hilite_none : "");
+        ostr << "REMOVE TTL";
     }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE TTL" << (settings.hilite ? hilite_none : "");
+        ostr << "MATERIALIZE TTL";
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY SETTING ";
         settings_changes->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::RESET_SETTING)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "RESET SETTING " << (settings.hilite ? hilite_none : "");
+        ostr << "RESET SETTING ";
         settings_resets->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY SETTING ";
         settings_changes->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY" << settings.nl_or_ws
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY QUERY" << settings.nl_or_ws
+                     ;
         select->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY" << settings.nl_or_ws
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY" << settings.nl_or_ws
+                     ;
         refresh->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
+        ostr << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
+                     ;
         column->format(ostr, settings, state, frame);
 
-        ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
+        ostr << " TO ";
         rename_to->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        ostr << "MODIFY ";
         sql_security->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
+        ostr << "APPLY DELETED MASK";
 
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::APPLY_PATCHES)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "APPLY PATCHES" << (settings.hilite ? hilite_none : "");
+        ostr << "APPLY PATCHES";
 
         if (partition)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
     }
@@ -647,7 +647,7 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     frame.need_parens = false;
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-    ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+    ostr << indent_str;
 
     switch (alter_object)
     {
@@ -660,8 +660,6 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
         default:
             break;
     }
-
-    ostr << (settings.hilite ? hilite_none : "");
 
     if (table)
     {

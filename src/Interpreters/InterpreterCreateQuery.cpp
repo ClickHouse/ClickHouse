@@ -350,7 +350,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+        IAST::FormatSettings format_settings(/*one_line=*/false);
         create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();

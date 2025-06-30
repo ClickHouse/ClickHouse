@@ -962,7 +962,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         WriteBufferFromOwnString out;
                         IAST::FormatSettings format_settings(
                             /*one_line=*/true,
-                            /*hilite=*/false,
                             IdentifierQuotingRule::WhenNecessary,
                             IdentifierQuotingStyle::Backticks,
                             /*show_secrets_=*/false);
