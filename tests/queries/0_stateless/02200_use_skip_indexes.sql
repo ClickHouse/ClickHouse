@@ -1,3 +1,5 @@
+SET use_query_condition_cache = 0;
+
 CREATE TABLE data_02200 (
     key Int,
     value Int,

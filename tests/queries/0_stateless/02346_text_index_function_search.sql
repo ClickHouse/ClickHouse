@@ -2,6 +2,7 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
