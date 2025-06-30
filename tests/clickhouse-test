@@ -68,6 +68,12 @@ MESSAGES_TO_RETRY = [
     "Unable to get registers from thread",
 ]
 
+IGNORED_SANITIZER_ERRORS = [
+    "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+    # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
+    #"LLVM ERROR: IO failure on output stream: Broken pipe",
+]
+
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
@@ -1655,7 +1661,9 @@ class TestCase:
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
-                content = "\n".join(filter(lambda l: "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!" not in l, content.splitlines()))
+                def ignore_sanitizer_line(line):
+                    return any(filter(lambda exception: exception in line, IGNORED_SANITIZER_ERRORS))
+                content = "\n".join(filter(lambda line: not ignore_sanitizer_line(line), content.splitlines())).strip()
                 if content:
                     stderr += f"Path: {path}\n"
                     stderr += content
@@ -1940,6 +1948,9 @@ class TestCase:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
         self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # Ensure that we start with empty files
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            os.remove(path)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -2756,7 +2767,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1))
+                signal.alarm(int(args.timeout * 1.1) + 5)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
