@@ -1292,7 +1292,14 @@ bool MutationsInterpreter::isAffectingAllColumns() const
     if (stages.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
-    return stages.back().isAffectingAllColumns(storage_columns);
+    /// Find first not readonly stage from the end.
+    for (auto it = stages.rbegin(); it != stages.rend(); ++it)
+    {
+        if (!it->is_readonly)
+            return it->isAffectingAllColumns(storage_columns);
+    }
+
+    return false;
 }
 
 }

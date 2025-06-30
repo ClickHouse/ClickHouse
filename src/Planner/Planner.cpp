@@ -6,6 +6,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -51,6 +52,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -141,6 +143,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool enable_parallel_blocks_marshalling;
 }
 
 namespace ServerSetting
@@ -229,6 +232,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             collect_filters = true;
             break;
         }
+        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
+        {
+            collect_filters = true;
+            break;
+        }
     }
 
     if (!collect_filters)
@@ -274,7 +282,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (auto filter_actions = read_from_dummy->detachFilterActionsDAG())
         {
             const auto & table_node = dummy_storage_to_table.at(&read_from_dummy->getStorage());
-            res[table_node] = FiltersForTableExpression{std::move(filter_actions), read_from_dummy->getPrewhereInfo()};
+            res[table_node] = FiltersForTableExpression{filter_actions, read_from_dummy->getPrewhereInfo()};
         }
     }
 
@@ -1060,6 +1068,16 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
+    }
+
+    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
+    /// as it may break `rows_before_limit_at_least` value during the second stage in
+    /// case it also contains LIMIT BY
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
+    {
+        return;
     }
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
@@ -1941,6 +1959,18 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    // Not all cases are supported here yet. E.g. for this query:
+    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6)) group by number
+    // we will have `BlocksMarshallingStep` added to the query plan, but not for
+    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6))
+    // because `to_stage` for it will be `QueryProcessingStage::Complete`.
+    if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
+        && query_context->getClientInfo().distributed_depth <= 1 // Makes sense for higher depths too, just not supported
+    )
+        query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);

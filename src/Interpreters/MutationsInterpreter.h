@@ -204,6 +204,10 @@ private:
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
 
+        /// True if columns in column_to_updated are not changed, but they need
+        /// to be read (for example to materialize projection).
+        bool is_readonly = false;
+
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };

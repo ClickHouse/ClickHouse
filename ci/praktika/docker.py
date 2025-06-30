@@ -19,7 +19,7 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(cls, config: "Docker.Config", digests, amd_only, arm_only, with_log):
+    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
         from .result import Result
 
         sw = Utils.Stopwatch()
