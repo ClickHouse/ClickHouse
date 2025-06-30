@@ -1,6 +1,6 @@
-#include "AggregateFunctionCombinatorFactory.h"
-#include "AggregateFunctions/Helpers.h"
-#include "Core/Types.h"
+#include <AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Helpers.h"
+#include <Core/Types.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Common/HashTable/HashMap.h>
@@ -34,23 +34,23 @@ namespace
         {
             const auto & key_vec = assert_cast<const ColumnVector<Key> &>(*columns[arg_num]).getData();
             auto ref = columns[arg_num - 1]->getDataAt(row_num);
-        
+
             UInt64 raw = 0;
             std::memcpy(&raw, ref.data, ref.size);
             map[key_vec[row_num]] = raw;
         }
-    
+
         void merge(const Self & rhs, Arena *)
         {
             for (const auto & [key, value] : rhs.map)
                 map[key] += value;
         }
-    
+
         void serialize(WriteBuffer & buf) const
         {
             map.write(buf);
         }
-    
+
         void deserialize(ReadBuffer & buf, Arena *)
         {
             map.read(buf);
@@ -67,7 +67,7 @@ namespace
             {
                 char buffer[sizeof(UInt64)];
                 std::memcpy(buffer, &raw_value, sizeof(UInt64));
-            
+
                 argument_columns[0]->insertData(buffer, value_size);
             }
             return argument_columns;
@@ -81,37 +81,37 @@ namespace
         using Map = HashMapWithStackMemory<T, T, DefaultHash<T>, 4>;
         using Self = AggregateFunctionDistinctByNumericData;
         Map map;
-    
+
         void add(const IColumn ** columns, size_t arg_num, size_t row_num, Arena *)
         {
             const auto & key_vec = assert_cast<const ColumnVector<T> &>(*columns[arg_num]).getData();
             const auto & val_vec = assert_cast<const ColumnVector<T> &>(*columns[arg_num]).getData();
             map[key_vec[row_num]] = val_vec[row_num];
         }
-    
+
         void merge(const Self & rhs, Arena *)
         {
             for (const auto & [key, value] : rhs.map)
                 map[key] += value;
         }
-    
+
         void serialize(WriteBuffer & buf) const
         {
             map.write(buf);
         }
-    
+
         void deserialize(ReadBuffer & buf, Arena *)
         {
             map.read(buf);
         }
-    
+
         MutableColumns getArguments(const DataTypes & argument_types, size_t /* arg_num */) const
         {
             MutableColumns argument_columns;
             argument_columns.emplace_back(argument_types[0]->createColumn());
             for (const auto & [_, value] : map)
                 argument_columns[0]->insert(value);
-    
+
             return argument_columns;
         }
     };
@@ -225,21 +225,60 @@ public:
         arg_num = arguments.size() - 1;
     }
 
-    String getName() const override { return nested_func->getName() + "DistinctBy"; }
+    String getName() const override
+    {
+        return nested_func->getName() + "DistinctBy";
+    }
 
-    bool allocatesMemoryInArena() const override { return true; }
-    bool isState() const override { return nested_func->isState(); }
-    bool isVersioned() const override { return nested_func->isVersioned(); }
-    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
-    size_t getDefaultVersion() const override { return nested_func->getDefaultVersion(); }
+    bool allocatesMemoryInArena() const override
+    {
+        return true;
+    }
 
-    size_t sizeOfData() const override { return sizeof(Data); }
-    size_t alignOfData() const override { return alignof(Data); }
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) Data; }
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
 
-    void destroy(AggregateDataPtr place) const noexcept override { this->data(place).~Data(); }
-    void destroyUpToState(AggregateDataPtr place) const noexcept override { this->data(place).~Data(); }
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
+    size_t sizeOfData() const override
+    {
+        return sizeof(Data); 
+    }
+
+    size_t alignOfData() const override
+    {
+        return alignof(Data);
+    }
+
+    void create(AggregateDataPtr __restrict place) const override
+    {
+        new (place) Data;
+    }
+
+    void destroy(AggregateDataPtr place) const noexcept override
+    {
+        this->data(place).~Data();
+    }
+
+    void destroyUpToState(AggregateDataPtr place) const noexcept override
+    {
+        this->data(place).~Data();
+    }
 
     bool hasTrivialDestructor() const override
     {
@@ -338,7 +377,7 @@ public:
     }
 };
 
-} // namespace
+}
 
 void registerAggregateFunctionCombinatorDistinctBy(AggregateFunctionCombinatorFactory & factory)
 {
