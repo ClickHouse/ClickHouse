@@ -21,15 +21,14 @@ namespace
         }
     }
 
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(new_name);
+        ostr << " RENAME TO " << quoteString(new_name);
     }
 
     void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        ostr << " SETTINGS ";
         settings.format(ostr, format);
     }
 
@@ -41,7 +40,7 @@ namespace
 
     void formatToRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " TO ";
         roles.format(ostr, settings);
     }
 }
@@ -74,26 +73,26 @@ void ASTCreateSettingsProfileQuery::formatImpl(WriteBuffer & ostr, const FormatS
 {
     if (attach)
     {
-        ostr << (format.hilite ? hilite_keyword : "") << "ATTACH SETTINGS PROFILE" << (format.hilite ? hilite_none : "");
+        ostr << "ATTACH SETTINGS PROFILE";
     }
     else
     {
-        ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER SETTINGS PROFILE" : "CREATE SETTINGS PROFILE")
-                      << (format.hilite ? hilite_none : "");
+        ostr << (alter ? "ALTER SETTINGS PROFILE" : "CREATE SETTINGS PROFILE")
+                     ;
     }
 
     if (if_exists)
-        ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << " IF EXISTS";
     else if (if_not_exists)
-        ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << " IF NOT EXISTS";
     else if (or_replace)
-        ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        ostr << " OR REPLACE";
 
     formatNames(names, ostr);
 
     if (!storage_name.empty())
-        ostr << (format.hilite ? IAST::hilite_keyword : "")
-                    << " IN " << (format.hilite ? IAST::hilite_none : "")
+        ostr
+                    << " IN "
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, format);

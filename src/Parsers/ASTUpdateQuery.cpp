@@ -34,7 +34,7 @@ ASTPtr ASTUpdateQuery::clone() const
 
 void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "UPDATE " << (settings.hilite ? hilite_none : "");
+    ostr << "UPDATE ";
 
     if (database)
     {
@@ -45,16 +45,16 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << backQuoteIfNeed(getTable());
     formatOnCluster(ostr, settings);
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
+    ostr << " SET ";
     assignments->format(ostr, settings, state, frame);
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+        ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+    ostr << " WHERE ";
     predicate->format(ostr, settings, state, frame);
 }
 

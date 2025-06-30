@@ -43,28 +43,26 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (out_file)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "INTO OUTFILE ";
         out_file->format(ostr, s, state, frame);
 
-        ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
             ostr << " APPEND";
         if (is_outfile_truncate)
             ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
             ostr << " AND STDOUT";
-        ostr << (s.hilite ? hilite_none : "");
     }
 
     if (format_ast)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "FORMAT ";
         format_ast->format(ostr, s, state, frame);
     }
 
     if (settings_ast)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "SETTINGS ";
         settings_ast->format(ostr, s, state, frame);
     }
 }

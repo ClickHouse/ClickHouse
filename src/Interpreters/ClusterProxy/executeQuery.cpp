@@ -1055,7 +1055,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         insert_ast->IAST::format(buf, ast_format_settings);
         formatted_query = buf.str();
     }

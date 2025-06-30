@@ -71,9 +71,9 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
     {
         if (it != list_of_selects->children.begin())
         {
-            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            ostr << settings.nl_or_ws << indent_str
                 << mode_to_str(get_mode(it))
-                << (settings.hilite ? hilite_none : "")
+
                 << settings.nl_or_ws;
         }
 

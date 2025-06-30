@@ -256,7 +256,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(oneline_current_query); // TODO
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
@@ -303,7 +303,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(oneline_current_query); // TODO
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
