@@ -1,4 +1,4 @@
-#include "Server.h"
+#include <Server.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -97,7 +97,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
-#include "MetricsTransmitter.h"
+#include <MetricsTransmitter.h>
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
@@ -2000,7 +2000,7 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setServerSetting("s3queue_disable_streaming", new_server_settings[ServerSetting::s3queue_disable_streaming].value);
+            global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 

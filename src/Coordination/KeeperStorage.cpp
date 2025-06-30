@@ -1568,17 +1568,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
 {
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
-    static const Coordination::ACLs injected_acls = {{.permissions = Coordination::ACL::All, .scheme = "auth", .id = ""}};
-    const Coordination::ACLs * request_acls;
-    if (keeper_context.shouldInjectAuth())
-    {
-        request_acls = &injected_acls;
-    }
-    else
-    {
-        request_acls = &zk_request.acls;
-    }
-
     std::list<KeeperStorageBase::Delta> new_deltas;
 
     auto parent_path = parentNodePath(zk_request.path);
@@ -1624,7 +1613,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(*request_acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
+    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     if (zk_request.is_ephemeral)
@@ -3494,12 +3483,6 @@ int64_t KeeperStorageBase::getSessionID(int64_t session_timeout_ms)
     auto result = session_id_counter++;
     session_and_timeout.emplace(result, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
-
-    if (keeper_context->shouldInjectAuth())
-    {
-        committed_session_and_auth.emplace(
-            result, AuthIDs{{.scheme = "digest", .id = KeeperStorageBase::generateDigest("clickhouse:injected")}});
-    }
     return result;
 }
 

@@ -1277,7 +1277,7 @@ uptime()
 Query:
 
 ```sql
-SELECT uptime() as Uptime;
+SELECT uptime() AS Uptime;
 ```
 
 Result:
@@ -2015,7 +2015,7 @@ blockSerializedSize(value[, value[, ...]])
 Query:
 
 ```sql
-SELECT blockSerializedSize(maxState(1)) as x
+SELECT blockSerializedSize(maxState(1)) AS x
 ```
 
 Result:
@@ -2676,7 +2676,7 @@ Consider how you can use `runningAccumulate` to find the cumulative sum of numbe
 Query:
 
 ```sql
-SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number AS k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
 ```
 
 Result:
@@ -2805,7 +2805,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:
@@ -2839,7 +2839,7 @@ SELECT * FROM db_test.id_val_nulls;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:
@@ -2903,7 +2903,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:
