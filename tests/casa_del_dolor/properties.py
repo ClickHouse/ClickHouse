@@ -220,6 +220,7 @@ possible_properties = {
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
+    "s3queue_disable_streaming": true_false_lambda,
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
