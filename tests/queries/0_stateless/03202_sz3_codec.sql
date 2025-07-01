@@ -13,6 +13,10 @@ CREATE TABLE tab (compressed String CODEC(SZ3)) Engine = Memory; -- { serverErro
 CREATE TABLE tab (compressed UInt64 CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (compressed BFloat16 CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (compressed Array(UInt64) CODEC(SZ3)) Engine = Memory; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_map (
+    compressed_f64   Map(UInt8, Float64) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
+    compressed_f32   Map(UInt8, Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
+) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
 -- SZ3 requires 0 or 3 arguments
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP'))) Engine = Memory; -- { serverError BAD_ARGUMENTS }
@@ -212,5 +216,80 @@ SELECT
 FROM tab
 GROUP BY name
 HAVING rel_error > 0.02;
+
+DROP TABLE tab;
+
+SELECT 'Simple test 1d tuple';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab (
+    key              UInt64,
+    name             String,
+    uncompressed_f64 Tuple(Float64),
+    uncompressed_f32 Tuple(Float32),
+    compressed_f64   Tuple(Float64) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
+    compressed_f32   Tuple(Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
+) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO tab VALUES
+(
+    1,
+    'alpha',
+    (123.456),
+    (12.34),
+    (123.456),
+    (12.34)
+),
+(
+    2,
+    'beta',
+    (654.321),
+    (43.21),
+    (654.321),
+    (43.21)
+),
+(
+    3,
+    'gamma',
+    (111.222),
+    (22.11),
+    (111.222),
+    (22.11)
+),
+(
+    4,
+    'delta',
+    (0.001),
+    (0.002),
+    (0.001),
+    (0.002)
+),
+(
+    5,
+    'epsilon',
+    (9999.999),
+    (999.99),
+    (9999.999),
+    (999.99)
+);
+
+SELECT
+    c1.key,
+    c1.name,
+    c1.uncompressed_f64,
+    c1.compressed_f64,
+    tupleElement(c1.uncompressed_f64, 1) - tupleElement(c1.compressed_f64, 1) AS diff_f64,
+    'prev:' AS marker,
+    c2.key AS prev_key,
+    c2.uncompressed_f64 AS prev_uncompressed_f64
+FROM
+    tab AS c1
+INNER JOIN
+    tab AS c2
+    ON c2.key = toUInt64(c1.key - 1)
+WHERE
+    abs(1 - (tupleElement(c1.uncompressed_f64, 1) - tupleElement(c1.compressed_f64, 1)) / tupleElement(c1.uncompressed_f64, 1)) < 0.01
+LIMIT 10;
 
 DROP TABLE tab;

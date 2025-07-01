@@ -96,8 +96,8 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
-    /// Setting dimensions is useful for vector codecs (only SZ3 codec at the moment).
-    virtual void setDimensions(const std::vector<size_t> & /*dimensions*/);
+    /// Setting dimension is useful for vector codecs (only SZ3 codec at the moment).
+    virtual void setVectorDimension(size_t /*dimension*/);
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);

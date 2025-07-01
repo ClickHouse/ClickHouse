@@ -8,3 +8,4 @@ Test with custom settings
 Test 1d array
 -- Test F64: summed relative error
 -- Test F32: summed relative error
+Simple test 1d tuple

@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ICompressionCodec::setDimensions(const std::vector<size_t> & /*dimensions*/)
+void ICompressionCodec::setVectorDimension(size_t /*dimension*/)
 {
     if (!isVectorCodec())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");

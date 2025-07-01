@@ -269,25 +269,17 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
                 /// require specifying the array dimensions before compression starts.
                 /// For 1D arrays, it's simply the length.
-                /// For multidimensional arrays, the dimensions vector contains the lengths of nested arrays at each level,
-                /// as long as the elements remain arrays.
                 auto compression_codec = result_stream->compressed_buf.getCodec();
                 if (compression_codec->isVectorCodec())
                 {
-                    std::vector<size_t> dimensions;
-
                     Field sample_field;
                     block.getColumnOrSubcolumnByName(name_and_type->name).column->get(0, sample_field);
 
-                    for (size_t j = 0; j < substream_path.size() - 1; ++j)
-                    {
-                        if (sample_field.getType() != Field::Types::Array)
-                            break;
-                        dimensions.push_back(sample_field.safeGet<Array>().size());
-                        Field child_field = sample_field.safeGet<Array>()[0];
-                        sample_field = std::move(child_field);
-                    }
-                    compression_codec->setDimensions(dimensions);
+                    if (sample_field.getType() == Field::Types::Array)          
+                        compression_codec->setVectorDimension(sample_field.safeGet<Array>().size());
+
+                    if (sample_field.getType() == Field::Types::Tuple)
+                        compression_codec->setVectorDimension(sample_field.safeGet<Tuple>().size());
                 }
 
                 /// Write one compressed block per column in granule for more optimal reading.
