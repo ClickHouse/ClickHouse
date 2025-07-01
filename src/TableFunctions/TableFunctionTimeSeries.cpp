@@ -128,7 +128,7 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Reads time series from a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
-            .category{""}}
+            .category = FunctionDocumentation::Category::TableFunction}
         });
 }
 
