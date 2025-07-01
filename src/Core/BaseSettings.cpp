@@ -12,6 +12,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
+
 void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
 {
     writeStringBinary(str, out);
@@ -53,10 +54,38 @@ void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
 }
 
-
+/// Log the summary of unknown settings as a warning instead of warning for each one separately.
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
-    LOG_WARNING(getLogger("Settings"), "Unknown setting '{}', skipping", name);
+    unknown_settings.emplace_back(name);
+
+    if (!unknown_settings_warning_logged)
+    {
+        if (unknown_settings.size() == 1)
+        {
+            LOG_WARNING(getLogger("Settings"), "Unknown setting '{}', skipping", unknown_settings[0]);
+        }
+        else if (unknown_settings.size() == 2)
+        {
+            LOG_WARNING(getLogger("Settings"), "Unknown settings: '{}', '{}', skipping", unknown_settings[0], unknown_settings[1]);
+        }
+        else
+        {
+            LOG_WARNING(
+                getLogger("Settings"),
+                "Unknown settings: '{}', '{}' and {} more, skipping",
+                unknown_settings[0],
+                unknown_settings[1],
+                unknown_settings.size() - 2);
+        }
+        unknown_settings_warning_logged = true;
+    }
+}
+
+void BaseSettingsHelpers::flushWarnings()
+{
+    unknown_settings.clear();
+    unknown_settings_warning_logged = false;
 }
 
 }
