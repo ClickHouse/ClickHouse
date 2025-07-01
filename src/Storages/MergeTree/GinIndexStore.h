@@ -195,20 +195,19 @@ private:
 
     friend class GinIndexStoreDeserializer;
 
-
     /// Initialize all indexing files for this store
     void initFileStreams();
 
     /// Initialize segment ID by either reading from file .gin_sid or setting to default value
     void initSegmentId();
 
-    /// Get next available segment ID by updating file .gin_sid
-    UInt32 getNextSegmentID();
-
     /// Stores segment id into disk
     void writeSegmentId();
 
-    /// Get a range of next available segment IDs
+    /// Get next available segment ID by updating file .gin_sid
+    UInt32 getNextSegmentID();
+
+    /// Get a range of next available segment IDs by updating file .gin_sid
     UInt32 getNextSegmentIDRange(size_t n);
 
     String name;
