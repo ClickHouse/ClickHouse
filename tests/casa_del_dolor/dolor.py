@@ -31,6 +31,10 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import Generator, BuzzHouseGenerator
+from oracles import (
+    collect_table_hash_before_shutdown,
+    collect_table_hash_after_shutdown,
+)
 from properties import modify_server_settings, modify_user_settings
 
 
@@ -242,6 +246,13 @@ parser.add_argument(
     dest="add_shared_catalog",
     help="Add 'shared_database_catalog' settings",
 )
+parser.add_argument(
+    "--compare-table-dump-prob",
+    type=int,
+    default=50,
+    choices=range(0, 101),
+    help="Probability to compare contents of a table after a server restart",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -451,6 +462,11 @@ while all_running:
     if not all_running:
         break
 
+    dump_table = (
+        collect_table_hash_before_shutdown(servers, logger)
+        if random.randint(1, 100) <= args.compare_table_dump_prob
+        else None
+    )
     kill_server = random.randint(1, 100) <= args.kill_server_prob
     # Pick one of the servers to restart
     # Restart ClickHouse
@@ -512,3 +528,5 @@ while all_running:
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+
+    collect_table_hash_after_shutdown(servers, logger, dump_table)

@@ -32,6 +32,14 @@ class ClickHouseTable:
     def get_sql_escaped_full_name(self) -> str:
         return f"`{self.schema_name}`.`{self.table_name}`"
 
+    def get_is_shared_or_replicated_merge_tree(self):
+        return self.table_engine.startswith("Shared") or self.table_engine.startswith(
+            "Replicated"
+        )
+
+    def get_hash_query(self):
+        return f"SELECT cityHash64(groupArray(sipHash128(*))) FROM {self.get_sql_escaped_full_name()}{" FINAL" if self.supports_final() else ""} ORDER BY ALL;"
+
     def supports_final(self) -> bool:
         to_check: str = self.table_engine
         if to_check.startswith("Shared"):
@@ -41,7 +49,7 @@ class ClickHouseTable:
         return to_check in ClickHouseTable.FINAL_SUPPORTED_ENGINES
 
 
-def dump_table(
+def collect_table_hash_before_shutdown(
     instances: list[ClickHouseInstance], logger
 ) -> Optional[ClickHouseTable]:
     next_node_index = random.choice(range(0, len(instances)))
@@ -53,7 +61,9 @@ def dump_table(
             """
             SELECT database, name, engine
             FROM system.tables
-            WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') AND NOT is_temporary AND engine NOT IN ('Merge', 'GenerateRandom', 'Memory');
+            WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
+              AND NOT is_temporary
+              AND engine NOT IN ('Merge', 'GenerateRandom', 'Memory');
             """
         )
         if not isinstance(tables_str, str) or tables_str == "":
@@ -67,17 +77,57 @@ def dump_table(
             next_node_index, random_table[0], random_table[1], random_table[2]
         )
         logger.info(
-            f"Collecting table: {random_table[0]}.{random_table[1]} hash before a shutdown"
+            f"Collecting table {next_tbl.get_sql_escaped_full_name()} hash from node {next_node.name} before shutdown"
         )
 
-        next_hash = client.query(
-            f"SELECT cityHash64(groupArray(sipHash128(*))) FROM {next_tbl.get_sql_escaped_full_name()}{" FINAL" if next_tbl.supports_final() else ""} ORDER BY ALL;"
+        # Make sure all replicas are in sync
+        if next_tbl.get_is_shared_or_replicated_merge_tree():
+            client.query(f"SYSTEM SYNC REPLICA {next_tbl.get_sql_escaped_full_name()};")
+        # Set table as readonly
+        client.query(
+            f"ALTER TABLE {next_tbl.get_sql_escaped_full_name()} MODIFY SETTING readonly = 1 SETTINGS mutations_sync = 2, replication_alter_partitions_sync = 1;"
         )
+        # Fetch table data and hash it
+        next_hash = client.query(next_tbl.get_hash_query())
         if not isinstance(next_hash, str) or next_hash == "":
             return None
         next_tbl.set_first_hash(next_hash)
 
         return next_tbl
     except Exception as ex:
-        logger.warn(f"Error occurred when picking a table dor dumping: {ex}")
+        logger.warn(
+            f"Error occurred while picking a table for hashing before restarting server: {ex}"
+        )
     return None
+
+
+def collect_table_hash_after_shutdown(
+    instances: list[ClickHouseInstance], logger, next_tbl: Optional[ClickHouseTable]
+):
+    if next_tbl is not None:
+        next_hash = None
+        next_node = instances[next_tbl.node_index]
+        client = Client(host=next_node.ip_address)
+
+        logger.info(
+            f"Collecting table {next_tbl.get_sql_escaped_full_name()} hash from node {next_node.name} after shutdown"
+        )
+        try:
+            # Fetch table data and hash it
+            next_hash = client.query(next_tbl.get_hash_query())
+        except Exception as ex:
+            logger.warn(
+                f"Error occurred while picking a table for hashing after restarting server: {ex}"
+            )
+        if isinstance(next_hash, str) and next_hash != next_tbl.first_hash:
+            message = f"Hash mismatch for table {next_tbl.get_sql_escaped_full_name()}"
+            logger.warn(message)
+            raise Exception(message)
+
+        try:
+            # Remove readonly status
+            client.query(
+                f"ALTER TABLE {next_tbl.get_sql_escaped_full_name()} MODIFY SETTING readonly = 0 SETTINGS mutations_sync = 2, replication_alter_partitions_sync = 1;"
+            )
+        except Exception as ex:
+            logger.warn(f"Error while removing readonly property from table: {ex}")
