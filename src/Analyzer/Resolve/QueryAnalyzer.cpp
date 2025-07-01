@@ -4837,10 +4837,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(insertion_table, scope_context)
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            auto insert_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
+            const auto & insert_columns = insert_storage->getInMemoryMetadataPtr()->getColumns();
             const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
