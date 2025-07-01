@@ -137,7 +137,7 @@ Functions `=` (equals) and `!=` (notEquals) check if the column contains rows wh
 #### in and notIn {#functions-example-in-notin}
 
 Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
-Instead of maching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
+Instead of matching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
 #### like, notLike and match {#functions-example-like-notlike-match}
 
