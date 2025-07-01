@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/IThrottler.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/OpenedFileCache.h>
 
@@ -67,8 +68,9 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {})
-        : AsynchronousReadBufferFromFileDescriptor(reader_, priority_, -1, buf_size, existing_memory, alignment, file_size_, throttler_)
+        ThrottlerPtr throttler_ = {},
+        FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr)
+        : AsynchronousReadBufferFromFileDescriptor(reader_, priority_, -1, buf_size, existing_memory, alignment, file_size_, throttler_, prefetches_log_)
         , file_name(file_name_)
     {
         file = OpenedFileCache::instance().get(file_name, flags);
