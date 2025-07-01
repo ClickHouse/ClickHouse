@@ -1,6 +1,6 @@
 #include <utility>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include "Disks/DiskType.h"
+#include <Disks/DiskType.h>
 #include "config.h"
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>

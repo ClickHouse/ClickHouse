@@ -56,38 +56,30 @@ bool HTTPChunkedReadBuffer::nextImpl()
     if (!in)
         return false;
 
-    try
+    /// The footer of previous chunk.
+    if (count())
+        readChunkFooter();
+
+    size_t chunk_size = readChunkHeader();
+    if (0 == chunk_size)
     {
-        /// The footer of previous chunk.
-        if (count())
-            readChunkFooter();
-
-        size_t chunk_size = readChunkHeader();
-        if (0 == chunk_size)
-        {
-            readChunkFooter();
-            in.reset();  // prevent double-eof situation.
-            return false;
-        }
-
-        if (in->available() >= chunk_size)
-        {
-            /// Zero-copy read from input.
-            working_buffer = Buffer(in->position(), in->position() + chunk_size);
-            in->position() += chunk_size;
-        }
-        else
-        {
-            /// Chunk is not completely in buffer, copy it to scratch space.
-            memory.resize(chunk_size);
-            in->readStrict(memory.data(), chunk_size);
-            working_buffer = Buffer(memory.data(), memory.data() + chunk_size);
-        }
+        readChunkFooter();
+        in.reset();  // prevent double-eof situation.
+        return false;
     }
-    catch (...)
+
+    if (in->available() >= chunk_size)
     {
-        in.reset();
-        throw;
+        /// Zero-copy read from input.
+        working_buffer = Buffer(in->position(), in->position() + chunk_size);
+        in->position() += chunk_size;
+    }
+    else
+    {
+        /// Chunk is not completely in buffer, copy it to scratch space.
+        memory.resize(chunk_size);
+        in->readStrict(memory.data(), chunk_size);
+        working_buffer = Buffer(memory.data(), memory.data() + chunk_size);
     }
 
     /// NOTE: We postpone reading the footer to the next iteration, because it may not be completely in buffer,
