@@ -1,4 +1,4 @@
-#include "FlatDictionary.h"
+#include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>

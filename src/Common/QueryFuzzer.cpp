@@ -1,4 +1,4 @@
-#include "QueryFuzzer.h"
+#include <Common/QueryFuzzer.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
