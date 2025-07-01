@@ -1,5 +1,5 @@
-#include "OwnSplitChannel.h"
-#include "OwnFormattingChannel.h"
+#include <Loggers/OwnSplitChannel.h>
+#include <Loggers/OwnFormattingChannel.h>
 
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>

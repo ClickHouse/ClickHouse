@@ -5,7 +5,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
-#include "OwnSplitChannel.h"
+#include <Loggers/OwnSplitChannel.h>
 
 
 namespace Poco::Util

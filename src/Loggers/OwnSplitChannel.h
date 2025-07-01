@@ -5,7 +5,7 @@
 #include <map>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
-#include "ExtendedLogChannel.h"
+#include <Loggers/ExtendedLogChannel.h>
 
 
 #ifndef WITHOUT_TEXT_LOG
