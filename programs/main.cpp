@@ -32,6 +32,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
@@ -96,6 +97,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"client", mainEntryClickHouseClient},
 #if USE_CHDIG
     {"chdig", mainEntryClickHouseChdig},
+    {"dig", mainEntryClickHouseChdig},
 #endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
@@ -112,6 +114,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
+    {"fst-dump-tree", mainEntryClickHouseFstDumpTree},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
