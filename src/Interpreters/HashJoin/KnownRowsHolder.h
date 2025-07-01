@@ -44,7 +44,7 @@ public:
         const size_t new_items = std::distance(from, to);
         if (items + new_items <= MAX_LINEAR)
         {
-            std::copy(from, to, &array_holder[items]);
+            std::copy(from, to, std::begin(array_holder) + items);
         }
         else
         {
