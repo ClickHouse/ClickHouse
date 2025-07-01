@@ -27,7 +27,6 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
-            FUNCTION_NOT_IN_RANGE,
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -40,13 +39,16 @@ public:
 
         Function function = FUNCTION_UNKNOWN;
         using ColumnRanges = std::unordered_map<String, PlainRanges>;
+        /// column in range (a, b) ...
         ColumnRanges column_ranges;
+        /// column not in range (a, b) ...
+        /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
+        ColumnRanges column_not_ranges;
         bool finalized = false;
         Float64 selectivity;
-        Float64 row_count;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
-        void finalize(const ColumnEstimators & column_estimators_, Float64 total_rows_);
+        void finalize(const ColumnEstimators & column_estimators_);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
@@ -61,10 +63,7 @@ private:
 
         void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
-        Float64 estimateLess(const Field & val, Float64 rows) const;
-        Float64 estimateGreater(const Field & val, Float64 rows) const;
-        Float64 estimateEqual(const Field & val, Float64 rows) const;
-        Float64 estimateRanges(const PlainRanges & ranges, Float64 rows) const;
+        Float64 estimateRanges(const PlainRanges & ranges) const;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const;

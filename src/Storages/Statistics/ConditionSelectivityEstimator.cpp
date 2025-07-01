@@ -1,6 +1,8 @@
+#include "Core/PlainRanges.h"
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
+#include <iostream>
 
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -42,8 +44,8 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
                     rpn_stack.push(&element);
                 else
                 {
-                    left_element->finalize(column_estimators, total_rows);
-                    right_element->finalize(column_estimators, total_rows);
+                    left_element->finalize(column_estimators);
+                    right_element->finalize(column_estimators);
                     /// P(c1 and c2) = P(c1) * P(c2)
                     if (element.function == RPNElement::FUNCTION_AND)
                         element.selectivity = left_element->selectivity * right_element->selectivity;
@@ -51,12 +53,27 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
                     else
                         element.selectivity = 1-(1-left_element->selectivity)*(1-right_element->selectivity);
                     element.finalized = true;
+                    rpn_stack.push(&element);
                 }
-
                 break;
             }
             case RPNElement::FUNCTION_NOT:
             {
+                auto* last_element = rpn_stack.top();
+                if (last_element->finalized && last_element->function != RPNElement::FUNCTION_UNKNOWN)
+                    last_element->selectivity = 1 - last_element->selectivity;
+                else
+                {
+                    std::swap(last_element->column_ranges, last_element->column_not_ranges);
+                    if (last_element->function == RPNElement::FUNCTION_AND)
+                        last_element->function = RPNElement::FUNCTION_OR;
+                    else if (last_element->function == RPNElement::FUNCTION_OR)
+                        last_element->function = RPNElement::FUNCTION_AND;
+                    else if (last_element->function == RPNElement::ALWAYS_FALSE)
+                        last_element->function = RPNElement::ALWAYS_TRUE;
+                    else if (last_element->function == RPNElement::ALWAYS_TRUE)
+                        last_element->function = RPNElement::ALWAYS_FALSE;
+                }
                 break;
             }
             default:
@@ -64,7 +81,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         }
     }
     auto* final_element = rpn_stack.top();
-    final_element->finalize(column_estimators, total_rows);
+    final_element->finalize(column_estimators);
     return final_element->selectivity * total_rows;
 }
 
@@ -147,42 +164,7 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::addStatistics(St
     part_statistics[part_name] = stats;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
-{
-    if (part_statistics.empty())
-        return default_cond_range_factor * rows;
-    Float64 result = 0;
-    Float64 part_rows = 0;
-    for (const auto & [key, estimator] : part_statistics)
-    {
-        result += estimator->estimateLess(val);
-        part_rows += estimator->rowCount();
-    }
-    return result * rows / part_rows;
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows) const
-{
-    return rows - estimateLess(val, rows);
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
-{
-    if (part_statistics.empty())
-    {
-        return default_cond_equal_factor * rows;
-    }
-    Float64 result = 0;
-    Float64 partial_cnt = 0;
-    for (const auto & [key, estimator] : part_statistics)
-    {
-        result += estimator->estimateEqual(val);
-        partial_cnt += estimator->rowCount();
-    }
-    return result * rows / partial_cnt;
-}
-
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateRanges(const PlainRanges & ranges, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateRanges(const PlainRanges & ranges) const
 {
     Float64 partial_cnt = 0;
     Float64 result = 0;
@@ -194,7 +176,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateRange
         }
         partial_cnt += estimator->rowCount();
     }
-    return result * rows / partial_cnt;
+    return result / partial_cnt;
 }
 
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
@@ -203,8 +185,8 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
             "notEquals",
             [] (RPNElement & out, const String & column, const Field & value)
             {
-                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                out.column_ranges.emplace(column, Range(value));
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.column_not_ranges.emplace(column, Range(value));
             }
         },
         {
@@ -249,42 +231,52 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
         }
 };
 
+/// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
+    /// for CNF, we can merge (... and ...) and (... and ...)
+    /// we cannot merge (.... or ...) and (... or ...), in this case we need to finalize this expression.
     auto canMergeWith = [&](const RPNElement & e)
     {
         return (e.function == FUNCTION_IN_RANGE
-                || e.function == FUNCTION_NOT_IN_RANGE
                 || e.function == function
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
-    if (canMergeWith(lhs) && canMergeWith(rhs))
+    /// we will merge normal expression and not expression seperately.
+    auto merge_column_ranges = [this](ColumnRanges & result_ranges, ColumnRanges & l_ranges, ColumnRanges & r_ranges, bool is_not)
     {
-        for (auto & [column_name, ranges] : lhs.column_ranges)
+        for (auto & [column_name, ranges] : l_ranges)
         {
-            auto rit = rhs.column_ranges.find(column_name);
-            if (rit != rhs.column_ranges.end())
+            auto rit = r_ranges.find(column_name);
+            if (rit != r_ranges.end())
             {
-                if (function == FUNCTION_AND)
-                    column_ranges.emplace(column_name, ranges.intersectWith(rit->second));
+                /// not a or not b means not (a and b), so we should use intersect here.
+                if ((function == FUNCTION_AND && !is_not) || (function == FUNCTION_OR && is_not))
+                    result_ranges.emplace(column_name, ranges.intersectWith(rit->second));
                 else
-                    column_ranges.emplace(column_name, ranges.unionWith(rit->second));
+                    result_ranges.emplace(column_name, ranges.unionWith(rit->second));
             }
             else
-                column_ranges.emplace(column_name, ranges);
+                result_ranges.emplace(column_name, ranges);
         }
-        for (auto & [column_name, ranges] : rhs.column_ranges)
+        for (auto & [column_name, ranges] : r_ranges)
         {
-            if (!lhs.column_ranges.contains(column_name))
-                column_ranges.emplace(column_name, ranges);
+            if (!l_ranges.contains(column_name))
+                result_ranges.emplace(column_name, ranges);
         }
+    };
+    if (canMergeWith(lhs) && canMergeWith(rhs))
+    {
+        merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
+        merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
         return true;
     }
     return false;
 }
 
-void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators & column_estimators_, Float64 total_rows_)
+/// finalization of a expression means we would calculate the seletivity and no longer analyze ranges further.
+void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators & column_estimators_)
 {
     if (finalized)
         return;
@@ -297,7 +289,17 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
             selectivity = ConditionSelectivityEstimator::default_unknown_cond_factor;
         }
         else
-            estimate_results.emplace_back(it->second.estimateRanges(ranges, total_rows_));
+            estimate_results.emplace_back(it->second.estimateRanges(ranges));
+    }
+    for (const auto & [column_name, ranges] : column_not_ranges)
+    {
+        auto it = column_estimators_.find(column_name);
+        if (it == column_estimators_.end())
+        {
+            selectivity = ConditionSelectivityEstimator::default_unknown_cond_factor;
+        }
+        else
+            estimate_results.emplace_back(1.0-it->second.estimateRanges(ranges));
     }
     selectivity = 1.0;
     for (const auto & estimate_result : estimate_results)

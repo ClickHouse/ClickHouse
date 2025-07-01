@@ -124,18 +124,22 @@ Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+        }
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
+    {
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
+    }
 #endif
     if (stats.contains(StatisticsType::Uniq))
     {
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return 1.0 / cardinality * rows; /// assume uniform distribution
+        return Float64(rows) / cardinality; /// assume uniform distribution
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
@@ -144,19 +148,29 @@ Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
 Float64 ColumnPartStatistics::estimateRange(const Range & range) const
 {
     if (range.empty())
+    {
         return 0;
+    }
 
     if (range.isInfinite())
+    {
         return rows;
+    }
 
     if (range.left == range.right)
+    {
         return estimateEqual(range.left);
+    }
 
     if (range.left.isNegativeInfinity())
+    {
         return estimateLess(range.right);
+    }
 
     if (range.right.isPositiveInfinity())
+    {
         return estimateGreater(range.left);
+    }
 
     Float64 right_count = estimateLess(range.right);
     Float64 left_count = estimateLess(range.left);
