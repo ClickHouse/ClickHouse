@@ -232,7 +232,7 @@ value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-inject_auth=$((RANDOM % 2))
+inject_auth=1
 if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
     inject_auth=0
 fi

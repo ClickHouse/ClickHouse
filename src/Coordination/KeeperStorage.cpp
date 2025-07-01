@@ -1488,6 +1488,9 @@ bool KeeperStorage<Container>::checkACL(StringRef path, int32_t permission, int6
     if (node_acls.empty())
         return true;
 
+    for (const auto & acl : node_acls)
+        LOG_INFO(getLogger("KeeperStorage"), "ACL: scheme='{}', id='{}', permissions={}", acl.scheme, acl.id, acl.permissions);
+
     if (uncommitted_state.hasACL(session_id, is_local, [](const auto & auth_id) { return auth_id.scheme == "super"; }))
         return true;
 
@@ -3210,20 +3213,30 @@ void KeeperStorage<Container>::preprocessRequest(
     {
         if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
         {
-            /// Multi requests handle failures using FailedMultiDelta
-            if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
-            {
-                const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
-                std::vector<Coordination::Error> response_errors;
-                response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
-                new_deltas.emplace_back(
-                    new_last_zxid, FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
-            }
-            else
-            {
-                new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
-            }
-            return;
+            uncommitted_state.forEachAuthInSession(
+                session_id,
+                [&](const KeeperStorageBase::AuthID & auth_id)
+                {
+                    LOG_FATAL(
+                        getLogger("KeeperStorage"), "Unauthorized access attempt. AuthID: scheme={}, id={}", auth_id.scheme, auth_id.id);
+                });
+
+            std::terminate();
+            
+            // /// Multi requests handle failures using FailedMultiDelta
+            // if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+            // {
+            //     const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
+            //     std::vector<Coordination::Error> response_errors;
+            //     response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
+            //     new_deltas.emplace_back(
+            //         new_last_zxid, FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+            // }
+            // else
+            // {
+            //     new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+            // }
+            // return;
         }
 
         uint64_t * digest_ptr = keeper_context->digestEnabled() ? &new_digest : nullptr;
