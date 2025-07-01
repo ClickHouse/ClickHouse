@@ -249,7 +249,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_insert_use_adaptive_busy_timeout", trueOrFalseSettingNoOracle},
     {"async_query_sending_for_remote", trueOrFalseSetting},
     {"async_socket_for_remote", trueOrFalseSetting},
-    {"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"cache_warmer_threads", threadSetting},
     {"calculate_text_stack_trace", trueOrFalseSettingNoOracle},
     {"cancel_http_readonly_queries_on_client_close", trueOrFalseSettingNoOracle},
@@ -277,7 +276,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"compatibility_ignore_auto_increment_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_collation_in_create_table", trueOrFalseSettingNoOracle},
     {"convert_query_to_cnf", trueOrFalseSettingNoOracle},
-    {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"create_table_empty_primary_key_by_default", trueOrFalseSettingNoOracle},
     {"cross_to_inner_join_rewrite", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
     {"database_atomic_wait_for_drop_and_detach_synchronously", trueOrFalseSettingNoOracle},
@@ -524,7 +522,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_values_interpret_expressions", trueOrFalseSettingNoOracle},
     {"insert_deduplicate", trueOrFalseSettingNoOracle},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
-    {"insert_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
     {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
     {"insert_quorum_parallel", trueOrFalseSettingNoOracle},
@@ -620,16 +617,13 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_temporary_non_const_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     {"max_threads", threadSetting},
     {"max_threads_for_indexes", threadSetting},
-    {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
     {"merge_tree_coarse_index_granularity",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
     {"merge_tree_compact_parts_min_granules_to_multibuffer_read",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 128)); }, {}, false)},
-    {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability", CHSetting(probRange, {}, false)},
     {"merge_tree_use_const_size_tasks_for_remote_reading", trueOrFalseSettingNoOracle},
     {"merge_tree_use_v1_object_and_dynamic_serialization", trueOrFalseSettingNoOracle},
     {"metrics_perf_events_enabled", trueOrFalseSettingNoOracle},
-    {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
     {"min_hit_rate_to_use_consecutive_keys_optimization", probRangeSetting},
     {"mongodb_throw_on_unsupported_query", trueOrFalseSettingNoOracle},
     {"multiple_joins_try_to_keep_original_names", trueOrFalseSetting},
@@ -785,7 +779,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"partial_result_on_first_cancel", trueOrFalseSettingNoOracle},
     {"parsedatetime_e_requires_space_padding", trueOrFalseSettingNoOracle},
     {"parsedatetime_parse_without_leading_zeros", trueOrFalseSettingNoOracle},
-    {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"precise_float_parsing", trueOrFalseSettingNoOracle},
     {"print_pretty_type_names", trueOrFalseSettingNoOracle},
     {"push_external_roles_in_interserver_queries", trueOrFalseSettingNoOracle},
@@ -880,8 +873,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
     {"union_default_mode", setSetting},
-    {"unknown_packet_in_send_data",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
     {"update_insert_deduplication_token_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     {"update_parallel_mode",
      CHSetting(
@@ -1044,6 +1035,20 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert(
             {{"session_timezone", CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.timezones) + "'"; }, {}, false)}});
+    }
+    if (fc.enable_fault_injection_settings)
+    {
+        serverSettings.insert(
+            {{"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"insert_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
+             {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability", CHSetting(probRange, {}, false)},
+             {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)},
+             {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"unknown_packet_in_send_data",
+              CHSetting(
+                  [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.1, 0.1, 0, 16384)); }, {}, false)}});
     }
 
     for (const auto & [key, value] : serverSettings)
