@@ -1,7 +1,7 @@
     Prewhere info
       Prewhere filter
       Prewhere filter column: greater(x, 100) (removed)
-  Filter
+  Filter ((WHERE + Change column names to column identifiers))
   Filter column: and(greater(x1, 100), greater(x2, 100), greater(x3, 100), greater(x4, \'100\')) (removed)
     Prewhere info
       Prewhere filter

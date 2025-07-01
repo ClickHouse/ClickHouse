@@ -1,4 +1,6 @@
 <clickhouse>
+    <local_disk_check_period_ms>30000</local_disk_check_period_ms>
+
     <storage_configuration>
         <disks>
             <s3_disk>
@@ -61,6 +63,7 @@
                 <disk>local_disk</disk>
                 <path>local_cache/</path>
                 <max_size>22548578304</max_size>
+                <cache_policy>LRU</cache_policy>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </local_cache>
             <local_cache_2>

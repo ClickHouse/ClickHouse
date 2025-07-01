@@ -183,6 +183,7 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
+CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -264,6 +265,8 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
+DictionaryMaxUpdateDelay
+DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -338,6 +341,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -713,6 +717,8 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumericIndexedVector
+NumericIndexedVectors
 ODBCDriver
 OFNS
 OLAP
@@ -899,6 +905,7 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
+RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -1944,6 +1951,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1961,6 +1969,7 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
+groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2024,6 +2033,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2061,6 +2071,7 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
@@ -2075,6 +2086,7 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
+isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2260,6 +2272,7 @@ metacharacters
 metasymbols
 metrica
 metroHash
+mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2407,6 +2420,23 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVector
+numericIndexedVectorAllValueSum
+numericIndexedVectorBuild
+numericIndexedVectorCardinality
+numericIndexedVectorGetValue
+numericIndexedVectorPointwiseAdd
+numericIndexedVectorPointwiseDivide
+numericIndexedVectorPointwiseEqual
+numericIndexedVectorPointwiseGreater
+numericIndexedVectorPointwiseGreaterEqual
+numericIndexedVectorPointwiseLess
+numericIndexedVectorPointwiseLessEqual
+numericIndexedVectorPointwiseMultiply
+numericIndexedVectorPointwiseNotEqual
+numericIndexedVectorPointwiseSubtract
+numericIndexedVectorShortDebugString
+numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2474,6 +2504,7 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
+pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2629,6 +2660,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2744,6 +2780,8 @@ satisfiable
 scala
 sccache
 schemas
+searchAny
+searchAll
 seekable
 seektable
 sequenceCount
@@ -2975,7 +3013,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3082,6 +3126,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml

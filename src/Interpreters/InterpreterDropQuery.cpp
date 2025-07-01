@@ -447,6 +447,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         // For truncate operation on database, drop the tables
         if (truncate)
             query_for_table.kind = query.has_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
+        if (database->getDisk()->isReadOnly())
+            query_for_table.kind = ASTDropQuery::Detach;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
@@ -608,7 +610,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     // only if operation is DETACH
-    if ((!drop || !truncate) && query.sync)
+    if (!drop && !truncate && query.sync)
     {
         /// Avoid "some tables are still in use" when sync mode is enabled
         for (const auto & table_uuid : uuids_to_wait)
@@ -618,7 +620,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// Protects from concurrent CREATE TABLE queries
     auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
     // only if operation is DETACH
-    if (!drop || !truncate)
+    if (!drop && !truncate)
         database->assertCanBeDetached(true);
 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.

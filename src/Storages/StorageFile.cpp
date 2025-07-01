@@ -11,6 +11,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -1178,7 +1179,12 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-        return getContext()->getReadTaskCallback()();
+    {
+        auto task = getContext()->getClusterFunctionReadTaskCallback()();
+        if (!task || task->isEmpty())
+            return {};
+        return task->path;
+    }
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
@@ -1503,7 +1509,8 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;

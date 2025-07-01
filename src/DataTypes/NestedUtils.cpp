@@ -4,7 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -82,7 +82,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
         {
             const DataTypeArray * type_arr = assert_cast<const DataTypeArray *>(elem.type.get());
             const DataTypeTuple * type_tuple = assert_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
@@ -118,7 +118,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
         }
         else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
         {
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
