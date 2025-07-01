@@ -1,6 +1,6 @@
-#include "RedisDictionarySource.h"
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/RedisDictionarySource.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
@@ -10,7 +10,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include "RedisSource.h"
+#include <Dictionaries/RedisSource.h>
 
 namespace DB
 {

@@ -173,9 +173,7 @@ def test_multiple_schemes_tables(started_cluster):
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     schema_name = f"schema_with_complex_tables_{use_delta_kernel}"
-    execute_spark_query(
-        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
-    )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name = f"complex_table_{use_delta_kernel}"
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
@@ -209,14 +207,11 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(complex_schema_tables) == 1
 
-    print(
-        node1.query(
-            f"SHOW CREATE TABLE complex_schema.`{schema_name}.{table_name}`"
-        )
-    )
+    print(node1.query(f"SHOW CREATE TABLE complex_schema.`{schema_name}.{table_name}`"))
     complex_data = (
         node1.query(
-            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
+            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`",
+            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
         )
         .strip()
         .split("\t")
@@ -231,15 +226,14 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     if use_delta_kernel == "1":
         assert node1.contains_in_log(f"DeltaLakeMetadata: Initializing snapshot")
 
+
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_timestamp_ntz(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node1.query("drop database if exists ntz_schema")
 
     schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
-    execute_spark_query(
-        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
-    )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name = f"table_with_timestamp_{use_delta_kernel}"
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/ntz_schema/{table_name}'"
@@ -273,17 +267,34 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(ntz_tables) == 1
 
-    ntz_data = (
-        node1.query(
-            f"SELECT * FROM ntz_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
-        )
-        .strip()
-        .split("\t")
-    )
+    def get_schemas():
+        return execute_spark_query(node1, f"SHOW SCHEMAS", ignore_exit_code=True)
+
+    assert schema_name in get_schemas()
+
+    ntz_data = ""
+    for i in range(10):
+        try:
+            ntz_data = (
+                node1.query(
+                    f"SELECT * FROM ntz_schema.`{schema_name}.{table_name}`",
+                    settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+                )
+                .strip()
+                .split("\t")
+            )
+            break
+        except Exception as ex:
+            if "Schema not found" not in str(ex):
+                raise ex
+            print(f"Retry {i + 1}, existing schemas: {get_schemas()}")
+
+    assert len(ntz_data) != 0, f"Schemas: {get_schemas()}"
     print(ntz_data)
     assert ntz_data[0] == "2024-10-01"
     assert ntz_data[1] == "2024-10-01 00:12:00.000000"
     assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+
 
 def test_no_permission_and_list_tables(started_cluster):
     # this test supposed to test "SHOW TABLES" query when we have no permissions for some table
@@ -294,9 +305,7 @@ def test_no_permission_and_list_tables(started_cluster):
     node1.query("drop database if exists schema_with_permissions")
 
     schema_name = f"schema_with_permissions"
-    execute_spark_query(
-        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
-    )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name_1 = f"table_granted"
     table_name_2 = f"table_not_granted"
 
@@ -305,7 +314,11 @@ def test_no_permission_and_list_tables(started_cluster):
 
     execute_multiple_spark_queries(node1, [create_query_2, create_query_1], True)
 
-    execute_spark_query(node1, f"REVOKE ALL PRIVILEGES ON TABLE {schema_name}.{table_name_1} FROM PUBLIC;", ignore_exit_code=True)
+    execute_spark_query(
+        node1,
+        f"REVOKE ALL PRIVILEGES ON TABLE {schema_name}.{table_name_1} FROM PUBLIC;",
+        ignore_exit_code=True,
+    )
 
     node1.query(
         f"""
