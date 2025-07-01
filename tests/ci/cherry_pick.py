@@ -60,14 +60,6 @@ This pull-request will be merged automatically. Please, **do not merge it manual
 
 ### Troubleshooting
 
-#### If the PR was manually reopened after being closed
-
-If this PR is stuck (i.e. not automatically merged after one day), check {pr_url} for \
-`{backport_created_label}` *label* and delete it.
-
-Manually merging will do nothing. The `{backport_created_label}` *label* prevents the \
-original PR {pr_url} from being processed.
-
 #### If the conflicts were resolved in a wrong way
 
 If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
@@ -614,13 +606,9 @@ class BackportPRs:
 
 
 class CherryPickPRs:
-    # If the cherry-pick PR is not updated for more than 30 hours, then
-    # it is considered stale and needs to be pinged.
-    STALE_THRESHOLD = ReleaseBranch.STALE_THRESHOLD + 6 * 3600
-
     def __init__(self, gh: GitHub, repo: str, dry_run: bool):
         self.gh = gh
-        self.repo_name = gh.get_repo(repo)
+        self.repo = gh.get_repo(repo)
         self.dry_run = dry_run
         self.error = None  # type: Optional[Exception]
 
@@ -628,14 +616,14 @@ class CherryPickPRs:
         """
         Get all open cherry-pick PRs in the repository.
         """
-        query = f"type:pr repo:{self.repo_name.full_name} label:{Labels.PR_CHERRYPICK}"
+        query = f"type:pr repo:{self.repo.full_name} label:{Labels.PR_CHERRYPICK}"
         logging.info("Query to find the cherry-pick PRs:\n %s", query)
         return self.gh.get_pulls_from_search(query=query, state="open")
 
-    def ping_stale_cherry_pick_prs(self) -> None:
+    def remove_backported_labels(self) -> None:
         """
-        Ping stale cherry-pick PRs that are not updated for more than 30 hours.
-        These PRs are probably stuck and require manual intervention.
+        After the cherry-pick PRs are closed, the original PRs are marked as
+        `pr-backports-created`. If the cherry-pick PR is reopened, we remove this label
         """
         try:
             prs = self.get_open_cherry_pick_prs()
@@ -645,7 +633,7 @@ class CherryPickPRs:
             return
         for pr in prs:
             try:
-                self._ping_stale_pr(pr)
+                self._remove_backported_label(pr)
             except Exception as e:
                 logging.error(
                     "Error while pinging stale cherry-pick PR #%s: %s", pr.number, e
@@ -653,32 +641,39 @@ class CherryPickPRs:
                 self.error = e
                 continue
 
-    def _ping_stale_pr(self, pr: PullRequest) -> None:
+    def _remove_backported_label(self, pr: PullRequest) -> None:
         # The `updated_at` is Optional[datetime]
-        cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
-        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
-        if since_updated < self.STALE_THRESHOLD:
-            logging.info(
-                "The cherry-pick PR #%s was updated %d seconds ago, "
-                "waiting for the next running",
+        try:
+            original_pr_number = int(pr.head.ref.rsplit("/")[-1])
+        except ValueError:
+            logging.error(
+                "Cherry-pick PR #%s has an invalid head ref: %s",
                 pr.number,
-                since_updated,
+                pr.head.ref,
             )
+            raise
+
+        original_pr = self.gh.get_pull_cached(self.repo, original_pr_number)
+        if not any(l.name == Labels.PR_BACKPORTS_CREATED for l in original_pr.labels):
+            # The original PR is not marked as backported, so nothing to do
             return
 
         assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
         comment_body = (
-            f"Dear {assignees}, the PR is not updated for more than 30 hours. "
-            "Probably, it's stuck. Please, review the state following the "
-            "`Troubleshooting` section in the PR description."
+            f"Dear {assignees}, this PR is reopened after #{original_pr.number} was "
+            f"marked as backported. The `{Labels.PR_BACKPORTS_CREATED}` is removed, so "
+            "the original PR can be processed again."
         )
         if self.dry_run:
             logging.info(
-                "DRY RUN: would comment the cherry-pick PR #%s:\n",
+                "DRY RUN: would remove label %s from #%s and comment the cherry-pick PR #%s:\n",
+                Labels.PR_BACKPORTS_CREATED,
+                original_pr.number,
                 pr.number,
             )
             return
 
+        original_pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
         pr.create_issue_comment(comment_body)
 
 
@@ -725,6 +720,12 @@ def main():
     token = args.token or get_best_robot_token()
 
     gh = GitHub(token, create_cache_dir=False)
+
+    # First, check if some cherry-pick PRs are reopened and original PRs are mared as
+    # done
+    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
+    cpp.remove_backported_labels()
+
     bpp = BackportPRs(
         gh,
         args.repo,
@@ -737,8 +738,6 @@ def main():
     bpp.update_local_release_branches()
     bpp.receive_prs_for_backport()
     bpp.process_backports()
-    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
-    cpp.ping_stale_cherry_pick_prs()
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
         logging.error("Finished successfully, but errors occurred!")
