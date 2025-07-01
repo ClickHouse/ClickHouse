@@ -552,7 +552,7 @@ ATTACH TABLE test;
 
 SELECT count() FROM test;
 
-INSERT INTO test ("0") VALUES ('Hello, world!');
+INSERT INTO test ("1") VALUES ('Hello, world!');
 SELECT count() FROM test;
 
 DROP TABLE IF EXISTS test_r1 SYNC;
