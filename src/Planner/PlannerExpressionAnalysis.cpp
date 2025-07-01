@@ -14,7 +14,6 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -29,6 +28,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include "Analyzer/HashUtils.h"
 
 namespace DB
 {

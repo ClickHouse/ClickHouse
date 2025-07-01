@@ -6090,7 +6090,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     query_context->increaseDistributedDepth();
 
     auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context, number_of_replicas);
 
     size_t replica_index = 0;
     for (const auto & replicas : src_cluster->getShardsAddresses())
@@ -6168,9 +6168,24 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
+    {
+        // pipeline will be built outside
+        return {};
+    }
 
-    // pipeline will be built outside
+    if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage",
+            src_storage->getName());
+    }
+
     return {};
 }
 
@@ -6562,7 +6577,7 @@ void StorageReplicatedMergeTree::alter(
         std::map<std::string, MutationCommands> unfinished_mutations;
         for (const auto & command : commands)
         {
-            if (command.isDropOrRename())
+            if (command.isDropSomething())
             {
                 if (shutdown_called || partial_shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
@@ -6575,7 +6590,7 @@ void StorageReplicatedMergeTree::alter(
                     pulled_queue = true;
                 }
 
-                checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+                checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
             }
         }
 

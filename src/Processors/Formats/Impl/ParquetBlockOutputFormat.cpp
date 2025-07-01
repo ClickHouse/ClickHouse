@@ -111,7 +111,6 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
-        options.write_geometadata = format_settings.parquet.write_geometadata;
 
         schema = convertSchema(header_, options);
     }
@@ -242,8 +241,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(file_state, out);
         }
-        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-        writeFileFooter(file_state, schema, options, out, header);
+        writeFileFooter(file_state, schema, options, out);
         chassert(out.count() - base_offset == file_state.offset);
     }
     else

@@ -15,6 +15,8 @@ namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
     extern const Event SynchronousReadWaitMicroseconds;
+    extern const Event LocalReadThrottlerBytes;
+    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -102,7 +104,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     file_offset_of_buffer_end += result.size;
 
     if (throttler)
-        throttler->add(result.size);
+        throttler->add(result.size, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
     if (bytes_read)
     {

@@ -1,6 +1,6 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+#include "AggregateFunctionCombinatorFactory.h"
+#include "AggregateFunctionIf.h"
+#include "AggregateFunctionNull.h"
 
 #include <absl/container/inlined_vector.h>
 

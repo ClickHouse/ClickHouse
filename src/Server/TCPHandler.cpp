@@ -166,6 +166,7 @@ namespace DB::ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
@@ -657,7 +658,7 @@ void TCPHandler::runImpl()
             customizeContext(query_state->query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-            query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
+            query_state->query_context->setReadTaskCallback([this, &query_state]() -> String
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
@@ -669,9 +670,7 @@ void TCPHandler::runImpl()
                 sendReadTaskRequest();
 
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
-
-                auto res = receiveClusterFunctionReadTaskResponse(query_state.value());
-
+                auto res = receiveReadTaskResponse(query_state.value());
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                 return res;
@@ -1948,11 +1947,6 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
 
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
-    {
-        writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    }
-
     out->next();
 }
 
@@ -1971,7 +1965,7 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 }
 
 
-ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
+String TCPHandler::receiveReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1984,9 +1978,13 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 
         case Protocol::Client::ReadTaskResponse:
         {
-            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            task->deserialize(*in);
-            return task;
+            UInt64 version = 0;
+            readVarUInt(version, *in);
+            if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+                throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
+            String response;
+            readStringBinary(response, *in);
+            return response;
         }
 
         default:
