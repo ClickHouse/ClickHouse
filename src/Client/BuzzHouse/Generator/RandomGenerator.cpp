@@ -65,11 +65,6 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
-uint32_t RandomGenerator::nextStrlen()
-{
-    return strlens(generator);
-}
-
 char RandomGenerator::nextDigit()
 {
     return static_cast<char>(digits(generator));
@@ -94,32 +89,6 @@ String RandomGenerator::nextDate32()
     const uint32_t day = days[month - 1](generator);
 
     return fmt::format("{}-{}{}-{}{}", 1900 + datetime64_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day);
-}
-
-String RandomGenerator::nextTime()
-{
-    const int32_t hour = time_hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
-
-    return fmt::format("{}:{}{}:{}{}", hour, minute < 10 ? "0" : "", minute, second < 10 ? "0" : "", second);
-}
-
-String RandomGenerator::nextTime64(const bool has_subseconds)
-{
-    const uint32_t hour = time64_hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
-
-    return fmt::format(
-        "{}:{}{}:{}{}{}{}",
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "");
 }
 
 String RandomGenerator::nextDateTime(const bool has_subseconds)

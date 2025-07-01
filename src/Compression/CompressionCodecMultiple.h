@@ -28,12 +28,6 @@ protected:
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
 
-    std::string getDescription() const override
-    {
-        return "Apply multiple codecs consecutively defined by user.";
-    }
-
-
 private:
     Codecs codecs;
 };

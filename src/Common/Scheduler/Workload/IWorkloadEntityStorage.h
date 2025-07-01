@@ -86,9 +86,6 @@ public:
 
     /// Returns the name of resource used for CPU scheduling of the additional query threads
     virtual String getWorkerThreadResourceName() = 0;
-
-    /// Returns the name of resource used for query slot scheduling
-    virtual String getQueryResourceName() = 0;
 };
 
 }

@@ -103,7 +103,6 @@ void registerOutputFormatODBCDriver2(FormatFactory & factory)
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
         });
     factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
-    factory.setContentType("ODBCDriver2", "application/octet-stream");
 }
 
 }

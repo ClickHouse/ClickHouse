@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>

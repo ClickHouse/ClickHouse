@@ -218,10 +218,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
         if (MemoryTrackerDebugBlockerInThread::isBlocked())
             return;
 
-        MemoryTrackerBlockerInThread tracker_blocker(VariableContext::Global);
-        /// Forbid recursive calls, since the first time debugLogBigAllocationWithoutCheck() can be called from logging,
-        /// and then it may be called again for the line below
-        [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
         LOG_TEST(
             getLogger("MemoryTracker"),
             "Too big allocation ({} bytes) without checking memory limits, "

@@ -11,7 +11,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -1179,12 +1178,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-    {
-        auto task = getContext()->getClusterFunctionReadTaskCallback()();
-        if (!task || task->isEmpty())
-            return {};
-        return task->path;
-    }
+        return getContext()->getReadTaskCallback()();
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
@@ -1849,9 +1843,7 @@ public:
 
     void onFinish() override
     {
-        if (isCancelled())
-            return;
-
+        chassert(!isCancelled());
         finalizeBuffers();
     }
 
