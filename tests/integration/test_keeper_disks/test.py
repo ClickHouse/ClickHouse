@@ -9,6 +9,8 @@ from helpers.cluster import ClickHouseCluster, is_arm
 
 import time
 
+import logging
+
 if is_arm():
     pytestmark = pytest.mark.skip
 
