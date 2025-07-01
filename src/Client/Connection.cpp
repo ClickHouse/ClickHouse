@@ -15,7 +15,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -29,6 +29,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -604,6 +605,11 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         {
             readVarUInt(server_query_plan_serialization_version, *in);
         }
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+        {
+            readVarUInt(server_cluster_function_protocol_version, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -1038,11 +1044,10 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const String & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
+    response.serialize(*out, server_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }

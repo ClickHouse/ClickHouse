@@ -25,7 +25,7 @@ Positions: 3 0 1
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Filter column: equals(__table1.id, 0_UInt8) (removed)

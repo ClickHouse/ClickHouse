@@ -14,6 +14,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./utils/list-licenses",
     ],
     with_git_submodules=True,
 )
@@ -681,6 +682,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -701,11 +704,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_ARM_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
         ],
     )
     buzz_fuzzer_jobs = Job.Config(
@@ -736,11 +739,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_ARM_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
         ],
     )
     performance_comparison_with_prev_release_jobs = Job.Config(

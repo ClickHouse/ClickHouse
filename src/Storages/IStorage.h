@@ -409,6 +409,7 @@ private:
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
+    /// Can be called after `shutdown`, but not after `drop`.
     virtual void read(
         QueryPlan & query_plan,
         const Names & /*column_names*/,

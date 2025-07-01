@@ -13,14 +13,16 @@ namespace ErrorCodes
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
-    size_t number_of_replicas_)
+    size_t number_of_replicas_,
+    bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
+    , send_over_whole_archive(send_over_whole_archive_)
     , connection_to_files(number_of_replicas_)
     , iterator_exhausted(false)
 {
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
 
@@ -48,7 +50,7 @@ size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String
     return ConsistentHashing(sipHash64(file_path), connection_to_files.size());
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
 {
     std::lock_guard lock(mutex);
 
@@ -56,10 +58,11 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFil
 
     while (!files.empty())
     {
-        String next_file = files.back();
+        auto next_file = files.back();
         files.pop_back();
 
-        auto it = unprocessed_files.find(next_file);
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        auto it = unprocessed_files.find(file_path);
         if (it == unprocessed_files.end())
             continue;
 
@@ -68,22 +71,22 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFil
         LOG_TRACE(
             log,
             "Assigning pre-queued file {} to replica {}",
-            next_file,
+            file_path,
             number_of_current_replica
         );
 
         return next_file;
     }
 
-    return std::nullopt;
+    return {};
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica)
 {
     {
         std::lock_guard lock(mutex);
         if (iterator_exhausted)
-            return std::nullopt;
+            return {};
     }
 
     while (true)
@@ -96,17 +99,19 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
 
             if (!object_info)
             {
+                LOG_TEST(log, "Iterator is exhausted");
                 iterator_exhausted = true;
                 break;
             }
         }
 
         String file_path;
-
-        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
-        if (archive_object_info)
+        if (send_over_whole_archive && object_info->isArchive())
         {
-            file_path = archive_object_info->getPathToArchive();
+            file_path = object_info->getPathOrPathToArchiveIfArchive();
+            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
+                     "This will be suboptimal, consider turning on "
+                     "cluster_function_process_archive_on_multiple_nodes setting", file_path);
         }
         else
         {
@@ -117,47 +122,53 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
-                log,
-                "Found file {} for replica {}",
-                file_path,
-                number_of_current_replica
+                log, "Found file {} for replica {}",
+                file_path, number_of_current_replica
             );
 
-            return file_path;
+            return object_info;
         }
+        LOG_TEST(
+            log,
+            "Found file {} for replica {} (number of current replica: {})",
+            file_path,
+            file_replica_idx,
+            number_of_current_replica
+        );
 
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            unprocessed_files.insert(file_path);
-            connection_to_files[file_replica_idx].push_back(file_path);
+            unprocessed_files.emplace(file_path, object_info);
+            connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
 
-    return std::nullopt;
+    return {};
 }
 
-std::optional<String> StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
     std::lock_guard lock(mutex);
 
     if (!unprocessed_files.empty())
     {
         auto it = unprocessed_files.begin();
-        String next_file = *it;
+        auto next_file = it->second;
         unprocessed_files.erase(it);
 
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
         LOG_TRACE(
             log,
             "Iterator exhausted. Assigning unprocessed file {} to replica {}",
-            next_file,
+            file_path,
             number_of_current_replica
         );
 
         return next_file;
     }
 
-    return std::nullopt;
+    return {};
 }
 
 }

@@ -107,6 +107,7 @@ Typical string search predicates automatically leverage the index. As examples, 
 
 ```sql
 INSERT INTO tab(key, str) VALUES (1, 'Hello World');
+
 SELECT * from tab WHERE str == 'Hello World';
 SELECT * from tab WHERE str IN ('Hello', 'World');
 SELECT * from tab WHERE str LIKE '%Hello%';

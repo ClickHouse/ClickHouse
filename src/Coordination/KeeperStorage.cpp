@@ -79,9 +79,10 @@ bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     int64_t session_id,
     const UncommittedState & uncommitted_state,
+    bool block_acl,
     std::vector<Coordination::ACL> & result_acls)
 {
-    if (request_acls.empty())
+    if (block_acl || request_acls.empty())
         return true;
 
     bool valid_found = false;
@@ -104,7 +105,9 @@ bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
-            /// We don't need to save default ACLs
+            /// Save world:anyone ACLs to support specific permissions
+            if (request_acl.permissions != Coordination::ACL::All)
+                result_acls.push_back(request_acl);
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -1567,17 +1570,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
 {
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
-    static const Coordination::ACLs injected_acls = {{.permissions = Coordination::ACL::All, .scheme = "auth", .id = ""}};
-    const Coordination::ACLs * request_acls;
-    if (keeper_context.shouldInjectAuth())
-    {
-        request_acls = &injected_acls;
-    }
-    else
-    {
-        request_acls = &zk_request.acls;
-    }
-
     std::list<KeeperStorageBase::Delta> new_deltas;
 
     auto parent_path = parentNodePath(zk_request.path);
@@ -1623,7 +1615,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(*request_acls, session_id, storage.uncommitted_state, node_acls))
+    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     if (zk_request.is_ephemeral)
@@ -2891,7 +2883,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(zk_request.acls, session_id, uncommitted_state, node_acls))
+    if (!fixupACL(zk_request.acls, session_id, uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     UpdateNodeStatDelta update_stat_delta(*node);
@@ -3493,12 +3485,6 @@ int64_t KeeperStorageBase::getSessionID(int64_t session_timeout_ms)
     auto result = session_id_counter++;
     session_and_timeout.emplace(result, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
-
-    if (keeper_context->shouldInjectAuth())
-    {
-        committed_session_and_auth.emplace(
-            result, AuthIDs{{.scheme = "digest", .id = KeeperStorageBase::generateDigest("clickhouse:injected")}});
-    }
     return result;
 }
 
