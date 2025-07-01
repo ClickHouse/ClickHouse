@@ -76,7 +76,6 @@ ObjectStoragePtr createObjectStorage(
 {
     if (isPlainStorage(type, config, config_prefix))
         return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
-
     if (isPlainRewritableStorage(type, config, config_prefix))
     {
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
@@ -95,7 +94,6 @@ ObjectStoragePtr createObjectStorage(
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
             std::move(metadata_storage_metrics), std::forward<Args>(args)...);
     }
-
     return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
 }
 }
@@ -206,6 +204,14 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
+        /// send_metadata changes the filenames (includes revision), while
+        /// s3_plain do not care about this, and expect that the file name
+        /// will not be changed.
+        ///
+        /// And besides, send_metadata does not make sense for s3_plain.
+        if (config.getBool(config_prefix + ".send_metadata", false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
+
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -232,6 +238,11 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* skip_access_check */) -> ObjectStoragePtr
         {
+            /// send_metadata changes the filenames (includes revision), while
+            /// s3_plain_rewritable does not support file renaming.
+            if (config.getBool(config_prefix + ".send_metadata", false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
+
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
@@ -283,7 +294,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
 
         AzureBlobStorage::ConnectionParams params
         {
@@ -294,7 +305,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint());
     };
@@ -343,14 +354,9 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         String object_key_prefix;
         UInt64 keep_free_space_bytes;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
-
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
-
-        bool read_only = config.getBool(config_prefix + ".readonly", false);
-        LocalObjectStorageSettings settings(object_key_prefix, read_only);
-
-        return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, settings);
+        return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, object_key_prefix);
     };
 
     factory.registerObjectStorageType("local_blob_storage", creator);

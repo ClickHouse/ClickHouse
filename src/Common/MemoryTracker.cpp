@@ -6,7 +6,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
@@ -201,34 +200,28 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
-/// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
-/// Let's find them.
 void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
 {
-    if constexpr (MemoryTrackerDebugBlockerInThread::isEnabled())
-    {
-        if (size < 0)
-            return;
+    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+    /// Let's find them.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (size < 0)
+        return;
 
-        /// The choice is arbitrary (maybe we should decrease it)
-        constexpr Int64 threshold = 16 * 1024 * 1024;
-        if (size < threshold)
-            return;
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    if (size < threshold)
+        return;
 
-        if (MemoryTrackerDebugBlockerInThread::isBlocked())
-            return;
-
-        MemoryTrackerBlockerInThread tracker_blocker(VariableContext::Global);
-        /// Forbid recursive calls, since the first time debugLogBigAllocationWithoutCheck() can be called from logging,
-        /// and then it may be called again for the line below
-        [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
-        LOG_TEST(
-            getLogger("MemoryTracker"),
-            "Too big allocation ({} bytes) without checking memory limits, "
-            "it may lead to OOM. Stack trace: {}",
-            size,
-            StackTrace().toString());
-    }
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    LOG_TEST(
+        getLogger("MemoryTracker"),
+        "Too big allocation ({} bytes) without checking memory limits, "
+        "it may lead to OOM. Stack trace: {}",
+        size,
+        StackTrace().toString());
+#else
+    /// Avoid trash logging in release builds
+#endif
 }
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
@@ -328,10 +321,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
             /// Try to shrink the userspace page cache.
             DB::PageCache * page_cache_ptr = nullptr;
-            if (level == VariableContext::Global && (page_cache_ptr = page_cache.load(std::memory_order_relaxed)))
+            if (level == VariableContext::Global && will_be_rss > current_hard_limit && ((page_cache_ptr = page_cache.load(std::memory_order_relaxed))))
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
-                page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit);
+                page_cache_ptr->autoResize(will_be_rss, current_hard_limit);
                 will_be = amount.load(std::memory_order_relaxed);
                 will_be_rss = rss.load(std::memory_order_relaxed);
                 if (will_be <= current_hard_limit && will_be_rss <= current_hard_limit)

@@ -18,7 +18,7 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 Tests are located in `queries` directory.
 There are two subdirectories: `stateless` and `stateful`.
 - Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself.
-- Stateful tests require preloaded test data from ClickHouse and it is available to general public. See [stateful test in continuous integration](continuous-integration.md#functional-stateful-tests).
+- Stateful tests require preloaded test data from ClickHouse and it is available to general public.
 
 Each test can be one of two types: `.sql` and `.sh`.
 - An `.sql` test is the simple SQL script that is piped to `clickhouse-client`.
@@ -110,7 +110,6 @@ List of available tags:
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
 | `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
 | `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
-| `fasttest-only`|  Test is only run under [Fast test](continuous-integration.md#fast-test) ||
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` |||
 | `no-ordinary-database` |||
@@ -168,7 +167,7 @@ In the meantime, some other tests might be added with the same numeric prefix, b
 Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
 
 ```sql
-SELECT x; -- { serverError 49 }
+select x; -- { serverError 49 }
 ```
 
 This test ensures that the server returns an error with code 49 about unknown column `x`.
@@ -272,7 +271,7 @@ Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
-```bash
+``` bash
 $ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
 $ sudo clickhouse start
@@ -280,14 +279,14 @@ $ sudo clickhouse start
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
-```bash
+``` bash
 $ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
 
-```bash
+``` bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 

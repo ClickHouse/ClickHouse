@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
@@ -50,7 +50,8 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
+        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return {};
@@ -87,7 +88,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
-        return reading->getStorage()->totalRows({});
+        return reading->getStorage()->totalRows(Settings{});
 
     if (node.children.size() != 1)
         return {};
@@ -309,7 +310,6 @@ bool convertLogicalJoinToPhysical(
             settings.max_block_size);
         new_join_node.children = {new_left_node};
     }
-    new_join_node.step->setStepDescription(node.step->getStepDescription());
 
     QueryPlan::Node result_node;
     if (post_filter)

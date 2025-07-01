@@ -676,16 +676,17 @@ public:
     {
         UInt64 elems;
         readVarUInt(elems, buf);
+
+        if (unlikely(elems == 0))
+            return;
+
         checkArraySize(elems, max_elems);
 
-        if (likely(elems > 0))
-        {
-            auto & value = data(place).value;
+        auto & value = data(place).value;
 
-            value.resize_exact(elems, arena);
-            for (UInt64 i = 0; i < elems; ++i)
-                value[i] = Node::read(buf, arena);
-        }
+        value.resize_exact(elems, arena);
+        for (UInt64 i = 0; i < elems; ++i)
+            value[i] = Node::read(buf, arena);
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(data(place).total_values, buf);

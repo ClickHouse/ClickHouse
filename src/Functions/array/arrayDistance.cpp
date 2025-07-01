@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <base/range.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>

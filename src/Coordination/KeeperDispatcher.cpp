@@ -38,7 +38,6 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
-    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
 }
 
 using namespace std::chrono_literals;
@@ -166,7 +165,6 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
-                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
                         log,
                         "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
@@ -348,7 +346,7 @@ void KeeperDispatcher::responseThread()
 
             try
             {
-                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                 setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {

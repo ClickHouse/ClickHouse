@@ -2,7 +2,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -78,21 +77,10 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
     );
 }
 
-RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * /* filter */,
-    const ContextPtr & context,
-    const size_t) const
+RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
-    {
-        auto file = iter->next();
-        if (file.empty())
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

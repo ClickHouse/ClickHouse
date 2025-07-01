@@ -25,40 +25,31 @@ public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadataDeltaKernel(
-        ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_);
+    DeltaLakeMetadataDeltaKernel(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & context) override;
 
+    Strings getDataFiles() const override;
+
     NamesAndTypesList getTableSchema() const override;
 
-    DB::ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context,
-        bool supports_subset_of_columns) override;
+    NamesAndTypesList getReadSchema() const override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
-
-    void modifyFormatSettings(FormatSettings & format_settings) const override;
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr /* context */)
+        ContextPtr, bool)
     {
-        auto configuration_ptr = configuration.lock();
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
 
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
-        size_t list_batch_size,
-        ContextPtr context) const override;
+    bool supportsFileIterator() const override { return true; }
+
+    ObjectIterator iterate() const override;
 
 private:
     const LoggerPtr log;

@@ -29,12 +29,6 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
 
-    std::string getDescription() const override
-    {
-        return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.";
-    }
-
-
 private:
     const int level;
     const bool enable_long_range;
