@@ -803,7 +803,8 @@ void ZooKeeper::sendThread()
                         break;
                     }
 
-                    info.request->addRootPath(args.chroot);
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64);
@@ -1006,7 +1007,9 @@ void ZooKeeper::receiveEvent()
         else
         {
             response->readImpl(getReadBuffer());
-            response->removeRootPath(args.chroot);
+
+            if (!request_info.request || request_info.request->add_root_path)
+                response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
@@ -1322,12 +1325,17 @@ std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, con
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::GetResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
+    ZooKeeperGetRequest request;
+    request.path = path;
+    request.add_root_path = false;
 
-    get(path, std::move(callback), {});
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
+    request_info.callback = [promise](const Response & response) { promise->set_value(dynamic_cast<const GetResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
         throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
 
