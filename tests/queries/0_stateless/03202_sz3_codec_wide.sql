@@ -1,7 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-asan
--- no-asan: runs too long
-
--- Basic tests for vector similarity index stored in compact vs. wide format, respectively full vs. packed parts
+-- Tags: no-fasttest, no-ordinary-database
 
 SET allow_experimental_vector_similarity_index = 1;
 

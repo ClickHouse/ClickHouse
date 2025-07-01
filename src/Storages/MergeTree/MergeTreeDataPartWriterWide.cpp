@@ -448,17 +448,30 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
+        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+        /// require specifying the array dimensions before compression starts.
+        /// For 1D arrays, it's simply the length.
         auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
         if (compression_codec->isVectorCodec())
         {
             Field sample_field;
             column.get(0, sample_field);
-
             if (sample_field.getType() == Field::Types::Array)
-                compression_codec->setVectorDimension(sample_field.safeGet<Array>().size());
-
+            {
+                for (size_t j = 0; j < column.size(); ++j)
+                {
+                    column.get(j, sample_field);
+                    compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Array>().size());
+                }
+            }
             if (sample_field.getType() == Field::Types::Tuple)
-                compression_codec->setVectorDimension(sample_field.safeGet<Tuple>().size());
+            {
+                for (size_t j = 0; j < column.size(); ++j)
+                {
+                    column.get(j, sample_field);
+                    compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Tuple>().size());
+                }
+            }
         }
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());

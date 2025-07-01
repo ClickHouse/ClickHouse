@@ -273,13 +273,24 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 if (compression_codec->isVectorCodec())
                 {
                     Field sample_field;
-                    block.getColumnOrSubcolumnByName(name_and_type->name).column->get(0, sample_field);
-
+                    auto column = block.getColumnOrSubcolumnByName(name_and_type->name).column;
+                    column->get(0, sample_field);
                     if (sample_field.getType() == Field::Types::Array)
-                        compression_codec->setVectorDimension(sample_field.safeGet<Array>().size());
-
+                    {
+                        for (size_t j = 0; j < column->size(); ++j)
+                        {
+                            column->get(j, sample_field);
+                            compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Array>().size());
+                        }
+                    }
                     if (sample_field.getType() == Field::Types::Tuple)
-                        compression_codec->setVectorDimension(sample_field.safeGet<Tuple>().size());
+                    {
+                        for (size_t j = 0; j < column->size(); ++j)
+                        {
+                            column->get(j, sample_field);
+                            compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Tuple>().size());
+                        }
+                    }
                 }
 
                 /// Write one compressed block per column in granule for more optimal reading.

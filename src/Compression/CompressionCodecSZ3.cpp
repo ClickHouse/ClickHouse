@@ -33,7 +33,7 @@ public:
 
     void updateHash(SipHash & hash) const override;
 
-    void setVectorDimension(size_t dimension) override;
+    void setVectorDimensionAndCheck(size_t dimension) override;
 
 protected:
     bool isCompression() const override { return true; }
@@ -51,7 +51,7 @@ private:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    size_t dimension = 1;
+    std::optional<size_t> dimension;
     const UInt8 float_width;
     const SZ3::ALGO algorithm;
     const SZ3::EB error_bound_mode;
@@ -120,10 +120,10 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     SZ3::Config config;
 
     std::vector<size_t> result_dimensions;
-    size_t num_floats = (source_size / float_width) / dimension;
+    size_t num_floats = (source_size / float_width) / dimension.value_or(1);
 
     result_dimensions.push_back(num_floats);
-    result_dimensions.push_back(dimension);
+    result_dimensions.push_back(dimension.value_or(1));
 
     config.setDims(result_dimensions.begin(), result_dimensions.end());
 
@@ -186,8 +186,10 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     return static_cast<UInt32>(offset + compressed_size);
 }
 
-void CompressionCodecSZ3::setVectorDimension(size_t dimension_)
+void CompressionCodecSZ3::setVectorDimensionAndCheck(size_t dimension_)
 {
+    if (dimension.has_value() && *dimension != dimension_)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Vector dimensions are not equals: {} and {}", dimension_, *dimension);
     dimension = dimension_;
 }
 
