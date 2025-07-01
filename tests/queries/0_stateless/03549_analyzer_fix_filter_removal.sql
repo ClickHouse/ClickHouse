@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 CREATE TABLE m (`key` UInt32) ENGINE = Merge(currentDatabase(), 'a');
 CREATE TABLE b (`key` UInt32, `ID` UInt32) ENGINE = MergeTree ORDER BY key;
 
