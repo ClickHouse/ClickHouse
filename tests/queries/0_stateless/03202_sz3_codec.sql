@@ -29,6 +29,23 @@ CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 1, 0.01))) Engine 
 -- The 3rd argument must be a Float64
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP', 'REL', 'not_a_f64'))) Engine = Memory; -- { serverError ILLEGAL_CODEC_PARAMETER }
 
+SELECT 'Test wide/compact format';
+-- Very basic test to make sure nothing breaks
+
+DROP TABLE IF EXISTS tab_wide;
+DROP TABLE IF EXISTS tab_compact;
+
+CREATE TABLE tab_wide(id Int32, vec Array(Float32) CODEC(SZ3)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE tab_compact(id Int32, vec Array(Float32) CODEC(SZ3)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1e9, min_rows_for_wide_part = 1e9;
+
+INSERT INTO tab_wide VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+INSERT INTO tab_compact VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+SELECT * FROM tab_wide ORDER BY ALL;
+SELECT * FROM tab_compact ORDER BY ALL;
+
+DROP TABLE tab_wide;
+
 SELECT 'Test with default settings';
 
 CREATE TABLE tab (
