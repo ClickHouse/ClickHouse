@@ -18,7 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 namespace DB
 {
