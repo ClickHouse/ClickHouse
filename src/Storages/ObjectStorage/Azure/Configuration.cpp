@@ -84,29 +84,6 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 {
     assertInitialized();
 
-    if (connection_params.endpoint.storage_account_url.starts_with("abfss"))
-    {
-        auto url = connection_params.endpoint.storage_account_url;
-        auto pos_slash = url.find("://");
-        auto pos_at = url.find("@");
-        auto pos_dot = url.find(".");
-        auto pos_net = url.find(".net");
-
-        if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", url);
-        }
-        auto container = url.substr(pos_slash+3, pos_at-pos_slash-3);
-        auto account_name = url.substr(pos_at+1, pos_dot-pos_at-1);
-
-        connection_params.endpoint.storage_account_url = "https://" + account_name + ".blob.core.net";
-
-        if (!connection_params.endpoint.container_name.empty())
-            connection_params.endpoint.prefix = connection_params.endpoint.container_name + connection_params.endpoint.prefix;
-
-        connection_params.endpoint.container_name = container;
-    }
-
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
@@ -187,15 +164,15 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             getSignatures(with_structure));
     }
 
+    for (auto & engine_arg : engine_args)
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+
     if (engine_args.size() == 2)
     {
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
         String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
         String sas_token = checkAndGetLiteralArgument<String>(engine_args[1], "sas_token");
         String container_name;
-        std::optional<String> account_name;
-        std::optional<String> account_key;
 
         auto pos_container = connection_url.find(".net");
 
@@ -213,25 +190,38 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             }
         }
 
+        /// Added for Unity Catalog on top of AzureBlobStorage
+        if (connection_url.starts_with("abfss"))
+        {
+            auto pos_slash = connection_url.find("://");
+            auto pos_at = connection_url.find("@");
+            auto pos_dot = connection_url.find(".");
+            auto pos_net = connection_url.find(".net");
+
+            if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
+            }
+            auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
+            auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
+
+            connection_params.endpoint.storage_account_url = "https://" + name + ".blob.core.windows.net";
+
+            if (!container_name.empty())
+            {
+                blob_path = container_name + blob_path;
+            }
+            connection_params.endpoint.container_name = container_name_abfss;
+        }
+
         blobs_paths = {blob_path};
-        connection_params = getConnectionParams(connection_url+"?"+sas_token, container_name, account_name, account_key, context);
         connection_params.endpoint.sas_auth = sas_token;
-        connection_params.endpoint.prefix = blob_path;
 
         return;
     }
 
-    if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
-    {
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 3 to {} arguments. All supported signatures:\n{}",
-            getMaxNumberOfArguments(with_structure),
-            getSignatures(with_structure));
-    }
 
-    for (auto & engine_arg : engine_args)
-        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
