@@ -1093,7 +1093,7 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
-    DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
+    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
@@ -3976,9 +3976,12 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE P
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for all mutations to complete on the current server.
-- 2 - The query waits for all mutations to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
+| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -3996,9 +3999,12 @@ The same as [`mutations_sync`](#mutations_sync), but controls only execution of 
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for the lightweight deletes to complete on the current server.
-- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
+| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
@@ -5629,6 +5635,9 @@ Max wait time when trying to read data for remote disk
 )", 0) \
     DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
 Max attempts to read with backoff
+)", 0) \
+    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
+If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
