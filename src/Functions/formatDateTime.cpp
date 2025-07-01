@@ -582,7 +582,7 @@ private:
             }
 
             size_t writes = 0;
-            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
+            for (UInt32 i = scale; i > 0; --i)
             {
                 dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
