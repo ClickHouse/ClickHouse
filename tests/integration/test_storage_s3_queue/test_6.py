@@ -261,6 +261,11 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         processed_nodes = zk.get_children(f"{keeper_path}/processed")
     else:
         for i in range(buckets):
+            # Files are linked to buckets by hash of file path.
+            # Path contains random table name, so distributing files to buckets is not predictable.
+            # In rare case bucket can have zero processed files.
+            if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
+                continue
             bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
             for node in bucket_nodes:
                 if node not in processed_nodes:
