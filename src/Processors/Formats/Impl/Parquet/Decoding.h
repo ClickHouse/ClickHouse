@@ -109,7 +109,8 @@ struct StringConverter
     virtual bool isTrivial() const { return false; }
 
     /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
-    virtual void convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
+    /// `offsets[-1]` must be valid and is not necessarily 0.
+    virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
     virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
@@ -213,7 +214,7 @@ struct TrivialStringConverter : public StringConverter
 {
     bool isTrivial() const override { return true; }
 
-    void convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
 };
 
@@ -279,7 +280,7 @@ struct BigEndianDecimalStringConverter : public StringConverter
 
     explicit BigEndianDecimalStringConverter(UInt32 scale_) : scale(scale_) {}
 
-    void convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
 };
 

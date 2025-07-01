@@ -1,5 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+#include <arrow/util/bit_stream_utils.h>
+
+#include <IO/VarInt.h>
+
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -150,7 +154,6 @@ struct BitPackedRLEDecoder : public PageDecoder
 
 struct PlainFixedSizeDecoder : public PageDecoder
 {
-    size_t value_size;
     std::shared_ptr<FixedSizeConverter> converter;
 
     PlainFixedSizeDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_)) {}
@@ -209,6 +212,7 @@ struct PlainStringDecoder : public PageDecoder
         else
         {
             offsets.clear();
+            offsets.reserve(num_values);
             /// We have extra 4 bytes *before* each string, but StringConverter expects
             /// separator_bytes *after* each string (for compatibility with ColumnString, which has
             /// extra '\0' byte after each string). So we offset the `data` start pointer to skip the
@@ -226,8 +230,413 @@ struct PlainStringDecoder : public PageDecoder
                 data += len;
             }
 
-            converter->convertColumn(std::span(chars_start, offset), offsets, /*separator_bytes*/ 4, num_values, col);
+            converter->convertColumn(std::span(chars_start, offset), offsets.data(), /*separator_bytes*/ 4, num_values, col);
         }
+    }
+};
+
+struct DeltaBinaryPackedDecoder : public PageDecoder
+{
+    std::shared_ptr<FixedSizeConverter> converter;
+
+    size_t values_per_block = 0;
+    size_t miniblocks_per_block = 0;
+    size_t total_values_remaining = 0;
+    /// Do all arithmetic as unsigned to silently wrap on overflow (as DELTA_BINARY_PACKED wants).
+    /// (Note: signed and unsigned integer addition are exactly the same operation, the only
+    ///  difference is whether overflow is UB or not.)
+    UInt64 current_value = 0;
+
+    UInt64 min_delta = 0;
+    const UInt8 * miniblock_bit_widths = nullptr;
+    size_t miniblock_idx = 0; // within block
+    size_t miniblock_values_remaining = 0;
+    arrow::bit_util::BitReader bit_reader;
+
+    PODArray<UInt64> temp_values;
+
+    DeltaBinaryPackedDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_))
+    {
+        /// From https://parquet.apache.org/docs/file-format/data-pages/encodings/ :
+        ///
+        /// Delta encoding consists of a header followed by blocks of delta encoded values binary
+        /// packed. Each block is made of miniblocks, each of them binary packed with its own bit width.
+        ///
+        /// The header is defined as follows:
+        /// <block size in values> <number of miniblocks in a block> <total value count> <first value>
+        ///  * the block size is a multiple of 128; it is stored as a ULEB128 int
+        ///  * the miniblock count per block is a divisor of the block size such that their
+        ///    quotient, the number of values in a miniblock, is a multiple of 32; it is stored as a
+        ///    ULEB128 int
+        ///  * the total value count is stored as a ULEB128 int
+        ///  * the first value is stored as a zigzag ULEB128 int
+
+        data = readVarUInt(values_per_block, data, end - data);
+        data = readVarUInt(miniblocks_per_block, data, end - data);
+        data = readVarUInt(total_values_remaining, data, end - data);
+        data = readVarUInt(current_value, data, end - data);
+        current_value = UInt64(decodeZigZag(current_value));
+
+        if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
+
+        /// Sanity-check total_values_remaining: each value takes at least one bit.
+        /// This is useful to avoid allocating lots of memory if the input is corrupted.
+        requireRemainingBytes((total_values_remaining + 7)/8);
+    }
+
+    void nextBlock()
+    {
+        /// From https://parquet.apache.org/docs/file-format/data-pages/encodings/ :
+        ///
+        /// Each block contains
+        /// <min delta> <list of bitwidths of miniblocks> <miniblocks>
+        ///  * the min delta is a zigzag ULEB128 int (we compute a minimum as we need positive
+        ///    integers for bit packing)
+        ///  * the bitwidth of each block is stored as a byte
+        ///  * each miniblock is a list of bit packed ints according to the bit width stored at the
+        ///    beginning of the block
+
+        data = readVarUInt(min_delta, data, end - data);
+        min_delta = UInt64(decodeZigZag(min_delta));
+        requireRemainingBytes(miniblocks_per_block);
+        miniblock_bit_widths = reinterpret_cast<const UInt8 *>(data);
+        data += miniblocks_per_block;
+        miniblock_idx = 0;
+    }
+
+    void nextMiniblock()
+    {
+        ++miniblock_idx;
+        if (miniblock_idx >= miniblocks_per_block || miniblock_bit_widths == nullptr)
+            nextBlock();
+        chassert(miniblock_idx < miniblocks_per_block);
+
+        miniblock_values_remaining = values_per_block / miniblocks_per_block;
+        size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
+        requireRemainingBytes(bytes);
+        bit_reader.Reset(reinterpret_cast<const uint8_t *>(data), int(bytes));
+        data += bytes;
+    }
+
+    void skip(size_t num_values) override
+    {
+        switch (converter->input_size)
+        {
+            case 32: decodeImpl<UInt32, true>(num_values, nullptr, [](UInt32 x) { return x; }); break;
+            case 64: decodeImpl<UInt64, true>(num_values, nullptr, [](UInt64 x) { return x; }); break;
+            default: chassert(false);
+        }
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        bool direct = converter->isTrivial();
+        char * to;
+        if (direct)
+        {
+            auto to_span = col.insertRawUninitialized(num_values);
+            chassert(to_span.size() == num_values * converter->input_size);
+            to = to_span.data();
+        }
+        else
+        {
+            size_t num_u64s = converter->input_size == 32 ? (num_values + 1) / 2 : num_values;
+            temp_values.resize(num_u64s);
+            to = reinterpret_cast<char *>(temp_values.data());
+        }
+
+        switch (converter->input_size)
+        {
+            case 32: decodeImpl<UInt32, false>(num_values, to, [](UInt32 x) { return x; }); break;
+            case 64: decodeImpl<UInt64, false>(num_values, to, [](UInt64 x) { return x; }); break;
+            default: chassert(false);
+        }
+
+        if (!direct)
+            converter->convertColumn(std::span(to, num_values * converter->input_size), num_values, col);
+    }
+
+    template <typename T, bool SKIP, typename F>
+    void decodeImpl(size_t num_values, char * out_bytes, F func)
+    {
+        if (total_values_remaining < num_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Trying to read past total number of values in DELTA_BINARY_PACKED encoding");
+        total_values_remaining -= num_values;
+
+        T * out_values = reinterpret_cast<T *>(out_bytes);
+        while (num_values)
+        {
+            if (!miniblock_values_remaining)
+                nextMiniblock();
+
+            size_t n = std::min(num_values, miniblock_values_remaining);
+            int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
+
+            if constexpr (SKIP)
+            {
+                bool ok = bit_reader.Advance(bits_per_delta * n);
+                chassert(ok);
+            }
+            else
+            {
+                /// Unpack deltas.
+                int read_count = bit_reader.GetBatch(bits_per_delta, out_values, n);
+                chassert(read_count == int(n));
+
+                for (size_t i = 0; i < n; ++i)
+                {
+                    current_value += min_delta + UInt64(out_values[i]);
+                    out_values[i] = func(T(current_value));
+                }
+
+                miniblock_values_remaining -= n;
+                out_values += n;
+            }
+        }
+    }
+};
+
+struct DeltaLengthByteArrayDecoder : public PageDecoder
+{
+    std::shared_ptr<StringConverter> converter;
+
+    PaddedPODArray<UInt64> offsets;
+    size_t idx = 0;
+
+    DeltaLengthByteArrayDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_) : PageDecoder(data_), converter(std::move(converter_))
+    {
+        /// Decode all lengths in advance because otherwise there's no way to tell where chars start.
+        DeltaBinaryPackedDecoder lengths_decoder(data_, nullptr);
+        offsets.resize(lengths_decoder.total_values_remaining);
+        size_t last_offset = 0;
+        lengths_decoder.decodeImpl<UInt64, false>(
+            lengths_decoder.total_values_remaining, reinterpret_cast<char *>(offsets.data()),
+            [&](UInt64 len)
+            {
+                if (common::addOverflow(last_offset, len, last_offset))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Overflow in lengths in DELTA_LENGTH_BYTE_ARRAY data");
+                return last_offset;
+            });
+        chassert(lengths_decoder.end == end);
+        data = lengths_decoder.data;
+        requireRemainingBytes(last_offset);
+    }
+
+    void skip(size_t num_values) override
+    {
+        if (num_values > offsets.size() - idx)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
+        idx += num_values;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        if (num_values > offsets.size() - idx)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
+        converter->convertColumn(std::span(data, end - data), offsets.data() + idx, /*separator_bytes*/ 0, num_values, col);
+        idx += num_values;
+    }
+};
+
+struct DeltaByteArrayDecoder : public PageDecoder
+{
+    /// This encoding is applicable for both BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY.
+    std::shared_ptr<StringConverter> string_converter;
+    std::shared_ptr<FixedSizeConverter> fixed_size_converter;
+
+    PaddedPODArray<UInt64> prefixes;
+    PaddedPODArray<UInt64> suffixes;
+
+    size_t idx = 0;
+    String current_value;
+
+    MutableColumnPtr temp_column;
+    PaddedPODArray<char> temp_buffer;
+
+    DeltaByteArrayDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> string_converter_, std::shared_ptr<FixedSizeConverter> fixed_size_converter_) : PageDecoder(data_), string_converter(std::move(string_converter_)), fixed_size_converter(fixed_size_converter_)
+    {
+        for (auto * lengths : {&prefixes, &suffixes})
+        {
+            DeltaBinaryPackedDecoder decoder(std::span(data, end - data), nullptr);
+            lengths->resize(decoder.total_values_remaining);
+            decoder.decodeImpl<UInt64, false>(
+                decoder.total_values_remaining, reinterpret_cast<char *>(lengths->data()),
+                [&](UInt64 x) { return x; });
+            data = decoder.data;
+        }
+
+        if (prefixes.size() != suffixes.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Value count mismatch in DELTA_BYTE_ARRAY headers");
+    }
+
+    void skip(size_t num_values) override
+    {
+        if (fixed_size_converter)
+            decodeImpl<true, true>(num_values, nullptr, nullptr);
+        else
+            decodeImpl<true, false>(num_values, nullptr, nullptr);
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        if (fixed_size_converter)
+        {
+            bool direct = fixed_size_converter->isTrivial();
+            std::span<char> to;
+            if (direct)
+            {
+                to = col.insertRawUninitialized(num_values);
+                chassert(to.size() == num_values * fixed_size_converter->input_size);
+            }
+            else
+            {
+                temp_buffer.resize(num_values * fixed_size_converter->input_size);
+                to = std::span(temp_buffer.data(), temp_buffer.size());
+            }
+
+            decodeImpl<false, true>(num_values, nullptr, to.data());
+
+            if (!direct)
+                fixed_size_converter->convertColumn(to, num_values, col);
+        }
+        else
+        {
+            bool direct = string_converter->isTrivial();
+            ColumnString * col_str;
+            if (direct)
+            {
+                col_str = assert_cast<ColumnString *>(&col);
+            }
+            else
+            {
+                if (!temp_column)
+                    temp_column = ColumnString::create();
+                col_str = assert_cast<ColumnString *>(temp_column.get());
+                col_str->getOffsets().clear();
+                col_str->getChars().clear();
+            }
+            col_str->reserve(col_str->size() + num_values);
+
+            decodeImpl<false, false>(num_values, col_str, nullptr);
+            chassert(col_str->size() == num_values);
+
+            if (!direct)
+                string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 1, num_values, col);
+        }
+    }
+
+    template <bool SKIP, bool FIXED_SIZE>
+    void decodeImpl(size_t num_values, ColumnString * out_str, char * out_fixed_size)
+    {
+        if (num_values > prefixes.size() - idx)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
+        size_t fixed_size = FIXED_SIZE ? fixed_size_converter->input_size : 0;
+
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            if (prefixes[idx] > current_value.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BYTE_ARRAY too long");
+            current_value.resize(prefixes[idx]);
+            requireRemainingBytes(suffixes[idx]);
+            current_value.append(data, suffixes[idx]);
+            data += suffixes[idx];
+            ++idx;
+
+            if constexpr (FIXED_SIZE)
+            {
+                if (current_value.size() != fixed_size)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected fixed string size in DELTA_BYTE_ARRAY");
+
+                if constexpr(!SKIP)
+                {
+                    memcpy(out_fixed_size, current_value.data(), fixed_size);
+                    out_fixed_size += fixed_size;
+                }
+            }
+            else if constexpr (!SKIP)
+            {
+                out_str->insertData(current_value.data(), current_value.size());
+            }
+        }
+    }
+};
+
+struct ByteStreamSplitDecoder : public PageDecoder
+{
+    std::shared_ptr<FixedSizeConverter> converter;
+    size_t stream_size = 0;
+
+    PaddedPODArray<char> temp_buffer;
+
+    ByteStreamSplitDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_))
+    {
+        if (data_.size() % converter->input_size != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "BYTE_STREAM_SPLIT data size not divisible by element size");
+        stream_size = data_.size() / converter->input_size;
+        /// Point [data, end) to the first stream.
+        end = data + stream_size;
+    }
+
+    void skip(size_t num_values) override
+    {
+        requireRemainingBytes(num_values);
+        data += num_values;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        size_t num_streams = converter->input_size;
+
+        bool direct = converter->isTrivial();
+        char * to = nullptr;
+        if (direct)
+        {
+            auto span = col.insertRawUninitialized(num_values);
+            chassert(span.size() == num_values * num_streams);
+            to = span.data();
+        }
+        else
+        {
+            temp_buffer.resize(num_values * num_streams);
+            to = temp_buffer.data();
+        }
+
+        requireRemainingBytes(num_values);
+
+        size_t i = 0;
+        while (i < num_values)
+        {
+            if (num_values - i >= 8)
+            {
+                /// Slightly faster code path that reads 8 bytes at once.
+                /// Arrow has ByteStreamSplitDecode with various fancy simd implementations, maybe
+                /// we should reuse that instead.
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                {
+                    UInt64 x = unalignedLoad<UInt64>(&data[i + stream * stream_size]);
+                    to[(i + 0) * num_streams + stream] = char(UInt8(x >> 0));
+                    to[(i + 1) * num_streams + stream] = char(UInt8(x >>  8));
+                    to[(i + 2) * num_streams + stream] = char(UInt8(x >> 16));
+                    to[(i + 3) * num_streams + stream] = char(UInt8(x >> 24));
+                    to[(i + 4) * num_streams + stream] = char(UInt8(x >> 32));
+                    to[(i + 5) * num_streams + stream] = char(UInt8(x >> 40));
+                    to[(i + 6) * num_streams + stream] = char(UInt8(x >> 48));
+                    to[(i + 7) * num_streams + stream] = char(UInt8(x >> 56));
+                }
+                i += 8;
+            }
+            else
+            {
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                    to[i * num_streams + stream] = data[i + stream * stream_size];
+                i += 1;
+            }
+        }
+        data += num_values;
+
+        if (!direct)
+            converter->convertColumn(std::span(to, num_values * num_streams), num_values, col);
     }
 };
 
@@ -279,14 +688,36 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
         /// TODO [parquet]: RLE for BOOLEAN
         case parq::Encoding::RLE: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RLE encoding is not implemented");
         case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected BIT_PACKED encoding for values");
-        /// TODO [parquet]: DELTA_BINARY_PACKED for INT32 and INT64
-        case parq::Encoding::DELTA_BINARY_PACKED: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BINARY_PACKED encoding is not implemented");
-        /// TODO [parquet]: DELTA_LENGTH_BYTE_ARRAY for BYTE_ARRAY
-        case parq::Encoding::DELTA_LENGTH_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_LENGTH_BYTE_ARRAY encoding is not implemented");
-        /// TODO [parquet]: DELTA_BYTE_ARRAY for BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY
-        case parq::Encoding::DELTA_BYTE_ARRAY: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DELTA_BYTE_ARRAY encoding is not implemented");
-        /// TODO [parquet]: BYTE_STREAM_SPLIT for FLOAT and DOUBLE
-        case parq::Encoding::BYTE_STREAM_SPLIT: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BYTE_STREAM_SPLIT encoding is not implemented");
+        case parq::Encoding::DELTA_BINARY_PACKED:
+            switch (physical_type)
+            {
+                case parq::Type::INT32:
+                case parq::Type::INT64:
+                    return std::make_unique<DeltaBinaryPackedDecoder>(data, fixed_size_converter);
+                default:
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_BINARY_PACKED for type {}", thriftToString(physical_type));
+            }
+        case parq::Encoding::DELTA_LENGTH_BYTE_ARRAY:
+            switch (physical_type)
+            {
+                case parq::Type::BYTE_ARRAY:
+                    return std::make_unique<DeltaLengthByteArrayDecoder>(data, string_converter);
+                default:
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_LENGTH_BYTE_ARRAY for type {}", thriftToString(physical_type));
+            }
+        case parq::Encoding::DELTA_BYTE_ARRAY:
+            switch (physical_type)
+            {
+                case parq::Type::BYTE_ARRAY:
+                case parq::Type::FIXED_LEN_BYTE_ARRAY:
+                    return std::make_unique<DeltaByteArrayDecoder>(data, string_converter, fixed_size_converter);
+                default:
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_BYTE_ARRAY for type {}", thriftToString(physical_type));
+            }
+        case parq::Encoding::BYTE_STREAM_SPLIT:
+            if (!fixed_size_converter)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding BYTE_STREAM_SPLIT for type {}", thriftToString(physical_type));
+            return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
 }
@@ -462,7 +893,7 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
             {
                 size_t start = offsets[size_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
-                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding. Also in PlainStringDecoder.
+                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
                 c.insertData(data.data() + start, len);
             }
             break;
@@ -610,12 +1041,12 @@ void FixedStringConverter::convertField(std::span<const char> data, bool /*is_ma
     out = Field(String(data.data(), data.size()));
 }
 
-void TrivialStringConverter::convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+void TrivialStringConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto & col_str = assert_cast<ColumnString &>(col);
     col_str.reserve(col_str.size() + num_values);
-    chassert(chars.size() == offsets.back());
-    col_str.getChars().reserve(col_str.getChars().size() + offsets.back() - separator_bytes * num_values + num_values);
+    chassert(chars.size() >= offsets[num_values - 1]);
+    col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values + num_values);
     for (size_t i = 0; i < num_values; ++i)
         col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
 }
@@ -734,7 +1165,7 @@ template struct BigEndianDecimalFixedSizeConverter<Int128>;
 template struct BigEndianDecimalFixedSizeConverter<Int256>;
 
 template <typename T>
-void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const IColumn::Offsets & offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto to_bytes = col.insertRawUninitialized(num_values);
     chassert(to_bytes.size() == num_values * sizeof(T));

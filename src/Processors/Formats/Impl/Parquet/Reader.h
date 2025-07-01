@@ -38,6 +38,7 @@ namespace DB::Parquet
 //  * make writer write DataPageV2
 //  * make writer write SizeStatistics
 //  * make writer write PageEncodingStats
+//  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
 //  * support or deprecate the preserve-order setting
@@ -49,7 +50,7 @@ namespace DB::Parquet
 //  * cache FileMetaData in something like SchemaCache
 //  * TSA
 //  * test with tsan
-//  * research reading only requested tuple elements automatically (supportsSubcolumns, supportsDynamicSubcolumns, supportsOptimizationToSubcolumns?)
+//  * fix tuple element reading, see todo in prepareReadingFromFormat; request subcolumns only if it's tuple element, otherwise request the whole column (e.g. for json fields)
 //  * use dictionary page instead of bloom filter when possible
 //  * test performance with prewhere i%2=0, to have lots of range skips
 //  * remember to test these:
