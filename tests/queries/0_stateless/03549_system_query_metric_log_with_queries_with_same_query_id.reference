@@ -1,0 +1,4 @@
+-- Ensure the second query with same query_id did not finish the first one
+1
+-- Ensure the second query cancels the previous one and runs to completion
+1
