@@ -6168,9 +6168,24 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
+    {
+        // pipeline will be built outside
+        return {};
+    }
 
-    // pipeline will be built outside
+    if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage",
+            src_storage->getName());
+    }
+
     return {};
 }
 
