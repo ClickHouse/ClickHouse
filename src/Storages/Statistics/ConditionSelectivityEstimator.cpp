@@ -1,4 +1,3 @@
-#include "Core/PlainRanges.h"
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
@@ -243,7 +242,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
-    /// we will merge normal expression and not expression seperately.
+    /// we will merge normal expression and not expression separately.
     auto merge_column_ranges = [this](ColumnRanges & result_ranges, ColumnRanges & l_ranges, ColumnRanges & r_ranges, bool is_not)
     {
         for (auto & [column_name, ranges] : l_ranges)
