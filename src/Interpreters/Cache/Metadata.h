@@ -73,10 +73,7 @@ struct FileSegmentMetadata : private boost::noncopyable
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-
-        const auto & entry = iterator->getEntry();
-        chassert(size() == entry->size);
-        entry->resetEvictingFlag();
+        iterator->getEntry()->resetEvictingFlag();
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }

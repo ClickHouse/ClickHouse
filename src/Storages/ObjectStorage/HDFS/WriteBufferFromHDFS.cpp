@@ -11,6 +11,12 @@
 #include <hdfs/hdfs.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
+}
+
 namespace DB
 {
 
@@ -68,7 +74,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {}, hdfs_uri: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
 
         if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(bytes_written);
+            write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         return bytes_written;
     }

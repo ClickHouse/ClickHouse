@@ -26,10 +26,10 @@ private:
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32, time_hours;
+    std::uniform_int_distribution<int32_t> ints32;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes, subseconds, time64_hours, strlens;
+        hours, minutes;
 
     std::uniform_int_distribution<int64_t> ints64;
 
@@ -85,7 +85,7 @@ private:
 public:
     pcg64_fast generator;
 
-    RandomGenerator(const uint64_t in_seed, const uint32_t min_string_length, const uint32_t max_string_length)
+    explicit RandomGenerator(const uint64_t in_seed)
         : seed(in_seed ? in_seed : randomSeed())
         , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
         , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
@@ -94,7 +94,6 @@ public:
         , ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-        , time_hours(-999, 999)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
@@ -106,9 +105,6 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
-        , subseconds(0, UINT32_C(1000000000))
-        , time64_hours(0, 999)
-        , strlens(min_string_length, max_string_length)
         , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
         , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
@@ -144,8 +140,6 @@ public:
 
     int64_t nextRandomInt64();
 
-    uint32_t nextStrlen();
-
     char nextDigit();
 
     bool nextBool();
@@ -156,17 +150,11 @@ public:
     /// Range [1900-01-01, 2299-12-31]
     String nextDate32();
 
-    /// Range [-999:59:59, 999:59:59]
-    String nextTime();
-
-    /// Range [000:00:00, 999:59:59.99999999]
-    String nextTime64(bool has_subseconds);
-
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime(bool has_subseconds);
+    String nextDateTime();
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64(bool has_subseconds);
+    String nextDateTime64();
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)

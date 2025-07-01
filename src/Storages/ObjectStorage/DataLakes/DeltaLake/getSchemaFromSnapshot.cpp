@@ -137,6 +137,8 @@ private:
     const LoggerPtr log = getLogger("SchemaVisitor");
 
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+
 };
 
 /**
@@ -147,32 +149,31 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
     using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::logical_schema(snapshot));
         auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
+        [[maybe_unused]] size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
     static void visitReadSchema(
-        ffi::SharedScan * scan,
+        ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelSharedSchema schema(ffi::scan_physical_schema(scan));
+        KernelSharedSchema schema(ffi::get_global_read_schema(scan_state));
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
     static void visitPartitionColumns(
-        ffi::SharedSnapshot * snapshot,
+        ffi::SharedGlobalScanState * scan_state,
         SchemaVisitorData & data)
     {
-        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
+        KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(scan_state));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -406,14 +407,6 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 
             types.push_back(type);
         }
-        else if (field.type == DB::TypeIndex::DateTime64)
-        {
-            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
-            if (field.nullable)
-                type = std::make_shared<DB::DataTypeNullable>(type);
-
-            types.push_back(type);
-        }
         else if (DB::isSimpleDataType(field.type))
         {
             auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
@@ -481,17 +474,17 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(f
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * scan_state)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitReadSchema(scan, data);
+    SchemaVisitor::visitReadSchema(scan_state, data);
     return data.getSchemaResult().names_and_types;
 }
 
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedGlobalScanState * scan_state)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visitPartitionColumns(snapshot, data);
+    SchemaVisitor::visitPartitionColumns(scan_state, data);
     return data.getPartitionColumns();
 }
 

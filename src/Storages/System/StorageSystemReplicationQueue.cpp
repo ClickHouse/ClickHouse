@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>

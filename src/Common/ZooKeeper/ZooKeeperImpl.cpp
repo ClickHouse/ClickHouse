@@ -74,7 +74,7 @@ namespace Metrics::ResponseTime
     Histogram::MetricFamily & mf = Histogram::Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",
-        {1, 2, 5, 10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 500, 1000, 2000},
+        {1, 2, 5, 10, 20, 50, 100},
         {"operation"}
     );
 

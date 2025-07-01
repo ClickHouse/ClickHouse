@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 
 namespace DB

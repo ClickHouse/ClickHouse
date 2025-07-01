@@ -78,7 +78,7 @@ In the results of `SELECT` query, the values of `AggregateFunction` type have im
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
-The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
+The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
 
 ```sql
 CREATE DATABASE test;
@@ -98,7 +98,7 @@ CREATE TABLE test.visits
 
 Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
 
 ```sql
 CREATE TABLE test.agg_visits (
@@ -132,14 +132,14 @@ INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
 
-To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.visits_mv`:
+To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
 ```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
     uniqMerge(Users) AS Users
-FROM test.visits_mv
+FROM test.agg_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
@@ -165,28 +165,6 @@ Run the `SELECT` query again, which will return the following output:
 │ 2022-11-26 07:00:31.000 │      5 │     1 │
 └─────────────────────────┴────────┴───────┘
 ```
-
-In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
-to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
-function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
-is no longer required in this case:
-
-```sql
-CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
-AS SELECT
-    StartDate,
-    CounterID,
-    initializeAggregation('sumState', Sign) AS Visits,
-    initializeAggregation('uniqState', UserID) AS Users
-FROM test.visits;
-```
-
-:::note
-When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
-Each source row produces one row in the materialized view, and the actual aggregation happens later when the
-`AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
-:::
 
 ## Related Content {#related-content}
 
