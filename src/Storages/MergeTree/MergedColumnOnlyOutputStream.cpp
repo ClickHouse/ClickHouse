@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -73,7 +74,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_infos.add(block);
 }
 
-MergeTreeData::DataPart::Checksums
+std::pair<MergeTreeData::DataPart::Checksums, NameSet>
 MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & all_checksums)
@@ -86,6 +87,8 @@ MergedColumnOnlyOutputStream::fillChecksums(
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
 
+    LOG_TRACE(getLogger("MergedColumnOnlyOutputStream"), "filled checksums {}", new_part->getNameWithState());
+
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
             projection_name + ".proj",
@@ -96,16 +99,17 @@ MergedColumnOnlyOutputStream::fillChecksums(
     auto serialization_infos = new_part->getSerializationInfos();
     serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
 
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
     for (const String & removed_file : removed_files)
     {
-        new_part->getDataPartStorage().removeFileIfExists(removed_file);
-        all_checksums.files.erase(removed_file);
+        LOG_DEBUG(getLogger("MergedColumnOnlyOutputStream"), "remove file from checksum {}, existsFile {}",
+            removed_file, new_part->getDataPartStorage().existsFile(removed_file));
+            all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
-    return checksums;
+    return {std::move(checksums), std::move(removed_files)};
 }
 
 void MergedColumnOnlyOutputStream::finish(bool sync)

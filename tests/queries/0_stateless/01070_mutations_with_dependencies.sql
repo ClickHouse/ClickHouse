@@ -47,3 +47,12 @@ alter table ttl update d = '2000-01-01' where 1;
 alter table ttl materialize ttl;
 select * from ttl;
 drop table ttl;
+
+create table ttl (a Int, b Int, c Int default 42 ttl d, d Date, index ind (b * c) type minmax granularity 1)
+engine = MergeTree order by a
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
+insert into ttl values (1, 2, 3, '2100-01-01');
+alter table ttl update d = '2000-01-01' where 1;
+alter table ttl materialize ttl;
+select * from ttl;
+drop table ttl;

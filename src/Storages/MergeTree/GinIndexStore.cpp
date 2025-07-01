@@ -2,6 +2,8 @@
 
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FST.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
@@ -271,6 +273,8 @@ bool GinIndexStore::needToWrite() const
 
 void GinIndexStore::finalize()
 {
+    LOG_DEBUG(getLogger("GinIndexStore"), "finalize current_postings.empty() {}", current_postings.empty());
+
     if (!current_postings.empty())
     {
         writeSegment();
@@ -323,6 +327,8 @@ void GinIndexStore::initSegmentId()
 
 void GinIndexStore::initFileStreams()
 {
+    LOG_DEBUG(getLogger("GinIndexStore"), "initFileStreams");
+
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
@@ -347,6 +353,8 @@ void GinIndexStore::writeSegmentId()
 
 void GinIndexStore::writeSegment()
 {
+    LOG_DEBUG(getLogger("GinIndexStore"), "writeSegment");
+
     if (metadata_file_stream == nullptr)
         initFileStreams();
 
