@@ -368,24 +368,14 @@ class BackportPRs:
         self,
         gh: GitHub,
         repo: str,
-        fetch_from: Optional[str],
         dry_run: bool,
     ):
         self.gh = gh
         self._repo_name = repo
-        self._fetch_from = fetch_from
         self.dry_run = dry_run
 
-        self.must_create_backport_labels = (
-            [Labels.MUST_BACKPORT]
-            if self._repo_name == self._fetch_from
-            else [Labels.MUST_BACKPORT_CLOUD, Labels.MUST_BACKPORT]
-        )
-        self.backport_created_label = (
-            Labels.PR_BACKPORTS_CREATED
-            if self._repo_name == self._fetch_from
-            else Labels.PR_BACKPORTS_CREATED_CLOUD
-        )
+        self.must_create_backport_labels = [Labels.MUST_BACKPORT]
+        self.backport_created_label = Labels.PR_BACKPORTS_CREATED
 
         self._remote = ""
         self._remote_line = ""
@@ -431,27 +421,11 @@ class BackportPRs:
         self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
 
-        if not self._fetch_from:
-            self.labels_to_backport = [
-                f"v{branch}-must-backport" for branch in self.release_branches
-            ]
-        else:
-            self.labels_to_backport = [
-                (
-                    f"v{branch}-must-backport"
-                    if self._repo_name == "ClickHouse/ClickHouse"
-                    else f"v{branch.replace('release/','')}-must-backport"
-                )
-                for branch in self.release_branches
-            ]
-
-            logging.info("Fetching from %s", self._fetch_from)
-            fetch_from_repo = self.gh.get_repo(self._fetch_from)
-            git_runner(
-                "git fetch "
-                f"{fetch_from_repo.ssh_url if self.is_remote_ssh else fetch_from_repo.clone_url} "
-                f"{fetch_from_repo.default_branch} --no-tags"
-            )
+        self.labels_to_backport = [
+            # compatibility labels for the cloud and public release branches
+            f"v{branch.replace('release/', '')}-must-backport"
+            for branch in self.release_branches
+        ]
 
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
@@ -487,12 +461,10 @@ class BackportPRs:
         since_date: date,
         labels_to_backport: Optional[Iterable[str]] = None,
         backport_created_label: str = "",
-        repo: Optional[str] = None,
     ) -> PullRequests:
         """
         Get PRs that are supposed to be backported.
         """
-        repo = repo or self._fetch_from
         labels_to_backport = (
             labels_to_backport
             or self.labels_to_backport + self.must_create_backport_labels
@@ -500,7 +472,7 @@ class BackportPRs:
         backport_created_label = backport_created_label or self.backport_created_label
         tomorrow = date.today() + timedelta(days=1)
         query_args = {
-            "query": f"type:pr repo:{repo} -label:{backport_created_label}",
+            "query": f"type:pr repo:{self.repo.full_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
@@ -684,22 +656,7 @@ def parse_args():
     )
     parser.add_argument("--token", help="github token, if not set, used from smm")
     parser.add_argument("--repo", default=GITHUB_REPOSITORY, help="repo owner/name")
-    parser.add_argument(
-        "--from-repo",
-        default=GITHUB_REPOSITORY,
-        help="if set, the commits will be taken from this repo, but PRs will be created in the main repo",
-    )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
-
-    # TODO: remove this after the labels will be synced to the Sync PRs
-    # The parameter looks like a workaround for the issue with a wrong first commit date
-    # logic
-    parser.add_argument(
-        "--reserve-search-days",
-        default=0,
-        type=int,
-        help="safity reserve for the PRs search days, necessary for cloud",
-    )
 
     parser.add_argument(
         "--debug-helpers",
@@ -726,12 +683,7 @@ def main():
     cpp = CherryPickPRs(gh, args.repo, args.dry_run)
     cpp.remove_backported_labels()
 
-    bpp = BackportPRs(
-        gh,
-        args.repo,
-        args.from_repo,
-        args.dry_run,
-    )
+    bpp = BackportPRs(gh, args.repo, args.dry_run)
 
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
