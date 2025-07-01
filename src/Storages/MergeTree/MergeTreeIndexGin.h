@@ -128,8 +128,8 @@ private:
 
     bool traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out);
     bool traverseASTEquals(
-        const RPNBuilderFunctionTreeNode & function,
-        const RPNBuilderTreeNode & key_ast,
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_ast,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
