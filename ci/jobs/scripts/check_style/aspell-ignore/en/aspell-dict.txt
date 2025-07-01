@@ -341,6 +341,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
