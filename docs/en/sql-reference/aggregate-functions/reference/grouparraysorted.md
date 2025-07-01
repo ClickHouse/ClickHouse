@@ -36,7 +36,7 @@ SELECT groupArraySorted(10)(number) FROM numbers(100)
 Gets all the String implementations of all numbers in column:
 
 ```sql
-SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) as str FROM numbers(5));
+SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM numbers(5));
 ```
 
 ```text

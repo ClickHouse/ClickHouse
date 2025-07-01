@@ -8,7 +8,7 @@ Header: name String
   Header: __table1.name String
     Join
     Header: __table1.name String
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.name String
         ReadFromMergeTree (default.users)
         Header: name String
@@ -20,7 +20,7 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
         Header: name String
@@ -42,7 +42,7 @@ Header: name String
   Header: __table1.name String
     Join
     Header: __table1.name String
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.name String
         ReadFromMergeTree (default.users)
         Header: name String
@@ -54,7 +54,7 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
         Header: name String
@@ -76,7 +76,7 @@ Header: name String
   Header: __table2.name String
     Join
     Header: __table2.name String
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.name String
         ReadFromMergeTree (default.users)
         Header: name String
@@ -88,7 +88,7 @@ Header: name String
             Parts: 1/3
             Granules: 1/3
             Search Algorithm: generic exclusion search
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.name String
         ReadFromMergeTree (default.users2)
         Header: name String

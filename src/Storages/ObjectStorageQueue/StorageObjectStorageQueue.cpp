@@ -1,5 +1,6 @@
 #include <optional>
 
+#include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -67,6 +68,7 @@ namespace FailPoints
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 keeper_multiread_batch_size;
+    extern const ServerSettingsBool s3queue_disable_streaming;
 }
 
 namespace ObjectStorageQueueSetting
@@ -103,30 +105,11 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-    std::string chooseZooKeeperPath(const StorageID & table_id, const Settings & settings, const ObjectStorageQueueSettings & queue_settings)
-    {
-        std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
-        if (zk_path_prefix.empty())
-            zk_path_prefix = "/";
-
-        std::string result_zk_path;
-        if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
-        {
-            /// We do not add table uuid here on purpose.
-            result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
-        }
-        else
-        {
-            auto database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
-            result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
-        }
-        return zkutil::extractZooKeeperPath(result_zk_path, true);
-    }
-
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
@@ -186,12 +169,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool keep_data_in_keeper_)
     : IStorage(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
-    , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
+    , zk_path(chooseZooKeeperPath(getContext(), table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
@@ -208,6 +192,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
+    , keep_data_in_keeper(keep_data_in_keeper_)
 {
     if (configuration->getPath().empty())
     {
@@ -264,7 +250,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
-
 }
 
 void StorageObjectStorageQueue::startup()
@@ -309,7 +294,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop && !keep_data_in_keeper);
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
@@ -505,41 +490,55 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    try
+    const auto & settings = getContext()->getServerSettings();
+
+    if (settings[ServerSetting::s3queue_disable_streaming])
     {
-        const size_t dependencies_count = getDependencies();
-        if (dependencies_count)
+        static constexpr auto disabled_streaming_reschedule_period = 5000;
+
+        LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
+
+        std::lock_guard lock(mutex);
+        reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
+    }
+    else
+    {
+        try
         {
-            mv_attached.store(true);
-            SCOPE_EXIT({ mv_attached.store(false); });
-
-            LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-            files_metadata->registerIfNot(storage_id, /* active */true);
-
-            if (streamToViews(streaming_tasks_index))
+            const size_t dependencies_count = getDependencies();
+            if (dependencies_count)
             {
-                /// Reset the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = polling_min_timeout_ms;
+                mv_attached.store(true);
+                SCOPE_EXIT({ mv_attached.store(false); });
+
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+                files_metadata->registerIfNot(storage_id, /* active */true);
+
+                if (streamToViews(streaming_tasks_index))
+                {
+                    /// Reset the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = polling_min_timeout_ms;
+                }
+                else
+                {
+                    /// Increase the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                }
+
+                LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
             }
             else
             {
-                /// Increase the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                LOG_TEST(log, "No attached dependencies");
             }
-
-            LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
         }
-        else
+        catch (...)
         {
-            LOG_TEST(log, "No attached dependencies");
+            LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
         }
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)
@@ -1115,6 +1114,52 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     }
 
     return settings;
+}
+
+void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    const bool move_between_databases = getStorageID().database_name != new_name.database_name;
+    if (move_between_databases && !can_be_moved_between_databases)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set."
+            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable."
+            "Please set an explicit `keeper_path` to allow moving the table", configuration->getEngineName());
+    }
+}
+
+String StorageObjectStorageQueue::chooseZooKeeperPath(
+    const ContextPtr & context_,
+    const StorageID & table_id,
+    const Settings & settings,
+    const ObjectStorageQueueSettings & queue_settings,
+    UUID database_uuid)
+{
+    /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
+    /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
+
+    std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
+    if (zk_path_prefix.empty())
+        zk_path_prefix = "/";
+
+    std::string result_zk_path;
+    if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
+    {
+        /// We do not add table uuid here on purpose.
+        result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
+
+        Macros::MacroExpansionInfo info;
+        info.table_id.uuid = table_id.uuid;
+        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+    }
+    else
+    {
+        if (database_uuid == UUIDHelpers::Nil)
+            database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
+
+        result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
+    }
+    return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
 }

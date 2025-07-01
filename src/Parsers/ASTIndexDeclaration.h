@@ -12,8 +12,9 @@ class ASTFunction;
 class ASTIndexDeclaration : public IAST
 {
 public:
-    static const auto DEFAULT_INDEX_GRANULARITY = 1uz;
-    static const auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
+    static constexpr auto DEFAULT_INDEX_GRANULARITY = 1uz;
+    static constexpr auto DEFAULT_TEXT_INDEX_GRANULARITY = 64uz;
+    static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
 
     ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
 

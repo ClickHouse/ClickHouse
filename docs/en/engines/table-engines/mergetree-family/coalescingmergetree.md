@@ -83,7 +83,7 @@ ORDER BY key
 Insert data to it:
 
 ```sql
-INSERT INTO test_table Values(1,NULL),(1,2),(2,1)
+INSERT INTO test_table VALUES(1,NULL),(1,2),(2,1)
 ```
 
 The result will looks like this:
