@@ -3222,7 +3222,7 @@ void KeeperStorage<Container>::preprocessRequest(
                 });
 
             std::terminate();
-            
+
             // /// Multi requests handle failures using FailedMultiDelta
             // if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
             // {
