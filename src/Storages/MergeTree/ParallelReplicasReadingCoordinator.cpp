@@ -785,6 +785,9 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         stats[request.replica_num].number_of_requests);
 
     ParallelReadResponse response;
+    if (replica_status[request.replica_num].is_finished)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Got request from replica {} after ranges assignment were finished for it", request.replica_num);
 
     size_t current_mark_size = 0;
 
