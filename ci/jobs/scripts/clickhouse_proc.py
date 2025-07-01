@@ -132,10 +132,6 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
-        os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
-        os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
-        os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
-        os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
@@ -264,6 +260,8 @@ class ClickHouseProc:
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
     WD2 = f"{temp_dir}/ft_wd2"
+    CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
+    CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
@@ -346,7 +344,17 @@ class ClickHouseProc:
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
-        return True
+
+        for _ in range(20):
+            res = Shell.check(
+                "/mc ls clickminio/test | grep -q .",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start minio")
+        return False
 
     def start_azurite(self):
         command = (
@@ -432,9 +440,6 @@ class ClickHouseProc:
     def start_log_exports(self, check_start_time):
         print("Start log export")
         os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
-        os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
-        os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
-        os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
             f"CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
@@ -659,7 +664,7 @@ else
 fi
 clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 # AWS S3 is very inefficient, so increase memory even further:
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=16"
 
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
@@ -667,7 +672,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 """
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        return Shell.check(command, strict=True)
+        return Shell.check(command)
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):
@@ -702,7 +707,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         self._flush_system_logs()
         print("Terminate ClickHouse processes")
 
-        timeout = 60
         Shell.check(f"ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
             (self.proc, self.pid_file, self.pid_0, self.run_path0),
@@ -717,33 +721,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     verbose=True,
                 ):
                     print("Failed to stop ClickHouse process gracefully")
+
         return self
-
-        # for proc, pid_file, pid in (
-        #     (self.proc, self.pid_file, self.pid_0),
-        #     (self.proc_2, self.pid_file_replica_2, self.pid_2),
-        #     (self.proc_1, self.pid_file_replica_1, self.pid_1),
-        # ):
-        #     if proc and pid:
-        #         try:
-        #             proc.wait(timeout=timeout)
-        #             print(f"Process {proc.pid} terminated gracefully.")
-        #         except Exception:
-        #             print(
-        #                 f"Process {proc.pid} did not terminate in {timeout} seconds, killing it..."
-        #             )
-        #             Shell.check("ps -ef | grep clickhouse | grep -v grep", verbose=True)
-        #             Utils.terminate_process_group(proc.pid, force=True)
-        #             Utils.terminate_process(pid, force=True)
-        #             proc.wait()  # Wait for the process to be fully killed
-        #             print(f"Process {pid} was killed.")
-        #         Shell.check("ps -ef | grep clickhouse | grep -v grep", verbose=True)
-
-        if self.minio_proc:
-            Utils.terminate_process_group(self.minio_proc.pid)
-
-        if self.azurite_proc:
-            Utils.terminate_process_group(self.azurite_proc.pid)
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
@@ -760,6 +739,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.GDB_LOG)
             if Path(self.DMESG_LOG).exists():
                 res.append(self.DMESG_LOG)
+            if Path(self.CH_LOCAL_ERR_LOG).exists():
+                res.append(self.CH_LOCAL_ERR_LOG)
+            if Path(self.CH_LOCAL_LOG).exists():
+                res.append(self.CH_LOCAL_LOG)
         self.logs = res
         return res
 
@@ -968,13 +951,24 @@ quit
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
+
         command_args += " --config-file=/etc/clickhouse-server/config.xml"
+        # Change log files for local in config.xml as command args do not override
+        Shell.check(
+            f"sed -i 's|<log>.*</log>|<log>{self.CH_LOCAL_LOG}</log>|' /etc/clickhouse-server/config.xml"
+        )
+        Shell.check(
+            f"sed -i 's|<errorlog>.*</errorlog>|<errorlog>{self.CH_LOCAL_ERR_LOG}</errorlog>|' /etc/clickhouse-server/config.xml"
+        )
         # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
         # the problem is that whenever we need disks all disks will be
         # initialized [1])
         #
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
-        command_args_post = "-- --zookeeper.implementation=testkeeper"
+        #
+        #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        #
+        command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
@@ -984,7 +978,7 @@ quit
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res = Shell.check(
-                f"{temp_dir}/clickhouse-local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                f"cd {self.run_path0} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                 verbose=True,
             )
             if not res:
@@ -993,10 +987,13 @@ quit
                     Result(name=f"Scraping {table}", status="FAIL")
                 )
                 res = False
+            if "minio" in table:
+                # minio tables are not replicated
+                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res = Shell.check(
-                    f"clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path1} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if not res:
@@ -1008,7 +1005,7 @@ quit
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
                 res = Shell.check(
-                    f"clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path2} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if not res:
@@ -1019,6 +1016,19 @@ quit
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
+    @staticmethod
+    def set_random_timezone():
+        tz = Shell.get_output(
+            f"rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{{print $3}}' | shuf | head -n1"
+        )
+        print(f"Chosen random timezone: {tz}")
+        assert tz, "Failed to get random TZ"
+        Shell.check(
+            f"cat /usr/share/zoneinfo/{tz} > /etc/localtime && echo '{tz}' > /etc/timezone",
+            verbose=True,
+            strict=True,
+        )
+
 
 if __name__ == "__main__":
     ch = ClickHouseProc()
@@ -1026,7 +1036,10 @@ if __name__ == "__main__":
     if command == "logs_export_config":
         ch.create_log_export_config()
     elif command == "logs_export_start":
-        ch.start_log_exports()
+        # FIXME: the start_time must be preserved globally in ENV or something like that
+        # to get the same values in different DBs
+        # As a wild idea, it could be stored in a Info.check_start_timestamp
+        ch.start_log_exports(check_start_time=Utils.timestamp())
     elif command == "logs_export_stop":
         ch.stop_log_exports()
     elif command == "start_minio":

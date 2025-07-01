@@ -25,6 +25,9 @@ namespace DB
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
+class KafkaConsumer2;
+using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
+
 class KafkaConsumer2
 {
 public:
@@ -36,7 +39,6 @@ public:
     {
         String topic;
         int32_t partition_id;
-        int64_t offset{INVALID_OFFSET};
 
         bool operator==(const TopicPartition &) const = default;
         bool operator<(const TopicPartition & other) const;
@@ -44,12 +46,12 @@ public:
 
     using TopicPartitions = std::vector<TopicPartition>;
 
-    struct OnlyTopicNameAndPartitionIdHash
+    struct TopicPartitionHash
     {
         std::size_t operator()(const TopicPartition & tp) const;
     };
 
-    struct OnlyTopicNameAndPartitionIdEquality
+    struct TopicPartitionEquality
     {
         bool operator()(const TopicPartition & lhs, const TopicPartition & rhs) const
         {
@@ -57,13 +59,18 @@ public:
         }
     };
 
+    struct TopicPartitionOffset : public TopicPartition
+    {
+        int64_t offset{INVALID_OFFSET};
+    };
+
+    using TopicPartitionOffsets = std::vector<TopicPartitionOffset>;
+
     struct TopicPartitionCount
     {
         String topic;
         size_t partition_count;
     };
-
-    using TopicPartitionCounts = std::vector<KafkaConsumer2::TopicPartitionCount>;
 
     KafkaConsumer2(
         ConsumerPtr consumer_,
@@ -85,13 +92,13 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
-    void updateOffsets(const TopicPartitions & topic_partitions);
+    void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count);
 
-    void commit(const TopicPartition & topic_partition);
+    void commit(const TopicPartitionOffset & topic_partition_offset);
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
@@ -103,7 +110,7 @@ public:
     String currentPayload() const { return current[-1].get_payload(); }
 
     // Build the full list of partitions for our subscribed topics.
-    TopicPartitions getAllTopicPartitions(bool need_sort = false) const;
+    TopicPartitionOffsets getAllTopicPartitionOffsets(bool need_sort = false) const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -132,7 +139,7 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
+    std::unordered_map<TopicPartition, cppkafka::Queue, TopicPartitionHash, TopicPartitionEquality> queues;
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;

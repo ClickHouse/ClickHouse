@@ -3473,8 +3473,23 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
-            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+        /// For null Field, check if the type is valid.
+        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
+        auto is_valid_uint64_or_int64_or_null = [&](const Field & f)
+        {
+            /// allow NULL only when inner type is a nativeInteger/enum/date/date32/datetime
+            if (f.isNull())
+                return which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32()
+                    || which_inner_type.isDateTime();
+
+            /// otherwise must be one of the two 64-bit types
+            auto t = f.getType();
+            return t == Field::Types::UInt64
+                || t == Field::Types::Int64;
+        };
+
+        if (!is_valid_uint64_or_int64_or_null(left)
+            || !is_valid_uint64_or_int64_or_null(right))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
@@ -4677,7 +4692,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
+        if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -4876,7 +4891,7 @@ private:
 
     WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
-        if (!from_tuple.haveExplicitNames())
+        if (!from_tuple.hasExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
 
@@ -5061,8 +5076,8 @@ private:
             new_elements.reserve(elements.size());
             for (const auto & element : elements)
                 new_elements.push_back(convertNestedObjectType(element, new_object_type));
-            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
-                                                   : std::make_shared<DataTypeTuple>(new_elements);
+            return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                  : std::make_shared<DataTypeTuple>(new_elements);
         }
 
         return type;
