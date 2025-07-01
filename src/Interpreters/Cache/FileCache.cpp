@@ -1843,6 +1843,7 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
         try
         {
             modified_size_limit = doDynamicResizeImpl(current_limits, desired_limits, result_limits, cache_lock);
+            chassert(result_limits.max_size && result_limits.max_elements);
         }
         catch (...)
         {
@@ -1925,6 +1926,7 @@ bool FileCache::doDynamicResizeImpl(
     if (desired_limits.max_size <= current_limits.max_size
         && desired_limits.max_elements <= current_limits.max_elements)
     {
+        result_limits = current_limits;
         return true;
     }
 

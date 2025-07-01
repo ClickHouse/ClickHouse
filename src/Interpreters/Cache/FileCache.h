@@ -307,9 +307,9 @@ private:
 
     struct SizeLimits
     {
-        size_t max_size;
-        size_t max_elements;
-        double slru_size_ratio;
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
     bool doDynamicResizeImpl(
