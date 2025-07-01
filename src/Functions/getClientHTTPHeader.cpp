@@ -77,11 +77,8 @@ public:
 
 REGISTER_FUNCTION(GetClientHTTPHeader)
 {
-    factory.registerFunction("getClientHTTPHeader",
-        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
-        FunctionDocumentation{
-            .description = R"(
-Get the value of an HTTP header.
+    FunctionDocumentation::Description description = R"(
+Gets the value of an HTTP header.
 
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
@@ -92,11 +89,22 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
-",
-            .syntax = "getClientHTTPHeader(name)",
-            .arguments = {{"name", "The HTTP header name (String)"}},
-            .returned_value = {"The value of the header", {"String"}},
-            .category = FunctionDocumentation::Category::Other});
+)";
+    FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "The HTTP header name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The value of the header", {"String"}};
+    FunctionDocumentation::Examples example = {
+        {"Usage example", "SELECT getClientHTTPHeader('Content-Type')", "application/x-www-form-urlencoded"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction("getClientHTTPHeader",
+        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
+        documentation);
 }
 
 }

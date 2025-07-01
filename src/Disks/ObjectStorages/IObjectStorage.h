@@ -109,6 +109,7 @@ struct RelativePathWithMetadata
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
 };
 
 struct ObjectKeyWithMetadata
@@ -246,13 +247,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
-    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
-    /// in different namespace.
-    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix, ContextPtr context) = 0;
-
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
@@ -307,12 +301,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
-
-
-private:
-    mutable std::mutex throttlers_mutex;
-    ThrottlerPtr remote_read_throttler;
-    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
