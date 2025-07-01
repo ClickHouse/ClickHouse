@@ -33,7 +33,7 @@ public:
 
     void updateHash(SipHash & hash) const override;
 
-    void setVectorDimensionAndCheck(size_t dimension) override;
+    void setAndCheckVectorDimension(size_t dimension) override;
 
 protected:
     bool isCompression() const override { return true; }
@@ -41,8 +41,9 @@ protected:
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
     /// We mark it as experimental for now.
+    bool isLossyCompression() const override { return true; }
     bool isExperimental() const override { return true; }
-    bool isVectorCodec() const override { return true; }
+    bool needsVectorDimensionUpfront() const override { return true; }
     String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
 
 private:
@@ -186,7 +187,7 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     return static_cast<UInt32>(offset + compressed_size);
 }
 
-void CompressionCodecSZ3::setVectorDimensionAndCheck(size_t dimension_)
+void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 {
     if (dimension.has_value() && *dimension != dimension_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Vector dimensions are not equals: {} and {}", dimension_, *dimension);

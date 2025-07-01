@@ -93,8 +93,9 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
-        /// If previous stream is not null it means it was offsets. We don't use vector codecs for offsets.
-        if (prev_stream && prev_stream->compressed_buf.getCodec()->isVectorCodec())
+        /// If previous stream is not null it means it was Array offsets stream.
+        /// Can't apply lossy compression for offsets.
+        if (prev_stream && prev_stream->compressed_buf.getCodec()->isLossyCompression())
             prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
 
         UInt64 codec_id = compression_codec->getHash();
@@ -270,7 +271,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// require specifying the array dimensions before compression starts.
                 /// For 1D arrays, it's simply the length.
                 auto compression_codec = result_stream->compressed_buf.getCodec();
-                if (compression_codec->isVectorCodec())
+                if (compression_codec->needsVectorDimensionUpfront())
                 {
                     Field sample_field;
                     auto column = block.getColumnOrSubcolumnByName(name_and_type->name).column;
@@ -280,7 +281,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                         for (size_t j = 0; j < column->size(); ++j)
                         {
                             column->get(j, sample_field);
-                            compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Array>().size());
+                            compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
                         }
                     }
                     if (sample_field.getType() == Field::Types::Tuple)
@@ -288,7 +289,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                         for (size_t j = 0; j < column->size(); ++j)
                         {
                             column->get(j, sample_field);
-                            compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Tuple>().size());
+                            compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
                         }
                     }
                 }

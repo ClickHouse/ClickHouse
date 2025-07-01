@@ -452,7 +452,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         /// require specifying the array dimensions before compression starts.
         /// For 1D arrays, it's simply the length.
         auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
-        if (compression_codec->isVectorCodec())
+        if (compression_codec->needsVectorDimensionUpfront())
         {
             Field sample_field;
             column.get(0, sample_field);
@@ -461,7 +461,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
                 for (size_t j = 0; j < column.size(); ++j)
                 {
                     column.get(j, sample_field);
-                    compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Array>().size());
+                    compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
                 }
             }
             if (sample_field.getType() == Field::Types::Tuple)
@@ -469,7 +469,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
                 for (size_t j = 0; j < column.size(); ++j)
                 {
                     column.get(j, sample_field);
-                    compression_codec->setVectorDimensionAndCheck(sample_field.safeGet<Tuple>().size());
+                    compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
                 }
             }
         }
