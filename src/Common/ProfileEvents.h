@@ -159,6 +159,52 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
+    /**
+     * Batched counters for high-frequency events.
+     * Accumulates statistics locally and flushes to global counters
+     * when local values reach a certain threshold.
+     */
+    class BatchedCounters
+    {
+    private:
+        /// Map of event types to local counts
+        std::unordered_map<Event, Count> local_counters;
+
+        /// Parent counter to flush values to
+        Counters * parent = nullptr;
+
+        /// Threshold percentage that triggers flush (default 1%)
+        double threshold_percentage;
+
+        /// Get estimated maximum thread concurrency for threshold calculation
+        size_t getMaxConcurrency() const;
+
+    public:
+        /// Constructor with configurable parent counter
+        explicit BatchedCounters(Counters * parent_ = &global_counters, double threshold_percentage_ = 1.0);
+
+        /// Destructor that ensures all counters are flushed
+        ~BatchedCounters();
+
+        /// Increment local counter for event
+        void increment(Event event, Count amount = 1);
+
+        /// Check if counter should be flushed and do so if needed
+        void tryFlush(Event event);
+
+        /// Explicitly flush a specific counter
+        void flush(Event event);
+
+        /// Flush all local counters to parent
+        void flushAll();
+
+        /// Get current local value for an event
+        Count get(Event event) const;
+
+        /// Thread-local singleton access method
+        static BatchedCounters & current();
+    };
+
     enum class ValueType : uint8_t
     {
         Number,

@@ -7,6 +7,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <cfloat>
 #include <random>
@@ -1324,6 +1325,90 @@ CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters:
 void CountersIncrement::init()
 {
     increment_holder = std::make_unique<Increment[]>(Counters::num_counters);
+}
+
+// Implementation of BatchedCounters methods
+size_t BatchedCounters::getMaxConcurrency() const
+{
+    static size_t max_threads = getNumberOfCPUCoresToUse();
+    return max_threads;
+}
+
+BatchedCounters::BatchedCounters(Counters * parent_, double threshold_percentage_)
+    : parent(parent_ ? parent_ : &global_counters), threshold_percentage(threshold_percentage_)
+{
+}
+
+BatchedCounters::~BatchedCounters()
+{
+    flushAll();
+}
+
+void BatchedCounters::increment(Event event, Count amount)
+{
+    local_counters[event] += amount;
+    tryFlush(event);
+}
+
+void BatchedCounters::tryFlush(Event event)
+{
+    if (local_counters.empty() && parent == nullptr)
+        return;
+
+    auto it = local_counters.find(event);
+    if (it == local_counters.end() || it->second == 0)
+        return;
+
+    Count local_value = it->second;
+    UInt64 global_value = parent->operator[](event).load(std::memory_order_relaxed);
+
+    // Flush if local value exceeds threshold percentage of global value
+    if (local_value * getMaxConcurrency() * 100 > global_value * threshold_percentage)
+        flush(event);
+}
+
+void BatchedCounters::flush(Event event)
+{
+    auto it = local_counters.find(event);
+    if (it == local_counters.end() || it->second == 0)
+        return;
+
+    if (parent)
+        parent->increment(event, it->second);
+
+    it->second = 0;
+}
+
+void BatchedCounters::flushAll()
+{
+    if (local_counters.empty() || !parent)
+        return;
+
+    for (auto & [event, count] : local_counters)
+    {
+        if (count > 0)
+        {
+            parent->increment(event, count);
+            count = 0;
+        }
+    }
+}
+
+Count BatchedCounters::get(Event event) const
+{
+    if (local_counters.empty())
+        return 0;
+
+    auto it = local_counters.find(event);
+    if (it == local_counters.end())
+        return 0;
+    return it->second;
+}
+
+BatchedCounters & BatchedCounters::current()
+{
+    static thread_local BatchedCounters instance;
+    return instance;
 }
 
 }
