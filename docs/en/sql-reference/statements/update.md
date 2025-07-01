@@ -107,7 +107,7 @@ For these two cases there are two ways to apply patch parts respectively:
    - Using merge by sorted columns `_part`, `_part_offset`.
    - Using join by `_block_number`, `_block_offset` columns.
 
-The join mode is slower and requires more memory than merge mode, but it is used more rarely.
+The join mode is slower and requires more memory than the merge mode, but it is used less often.
 
 ## Related Content {#related-content}
 
