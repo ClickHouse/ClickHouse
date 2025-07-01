@@ -38,7 +38,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -55,7 +55,7 @@ Positions: 4 1 0 2
         ReadType: Default
         Parts: 1
         Granules: 1
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -117,7 +117,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -134,7 +134,7 @@ Positions: 4 1 0 2
         ReadType: Default
         Parts: 1
         Granules: 1
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -196,7 +196,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       AND column: equals(__table1.id, 5_UInt8)
@@ -220,7 +220,7 @@ Positions: 4 1 0 2
         ReadType: Default
         Parts: 1
         Granules: 1
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       AND column: equals(__table2.id, 6_UInt8)
@@ -286,7 +286,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -303,7 +303,7 @@ Positions: 4 1 0 2
         ReadType: Default
         Parts: 1
         Granules: 1
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Filter column: equals(__table2.id, 5_UInt8) (removed)
@@ -537,7 +537,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
       Filter column: equals(__table1.id, 5_UInt8) (removed)
@@ -554,7 +554,7 @@ Positions: 4 1 0 2
         ReadType: Default
         Parts: 1
         Granules: 1
-      Filter (( + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
       Filter column: equals(__table2.id, 5_UInt8) (removed)

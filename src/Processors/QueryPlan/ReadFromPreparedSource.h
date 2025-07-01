@@ -8,9 +8,6 @@
 namespace DB
 {
 
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
 /// Create source from prepared pipe.
 class ReadFromPreparedSource : public ISourceStep
 {

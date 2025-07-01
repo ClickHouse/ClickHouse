@@ -31,7 +31,7 @@ RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|https://archi
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="25.5.3.75"
+ARG VERSION="25.6.2.5"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off

@@ -442,12 +442,12 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
             const auto & storage = storage_snapshot->storage;
 
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage.getStorageID(),
-                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
+                storage_snapshot->metadata->getColumns(),
                 storage_snapshot,
                 storage.supportsReplication());
 
@@ -588,6 +588,40 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
         return win_func->getDefaultFrame();
     }
     return {};
+}
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
+{
+    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    {
+        std::vector<const ActionsDAG::Node *> stack;
+        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        stack.push_back(predicate);
+        visited_nodes.insert(predicate);
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            if (is_conjunction)
+            {
+                for (const auto & child : node->children)
+                {
+                    if (!visited_nodes.contains(child))
+                    {
+                        visited_nodes.insert(child);
+                        stack.push_back(child);
+                    }
+                }
+            }
+            else if (node->type == ActionsDAG::ActionType::ALIAS)
+                stack.push_back(node->children.front());
+            else
+                conjuncts.push_back(node);
+        }
+    }
+    return conjuncts;
 }
 
 }
