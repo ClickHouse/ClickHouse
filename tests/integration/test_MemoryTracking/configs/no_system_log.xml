@@ -6,7 +6,6 @@
     <query_metric_log remove="remove" />
     <query_views_log remove="remove" />
     <metric_log remove="remove"/>
-    <latency_log remove="remove"/>
     <error_log remove="remove"/>
     <text_log remove="remove"/>
     <trace_log remove="remove"/>
