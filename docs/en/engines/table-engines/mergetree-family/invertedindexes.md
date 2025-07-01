@@ -136,8 +136,8 @@ Functions `=` (equals) and `!=` (notEquals) check if the column contains rows wh
 
 #### in and notIn {#functions-example-in-notin}
 
-Functions `in` and `notIn` are similar to `equals` and `notEquals` functions respectively.
-Instead of maching a single term, they can be used to match multiple search terms.
+Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
+Instead of maching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
 #### like, notLike and match {#functions-example-like-notlike-match}
 
@@ -194,22 +194,23 @@ SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhous
 
 #### hasToken and hasTokenOrNull {#functions-example-hastoken-hastokenornull}
 
-Functions `hasToken` and `hasTokenOrNull` check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`). 
+Functions `hasToken` and `hasTokenOrNull` check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`).
 
-In compare to other functions, search term accepts a single token. 
+Compared to other functions, `hasToken` and `hasTokenOrNull` do not tokenize the search term, i.e. they assume the input is a single token.
 
 Example:
 
 ```sql
 SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
 ```
+
 These functions are the most performant options to use with the `text` index.
 
 #### searchAny and searchAll {#functions-example-searchany-searchall}
 
 Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
 
-In compare to `hasToken`, these functions accept multiple search terms.
+Compared to `hasToken`, these functions accept multiple search terms.
 
 Example:
 
@@ -222,7 +223,7 @@ SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb'
 #### has {#functions-example-has}
 
 Function `has` is also similar to `equals` in terms of matching the entire value.
-Instead it operators on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
+Instead it operates on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
 
 Example how to define a `text` index to use with the `has` function:
 
