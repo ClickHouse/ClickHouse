@@ -47,6 +47,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -2031,8 +2032,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             add_index_stat_row_for_pk_expand = true;
         }
 
-        /// Fill query condition cache with ranges excluded by index analysis.
+        std::optional<size_t> condition_hash;
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+                condition_hash = outputs.front()->getHash();
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (condition_hash)
         {
             RangesInDataParts remaining;
 
@@ -2109,13 +2118,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             const auto * output = query_info_.filter_actions_dag->getOutputs().front();
             for (const auto & remaining_ranges : remaining)
             {
-                auto data_part = remaining_ranges.data_part;
+                const auto & data_part = remaining_ranges.data_part;
                 String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                                                  : data_part->name;
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
-                    output->getHash(),
+                    *condition_hash,
                     reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
