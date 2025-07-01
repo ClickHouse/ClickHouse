@@ -4,6 +4,7 @@ import pathlib
 import random
 import sys
 import tempfile
+from typing import Optional
 
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
@@ -16,10 +17,11 @@ from integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(self, binary: pathlib.Path, config: pathlib.Path, _suffix: str):
+    def __init__(self, binary: pathlib.Path, config: pathlib.Path, _suffix: Optional[str]):
         self.binary: pathlib.Path = binary
         self.config: pathlib.Path = config
-        self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
+        if _suffix is not None:
+            self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
 
     @abstractmethod
     def run_generator(self, server: ClickHouseInstance) -> CommandRequest:

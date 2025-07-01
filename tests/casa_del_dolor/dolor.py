@@ -28,9 +28,9 @@ def get_unique_free_ports(total):
 
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
-from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
-from generators import BuzzHouseGenerator
+from generators import Generator, BuzzHouseGenerator
 from properties import modify_server_settings, modify_user_settings
 
 
@@ -245,7 +245,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
-    raise f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
+    raise Exception(
+        f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
+    )
 
 logging.basicConfig(
     filename=args.log_path,
@@ -328,7 +330,7 @@ logger.info(
     f"Using {", ".join(keeper_features) if len(keeper_features) > 0 else "none"} keeper flags"
 )
 
-servers = []
+servers: list[ClickHouseInstance] = []
 for i in range(0, len(args.replica_values)):
     servers.append(
         cluster.add_instance(
@@ -370,7 +372,7 @@ if args.with_postgresql:
     postgres_conn.close()
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator = None
+generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster)
 logger.info("Start load generator")
