@@ -1,6 +1,6 @@
 #include "config.h"
-#include "ConfigProcessor.h"
-#include "YAMLParser.h"
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/YAMLParser.h>
 
 #include <sys/utsname.h>
 #include <cerrno>
