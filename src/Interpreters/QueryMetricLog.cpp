@@ -169,6 +169,11 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         return;
 
     auto & query_status = it->second;
+
+    /// Get a refcounted reference to the mutex to ensure it's not destroyed until
+    /// the query is removed from queries. Otherwise, query_lock would attempt to
+    /// unlock a non-existing mutex.
+    auto mutex = query_status.mutex;
     UniqueLock query_lock(query_status.getMutex());
     global_lock.unlock();
 

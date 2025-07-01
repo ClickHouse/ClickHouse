@@ -58,7 +58,7 @@ struct QueryMetricLogStatus
     QueryMetricLogStatusInfo info TSA_GUARDED_BY(getMutex());
 
     /// We need to be able to move it for the hash map, so we need to add an indirection here.
-    std::unique_ptr<Mutex> mutex = std::make_unique<Mutex>();
+    std::shared_ptr<Mutex> mutex = std::make_shared<Mutex>();
 
     bool finished TSA_GUARDED_BY(getMutex()) = false;
     UInt64 thread_id TSA_GUARDED_BY(getMutex()) = CurrentThread::get().thread_id;
