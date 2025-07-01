@@ -1,4 +1,5 @@
 SET session_timezone = 'UTC';
+SET use_legacy_to_time = false;
 
 -- Standard precision operations (Time + DateTime)
 SELECT toDateTime('2020-01-01 12:10:10') + toTime('00:02:02') AS dt_plus_t;
