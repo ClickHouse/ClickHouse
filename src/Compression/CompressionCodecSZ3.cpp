@@ -1,10 +1,10 @@
-#include "Core/TypeId.h"
 #include "config.h"
 
 #if USE_SZ3
 #  include "base/types.h"
 #  include "Common/Exception.h"
 #  include <Common/SipHash.h>
+#  include <Core/TypeId.h>
 #  include <Compression/CompressionFactory.h>
 #  include <Compression/CompressionInfo.h>
 #  include <Compression/ICompressionCodec.h>
