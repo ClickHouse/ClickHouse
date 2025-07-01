@@ -15,7 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
