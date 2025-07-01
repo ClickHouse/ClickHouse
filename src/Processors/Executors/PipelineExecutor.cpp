@@ -523,7 +523,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
             }
         });
 
-        chassert(!slot); // Just to make sure. Slot should be empty after we moved it to the thread lambda
+        slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
         if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
             return;
