@@ -82,13 +82,13 @@ class FTResultsProcessor:
                 ):
                     test_name = line.split(" ")[2].split(":")[0]
 
-                    test_time = ""
+                    test_time = None
                     try:
                         time_token = line.split("]")[1].strip().split()[0]
                         float(time_token)
                         test_time = time_token
                     except:
-                        pass
+                        print(f"ERROR: Failed to parse time str from line [{line}]")
 
                     total += 1
                     if TIMEOUT_SIGN in line:
