@@ -463,7 +463,7 @@ while all_running:
         break
 
     dump_table = (
-        collect_table_hash_before_shutdown(servers, logger)
+        collect_table_hash_before_shutdown(cluster, logger)
         if random.randint(1, 100) <= args.compare_table_dump_prob
         else None
     )
@@ -529,4 +529,4 @@ while all_running:
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
 
-    collect_table_hash_after_shutdown(servers, logger, dump_table)
+    collect_table_hash_after_shutdown(cluster, logger, dump_table)
