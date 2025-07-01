@@ -323,3 +323,13 @@ function (organize_ide_folders_2_level _dir)
 endfunction ()
 
 organize_ide_folders_2_level ("${CMAKE_CURRENT_LIST_DIR}")
+
+option(ENABLE_AWS_SQS "Enable AWS SQS library" ${ENABLE_LIBRARIES})
+if (ENABLE_AWS_SQS)
+    add_subdirectory(aws-sdk-cpp-sqs)
+endif()
+
+option(ENABLE_AWS_KINESIS "Enable AWS Kinesis library" ${ENABLE_LIBRARIES})
+if (ENABLE_AWS_KINESIS)
+    add_subdirectory(aws-sdk-cpp-kinesis)
+endif()

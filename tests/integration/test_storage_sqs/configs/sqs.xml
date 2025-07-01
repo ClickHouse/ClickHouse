@@ -1,0 +1,15 @@
+<clickhouse>
+    <aws_access_key_id>test</aws_access_key_id>
+    <aws_secret_access_key>test</aws_secret_access_key>
+    <aws_region>us-east-1</aws_region>
+    
+    <sqs>
+        <queue_url>http://localstack:4566/000000000000/default</queue_url>
+        
+        <verify_ssl>false</verify_ssl>
+        <use_http>true</use_http>
+        
+        <request_timeout_ms>5000</request_timeout_ms>
+        <connect_timeout_ms>5000</connect_timeout_ms>
+    </sqs>
+</clickhouse>

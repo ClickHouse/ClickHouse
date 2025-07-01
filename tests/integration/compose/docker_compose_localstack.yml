@@ -1,0 +1,17 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    hostname: localstack
+    ports:
+      - "${LOCALSTACK_PORT:-4566}:4566"
+    environment:
+      - SERVICES=sqs,kinesis
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - HOSTNAME_EXTERNAL=localstack
+      - HOSTNAME=localstack
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
