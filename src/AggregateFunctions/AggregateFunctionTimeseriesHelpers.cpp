@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionTimeseriesInstantValue.h>
 #include <AggregateFunctions/AggregateFunctionTimeseriesExtrapolatedValue.h>
 #include <AggregateFunctions/AggregateFunctionTimeseriesToGridSparse.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeSeriesLastToGrid.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -216,6 +217,9 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         createAggregateFunctionTimeseries<false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
+
+    factory.registerFunction("timeSeriesLastToGrid",
+        createAggregateFunctionTimeseries<false, AggregateFunctionTimeSeriesLastToGridTraits, AggregateFunctionTimeSeriesLastToGrid>);
 }
 
 }
