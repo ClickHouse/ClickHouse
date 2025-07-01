@@ -227,6 +227,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
 
+
         return &column_streams.at(stream_name)->compressed_hashing;
     };
 }
@@ -447,6 +448,18 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
+        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
+        if (compression_codec->isVectorCodec())
+        {
+            Field sample_field;
+            column.get(0, sample_field);
+
+            if (sample_field.getType() == Field::Types::Array)
+                compression_codec->setVectorDimension(sample_field.safeGet<Array>().size());
+
+            if (sample_field.getType() == Field::Types::Tuple)
+                compression_codec->setVectorDimension(sample_field.safeGet<Tuple>().size());
+        }
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());
 }

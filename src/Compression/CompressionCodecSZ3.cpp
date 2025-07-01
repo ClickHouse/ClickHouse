@@ -112,7 +112,7 @@ void CompressionCodecSZ3::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return 100 * (sizeof(UInt8) + uncompressed_size);
+    return sizeof(UInt8) + sizeof(SZ3::Config) + uncompressed_size;
 }
 
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
