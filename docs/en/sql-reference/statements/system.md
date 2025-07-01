@@ -160,12 +160,13 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
-Supported formats:
-
-- Protobuf
+Supported targets:
+- Protobuf: Removes imported Protobuf message definitions from memory.
+- Files: Deletes cached schema files stored locally in the [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path), generated when `format_schema_source` is set to `query`.
+Note: If no target is specified, both caches are cleared.
 
 ```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
+SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
 ```
 
 ## FLUSH LOGS {#flush-logs}

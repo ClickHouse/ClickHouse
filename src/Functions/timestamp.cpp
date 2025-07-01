@@ -171,19 +171,20 @@ public:
 
 REGISTER_FUNCTION(Timestamp)
 {
-    FunctionDocumentation::Description description_timestamp = R"(
+    FunctionDocumentation::Description description = R"(
 Converts the first argument `expr` to type [`DateTime64(6)`](/sql-reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
     )";
-    FunctionDocumentation::Syntax syntax_timestamp = R"(
+    FunctionDocumentation::Syntax syntax = R"(
     timestamp(expr[, expr_time])
     )";
-    FunctionDocumentation::Arguments arguments_timestamp = {
-        {"expr", "Date or date with time. [`String`](/sql-reference/data-types/string)."},
-        {"expr_time", "Optional. Time to add to the converted value. [`String`](/sql-reference/data-types/string)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"expr", "Date or date with time.", {"String"}},
+        {"expr_time", "Optional. Time to add to the converted value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timestamp = "Returns the converted value of `expr`, or `expr` with added time. [`DateTime64(6)`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_timestamp = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the converted value of `expr`, or `expr` with added time", {"DateTime64(6)"}};
+    FunctionDocumentation::Examples examples = {
         {"Convert date string to DateTime64(6)", R"(
 SELECT timestamp('2023-12-31') AS ts;
     )",
@@ -201,11 +202,11 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 └────────────────────────────┘
     )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timestamp = {23, 9};
-    FunctionDocumentation::Category category_timestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_timestamp = {description_timestamp, syntax_timestamp, arguments_timestamp, returned_value_timestamp, examples_timestamp, introduced_in_timestamp, category_timestamp};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimestamp>(documentation_timestamp, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionTimestamp>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

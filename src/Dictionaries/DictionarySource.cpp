@@ -1,4 +1,4 @@
-#include "DictionarySource.h"
+#include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Processors/ISource.h>
 

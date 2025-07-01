@@ -35,7 +35,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 
 /** A tool for evaluating ClickHouse performance.
