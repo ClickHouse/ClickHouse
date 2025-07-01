@@ -3,6 +3,7 @@
 
 SET allow_experimental_codecs = 1;
 SET cross_to_inner_join_rewrite = 1;
+SET async_insert = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -17,6 +18,10 @@ CREATE TABLE tab_map (
     compressed_f64   Map(UInt8, Float64) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
     compressed_f32   Map(UInt8, Float32) CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
 ) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (key UInt64, val Array(Float64) CODEC(SZ3)) engine = MergeTree ORDER BY key;
+INSERT INTO tab VALUES (1, [1.0, 2.0]) (2, [3.0, 4.0, 5.0]); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS tab;
 
 -- SZ3 requires 0 or 3 arguments
 CREATE TABLE tab (compressed Float64 CODEC(SZ3('ALGO_INTERP'))) Engine = Memory; -- { serverError BAD_ARGUMENTS }

@@ -271,28 +271,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 /// require specifying the array dimensions before compression starts.
                 /// For 1D arrays, it's simply the length.
                 auto compression_codec = result_stream->compressed_buf.getCodec();
-                if (compression_codec->needsVectorDimensionUpfront())
-                {
-                    Field sample_field;
-                    auto column = block.getColumnOrSubcolumnByName(name_and_type->name).column;
-                    column->get(0, sample_field);
-                    if (sample_field.getType() == Field::Types::Array)
-                    {
-                        for (size_t j = 0; j < column->size(); ++j)
-                        {
-                            column->get(j, sample_field);
-                            compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
-                        }
-                    }
-                    if (sample_field.getType() == Field::Types::Tuple)
-                    {
-                        for (size_t j = 0; j < column->size(); ++j)
-                        {
-                            column->get(j, sample_field);
-                            compression_codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
-                        }
-                    }
-                }
+                setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
 
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
