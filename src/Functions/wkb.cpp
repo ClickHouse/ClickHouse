@@ -99,7 +99,7 @@ REGISTER_FUNCTION(Wkb)
     └──────────────────────────────────────────────────────┘
                 )"},
         },
-        .introduced_in = {25, 6},
+        .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo,
     });
 }
