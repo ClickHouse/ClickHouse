@@ -68,8 +68,10 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
 
     const auto & join_tree = query_node->getJoinTree();
     bool allow_where = true;
+    bool allow_limit = true;
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
+        allow_limit = false;
         if (join_node->getKind() == JoinKind::Left)
             allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
         else if (join_node->getKind() == JoinKind::Right)
@@ -83,9 +85,17 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (allow_where)
     {
         if (query_node->hasPrewhere())
+        {
+            if (hasUnknownColumn(query_node->getPrewhere(), table_expression))
+                allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), table_expression, context);
+        }
         if (query_node->hasWhere())
+        {
+            if (hasUnknownColumn(query_node->getWhere(), table_expression))
+                allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), table_expression, context);
+        }
     }
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
@@ -107,6 +117,11 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery, got {}", select_query ? select_query->formatForErrorMessage() : "nullptr");
     if (!allow_where)
         select_query_typed->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
+    if (!allow_limit)
+    {
+        select_query_typed->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, nullptr);
+        select_query_typed->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, nullptr);
+    }
     return select_query;
 }
 

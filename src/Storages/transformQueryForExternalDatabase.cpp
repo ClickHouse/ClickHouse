@@ -300,14 +300,20 @@ String transformQueryForExternalDatabaseImpl(
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
     auto select = std::make_shared<ASTSelectQuery>();
+    /// To copy LIMIT expression of SELECT query we need to keep track of how many expressions are fully copied for external DB.
+    size_t whole_copied_expr_count = 0;
+    const auto query_children_expr_count = clone_query->children.size();
 
     select->replaceDatabaseAndTable(database, table);
+    if (!clone_query->as<ASTSelectQuery &>().hasJoin())
+        ++whole_copied_expr_count;
 
     auto select_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & name : used_columns)
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
+    ++whole_copied_expr_count;
 
     /** If there was WHERE,
       * copy it to transformed query if it is compatible,
@@ -316,6 +322,13 @@ String transformQueryForExternalDatabaseImpl(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
+
+    // Since WHERE subexpressions removed "in-place" (keeping pointers to externally-known subexpressions),
+    // we can check if the original WHERE is fully copied by comparing ASTs' dumps.
+    std::string dumped_original_where;
+    if (original_where)
+        dumped_original_where = original_where->dumpTree();
+
     bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
 
     if (original_where && where_has_known_columns)
@@ -328,6 +341,8 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where))
         {
+            if (original_where->dumpTree() == dumped_original_where)
+                ++whole_copied_expr_count;
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
         else if (strict)
@@ -381,6 +396,19 @@ String transformQueryForExternalDatabaseImpl(
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
+    auto limit_len_expr = clone_query->as<ASTSelectQuery &>().limitLength();
+    // "Whitelist" strategy to push down LIMIT clause iff all expressions (which are being applied before) are completely copied.
+    if (limit_len_expr && whole_copied_expr_count + 1 == query_children_expr_count)
+    {
+        if (auto * limit_len_lit = limit_len_expr->as<ASTLiteral>(); limit_len_lit && limit_len_lit->value.getType() == Field::Types::UInt64)
+        {
+            auto limit_len = limit_len_lit->value.safeGet<UInt64>();
+            if (limit.has_value())
+                limit = std::min(limit.value(), limit_len);
+            else
+                limit = limit_len;
+        }
+    }
     if (limit)
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::make_shared<ASTLiteral>(*limit));
 
