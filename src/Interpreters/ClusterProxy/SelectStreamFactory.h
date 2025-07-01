@@ -15,7 +15,6 @@ namespace DB
 
 struct Settings;
 class Cluster;
-class Throttler;
 struct SelectQueryInfo;
 
 class Pipe;

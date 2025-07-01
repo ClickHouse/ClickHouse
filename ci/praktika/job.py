@@ -188,19 +188,16 @@ class Job:
                     )
             return res
 
-        def unset_provides(self, artifact_keywords):
+        def unset_provides(self, artifact_keyword):
             """
-            removes artifacts matching any of the artifact_keywords.
-            :param artifact_keywords: str or list of keywords to filter out from provides
+            removes artifact matching artifact_keyword
+            :param artifact_keyword:
             :return: copied and modified Job.Config instance
             """
             res = copy.deepcopy(self)
-            if isinstance(artifact_keywords, str):
-                artifact_keywords = [artifact_keywords]
-            artifact_keywords = [k.lower() for k in artifact_keywords]
             provides_res = []
             for artifact in res.provides:
-                if not any(keyword in artifact.lower() for keyword in artifact_keywords):
+                if artifact_keyword.lower() not in artifact.lower():
                     provides_res.append(artifact)
             res.provides = provides_res
             return res
