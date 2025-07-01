@@ -423,6 +423,14 @@ def test_commit_on_limit(started_cluster, processing_threads):
             "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
         )
     )
+    node.query("system flush logs")
+    commit_id = node.query(
+        f"SELECT commit_id FROM system.s3queue_log WHERE file_name = '{files_path}/test_999999.csv'"
+    ).strip()
+    assert len(commit_id) > 0
+    assert 5 == int(node.query(
+        f"SELECT count() FROM system.s3queue_log WHERE commit_id = {commit_id}"
+    ).strip())
 
     expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
     processed = get_processed_files()

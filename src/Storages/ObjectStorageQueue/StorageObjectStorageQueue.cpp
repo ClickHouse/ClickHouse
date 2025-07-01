@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -738,12 +739,21 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
-    for (auto & source : sources)
-        source->finalizeCommit(insert_succeeded, exception_message);
+    const auto commit_id = generateCommitID();
+    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-    LOG_TRACE(
+    for (auto & source : sources)
+        source->finalizeCommit(insert_succeeded, commit_id, commit_time, exception_message);
+
+    LOG_DEBUG(
         log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
         requests.size(), sources.size(), inserted_rows, successful_objects.size());
+}
+
+UInt64 StorageObjectStorageQueue::generateCommitID()
+{
+    pcg64_fast rng(randomSeed());
+    return rng();
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode

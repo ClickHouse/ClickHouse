@@ -181,12 +181,20 @@ public:
         int error_code = 0);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void finalizeCommit(
+        bool insert_succeeded,
+        UInt64 commit_id,
+        time_t commit_time,
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    void appendLogElement(
+        const FileMetadataPtr & file_metadata_,
+        bool processed,
+        UInt64 commit_id,
+        time_t commit_time);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.

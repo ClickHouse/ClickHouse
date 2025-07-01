@@ -57,8 +57,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
     state = FileStatus::State::Processed;
-    if (!processing_end_time)
-        setProcessingEndTime();
+    chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)

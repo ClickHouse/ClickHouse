@@ -67,6 +67,10 @@ public:
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
 
+    /// Generate id for the S3(Azure/etc)Queue commit.
+    /// Used for system.s3(azure/etc)_queue_log.
+    static UInt64 generateCommitID();
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;

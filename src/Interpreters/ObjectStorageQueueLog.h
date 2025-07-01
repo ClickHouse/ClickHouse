@@ -29,6 +29,8 @@ struct ObjectStorageQueueLogElement
     time_t processing_start_time;
     time_t processing_end_time;
     std::string exception;
+    UInt64 commit_id;
+    time_t commit_time;
 
     static std::string name() { return "ObjectStorageQueueLog"; }
 
