@@ -275,7 +275,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     Field sample_field;
                     block.getColumnOrSubcolumnByName(name_and_type->name).column->get(0, sample_field);
 
-                    if (sample_field.getType() == Field::Types::Array)          
+                    if (sample_field.getType() == Field::Types::Array)
                         compression_codec->setVectorDimension(sample_field.safeGet<Array>().size());
 
                     if (sample_field.getType() == Field::Types::Tuple)

@@ -258,7 +258,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
         UInt8 float_width = 4;
         if (column_type)
             float_width = getFloatByteWidth(*column_type);
-           
+
         if (!arguments || arguments->children.empty())
         {
             static constexpr auto default_algorithm = SZ3::ALGO_INTERP_LORENZO;
