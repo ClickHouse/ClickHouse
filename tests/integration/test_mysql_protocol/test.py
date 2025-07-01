@@ -33,6 +33,20 @@ node = cluster.add_instance(
     with_mysql_client=True,
 )
 
+node_secure = cluster.add_instance(
+    "node_secure",
+    main_configs=[
+        "configs/ssl_conf.xml",
+        "configs/mysql_secure.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
+    user_configs=["configs/users.xml"],
+    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+    with_mysql_client=True,
+)
+
 server_port = 9001
 
 
@@ -225,6 +239,39 @@ def test_mysql_client(started_cluster):
     assert stdout.decode() == "\n".join(
         ["column", "0", "0", "1", "1", "5", "5", "tmp_column", "0", "1", ""]
     )
+
+def test_mysql_client_secure(started_cluster):
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123 --ssl-mode=required -e "select 1 as a;"
+    """.format(
+            host=started_cluster.get_instance_ip("node_secure"), port=server_port
+        ),
+        demux=True,
+    )
+
+    logging.debug(f"test_mysql_client code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert stdout.decode() == "\n".join(["a", "1", ""])
+
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123 --ssl-mode=disabled -e "select 1 as a;"
+    """.format(
+            host=started_cluster.get_instance_ip("node_secure"), port=server_port
+        ),
+        demux=True,
+    )
+
+    logging.debug(f"test_mysql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert (
+        "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
+        "ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 0"
+        in stderr.decode()
+    )
+
+    assert node_secure.contains_in_log(
+        f"<Error> MySQLHandler: DB::Exception: SSL connection required."
+    ) 
 
 
 def test_mysql_client_exception(started_cluster):

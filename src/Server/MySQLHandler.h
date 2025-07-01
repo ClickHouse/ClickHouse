@@ -44,6 +44,7 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required,
         uint32_t connection_id_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
@@ -86,6 +87,7 @@ protected:
     IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;
+    bool secure_required = false;
     uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;
@@ -126,6 +128,7 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required_,
         uint32_t connection_id_,
         KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
