@@ -441,7 +441,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
+void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -486,12 +486,24 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     /// We must wait for the async flushes to finish
     for (const auto & [log, index] : logs_to_wait)
-        log->flush(index, should_prepare_tables_anyway);
+    {
+        try
+        {
+            log->flush(index, should_prepare_tables_anyway);
+        }
+        catch (...)
+        {
+            if (ignore_errors)
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            else
+                throw;
+        }
+    }
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false, {});
+    flush(/* should_prepare_tables_anyway= */ false, {}, /* ignore_errors= */ true);
     shutdown();
 }
 
