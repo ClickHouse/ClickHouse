@@ -16,12 +16,21 @@ ClickHouse supports [gRPC](https://grpc.io/) interface. It is an open source rem
 - authentication;
 - sessions;
 - compression;
+- query parameters;
 - parallel queries through the same channel;
 - cancellation of queries;
 - getting progress and logs;
 - external tables.
 
 The specification of the interface is described in [clickhouse_grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
+
+Query parameters can be set in the Metadata fields of the Client Context, with `param_` prefix for the key, for example:
+```py
+[
+    ("param_table", "my_table"),
+    ("param_column", "my_column"),
+]
+```
 
 ## gRPC Configuration {#grpc-interface-configuration}
 
@@ -74,6 +83,7 @@ The client supports the following arguments:
 - `--query QUERY, -q QUERY` – A query to process when using non-interactive mode.
 - `--database DATABASE, -d DATABASE` – A default database. If not specified, the current database set in the server settings is used (`default` by default).
 - `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – A result output [format](formats.md). Default value for interactive mode: `PrettyCompact`.
+- `--param PARAM` – Query parameters in `key=value` format. Can be used multiple times.
 - `--debug` – Enables showing debug information.
 
 To run the client in an interactive mode call it without `--query` argument.

@@ -411,6 +411,11 @@ namespace
             return std::nullopt;
         }
 
+        const std::multimap<::grpc::string_ref, ::grpc::string_ref> & getClientHeaders() const
+        {
+            return grpc_context.client_metadata();
+        }
+
         void setTransportCompression(const TransportCompression & transport_compression)
         {
             grpc_context.set_compression_algorithm(transport_compression.algorithm);
@@ -913,6 +918,16 @@ namespace
         }
 
         query_context = session->makeQueryContext(std::move(client_info));
+
+        /// Extract query params from gRPC client context.
+        for (const auto & [key, value] : responder->getClientHeaders())
+        {
+            if (key.starts_with("param_"))
+            {
+                query_context->setQueryParameter(
+                    String{key.data() + 6, key.size() - 6}, String{value.data(), value.size()});
+            }
+        }
 
         /// Prepare settings.
         SettingsChanges settings_changes;
