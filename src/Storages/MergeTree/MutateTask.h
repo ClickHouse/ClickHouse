@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -54,9 +55,14 @@ private:
 
     bool prepare();
 
+    void prepareProjections();
+
+    void processProjectionsWithLightweightDelete(std::vector<MutationCommands> & projection_commands);
+
     enum class State : uint8_t
     {
         NEED_PREPARE,
+        NEED_PREPARE_PROJECTIONS,
         NEED_EXECUTE
     };
 
