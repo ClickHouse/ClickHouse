@@ -133,7 +133,11 @@ ClickHouse supports different subsets of functions for the `text` index.
 #### equals and notEquals {#functions-example-equals-notequals}
 
 Functions `=` (equals) and `!=` (notEquals) check if the column contains rows which match the entire search term.
-Therefore, they work reasonably only with text indexes with `no_op` tokenizer.
+
+#### in and notIn {#functions-example-in-notin}
+
+Functions `in` and `notIn` are similar to `equals` and `notEquals` functions respectively.
+Instead of maching a single term, they can be used to match multiple search terms.
 
 #### like, notLike and match {#functions-example-like-notlike-match}
 
@@ -186,6 +190,50 @@ Example:
 
 ```sql
 SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
+```
+
+#### hasToken and hasTokenOrNull {#functions-example-hastoken-hastokenornull}
+
+Functions `hasToken` and `hasTokenOrNull` check if the column contains rows which match the search term or `NULL` (`hasTokenOrNull`). 
+
+In compare to other functions, search term accepts a single token. 
+
+Example:
+
+```sql
+SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
+```
+These functions are the most performant options to use with the `text` index.
+
+#### searchAny and searchAll {#functions-example-searchany-searchall}
+
+Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
+
+In compare to `hasToken`, these functions accept multiple search terms.
+
+Example:
+
+```sql
+SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
+
+SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
+```
+
+#### has {#functions-example-has}
+
+Function `has` is also similar to `equals` in terms of maching the entire value.
+Instead it operators on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
+
+Example how to define a `text` index to use with the `has` function:
+
+```sql
+CREATE TABLE tbl (
+    id UInt64,
+    values Array(String),
+    INDEX idx_values(values) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY id;
 ```
 
 ## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
