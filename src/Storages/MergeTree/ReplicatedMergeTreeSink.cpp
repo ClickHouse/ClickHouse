@@ -1212,6 +1212,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 }
 
 template<bool async_insert>
+void ReplicatedMergeTreeSinkImpl<async_insert>::onCancel()
+{
+    if (!delayed_chunk)
+        return;
+    for (auto & partition : delayed_chunk->partitions)
+        partition.temp_part.cancel();
+    delayed_chunk.reset();
+}
+
+template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
