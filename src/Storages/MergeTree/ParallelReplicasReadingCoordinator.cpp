@@ -784,11 +784,13 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         request.min_number_of_marks,
         stats[request.replica_num].number_of_requests);
 
-    ParallelReadResponse response;
     if (replica_status[request.replica_num].is_finished)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Got request from replica {} after ranges assignment were finished for it", request.replica_num);
+            ErrorCodes::LOGICAL_ERROR,
+            "Got request from replica {} after ranges assignment has been completed for the replica",
+            request.replica_num);
 
+    ParallelReadResponse response;
     size_t current_mark_size = 0;
 
     /// 1. Try to select ranges meant for this replica by consistent hash
