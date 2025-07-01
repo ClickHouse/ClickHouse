@@ -21,6 +21,7 @@ perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 
+
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 select test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,

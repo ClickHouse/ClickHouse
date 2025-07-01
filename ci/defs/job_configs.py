@@ -611,7 +611,7 @@ class JobConfigs:
             "aarch64, distributed plan, 3/4",
             "aarch64, distributed plan, 4/4",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(10)]
+        runs_on=[RunnerLabels.RUNNER_AMD_XLARGE for _ in range(10)]
         + [RunnerLabels.FUNC_TESTER_ARM for _ in range(4)],
         requires=[["Build (amd_asan)"] for _ in range(6)]
         + [["Build (amd_release)"] for _ in range(4)]
@@ -639,7 +639,7 @@ class JobConfigs:
             "tsan, 5/6",
             "tsan, 6/6",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(6)],
+        runs_on=[RunnerLabels.RUNNER_AMD_XLARGE for _ in range(6)],
         requires=[["Build (amd_tsan)"] for _ in range(6)],
     )
     integration_test_asan_flaky_pr_job = Job.Config(
@@ -767,7 +767,7 @@ class JobConfigs:
             "amd_release, prev_release, 2/3",
             "amd_release, prev_release, 3/3",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)],
+        runs_on=[RunnerLabels.RUNNER_AMD_XLARGE for _ in range(3)],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(3)],
         provides=[
             [ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE],
@@ -800,7 +800,7 @@ class JobConfigs:
             "arm_release, master_head, 2/3",
             "arm_release, master_head, 3/3",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(3)]
+        runs_on=[RunnerLabels.RUNNER_AMD_XLARGE for _ in range(3)]
         + [RunnerLabels.FUNC_TESTER_ARM for _ in range(3)],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(3)]
         + [[ArtifactNames.CH_ARM_RELEASE] for _ in range(3)],
