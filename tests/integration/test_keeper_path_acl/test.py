@@ -25,7 +25,7 @@ def started_cluster():
 def test_path_acl(started_cluster):
     """Test path_acl configuration parsing and ACL application"""
     node.query(
-        "CREATE TABLE test_table (id UInt64) ENGINE = ReplicatedMergeTree('/test_path', 'replica1') ORDER BY id"
+        "CREATE TABLE IF NOT EXISTS test_table (id UInt64) ENGINE = ReplicatedMergeTree('/test_path', 'replica1') ORDER BY id"
     )
     node.query("INSERT INTO test_table VALUES (1)")
 
