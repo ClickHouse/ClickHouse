@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+    <users>
+        <default></default>
+    </users>
+</clickhouse>

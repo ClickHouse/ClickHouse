@@ -323,6 +323,8 @@ String toString(ClientInfo::Interface interface)
             return "PROMETHEUS";
         case ClientInfo::Interface::BACKGROUND:
             return "BACKGROUND";
+        case ClientInfo::Interface::REDIS:
+            return "REDIS";
     }
 
     return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));

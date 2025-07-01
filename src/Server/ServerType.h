@@ -21,6 +21,7 @@ public:
         GRPC,
         POSTGRESQL,
         PROMETHEUS,
+        REDIS,
         CUSTOM,
         INTERSERVER_HTTP,
         INTERSERVER_HTTPS,

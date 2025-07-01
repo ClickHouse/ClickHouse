@@ -100,6 +100,10 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    bool supportsGetRequests() const override { return true; }
+
+    Chunk getChunkByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context) override;
+
 private:
     Block sample_block;
     const Names key_names;
