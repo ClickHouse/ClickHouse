@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -1198,12 +1199,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
             {
-                String next_uri = callback();
-                if (next_uri.empty())
+                auto task = callback();
+                if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(next_uri, max_addresses);
+                return getFailoverOptions(task->path, max_addresses);
             });
     }
     else if (is_url_with_globs)

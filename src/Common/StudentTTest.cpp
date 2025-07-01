@@ -1,4 +1,4 @@
-#include "StudentTTest.h"
+#include <Common/StudentTTest.h>
 
 #include <cmath>
 #include <iomanip>
