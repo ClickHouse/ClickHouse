@@ -495,7 +495,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        auto & index = *skip_indices[i];
+        const auto & index = *skip_indices[i];
         auto & stream = *skip_indices_streams[i];
 
         chassert(index.getFileName() == stream.escaped_column_name);
