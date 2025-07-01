@@ -21,7 +21,8 @@ HAVING
         (
             materialize(toLowCardinality(0)) = 0
         ) = anyLast(1)
-    );
+    )
+ORDER BY 1;
 
 SELECT
     dynamicType(d2)
@@ -34,6 +35,7 @@ HAVING
         (
             materialize(toLowCardinality(0)) = 0
         ) = anyLast(0)
-    );
+    )
+ORDER BY 1;
 
 DROP TABLE IF EXISTS test;
