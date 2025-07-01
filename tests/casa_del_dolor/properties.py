@@ -428,6 +428,11 @@ def apply_properties_recursively(
     return is_modified
 
 
+def remove_element(property_element: ET.Element, elem: str):
+    remove_xml = ET.SubElement(property_element, elem, attrib={"remove": "remove"})
+    remove_xml.text = ""
+
+
 def add_single_cluster(
     existing_nodes: list[str],
     next_cluster: ET.Element,
@@ -485,12 +490,11 @@ class ClusterPropertiesGroup(PropertiesGroup):
         # remote_server_config = ET.SubElement(root, "remote_servers")
         existing_nodes = [f"node{i}" for i in range(0, len(args.replica_values))]
 
-        # Remove default cluster
+        # Remove default clusters
         if random.randint(1, 2) == 1:
-            default_cluster = ET.SubElement(
-                property_element, "default", attrib={"remove": "remove"}
-            )
-            default_cluster.text = ""
+            remove_element(property_element, "default")
+        if random.randint(1, 2) == 1:
+            remove_element(property_element, "all_groups.default")
 
         lower_bound, upper_bound = args.number_servers
         number_clusters = random.randint(lower_bound, upper_bound)

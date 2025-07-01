@@ -17,7 +17,9 @@ from integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(self, binary: pathlib.Path, config: pathlib.Path, _suffix: Optional[str]):
+    def __init__(
+        self, binary: pathlib.Path, config: pathlib.Path, _suffix: Optional[str]
+    ):
         self.binary: pathlib.Path = binary
         self.config: pathlib.Path = config
         if _suffix is not None:
