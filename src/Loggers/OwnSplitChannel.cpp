@@ -352,11 +352,12 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
-    while (is_open)
+
+    auto log_notification = [&](Poco::AutoPtr<Poco::Notification> & notif)
     {
-        if (!notification)
-            continue;
-        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notification.get());
+        if (!notif)
+            return;
+        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notif.get());
         {
             if (own_notification)
             {
@@ -366,7 +367,24 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
                     channels[i].first->log(*own_notification->msg_ext.base); // ordinary child
             }
         }
+    };
+
+    while (is_open)
+    {
+        log_notification(notification);
         notification = queues[i]->waitDequeueNotification();
+    }
+
+    /// Flush everything before closing
+    log_notification(notification);
+
+    /// We want to process only what's currently in the queue and not block other logging
+    auto queue = queues[i]->getCurrentQueueAndClear();
+    while (!queue.empty())
+    {
+        notification = queue.front();
+        queue.pop_front();
+        log_notification(notification);
     }
 }
 
@@ -378,6 +396,19 @@ void OwnAsyncSplitChannel::runTextLog()
     {
         if (const auto * own_notification = dynamic_cast<const OwnMessageNotification *>(message))
             logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
+    };
+
+    auto flush_queue = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
+    {
+        /// We want to process only what's currently in the queue and not block other logging
+        auto queue = text_log_queue.getCurrentQueueAndClear();
+        while (!queue.empty())
+        {
+            auto notif = queue.front();
+            queue.pop_front();
+            if (notif)
+                log_notification(notif, text_log_locked);
+        }
     };
 
     Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
@@ -392,15 +423,8 @@ void OwnAsyncSplitChannel::runTextLog()
             if (notification)
                 log_notification(notification, text_log_locked);
 
-            /// We want to process only what's currently in the queue and not block other logging
-            auto queue = text_log_queue.getCurrentQueueAndClear();
-            while (!queue.empty())
-            {
-                auto notif = queue.front();
-                queue.pop_front();
-                if (notif)
-                    log_notification(notif, text_log_locked);
-            }
+            flush_queue(text_log_locked);
+
             flush_text_logs = false;
             flush_text_logs.notify_all();
         }
@@ -414,6 +438,16 @@ void OwnAsyncSplitChannel::runTextLog()
 
         notification = text_log_queue.waitDequeueNotification();
     }
+
+    /// We want to flush everything already in the queue before closing so all messages are logged
+    auto text_log_locked = text_log.lock();
+    if (!text_log_locked)
+        return;
+
+    if (notification)
+        log_notification(notification, text_log_locked);
+
+    flush_queue(text_log_locked);
 }
 
 void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value)
