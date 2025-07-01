@@ -176,14 +176,29 @@ class QueryPool:
         self.threads: list[threading.Thread] = []
         self.stopped: bool = True
 
-    def start(self, max_number) -> None:
+    def start_random(self, max_billions: int, max_threads: int) -> None:
         assert self.stopped, "Pool is already running"
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
                 node.query(
-                    f"with (select rand64() % {max_number * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
-                    f"workload='{self.workload}', max_threads=2"
+                    f"with (select rand64() % {max_billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
+                    f"workload='{self.workload}', max_threads={max_threads}"
+                )
+
+        for _ in range(self.num_queries):
+            self.threads.append(threading.Thread(target=query_thread, args=()))
+        for thread in self.threads:
+            thread.start()
+
+    def start_fixed(self, billions: int, max_threads: int) -> None:
+        assert self.stopped, "Pool is already running"
+
+        def query_thread() -> None:
+            while not self.stop_event.is_set():
+                node.query(
+                    f"with (select {billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
+                    f"workload='{self.workload}', max_threads={max_threads}"
                 )
 
         for _ in range(self.num_queries):
@@ -223,7 +238,7 @@ def ensure_shares(minimum_runtime: float, assertions: list[tuple[str, float]]) -
             break
 
 
-def test_cpu_time_fairness():
+def test_cpu_time_fairness_fixed_queries():
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
@@ -238,8 +253,20 @@ def test_cpu_time_fairness():
     production = QueryPool(6, "production")
     development = QueryPool(6, "development")
 
-    production.start(10)
-    development.start(10)
+    production.start_fixed(10, 2)
+    development.start_fixed(10, 2)
+    ensure_shares(
+        0.4,
+        [
+            ("production", 0.75),
+            ("development", 0.25),
+        ],
+    )
+    production.stop()
+    development.stop()
+
+    production.start_fixed(100, 2)
+    development.start_fixed(10, 2)
     ensure_shares(
         0.2,
         [
@@ -250,8 +277,8 @@ def test_cpu_time_fairness():
     production.stop()
     development.stop()
 
-    production.start(100)
-    development.start(10)
+    production.start_fixed(10, 2)
+    development.start_fixed(100, 2)
     ensure_shares(
         0.2,
         [
@@ -262,8 +289,48 @@ def test_cpu_time_fairness():
     production.stop()
     development.stop()
 
-    production.start(10)
-    development.start(100)
+
+def test_cpu_time_fairness_random_queries():
+    node.query(
+        f"""
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=8;
+        create workload production in all settings weight=3;
+        create workload development in all;
+        create workload admin in all settings priority=-1;
+    """
+    )
+
+    admin = QueryPool(6, "admin")
+    production = QueryPool(6, "production")
+    development = QueryPool(6, "development")
+
+    production.start_random(10, 2)
+    development.start_random(10, 2)
+    ensure_shares(
+        0.4,
+        [
+            ("production", 0.75),
+            ("development", 0.25),
+        ],
+    )
+    production.stop()
+    development.stop()
+
+    production.start_random(100, 2)
+    development.start_random(10, 2)
+    ensure_shares(
+        0.2,
+        [
+            ("production", 0.75),
+            ("development", 0.25),
+        ],
+    )
+    production.stop()
+    development.stop()
+
+    production.start_random(10, 2)
+    development.start_random(100, 2)
     ensure_shares(
         0.2,
         [
