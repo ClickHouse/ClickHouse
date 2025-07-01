@@ -2388,21 +2388,12 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
     ParserKeyword s_codec(Keyword::CODEC);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
-    ParserKeyword s_remove(Keyword::REMOVE);
-    ParserKeyword s_modify(Keyword::MODIFY);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
-
-    if (s_materialize.checkWithoutMoving(pos, expected) ||
-        s_remove.checkWithoutMoving(pos, expected) ||
-        s_modify.checkWithoutMoving(pos, expected))
-
-        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
