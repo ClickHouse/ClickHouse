@@ -221,7 +221,7 @@ SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb'
 
 #### has {#functions-example-has}
 
-Function `has` is also similar to `equals` in terms of maching the entire value.
+Function `has` is also similar to `equals` in terms of matching the entire value.
 Instead it operators on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
 
 Example how to define a `text` index to use with the `has` function:
