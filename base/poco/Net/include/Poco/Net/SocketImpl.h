@@ -473,6 +473,10 @@ namespace Net
         Poco::Timespan _sndTimeout;
         bool _blocking;
         bool _isBrokenTimeout;
+
+        static constexpr size_t THROTTLER_QUANTUM = 32 * 1024;
+        size_t _recvThrottlerBudget;
+        size_t _sndThrottlerBudget;
         ThrottlerPtr _recvThrottler;
         ThrottlerPtr _sndThrottler;
 

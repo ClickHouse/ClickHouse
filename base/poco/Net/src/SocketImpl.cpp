@@ -64,7 +64,9 @@ bool checkIsBrokenTimeout()
 SocketImpl::SocketImpl():
 	_sockfd(POCO_INVALID_SOCKET),
 	_blocking(true),
-	_isBrokenTimeout(checkIsBrokenTimeout())
+	_isBrokenTimeout(checkIsBrokenTimeout()),
+	_recvThrottlerBudget(0),
+	_sndThrottlerBudget(0)
 {
 }
 
@@ -72,7 +74,9 @@ SocketImpl::SocketImpl():
 SocketImpl::SocketImpl(poco_socket_t sockfd):
 	_sockfd(sockfd),
 	_blocking(true),
-	_isBrokenTimeout(checkIsBrokenTimeout())
+	_isBrokenTimeout(checkIsBrokenTimeout()),
+	_recvThrottlerBudget(0),
+	_sndThrottlerBudget(0)
 {
 }
 
@@ -277,6 +281,16 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
     bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
 
+	if (_sndThrottler && _sndThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (blocking)
+			_sndThrottler->throttle(amount);
+		else
+			_sndThrottler->throttleNonBlocking(amount);
+		_sndThrottlerBudget += amount;
+	}
+
 	if (_isBrokenTimeout && blocking)
 	{
 		if (_sndTimeout.totalMicroseconds() != 0)
@@ -306,10 +320,8 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 
 	if (_sndThrottler && rc > 0)
 	{
-		if (blocking)
-			_sndThrottler->throttle(rc);
-		else
-			_sndThrottler->throttleNonBlocking(rc);
+		poco_assert(rc <= _sndThrottlerBudget);
+		_sndThrottlerBudget -= rc;
 	}
 
 	return rc;
@@ -326,6 +338,16 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 			if (!poll(_recvTimeout, SELECT_READ))
 				throw TimeoutException();
 		}
+	}
+
+	if (_recvThrottler && _recvThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (blocking)
+			_recvThrottler->throttle(amount);
+		else
+			_recvThrottler->throttleNonBlocking(amount);
+		_recvThrottlerBudget += amount;
 	}
 
 	int rc;
@@ -348,10 +370,8 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 	if (_recvThrottler && rc > 0)
 	{
-		if (blocking)
-			_recvThrottler->throttle(rc);
-		else
-			_recvThrottler->throttleNonBlocking(rc);
+		poco_assert(rc <= _recvThrottlerBudget);
+		_recvThrottlerBudget -= rc;
 	}
 
 	return rc;
@@ -360,6 +380,17 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
+	if (_sndThrottler && _sndThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (_blocking)
+			_sndThrottler->throttle(amount);
+		else
+			_sndThrottler->throttleNonBlocking(amount);
+		_sndThrottlerBudget += amount;
+	}
+
+
 	int rc;
 	do
 	{
@@ -371,10 +402,8 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 
 	if (_sndThrottler && rc > 0)
 	{
-		if (_blocking)
-			_sndThrottler->throttle(rc);
-		else
-			_sndThrottler->throttleNonBlocking(rc);
+		poco_assert(rc <= _sndThrottlerBudget);
+		_sndThrottlerBudget -= rc;
 	}
 
 	return rc;
@@ -390,6 +419,16 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 			if (!poll(_recvTimeout, SELECT_READ))
 				throw TimeoutException();
 		}
+	}
+
+	if (_recvThrottler && _recvThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (_blocking)
+			_recvThrottler->throttle(amount);
+		else
+			_recvThrottler->throttleNonBlocking(amount);
+		_recvThrottlerBudget += amount;
 	}
 
 	sockaddr_storage abuffer;
@@ -419,10 +458,8 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 
 	if (_recvThrottler && rc > 0)
 	{
-		if (_blocking)
-			_recvThrottler->throttle(rc);
-		else
-			_recvThrottler->throttleNonBlocking(rc);
+		poco_assert(rc <= _recvThrottlerBudget);
+		_recvThrottlerBudget -= rc;
 	}
 
 	return rc;
@@ -609,6 +646,7 @@ Poco::Timespan SocketImpl::getReceiveTimeout()
 
 void SocketImpl::setSendThrottler(const Poco::Net::ThrottlerPtr & throttler)
 {
+	_sndThrottlerBudget = 0; // Reset budget when a new throttler is set
 	_sndThrottler = throttler;
 }
 
@@ -620,6 +658,7 @@ Poco::Net::ThrottlerPtr SocketImpl::getSendThrottler()
 
 void SocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler)
 {
+	_recvThrottlerBudget = 0; // Reset budget when a new throttler is set
 	_recvThrottler = throttler;
 }
 
