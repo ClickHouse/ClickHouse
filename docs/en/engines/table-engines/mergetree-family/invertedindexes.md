@@ -137,6 +137,10 @@ Therefore, they work reasonably only with text indexes with `no_op` tokenizer.
 
 #### like, notLike and match {#functions-example-like-notlike-match}
 
+:::note
+Currently, these functions use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
+:::
+
 In order to use functions `like`, `notLike`, and `match` with the `text` index, the search term should be in a way that complete tokens can be extracted from it.
 
 Example:
@@ -149,10 +153,6 @@ In the example, only `clickhouse` is a complete token.
 As `support` is followed by a `%`, it could match `support`, `supports`, `supporting` etc.
 As a result, the lookup in the text index will only consider token `clickhouse`.
 
-:::note
-Currently, these functions use `text` index for filtering when the tokenizer is either `default` or `ngram`.
-:::
-
 #### startsWith and endsWith {#functions-example-startswith-endswith}
 
 Similar to `like`, the search term should be in a way that complete tokens can be extracted from it.
@@ -163,7 +163,7 @@ Example:
 SELECT count() FROM hackernews WHERE startsWith(lower(comment), 'clickhouse support');
 ```
 
-As in the previous example, the index lookup will only search for token `clickhouse` as `support` could be `support`, `supports`, `supporting` etc.
+As in the previous example, the index lookup will only search for token `clickhouse` as `support` could match `support`, `supports`, `supporting` etc.
 To search for a row value starting with `clickhouse supports`, use syntax `startsWith(lower(comment), 'clickhouse supports ')` (note the trailing space).
 
 ```sql
@@ -171,6 +171,10 @@ SELECT count() FROM hackernews WHERE endsWith(lower(comment), 'olap engine');
 ```
 
 Similarly, if you like to search a column value ending with `olap engine`, use syntax `endsWith(lower(comment), ' olap engine')` (note the leading space).
+
+:::note
+Index lookups for functions `startsWith` and `endWidth` are generally less efficient than for functions `like`/`notLike`/`match`.
+:::
 
 #### multiSearchAny {#functions-example-multisearchany}
 
