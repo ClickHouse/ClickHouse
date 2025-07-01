@@ -7,16 +7,16 @@ slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
 ---
 
-The lightweight `UPDATE` statement updates rows in the table `[db.]table` that match the expression `filter_expr`.
-It is called "lightweight update" to contrast it to the [ALTER TABLE ... UPDATE](/sql-reference/statements/alter/update) query, which is a heavyweight process that rewrites entire columns in data parts.
-It is only available for the [MergeTree](/engines/table-engines/mergetree-family/mergetree) table engine family.
+The lightweight `UPDATE` statement updates rows in a table `[db.]table` that match the expression `filter_expr`.
+It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) query, which is a heavyweight process that rewrites entire columns in data parts.
+It is only available for the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
 UPDATE [db.]table SET column1 = expr1 [, ...] [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE filter_expr;
 ```
 
-The `filter_expr` must be of type `UInt8`. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
-Values are cast to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
+Values are cast to the column type using the `CAST` operator. Updating columns used in the calculation of the primary or partition keys is not supported.
 
 ## Examples {#examples}
 
@@ -28,9 +28,9 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 
 ## Lightweight updates do not update data immediately {#lightweight-update-does-not-update-data-immediately}
 
-Lightweight `UPDATE` is implemented using **patch parts** - a special type of data parts that contain only the updated columns and rows.
-Lightweight `UPDATE` creates patch parts but does not immediately modify the original data physically in storage.
-The process of update is similar to `INSERT ... SELECT ...` query. `UPDATE` query waits until the patch part creation is completed before returning.
+Lightweight `UPDATE` is implemented using **patch parts** - a special kind of data part that contains only the updated columns and rows.
+A lightweight `UPDATE` creates patch parts but does not immediately modify the original data physically in storage.
+The process of updating is similar to a `INSERT ... SELECT ...` query but the `UPDATE` query waits until the patch part creation is completed before returning.
 
 The updated values are:
    - **Immediately visible** in `SELECT` queries through patches application
@@ -39,32 +39,32 @@ The updated values are:
 
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
-Lightweight updates are supported for [MergeTree](/engines/table-engines/mergetree-family/mergetree), [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree), [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [Replicated](/engines/table-engines/mergetree-family/replication.md) and [Shared](/cloud/reference/shared-merge-tree) versions.
+Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
 
-To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled by table settings [enable_block_number_column](/operations/settings/merge-tree-settings#enable_block_number_column) and [enable_block_offset_column](/operations/settings/merge-tree-settings#enable_block_offset_column).
+To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled using table settings [`enable_block_number_column`](/operations/settings/merge-tree-settings#enable_block_number_column) and [`enable_block_offset_column`](/operations/settings/merge-tree-settings#enable_block_offset_column).
 
 ## Lightweight deletes {#lightweight-delete}
 
-[Lightweight DELETE](/sql-reference/statements/delete) query can be run as a lightweight `UPDATE` instead of `ALTER UPDATE` mutation. The implementation of lightweight `DELETE` is controlled by setting [lightweight_delete_mode](/operations/settings/settings#lightweight_delete_mode).
+A [lightweight `DELETE`](/sql-reference/statements/delete) query can be run as a lightweight `UPDATE` instead of a `ALTER UPDATE` mutation. The implementation of lightweight `DELETE` is controlled by setting [`lightweight_delete_mode`](/operations/settings/settings#lightweight_delete_mode).
 
 ## Performance considerations {#performance-considerations}
 
 **Advantages of lightweight updates:**
    - The latency of the update is comparable to the latency of the `INSERT ... SELECT ...` query
    - Only updated columns and values are written, not entire columns in data parts
-   - No need to wait for currently running merges/mutations to complete, therefore the latency of update is predictable
+   - No need to wait for currently running merges/mutations to complete, therefore the latency of an update is predictable
    - Parallel execution of lightweight updates is possible
 
 **Potential performance impacts:**
    - Adds an overhead to `SELECT` queries that need to apply patches
    - [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied
-   - Too frequent small updates may lead to `Too many parts` error. It is recommended to batch several updates into a single query, for example by putting ids for updates into a single `IN` clause in `WHERE` clause
-   - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [ALTER TABLE ... UPDATE](/sql-reference/statements/alter/update) mutation
+   - Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
+   - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
 
 ## Concurrent operations {#concurrent-operations}
 
 Lightweight updates don't wait for currently running merges/mutations to complete unlike heavy mutations.
-The consistency of concurrent lightweight updates is controlled by settings [update_sequential_consistency](/operations/settings/settings#update_sequential_consistency) and [update_parallel_mode](/operations/settings/settings#update_parallel_mode).
+The consistency of concurrent lightweight updates is controlled by settings [`update_sequential_consistency`](/operations/settings/settings#update_sequential_consistency) and [`update_parallel_mode`](/operations/settings/settings#update_parallel_mode).
 
 ## Update permissions {#update-permissions}
 
@@ -81,22 +81,22 @@ Patch parts are the same as the regular parts, but contain only updated columns 
   - `_part_offset` - the row number in the original part
   - `_block_number` - the block number of the row in the original part
   - `_block_offset` - the block offset of the row in the original part
-  - `_data_version` - the data version of the updated data (block number allocated for the UPDATE query)
+  - `_data_version` - the data version of the updated data (block number allocated for the `UPDATE` query)
 
 On average it gives about 40 bytes (uncompressed data) of overhead per updated row in the patch parts.
-System columns help to find rows in original part which should be updated.
+System columns help to find rows in the original part which should be updated.
 System columns are related to the [virtual columns](/engines/table-engines/mergetree-family/mergetree.md/#virtual-columns) in the original part, which are added for reading if patch parts should be applied.
 Patch parts are sorted by `_part` and `_part_offset`.
 
-Patch parts belong to the different partitions than the original part.
+Patch parts belong to different partitions than the original part.
 The partition id of the patch part is `patch-<hash of column names in patch part>-<original_partition_id>`.
 Therefore patch parts with different columns are stored in different partitions.
 For example three updates `SET x = 1 WHERE <cond>`, `SET y = 1 WHERE <cond>` and `SET x = 1, y = 1 WHERE <cond>` will create three patch parts in three different partitions.
 
-Patch parts can be merged among themselves to reduce the amount of applied patches on `SELECT` queries and reduce the overhead. Merge of patch parts uses [Replacing](/engines/table-engines/mergetree-family/replacingmergetree) merge algorithm with `_data_version` as a version column.
-Therefore patch part always stores the latest version for each updated row in part.
+Patch parts can be merged among themselves to reduce the amount of applied patches on `SELECT` queries and reduce the overhead. Merging of patch parts uses the [replacing](/engines/table-engines/mergetree-family/replacingmergetree) merge algorithm with `_data_version` as a version column.
+Therefore patch parts always store the latest version for each updated row in the part.
 
-Lightweight updates don't wait for currently running merges and mutations to finish and always use current snapshot of data parts to execute an update and produce a patch part.
+Lightweight updates don't wait for currently running merges and mutations to finish and always use a current snapshot of data parts to execute an update and produce a patch part.
 Because of that there can be two cases of applying patch parts.
 
 For example if we read part `A`, we need to apply patch part `X`:
@@ -111,5 +111,5 @@ The join mode is slower and requires more memory than merge mode, but it is used
 
 ## Related Content {#related-content}
 
-- [ALTER UPDATE](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
-- [Lightweight DELETE](/sql-reference/statements/delete) - Lightweight `DELETE` operations
+- [`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
+- [Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations
