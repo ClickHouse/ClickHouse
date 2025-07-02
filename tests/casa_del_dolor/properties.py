@@ -6,7 +6,6 @@ import random
 import string
 import typing
 
-from timezones import timezones
 from integration.helpers.cluster import ClickHouseCluster
 
 
@@ -229,7 +228,6 @@ possible_properties = {
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
-    "timezone": lambda: random.choice(timezones),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -917,6 +915,7 @@ def modify_server_settings(
     cluster: ClickHouseCluster,
     is_private_binary: bool,
     input_config_path: str,
+    possible_timezones: list[str],
 ) -> tuple[bool, str, int]:
     modified = False
     number_clusters = 0
@@ -949,6 +948,9 @@ def modify_server_settings(
             name_xml.text = random.choice(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
+
+    if "timezone" not in possible_properties and len(possible_timezones) > 0:
+        possible_properties["timezone"] = lambda: random.choice(possible_timezones)
 
     selected_properties = {}
     # Select random properties to the XML

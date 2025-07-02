@@ -28,6 +28,7 @@ def get_unique_free_ports(total):
 
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
+from environment import set_environment_variables
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import Generator, BuzzHouseGenerator
@@ -250,6 +251,20 @@ parser.add_argument(
     choices=range(0, 101),
     help="Probability to compare contents of a table after a server restart",
 )
+parser.add_argument(
+    "--set-locales-prob",
+    type=int,
+    default=50,
+    choices=range(0, 101),
+    help="Probability to send a random locale to all instances in a cluster",
+)
+parser.add_argument(
+    "--set-timezones-prob",
+    type=int,
+    default=50,
+    choices=range(0, 101),
+    help="Probability to send a random timezone to all instances in a cluster",
+)
 args = parser.parse_args()
 
 if len(args.replica_values) != len(args.shard_values):
@@ -295,6 +310,9 @@ with open(current_server, "r+") as f:
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 cluster = ClickHouseCluster(__file__)
 
+# Set environment variables such as locales and timezones
+test_env_variables, possible_timezones = set_environment_variables(logger, args)
+
 # Use random server settings sometimes
 server_settings = args.server_config
 user_settings = args.user_config
@@ -302,7 +320,9 @@ modified_server_settings = modified_user_settings = False
 generated_clusters = 0
 if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
-        modify_server_settings(args, cluster, is_private_binary, server_settings)
+        modify_server_settings(
+            args, cluster, is_private_binary, server_settings, possible_timezones
+        )
     )
     if generated_clusters > 0:
         modified_user_settings, user_settings = modify_user_settings(
@@ -359,6 +379,7 @@ for i in range(0, len(args.replica_values)):
             storage_opt=None if args.storage_limit == "" else args.storage_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
+            env_variables=test_env_variables,
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )
