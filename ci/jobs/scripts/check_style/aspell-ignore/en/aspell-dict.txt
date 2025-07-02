@@ -233,6 +233,7 @@ DESC
 DIEs
 DOGEFI
 Damerau
+Databricks
 DataGrip
 DataLens
 DataPacket
@@ -246,6 +247,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -719,6 +721,7 @@ NumberOfDetachedParts
 NumberOfTables
 NumericIndexedVector
 NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
 OLAP
