@@ -181,7 +181,7 @@ namespace ProfileEvents
 
     public:
         /// Constructor with configurable parent counter
-        explicit BatchedCounters(Counters * parent_ = &global_counters, double threshold_percentage_ = 1.0);
+        explicit BatchedCounters(Counters * parent_ = &global_counters, double threshold_percentage_ = 0);
 
         /// Destructor that ensures all counters are flushed
         ~BatchedCounters();
