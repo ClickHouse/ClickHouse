@@ -44,19 +44,19 @@ catalog_type,
 
 The following settings are supported:
 
-| Setting                 | Description                                                                   |
-|-------------------------|-------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`            |
-| `warehouse`             | The warehouse/database name to use in the catalog (e.g., 'demo', 'test')      |
-| `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)            |
-| `auth_header`           | Custom HTTP header for authentication with the catalog service                |
-| `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                              |
-| `storage_endpoint`      | Endpoint URL for the underlying storage (e.g., 'http://minio:9000/warehouse') |
-| `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                     |
-| `vended_credentials`    | Boolean indicating whether to use vended credentials (AWS-specific)           |
-| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)        |
-| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)    |
-| `region`                | AWS region for the service (e.g., 'us-east-1')                                |
+| Setting                 | Description                                                               |
+|-------------------------|---------------------------------------------------------------------------|
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`        |
+| `warehouse`             | The warehouse/database name to use in the catalog.                        |
+| `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)        |
+| `auth_header`           | Custom HTTP header for authentication with the catalog service            |
+| `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                          |
+| `storage_endpoint`      | Endpoint URL for the underlying storage                                   |
+| `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                 |
+| `vended_credentials`    | Boolean indicating whether to use vended credentials (AWS-specific)       |
+| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)    |
+| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials) |
+| `region`                | AWS region for the service (e.g., `us-east-1`)                             |
 
 ## Examples {#examples}
 
