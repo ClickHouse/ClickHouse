@@ -488,7 +488,7 @@ Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
 **Syntax**
 
 ```sql
-SYSTEM RESTORE DATABASE REPLICA repl_db
+SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 ```
 
 **Example**
