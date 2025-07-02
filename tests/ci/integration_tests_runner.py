@@ -911,10 +911,11 @@ class ClickhouseIntegrationTestsRunner:
             len(not_found_tests),
             " ".join(not_found_tests[:3]),
         )
-        grouped_tests = self.group_test_by_file(filtered_sequential_tests)
+        grouped_tests = OrderedDict()
+        grouped_tests["sequential"] = (filtered_sequential_tests, 1)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
-            grouped_tests[f"parallel{i}"] = par_group
+            grouped_tests[f"parallel{i}"] = (par_group, 5)
             i += 1
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
@@ -932,13 +933,13 @@ class ClickhouseIntegrationTestsRunner:
         if self.shuffle_test_groups():
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
-        for group, tests in items_to_run:
+        for group, (tests, num_workers) in items_to_run:
             if timeout_expired:
                 print("Timeout expired - break tests execution")
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "1h", group, tests, MAX_RETRY, num_workers, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
@@ -1022,7 +1023,6 @@ def run():
     with open(params_path, "r", encoding="utf-8") as jfd:
         params = json.loads(jfd.read())
     runner = ClickhouseIntegrationTestsRunner(repo_path, result_path, params)
-
     logging.info("Running tests")
 
     if IS_CI:
