@@ -247,7 +247,7 @@ jobs:
 
   build_amd_tidy:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow, dockers_build_amd]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90aWR5KQ==') }}
     name: "Build (amd_tidy)"
     outputs:
@@ -285,7 +285,7 @@ jobs:
 
   build_arm_tidy:
     runs-on: [self-hosted, builder-aarch64]
-    needs: [config_workflow, dockers_build_arm]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tidy]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
     name: "Build (arm_tidy)"
     outputs:
