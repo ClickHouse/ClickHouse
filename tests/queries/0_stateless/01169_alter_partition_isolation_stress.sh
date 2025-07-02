@@ -68,7 +68,8 @@ function thread_partition_src_to_dst()
         tx_id=$(tx $session_id "select transactionID().1" | awk '{print $2}')
 
         tx $session_id "INSERT INTO src VALUES /* ($i, 3) */ ($i, 3)"
-        tx $session_id "INSERT INTO dst SELECT * FROM src"
+        # it seems all inserts should happened on query initiator, so disable parallel_distributed_insert_select
+        tx $session_id "INSERT INTO dst SELECT * FROM src SETTINGS parallel_distributed_insert_select=0"
 
         output=$(tx $session_id "ALTER TABLE src DROP PARTITION ID 'all'" ||:)
         if echo "$output" | is_tx_aborted_with "SERIALIZATION_ERROR" "PART_IS_TEMPORARILY_LOCKED" "PART_IS_TEMPORARILY_LOCKED"
@@ -142,7 +143,8 @@ function thread_partition_dst_to_src()
         tx_id=$(tx $session_id "select transactionID().1" | awk '{print $2}')
 
         tx $session_id "INSERT INTO dst VALUES /* ($i, 4) */ ($i, 4)"
-        tx $session_id "INSERT INTO src SELECT * FROM dst"
+        # it seems all inserts should happened on query initiator, so disable parallel_distributed_insert_select
+        tx $session_id "INSERT INTO src SELECT * FROM dst SETTINGS parallel_distributed_insert_select=0"
 
         output=$(tx $session_id "ALTER TABLE dst DROP PARTITION ID 'all'" ||:)
         if echo "$output" | is_tx_aborted_with "PART_IS_TEMPORARILY_LOCKED"
