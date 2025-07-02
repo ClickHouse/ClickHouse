@@ -103,6 +103,11 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
     }
 }
 
+off_t CompressedReadBufferFromFile::getPosition() const
+{
+    return file_in.getPosition();
+}
+
 size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
     try

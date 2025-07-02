@@ -17,7 +17,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
 {
     DB::WriteBufferFromString wb(text);
 
-    const Poco::Message & msg = msg_ext.base;
+    const Poco::Message & msg = *msg_ext.base;
 
     /// Change delimiters in date for compatibility with old logs.
     DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb, server_timezone);
