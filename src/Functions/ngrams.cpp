@@ -35,9 +35,7 @@ public:
     bool isVariadic() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
 
-    bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

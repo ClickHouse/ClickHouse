@@ -1,4 +1,4 @@
-#include "LocalServer.h"
+#include <LocalServer.h>
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -16,7 +16,7 @@
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabasesOverlay.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -164,7 +164,7 @@ void LocalServer::processError(std::string_view) const
         String message;
         if (server_exception)
         {
-            message = getExceptionMessage(*server_exception, print_stack_trace, true);
+            message = getExceptionMessageForLogging(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
         {
@@ -283,7 +283,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 
@@ -567,8 +567,6 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    thread_status.emplace();
-
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
     setupSignalHandler();
@@ -635,7 +633,8 @@ try
     /// Must be called after we stopped initializing the global context and changing its settings.
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
-    createClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {
@@ -671,10 +670,10 @@ try
 
     return Application::EXIT_OK;
 }
-catch (const DB::Exception & e)
+catch (DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
@@ -894,7 +893,7 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
-    adjustSettings();
+    adjustSettings(global_context);
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -907,16 +906,15 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = server_settings[ServerSetting::default_database];
-    if (default_database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
+    std::string server_default_database = server_settings[ServerSetting::default_database];
+    if (!server_default_database.empty())
     {
-        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(server_default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(default_database, database);
+        DatabaseCatalog::instance().attachDatabase(server_default_database, database);
+        global_context->setCurrentDatabase(server_default_database);
     }
-    global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
     {
@@ -968,7 +966,24 @@ void LocalServer::processConfig()
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+
+        /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
+        /// even in temporary mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
     }
+    else
+    {
+        /// Similarly, for other cases, create background tasks for DDL operations like
+        /// DROP VIEW SYNC in temporaty mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
+    }
+
+    std::string default_database = getClientConfiguration().getString("database", server_default_database);
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
+    global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 
@@ -1056,18 +1071,10 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
-}
-
-
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
+    if (options.count("path"))
+        getClientConfiguration().setString("path", options["path"].as<std::string>());
     if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
@@ -1108,8 +1115,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     {
         std::string_view arg = argv[arg_num];
 
-        /// Parameter arg after underline.
-        if (arg.starts_with("--param_"))
+        /// Parameter arg after underline or dash.
+        if (arg.starts_with("--param_") || arg.starts_with("--param-"))
         {
             auto param_continuation = arg.substr(strlen("--param_"));
             auto equal_pos = param_continuation.find_first_of('=');
@@ -1146,15 +1153,17 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

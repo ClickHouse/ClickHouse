@@ -1,0 +1,6 @@
+-- Intersecting columns in GROUP BY and SET
+2000-06-09 10:00:00	pepe	1000
+2000-06-10 13:00:00	pepe	11000
+-- Intersecting columns in GROUP AND SET where SET is prioritized
+2000-06-09 10:00:00	a	a
+2000-06-10 11:00:00	c	b

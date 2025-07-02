@@ -303,7 +303,7 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     }
     else if (!mysql_real_connect(
                  mcon,
-                 scc.hostname.empty() ? nullptr : scc.hostname.c_str(),
+                 scc.client_hostname.empty() ? nullptr : scc.client_hostname.c_str(),
                  scc.user.empty() ? nullptr : scc.user.c_str(),
                  scc.password.empty() ? nullptr : scc.password.c_str(),
                  nullptr,
@@ -336,7 +336,7 @@ void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b,
     {
         te->add_params()->set_svalue("MySQL");
     }
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -531,9 +531,9 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     String connection_str;
     bool has_something = false;
 
-    if (!scc.unix_socket.empty() || !scc.hostname.empty())
+    if (!scc.unix_socket.empty() || !scc.client_hostname.empty())
     {
-        connection_str += fmt::format("host='{}'", scc.unix_socket.empty() ? scc.hostname : scc.unix_socket);
+        connection_str += fmt::format("host='{}'", scc.unix_socket.empty() ? scc.client_hostname : scc.unix_socket);
         has_something = true;
     }
     if (scc.port)
@@ -578,7 +578,7 @@ void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase
     {
         te->add_params()->set_svalue("PostgreSQL");
     }
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -816,7 +816,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 
 void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
@@ -837,17 +837,17 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}={}", scc.hostname, scc.port);
+    connection_str += fmt::format("{}:{}", scc.client_hostname, scc.port);
 
     try
     {
         bool db_exists = false;
-        mongocxx::client client = mongocxx::client(mongocxx::uri(std::move(connection_str)));
-        auto databases = client.list_databases();
+        mongocxx::client client(mongocxx::uri(std::move(connection_str)));
+        auto databases = client.list_database_names();
 
         for (const auto & db : databases)
         {
-            if (db["name"].get_utf8().value == scc.database)
+            if (db == scc.database)
             {
                 db_exists = true;
                 break;
@@ -859,11 +859,21 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
             client[scc.database].drop();
         }
 
-        mongocxx::database db = client[scc.database];
-        db.create_collection("test");
+        auto db = client[scc.database];
+        auto collection = db["example"];
+        /// Create a dummy document to force database creation
+        auto doc = bsoncxx::builder::stream::document{} << "created" << bsoncxx::types::b_date(std::chrono::system_clock::now())
+                                                        << bsoncxx::builder::stream::finalize;
+        collection.insert_one(doc.view());
+        collection.drop();
 
         LOG_INFO(fcc.log, "Connected to MongoDB");
         return std::make_unique<MongoDBIntegration>(fcc, scc, client, db);
+    }
+    catch (const mongocxx::exception & e)
+    {
+        LOG_ERROR(fcc.log, "MongoDB connection error: {}", e.what());
+        return nullptr;
     }
     catch (const std::exception & e)
     {
@@ -874,7 +884,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 
 void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -960,11 +970,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> next_dist(0, 8);
+            std::uniform_int_distribution<uint32_t> next_dist(0, 76);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            buf = appendDecimal(rg, left, right);
+            buf = appendDecimal(rg, false, left, right);
         }
         if constexpr (is_document<T>)
         {
@@ -1006,7 +1016,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
-        String buf = appendDecimal(rg, left, right);
+        String buf = appendDecimal(rg, false, left, right);
 
         if (rg.nextBool())
         {
@@ -1032,7 +1042,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((stp = dynamic_cast<StringType *>(tp)))
     {
-        const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
+        const uint32_t limit = stp->precision.value_or(rg.nextStrlen());
 
         if (rg.nextBool())
         {
@@ -1385,7 +1395,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Buffer size was to small to fit result");
         return false;
     }
-    if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
+    if ((error = getaddrinfo(sc.client_hostname.c_str(), buffer, &hints, &result)) != 0)
     {
         if (error == EAI_SYSTEM)
         {
@@ -1495,21 +1505,21 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
-String MinIOIntegration::getConnectionURL()
+String MinIOIntegration::getConnectionURL(const bool client)
 {
-    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/";
+    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + sc.database + "/";
 }
 
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
 
 void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(getConnectionURL() + filename);
+    br->add_out_params(getConnectionURL(false) + filename);
     br->add_out_params(sc.user);
     br->add_out_params(sc.password);
 }
@@ -1522,7 +1532,7 @@ bool MinIOIntegration::performIntegration(
 
 void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname);
+    te->add_params()->set_svalue(sc.server_hostname);
     te->add_params()->set_svalue(sc.container);
     te->add_params()->set_svalue("file" + tname.substr(1));
     te->add_params()->set_svalue(sc.user);
@@ -1531,7 +1541,7 @@ void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, co
 
 void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(sc.hostname);
+    br->add_out_params(sc.server_hostname);
     br->add_out_params(sc.container);
     br->add_out_params(filename);
     br->add_out_params(sc.user);
@@ -1544,14 +1554,14 @@ bool AzuriteIntegration::performIntegration(
     return true;
 }
 
-String HTTPIntegration::getConnectionURL()
+String HTTPIntegration::getConnectionURL(const bool client)
 {
-    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + "/";
+    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + "/";
 }
 
 void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1));
 }
 
 bool HTTPIntegration::performIntegration(

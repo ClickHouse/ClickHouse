@@ -106,7 +106,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
-    extern const MergeTreeSettingsUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
@@ -1072,7 +1072,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], part_num, part_starting_offset),
+            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
             Names{column_name},
@@ -1241,7 +1241,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
         ctx->delayed_streams.pop_front();
     }
 
-    if (global_ctx->rows_written != ctx->column_elems_written)
+    if (!global_ctx->isCancelled() && global_ctx->rows_written != ctx->column_elems_written)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Written {} elements of column {}, but {} rows of PK columns",
                         toString(ctx->column_elems_written), column_name, toString(global_ctx->rows_written));
@@ -1836,7 +1836,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[i], i, part_starting_offset),
+            RangesInDataPart(global_ctx->future_part->parts[i], nullptr, i, part_starting_offset),
             global_ctx->alter_conversions[i],
             global_ctx->merged_part_offsets,
             merging_column_names,
