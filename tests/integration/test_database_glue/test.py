@@ -444,4 +444,4 @@ def test_empty_table(started_cluster):
     table = create_table(catalog, root_namespace, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.{root_namespace}.{table_name}")) == 0
+    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
