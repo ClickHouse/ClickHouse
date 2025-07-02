@@ -409,7 +409,10 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {
     for (const auto & elem : elems)
+    {
         callback(*elem);
+        elem->forEachChild(callback);
+    }
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
