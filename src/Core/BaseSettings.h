@@ -45,7 +45,7 @@ struct BaseSettingsHelpers
     static UInt64 readFlags(ReadBuffer & in);
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
-    inline static thread_local std::vector<std::string> unknown_settings;
+    inline static thread_local Strings unknown_settings;
     inline static thread_local bool unknown_settings_warning_logged = false;
 
 };

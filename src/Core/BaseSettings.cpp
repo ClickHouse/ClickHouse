@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -57,27 +58,26 @@ void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
-    unknown_settings.emplace_back(name);
+    unknown_settings.push_back(fmt::format("`{}`", name));
 
     if (!unknown_settings_warning_logged)
     {
-        if (unknown_settings.size() == 1)
+        static size_t MAX_UNKNOWN_SETTINGS_FOR_LOGGING = 3;
+
+        if (unknown_settings.size() > MAX_UNKNOWN_SETTINGS_FOR_LOGGING)
         {
-            LOG_WARNING(getLogger("Settings"), "Unknown setting '{}', skipping", unknown_settings[0]);
-        }
-        else if (unknown_settings.size() == 2)
-        {
-            LOG_WARNING(getLogger("Settings"), "Unknown settings: '{}', '{}', skipping", unknown_settings[0], unknown_settings[1]);
+            Strings first_few(unknown_settings.begin(), unknown_settings.begin() + MAX_UNKNOWN_SETTINGS_FOR_LOGGING);
+            LOG_WARNING(
+                getLogger("Settings"),
+                "Unknown settings: {} and {} more, skipping",
+                fmt::join(first_few, ", "),
+                unknown_settings.size() - MAX_UNKNOWN_SETTINGS_FOR_LOGGING);
         }
         else
         {
-            LOG_WARNING(
-                getLogger("Settings"),
-                "Unknown settings: '{}', '{}' and {} more, skipping",
-                unknown_settings[0],
-                unknown_settings[1],
-                unknown_settings.size() - 2);
+            LOG_WARNING(getLogger("Settings"), "Unknown settings: {}, skipping", fmt::join(unknown_settings, ", "));
         }
+
         unknown_settings_warning_logged = true;
     }
 }
