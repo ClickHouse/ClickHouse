@@ -1158,7 +1158,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.column->expand(null_map, /*inverted*/ true);
     }
 
-    if (subchunk.column->size() != row_subgroup.filter.rows_pass)
+    if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk");
 
     if (column_info.output_nullable)

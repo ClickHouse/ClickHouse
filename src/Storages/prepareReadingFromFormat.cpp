@@ -101,8 +101,13 @@ ReadFromFormatInfo prepareReadingFromFormat(
 
                         for (size_t i = 0; i < subpath.size(); ++i)
                         {
+                            /// Allow `a.x` where `a` is array of tuples.
+                            if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                                continue;
+
                             if (subpath[i].type != ISerialization::Substream::TupleElement)
                                 break;
+
                             if (subpath[i].visited)
                                 continue;
                             subpath[i].visited = true;
@@ -117,7 +122,6 @@ ReadFromFormatInfo prepareReadingFromFormat(
                                 continue;
 
                             column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                            column_info.type = subpath[i].data.type;
                             if (found_full_path)
                                 break;
                         }
@@ -127,6 +131,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
                     settings.position_independent_encoding = false;
                     settings.enumerate_dynamic_streams = false;
                     data.serialization->enumerateStreams(settings, callback_with_data, data);
+
+                    if (!column_info.path.empty())
+                        column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
                 }
 
                 column_info.name = column_to_read.getNameInStorage();
@@ -170,9 +177,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 if (ancestor_requested)
                     continue;
 
-                new_columns_to_read.push_back(column_info.name);
+                column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
                 if (!column_info.is_duplicate)
-                    column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
+                    new_columns_to_read.push_back(column_info.name);
             }
             columns_to_read = std::move(new_columns_to_read);
 

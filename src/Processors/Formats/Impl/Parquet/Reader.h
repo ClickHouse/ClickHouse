@@ -59,6 +59,8 @@ namespace DB::Parquet
 //     - reading tuple element without reading the whole tuple
 //     - `select t, t.x`, `select t.x.x, t.x`, `select t.x.dyn_col`, `select t.`1``
 //        -- somehow assert that only the expected subcolumns are read
+//        -- also tuples inside arrays:
+//           insert into function file('p4.parquet') select [((number*100 + 10,number*100+11),number*100+20)::Tuple(x Tuple(x Int64, y String), y Int64)] as a from numbers(3)
 //     - prewhere with tuple element access (prepareReadingFromFormat looks like it won't work)
 //     - prewhere with expression string equal to some (weird) column name in the file
 //     - prewhere with expression that's just a (UInt8) column name, present or not present in select

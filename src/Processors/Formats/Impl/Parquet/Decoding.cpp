@@ -726,7 +726,6 @@ void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_v
 {
     if (max == 0)
         return;
-    out.resize(num_values);
     switch (encoding)
     {
         case parq::Encoding::RLE:
