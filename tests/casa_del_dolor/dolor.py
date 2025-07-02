@@ -221,25 +221,25 @@ parser.add_argument(
     "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
 )
 parser.add_argument(
-    "--add-keeper-map-prefix",
+    "--without-keeper-map-prefix",
     action="store_false",
     dest="add_keeper_map_prefix",
     help="Add 'keeper_map_path_prefix' server setting",
 )
 parser.add_argument(
-    "--add-transactions",
+    "--without-transactions",
     action="store_false",
     dest="add_transactions",
     help="Add 'allow_experimental_transactions' server setting",
 )
 parser.add_argument(
-    "--add-distributed-ddl",
+    "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
     help="Add 'distributed_ddl' settings",
 )
 parser.add_argument(
-    "--add-shared-catalog",
+    "--without-shared-catalog",
     action="store_false",
     dest="add_shared_catalog",
     help="Add 'shared_database_catalog' settings",

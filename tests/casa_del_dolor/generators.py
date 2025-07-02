@@ -49,7 +49,7 @@ class BuzzHouseGenerator(Generator):
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
-                "database": "/" + cluster.minio_bucket,
+                "database": "/" + cluster.minio_bucket + "/data",
                 "server_hostname": cluster.minio_host,
                 "port": cluster.minio_port,
                 "user": "minio",
