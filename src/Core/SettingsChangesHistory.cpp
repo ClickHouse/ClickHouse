@@ -69,13 +69,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-            {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
             {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
