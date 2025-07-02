@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
+#include "Common/Logger.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -270,11 +271,15 @@ bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
         return false;
 
     auto storage_snapshot = reading_step->getStorageSnapshot();
-    auto mutations_snapshot = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).mutations_snapshot;
 
-    /// Applying patches in MergeTreeLazilyReader is not implemented.
-    if (mutations_snapshot->hasPatchParts())
-        return false;
+    /// Snapshot data may be missed, for example, in EXPLAIN query.
+    if (storage_snapshot->data)
+    {
+        auto mutations_snapshot = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).mutations_snapshot;
+        /// Applying patches in MergeTreeLazilyReader is not implemented.
+        if (mutations_snapshot->hasPatchParts())
+            return false;
+    }
 
     lazily_read_info->data_part_infos = std::make_shared<DataPartInfoByIndex>();
 
