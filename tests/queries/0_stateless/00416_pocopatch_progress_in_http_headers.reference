@@ -1,8 +1,18 @@
+&output_format_parallel_formatting=0&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0
 < X-ClickHouse-Progress: {"total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"5","read_bytes":"40","total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10","result_rows":"1","result_bytes":"136"}
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"0","written_bytes":"0","total_rows_to_read":"10","result_rows":"1","result_bytes":"136"}
 9
+&output_format_parallel_formatting=1&max_block_size=5&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0
+< X-ClickHouse-Progress: {"total_rows_to_read":"10"}
+< X-ClickHouse-Progress: {"read_rows":"5","read_bytes":"40","total_rows_to_read":"10"}
+< X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10"}
+< X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10","result_rows":"1","result_bytes":"136"}
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"0","written_bytes":"0","total_rows_to_read":"10","result_rows":"1","result_bytes":"136"}
+9
+&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0
 < X-ClickHouse-Progress: {"total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"1","read_bytes":"8","total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"2","read_bytes":"16","total_rows_to_read":"10"}
@@ -15,6 +25,7 @@
 < X-ClickHouse-Progress: {"read_rows":"9","read_bytes":"72","total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows_to_read":"10","result_rows":"10","result_bytes":"1360"}
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"0","written_bytes":"0","total_rows_to_read":"10","result_rows":"10","result_bytes":"1360"}
 0
 1
 2
@@ -35,5 +46,4 @@
 7
 8
 9
-< Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
 < X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"10","written_bytes":"40","total_rows_to_read":"10","result_rows":"10","result_bytes":"40"}

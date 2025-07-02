@@ -756,7 +756,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
         for (const auto & entry : this->entries)
         {
-            url += fmt::format("{}{}", first ? "" : ",", columnPathRef(entry));
+            url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
             buf2 += fmt::format(
                 "{}{} {}{}{}",
                 first ? "" : ", ",
