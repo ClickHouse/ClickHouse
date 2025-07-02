@@ -167,7 +167,6 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     for (auto & engine_arg : engine_args)
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-
     if (engine_args.size() == 2)
     {
         String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
@@ -219,9 +218,6 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
         return;
     }
-
-
-
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
