@@ -1,4 +1,4 @@
-#include "ThreadPoolRemoteFSReader.h"
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <IO/AsyncReadCounters.h>
 #include <IO/SeekableReadBuffer.h>
