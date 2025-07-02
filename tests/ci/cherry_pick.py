@@ -29,12 +29,12 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from ci_buddy import CIBuddy
 from ci_config import Labels
 from ci_utils import Shell
-from env_helper import IS_CI, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
@@ -43,6 +43,7 @@ from ssh import SSHKey
 
 
 class ReleaseBranch:
+    STALE_THRESHOLD = 24 * 3600
     CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
 
 This pull-request is a first step of an automated backporting.
@@ -318,10 +319,10 @@ close it.
         ).timestamp()
         since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
         since_updated_str = (
-            f"{since_updated // 86400}d{since_updated // 3600}"
-            f"h{since_updated // 60 % 60}m{since_updated % 60}s"
+            f"{since_updated // 86400}d{since_updated // 3600 % 24}h"
+            f"{since_updated // 60 % 60}m{since_updated % 60}s"
         )
-        if since_updated < 86400:
+        if since_updated < self.STALE_THRESHOLD:
             logging.info(
                 "The cherry-pick PR was updated %s ago, "
                 "waiting for the next running",
@@ -370,7 +371,7 @@ close it.
         return self.name
 
 
-class Backport:
+class BackportPRs:
     def __init__(
         self,
         gh: GitHub,
@@ -477,30 +478,49 @@ class Backport:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def receive_prs_for_backport(self, reserve_search_days: int) -> None:
-        # The commits in the oldest open release branch
-        oldest_branch_commits = git_runner(
-            "git log --no-merges --format=%H --reverse "
-            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
-        )
-        # The first commit is the one we are looking for
-        since_commit = oldest_branch_commits.split("\n", 1)[0]
-        since_date = date.fromisoformat(
-            git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
-        ) - timedelta(days=reserve_search_days)
-        # To not have a possible TZ issues
-        tomorrow = date.today() + timedelta(days=1)
-        logging.info("Receive PRs supposed to be backported")
+    def oldest_commit_date(self) -> date:
+        # The dates of every commit in each release branche
+        commit_dates = [
+            commit
+            for branch in self.release_branches
+            for commit in git_runner(
+                "git log --no-merges --format=format:%cs --reverse "
+                f"{self.remote}/{self.default_branch}..{self.remote}/{branch}"
+            ).split("\n")
+        ]
+        return min(date.fromisoformat(c_date) for c_date in commit_dates)
 
+    def _get_backporting_prs(
+        self,
+        since_date: date,
+        labels_to_backport: Optional[Iterable[str]] = None,
+        backport_created_label: str = "",
+        repo: Optional[str] = None,
+    ) -> PullRequests:
+        """
+        Get PRs that are supposed to be backported.
+        """
+        repo = repo or self._fetch_from
+        labels_to_backport = (
+            labels_to_backport
+            or self.labels_to_backport + self.must_create_backport_labels
+        )
+        backport_created_label = backport_created_label or self.backport_created_label
+        tomorrow = date.today() + timedelta(days=1)
         query_args = {
-            "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
-            "label": ",".join(
-                self.labels_to_backport + self.must_create_backport_labels
-            ),
+            "query": f"type:pr repo:{repo} -label:{backport_created_label}",
+            "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
-        self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
+        return self.gh.get_pulls_from_search(**query_args)
+
+    def receive_prs_for_backport(self) -> None:
+        since_date = self.oldest_commit_date()
+        # To not have a possible TZ issues
+        logging.info("Receive PRs supposed to be backported")
+
+        self.prs_for_backport = self._get_backporting_prs(since_date)
         logging.info(
             "PRs to be backported:\n %s",
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
@@ -593,22 +613,92 @@ class Backport:
         return self.repo.default_branch
 
 
+class CherryPickPRs:
+    # If the cherry-pick PR is not updated for more than 30 hours, then
+    # it is considered stale and needs to be pinged.
+    STALE_THRESHOLD = ReleaseBranch.STALE_THRESHOLD + 6 * 3600
+
+    def __init__(self, gh: GitHub, repo: str, dry_run: bool):
+        self.gh = gh
+        self.repo_name = gh.get_repo(repo)
+        self.dry_run = dry_run
+        self.error = None  # type: Optional[Exception]
+
+    def get_open_cherry_pick_prs(self) -> PullRequests:
+        """
+        Get all open cherry-pick PRs in the repository.
+        """
+        query = f"type:pr repo:{self.repo_name.full_name} label:{Labels.PR_CHERRYPICK}"
+        logging.info("Query to find the cherry-pick PRs:\n %s", query)
+        return self.gh.get_pulls_from_search(query=query, state="open")
+
+    def ping_stale_cherry_pick_prs(self) -> None:
+        """
+        Ping stale cherry-pick PRs that are not updated for more than 30 hours.
+        These PRs are probably stuck and require manual intervention.
+        """
+        try:
+            prs = self.get_open_cherry_pick_prs()
+        except Exception as e:
+            logging.error("Error while getting open cherry-pick PRs: %s", e)
+            self.error = e
+            return
+        for pr in prs:
+            try:
+                self._ping_stale_pr(pr)
+            except Exception as e:
+                logging.error(
+                    "Error while pinging stale cherry-pick PR #%s: %s", pr.number, e
+                )
+                self.error = e
+                continue
+
+    def _ping_stale_pr(self, pr: PullRequest) -> None:
+        # The `updated_at` is Optional[datetime]
+        cherrypick_updated_ts = (pr.updated_at or datetime.now()).timestamp()
+        since_updated = int(datetime.now().timestamp() - cherrypick_updated_ts)
+        if since_updated < self.STALE_THRESHOLD:
+            logging.info(
+                "The cherry-pick PR #%s was updated %d seconds ago, "
+                "waiting for the next running",
+                pr.number,
+                since_updated,
+            )
+            return
+
+        assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
+        comment_body = (
+            f"Dear {assignees}, the PR is not updated for more than 30 hours. "
+            "Probably, it's stuck. Please, review the state following the "
+            "`Troubleshooting` section in the PR description."
+        )
+        if self.dry_run:
+            logging.info(
+                "DRY RUN: would comment the cherry-pick PR #%s:\n",
+                pr.number,
+            )
+            return
+
+        pr.create_issue_comment(comment_body)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         "Create cherry-pick and backport PRs",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--token", help="github token, if not set, used from smm")
-    parser.add_argument(
-        "--repo", default="ClickHouse/ClickHouse", help="repo owner/name"
-    )
+    parser.add_argument("--repo", default=GITHUB_REPOSITORY, help="repo owner/name")
     parser.add_argument(
         "--from-repo",
-        default="ClickHouse/ClickHouse",
+        default=GITHUB_REPOSITORY,
         help="if set, the commits will be taken from this repo, but PRs will be created in the main repo",
     )
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
 
+    # TODO: remove this after the labels will be synced to the Sync PRs
+    # The parameter looks like a workaround for the issue with a wrong first commit date
+    # logic
     parser.add_argument(
         "--reserve-search-days",
         default=0,
@@ -635,29 +725,32 @@ def main():
     token = args.token or get_best_robot_token()
 
     gh = GitHub(token, create_cache_dir=False)
-    bp = Backport(
+    bpp = BackportPRs(
         gh,
         args.repo,
         args.from_repo,
         args.dry_run,
     )
-    # https://github.com/python/mypy/issues/3004
-    bp.gh.cache_path = temp_path / "gh_cache"
-    bp.receive_release_prs()
-    bp.update_local_release_branches()
-    bp.receive_prs_for_backport(args.reserve_search_days)
-    bp.process_backports()
-    if bp.error is not None:
+
+    bpp.gh.cache_path = temp_path / "gh_cache"
+    bpp.receive_release_prs()
+    bpp.update_local_release_branches()
+    bpp.receive_prs_for_backport()
+    bpp.process_backports()
+    cpp = CherryPickPRs(gh, args.repo, args.dry_run)
+    cpp.ping_stale_cherry_pick_prs()
+    errors = [e for e in (bpp.error, cpp.error) if e is not None]
+    if any(errors):
         logging.error("Finished successfully, but errors occurred!")
         if IS_CI:
             ci_buddy = CIBuddy()
             ci_buddy.post_job_error(
-                f"The cherry-pick finished with errors: {bp.error}",
+                f"The backport process finished with errors: {errors[0]}",
                 with_instance_info=True,
                 with_wf_link=True,
                 critical=True,
             )
-        raise bp.error
+        raise errors[0]
 
 
 if __name__ == "__main__":

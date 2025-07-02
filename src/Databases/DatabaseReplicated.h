@@ -39,8 +39,6 @@ class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
-    static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
-    static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
