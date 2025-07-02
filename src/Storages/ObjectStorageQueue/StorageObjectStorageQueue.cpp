@@ -655,6 +655,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
 
+        const auto transaction_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -662,12 +664,19 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            commit(
+                /*insert_succeeded=*/ false,
+                rows,
+                sources,
+                transaction_start_time,
+                getCurrentExceptionMessage(true),
+                getCurrentExceptionCode());
+
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/*insert_succeeded=*/ true, rows, sources);
+        commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -680,6 +689,7 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    time_t transaction_start_time,
     const std::string & exception_message,
     int error_code) const
 {
@@ -727,11 +737,15 @@ void StorageObjectStorageQueue::commit(
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     for (auto & source : sources)
-        source->finalizeCommit(insert_succeeded, commit_id, commit_time, exception_message);
+    {
+        source->finalizeCommit(
+            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+    }
 
     LOG_DEBUG(
-        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), inserted_rows, successful_objects.size());
+        log, "Successfully committed {} requests for {} sources with commit id {} "
+        "(inserted rows: {}, successful files: {})",
+        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()

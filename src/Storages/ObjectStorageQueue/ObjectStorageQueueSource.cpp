@@ -166,7 +166,9 @@ ObjectStorageQueueSource::FileIterator::next()
     if (current_batch_processed)
     {
         file_metadatas.clear();
+        Stopwatch get_object_watch;
         Source::ObjectInfos new_batch;
+
         while (new_batch.empty())
         {
             auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
@@ -296,6 +298,13 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
+            }
+
+            if (!new_batch.empty())
+            {
+                UInt64 get_object_time_ms = get_object_watch.elapsedMilliseconds();
+                for (const auto & file_metadata : file_metadatas)
+                    file_metadata->getFileStatus()->setGetObjectTime(get_object_time_ms);
             }
         }
 
@@ -744,6 +753,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , commit_once_processed(commit_once_processed_)
     , log(log_)
 {
+    if (commit_once_processed)
+        transaction_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 }
 
 String ObjectStorageQueueSource::getName() const
@@ -1157,6 +1168,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
     time_t commit_time,
+    time_t transaction_start_time_,
     const std::string & exception_message)
 {
     if (processed_files.empty())
@@ -1204,7 +1216,8 @@ void ObjectStorageQueueSource::finalizeCommit(
             file_metadata,
             /* processed */insert_succeeded && file_state == FileState::Processed,
             commit_id,
-            commit_time);
+            commit_time,
+            transaction_start_time_);
     }
 }
 
@@ -1234,7 +1247,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-    finalizeCommit(insert_succeeded, commit_id, commit_time, exception_message);
+    finalizeCommit(insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
     LOG_DEBUG(log, "Successfully committed {} requests", requests.size());
 }
 
@@ -1242,7 +1255,8 @@ void ObjectStorageQueueSource::appendLogElement(
     const ObjectStorageQueueMetadata::FileMetadataPtr & file_metadata_,
     bool processed,
     UInt64 commit_id,
-    time_t commit_time)
+    time_t commit_time,
+    time_t transaction_start_time_)
 {
     if (!system_queue_log)
         return;
@@ -1266,6 +1280,8 @@ void ObjectStorageQueueSource::appendLogElement(
             .exception = file_status.getException(),
             .commit_id = commit_id,
             .commit_time = commit_time,
+            .transaction_start_time = transaction_start_time_,
+            .get_object_time_ms = file_status.get_object_time_ms,
         };
     }
     system_queue_log->add(std::move(elem));

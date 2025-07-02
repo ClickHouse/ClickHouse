@@ -40,6 +40,8 @@ ColumnsDescription ObjectStorageQueueLogElement::getColumnsDescription()
         {"exception", std::make_shared<DataTypeString>(), "Exception message if happened"},
         {"commit_id", std::make_shared<DataTypeUInt64>(), "Id of the transaction in which this file was committed"},
         {"commit_time", std::make_shared<DataTypeDateTime>(), "Time of committing file in keeper (as either failed or processed)"},
+        {"transaction_start_time", std::make_shared<DataTypeDateTime>(), "Time when the whole processing transaction started"},
+        {"get_object_time_ms", std::make_shared<DataTypeUInt64>(), "Time which took us to find the object in s3"},
     };
 }
 
@@ -70,6 +72,8 @@ void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(commit_id);
     columns[i++]->insert(commit_time);
+    columns[i++]->insert(transaction_start_time);
+    columns[i++]->insert(get_object_time_ms);
 }
 
 }

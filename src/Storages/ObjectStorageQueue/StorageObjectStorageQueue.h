@@ -156,6 +156,7 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
 

@@ -46,6 +46,11 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
     processing_end_time = now();
 }
 
+void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapsed_ms)
+{
+    get_object_time_ms = elapsed_ms;
+}
+
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;

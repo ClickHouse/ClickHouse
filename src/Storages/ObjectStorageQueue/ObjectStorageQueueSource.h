@@ -185,6 +185,7 @@ public:
         bool insert_succeeded,
         UInt64 commit_id,
         time_t commit_time,
+        time_t transaction_start_time_,
         const std::string & exception_message = {});
 
 private:
@@ -194,7 +195,8 @@ private:
         const FileMetadataPtr & file_metadata_,
         bool processed,
         UInt64 commit_id,
-        time_t commit_time);
+        time_t commit_time,
+        time_t transaction_start_time_);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -218,6 +220,7 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    time_t transaction_start_time;
 
     LoggerPtr log;
 
