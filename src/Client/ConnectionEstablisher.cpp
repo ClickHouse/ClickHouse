@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int CANNOT_READ_FROM_SOCKET;
 }
 
 namespace FailPoints
@@ -122,7 +123,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
+            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
