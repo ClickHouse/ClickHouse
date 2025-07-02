@@ -56,6 +56,8 @@ void generateManifestFile(
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
     WriteBuffer & buf);
 
 void generateManifestList(
@@ -175,6 +177,8 @@ private:
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
+    Poco::JSON::Object::Ptr partititon_spec;
+    Int64 partition_spec_id;
 };
 
 }

@@ -147,6 +147,8 @@ void generateManifestFile(
     const String & data_file_name,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
     WriteBuffer & buf)
 {
     avro::ValidSchema schema;
@@ -231,8 +233,11 @@ void generateManifestFile(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata("schema", json_representation);
-    writer.setMetadata("partition-spec", "[]");
-    writer.setMetadata("partition-spec-id", "0");
+
+    std::ostringstream oss_partition_spec;
+    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
+    writer.setMetadata("partition-spec", oss_partition_spec.str());
+    writer.setMetadata("partition-spec-id", std::to_string(partition_spec_id));
     writer.write(manifest_datum);
     writer.close();
 }
@@ -603,7 +608,7 @@ IcebergStorageSink::IcebergStorageSink(
     filename_generator.setVersion(last_version + 1);
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
 
-    Int64 partition_spec_id = metadata->getValue<Int64>("default-spec-id");
+    partition_spec_id = metadata->getValue<Int64>("default-spec-id");
     auto partitions_specs = metadata->getArray("partition-specs");
 
     auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -621,6 +626,7 @@ IcebergStorageSink::IcebergStorageSink(
         auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
         if (current_partition_spec->getValue<Int64>("spec-id") == partition_spec_id)
         {
+            partititon_spec = current_partition_spec;
             partitioner = ChunkPartitioner(current_partition_spec->getArray("fields"), current_schema, context_, sample_block_);
             break;
         }
@@ -739,7 +745,7 @@ void IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, configuration->format, *buffer_manifest_entry);
+        generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
     }
 
