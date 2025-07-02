@@ -127,6 +127,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool data_type_string_use_size_stream;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -559,7 +560,10 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl,
+    LoadingStrictnessLevel mode,
+    bool make_columns_nullable,
+    bool make_string_columns_with_size_stream)
 {
     if (!col_decl.type)
     {
@@ -596,6 +600,9 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         else
             column_type = makeNullable(column_type);
     }
+
+    if (isString(column_type) && make_string_columns_with_size_stream)
+        column_type = DataTypeFactory::instance().get("StringWithSizeStream");
     return column_type;
 }
 
@@ -611,6 +618,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     NamesAndTypesList column_names_and_types;
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
+    bool make_string_columns_with_size_stream = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+        && context_->getSettingsRef()[Setting::data_type_string_use_size_stream];
 
     for (const auto & ast : columns_ast.children)
     {
@@ -622,8 +631,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
         }
 
-
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(
+            col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, make_string_columns_with_size_stream));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -686,6 +695,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 /// set nullability for case of column declaration w/o type but with default expression
                 if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
                     column.type = makeNullable(column.type);
+
+                if (isString(column.type) && make_string_columns_with_size_stream)
+                    column.type = DataTypeFactory::instance().get("StringWithSizeStream");
             }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);

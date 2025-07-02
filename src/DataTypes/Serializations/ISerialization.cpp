@@ -61,6 +61,8 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
 {
+    StringSizes,
+    InlinedStringSizes,
     TupleElement,
     NamedOffsets,
     NamedNullMap,
@@ -187,6 +189,8 @@ String getNameForSubstreamPath(
             stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
+        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
+            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
@@ -290,6 +294,14 @@ void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const Substre
     cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
+void ISerialization::addToOrUpdateSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
+{
+    if (!cache || path.empty())
+        return;
+
+    cache->insert_or_assign(getSubcolumnNameForStream(path), column);
+}
+
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
 {
     if (!cache || path.empty())
@@ -322,6 +334,8 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     {
         if (elem.type == Substream::NullMap
             || elem.type == Substream::ArraySizes
+            || elem.type == Substream::StringSizes
+            || elem.type == Substream::InlinedStringSizes
             || elem.type == Substream::DictionaryIndexes
             || elem.type == Substream::SparseOffsets)
             return false;
@@ -422,6 +436,8 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::StringSizes
+            || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::ObjectTypedPath;
@@ -433,7 +449,7 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap;
+    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

@@ -170,6 +170,9 @@ public:
             ArrayElements,
             ArraySizes,
 
+            StringSizes,
+            InlinedStringSizes,
+
             NullableElements,
             NullMap,
 
@@ -494,6 +497,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
+    static void addToOrUpdateSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
