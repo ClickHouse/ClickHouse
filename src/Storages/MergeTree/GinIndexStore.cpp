@@ -389,17 +389,20 @@ GinIndexStore::Format GinIndexStore::writeSegment()
     current_segment.dict_start_offset += getLengthOfVarUInt(uncompressed_size);
 
     Format version = Format::v1;
-    if (uncompressed_size < FST_SIZE_COMPRESSION_THRESHOLD) {
+    if (uncompressed_size < FST_SIZE_COMPRESSION_THRESHOLD)
+    {
         /// Write FST uncompressed blob
         dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
         current_segment.dict_start_offset += uncompressed_size;
-    } else {
+    }
+    else
+    {
         version = Format::v2;
 
-        const auto& codec = GinIndexCompression::zstdCodec();
+        const auto & codec = GinIndexCompression::zstdCodec();
         Memory<> memory;
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
-        auto compressed_size = codec->compress(reinterpret_cast<char*>(buffer.data()), uncompressed_size, memory.data());
+        auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
 
         /// Write FST compressed size
         writeVarUInt(compressed_size, *dict_file_stream);
