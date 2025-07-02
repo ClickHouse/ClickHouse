@@ -913,7 +913,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
             DB::ErrorCodes::LOGICAL_ERROR,
             "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
     }
-    
+
     bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
     std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA) ? cached_unprunned_files_for_last_processed_snapshot : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
     
