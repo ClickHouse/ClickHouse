@@ -101,7 +101,7 @@ TEST(Statistics, Estimator)
     estimator.addStatistics("onlypart", stats_c);
     estimator.incrementRowCount(10000);
 
-    auto test_f = [&](const String & expression, Int32 real_result)
+    auto test_f = [&](const String & expression, Int32 real_result, Float64 eps = 0.001)
     {
         ParserExpressionWithOptionalAlias exp_parser(false);
         ContextPtr context = getContext().context;
@@ -112,7 +112,6 @@ TEST(Statistics, Estimator)
         Float64 estimate_result = estimator.estimateRowCount(node);
         /// EXPECT_EQ(Float64(real_result), estimate_result);
         std::cout << expression << " " << real_result << " "<< estimate_result << std::endl;
-        Float64 eps = 0.001; /// it would be nice if the error < 0.1 percent
         EXPECT_LT(std::abs(real_result - estimate_result), 10000 * eps);
     };
     ///
@@ -121,8 +120,19 @@ TEST(Statistics, Estimator)
     test_f("not (a < 3 and b = 500)", 10000-1);
     test_f("c between -1000 and -10", 3);
     test_f("b != 500 and b != 600", 0);
+    test_f("not (b != 500 and b != 600)", 10000);
     test_f("b != 500 or b != 600", 10000);
+    test_f("not (b != 500 or b != 600)", 0);
     test_f("a < 3 and b != 600", 1);
-    test_f("a > 3 and b != 600", 4999);
-    test_f("(a > 3 or a < 10) and b != 600", 4999);
+    test_f("a > 3 and b != 600", 4998);
+    test_f("(a > 3 or a < 10) and b != 600", 5000);
+    test_f("(a > 3 and a < 10) and b != 600", 3);
+    test_f("(a > 3 and a < 10) or (b != 600 and b != 500)", 6);
+    test_f("(a > 3 and a < 10) or not (b != 600 and b != 500)", 10000);
+    test_f("((a > 3 and a < 10) or (a > 900 and a < 1000) or (a > 9050 and a < 9060))", 114);
+    test_f("(a > 3 and a < 1000) or (a > 3 and a < 1011) or (a > 3 and a < 2012)", 2008);
+    test_f("(a > 3 and a < 1000) or (a > 3 and a < 1011) or (b = 500)", 5503);
+    test_f("(a > 3 and a < 1000) or ((a > 3 and a < 1011) and (b = 500))", 1001, 0.05); /// 5% error
+    test_f("((a > 3 and a < 1000) or (a > 3 and a < 1011)) and (b = 500)", 503);
+    test_f("a = 5 and a != 6", 1);
 }

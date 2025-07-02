@@ -28,6 +28,14 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     {
         switch (element.function)
         {
+            /// for a AND b / a or b , we check:
+            /// 1. if a / b is always true or false
+            /// 2. if a / b is AND / OR clause
+            /// 2.a if a AND b and a/b is OR clause containing different columns, we don't merge the ranges
+            /// 2.b if a OR b and a/b is AND clause containing different columns, we don't merge the ranges
+            /// 2.c in other cases, we intersect or union the ranges
+            /// 3. if we cannot merge the expressions, we mark the expression as 'finalized' and materialize the selectivity.
+            /// 4. we don't merge ranges for finalized expression.
             case RPNElement::FUNCTION_AND:
             case RPNElement::FUNCTION_OR:
             {
@@ -233,12 +241,11 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    /// for CNF, we can merge (... and ...) and (... and ...)
-    /// we cannot merge (.... or ...) and (... or ...), in this case we need to finalize this expression.
     auto canMergeWith = [&](const RPNElement & e)
     {
         return (e.function == FUNCTION_IN_RANGE
                 || e.function == function
+                || e.column_ranges.size() + e.column_not_ranges.size() == 1
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
@@ -279,13 +286,33 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 {
     if (finalized)
         return;
+    finalized = true;
+    if (function == FUNCTION_UNKNOWN)
+    {
+        selectivity = default_unknown_cond_factor;
+        return;
+    }
+    auto estimateUnknownRanges = [&](const PlainRanges & ranges)
+    {
+        Float64 equal_selectivity = 0;
+        for (const Range & range : ranges.ranges)
+        {
+            if (range.isInfinite())
+                return 1.0;
+            if (range.left == range.right)
+                equal_selectivity += default_cond_equal_factor;
+            else
+                return default_cond_range_factor;
+        }
+        return equal_selectivity;
+    };
     std::vector<Float64> estimate_results;
     for (const auto & [column_name, ranges] : column_ranges)
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            selectivity = ConditionSelectivityEstimator::default_unknown_cond_factor;
+            estimate_results.emplace_back(estimateUnknownRanges(ranges));
         }
         else
             estimate_results.emplace_back(it->second.estimateRanges(ranges));
@@ -295,7 +322,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            selectivity = ConditionSelectivityEstimator::default_unknown_cond_factor;
+            estimate_results.emplace_back(1-estimateUnknownRanges(ranges));
         }
         else
             estimate_results.emplace_back(1.0-it->second.estimateRanges(ranges));
@@ -310,7 +337,6 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     }
     if (function == FUNCTION_OR)
         selectivity = 1-selectivity;
-    finalized = true;
 }
 
 }
