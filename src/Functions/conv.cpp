@@ -19,9 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionConv : public IFunction
@@ -108,8 +106,13 @@ private:
             return "";
         std::string clean_number = number;
         bool is_negative = false;
+        // Trim leading whitespace
         clean_number.erase(0, clean_number.find_first_not_of(" \t\n\r\f\v"));
-
+        // Trim trailing whitespace
+        if (!clean_number.empty())
+        {
+            clean_number.erase(clean_number.find_last_not_of(" \t\n\r\f\v") + 1);
+        }
         if (clean_number.empty())
             return "";
 
@@ -147,28 +150,25 @@ private:
             return 0;
 
         UInt64 result = 0;
-        UInt64 base_power = 1;
-        for (int i = str.length() - 1; i >= 0; --i)
+
+        // (MySQL behavior)
+        for (size_t i = 0; i < str.length(); ++i)
         {
             char c = str[i];
             int digit = charToDigit(c);
             if (digit < 0 || digit >= base)
             {
-                //stop at first invalid character
+                // Stop at first invalid character
                 break;
             }
-            if (result > (UINT64_MAX - digit) / base_power)
-            {
-                return UINT64_MAX;
-            }
-            result += digit * base_power;
-            // check base overflow for next iteration
-            if (i > 0 && base_power > UINT64_MAX / base)
+
+            // Check for overflow before multiplication
+            if (result > (UINT64_MAX - digit) / base)
             {
                 return UINT64_MAX;
             }
 
-            base_power *= base;
+            result = result * base + digit;
         }
 
         return result;
@@ -225,7 +225,7 @@ This function is compatible with MySQL's CONV() function.
         = {{"number", "The number to convert. Can be a string or numeric type."},
            {"from_base", "The source base (2-36). Must be an integer."},
            {"to_base", "The target base (2-36). Must be an integer."}},
-        .returned_value = "String representation of the number in the target base.",
+        .returned_value = {"String representation of the number in the target base."},
         .examples
         = {{"Convert decimal to binary", "SELECT conv('10', 10, 2)", "1010"},
            {"Convert hexadecimal to decimal", "SELECT conv('FF', 16, 10)", "255"},
