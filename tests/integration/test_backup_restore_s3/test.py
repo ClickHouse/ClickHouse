@@ -1,8 +1,11 @@
+import logging
 import os
 import uuid
+from pathlib import Path
 from typing import Dict
 
 import pytest
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -187,8 +190,10 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
 def format_settings(settings):
     if not settings:
         return ""
+
     def vstr(v):
         return "'" + v + "'" if type(v) == str else str(v)
+
     return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
 
 
@@ -346,9 +351,7 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
 def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
-    )
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
     check_system_tables(backup_events["query_id"])
 
@@ -443,9 +446,7 @@ def test_backup_to_s3_multipart():
 )
 def test_backup_to_s3_native_copy(storage_policy):
     backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
-    )
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     (backup_events, restore_events) = check_backup_and_restore(
         storage_policy, backup_destination
     )
@@ -516,9 +517,7 @@ def test_backup_with_fs_cache(
     storage_policy = "policy_s3_cache"
 
     backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
-    )
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     insert_settings = {
         "enable_filesystem_cache_on_write_operations": int(in_cache_initially)
@@ -792,7 +791,7 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
         backup_destination,
         backup_settings=settings,
         restore_settings=settings,
-        size=size
+        size=size,
     )
 
     check_system_tables(backup_events["query_id"])
@@ -816,9 +815,7 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
 def test_backup_restore_system_tables_with_plain_rewritable_disk():
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
-    )
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     instance.query("SYSTEM FLUSH LOGS")
 
@@ -836,3 +833,88 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk():
         query_id=restore_query_id,
     )
     instance.query("DROP TABLE data_restored SYNC")
+
+
+# TODO: move to a common place
+def upload_to_minio(minio_client, bucket_name, local_path, minio_path=""):
+    local_path = Path(local_path)
+    for root, _, files in os.walk(local_path):
+        for file in files:
+            local_file_path = Path(root) / file
+            minio_object_name = minio_path + str(
+                local_file_path.relative_to(local_path)
+            )
+
+            try:
+                with open(local_file_path, "rb") as data:
+                    file_stat = os.stat(local_file_path)
+                    minio_client.put_object(
+                        bucket_name, minio_object_name, data, file_stat.st_size
+                    )
+                logging.info(f"Uploaded {local_file_path} to {minio_object_name}")
+            except S3Error as e:
+                logging.error(f"Error uploading {local_file_path}: {e}")
+
+
+def test_backup_restore_s3_plain():
+    storage_policy = "policy_s3"
+    to_disk = "disk_s3_plain"
+    instance = cluster.instances["node"]
+    backup_name = new_backup_name()
+
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    instance.query(
+        f"""
+    CREATE DATABASE db;
+    CREATE TABLE db.sample (key Int, value String)
+    ENGINE = MergeTree() ORDER BY tuple()
+    AS
+    SELECT number AS id, concat('name_', toString(number)) AS name
+    FROM numbers(100);
+    """
+    )
+
+    assert instance.query("SELECT count(*) FROM db.sample") == "100\n"
+
+    table_data_path = os.path.join(instance.path, f"database/store")
+    minio = cluster.minio_client
+    upload_to_minio(
+        minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/"
+    )
+
+    table_uuid = instance.query(
+        f"""
+            SELECT uuid FROM system.tables WHERE name='sample' and database='db'
+            """
+    ).strip()
+
+    instance.query(
+        f"""
+        DROP TABLE db.sample SYNC;
+        CREATE DATABASE db_dst;
+        ATTACH TABLE db_dst.sample UUID '{table_uuid}' (key Int, value String)
+        ENGINE = MergeTree() ORDER BY tuple()
+        SETTINGS storage_policy='policy_s3_plain'
+        """
+    )
+    assert instance.query("SELECT count(*) FROM db_dst.sample") == "100\n"
+
+    backup_query_id = uuid.uuid4().hex
+    instance.query(
+        f"BACKUP TABLE db_dst.sample TO {backup_destination}",
+        query_id=backup_query_id,
+    )
+
+    restore_query_id = uuid.uuid4().hex
+    instance.query("DROP TABLE IF EXISTS db_dst.sample_restored SYNC")
+    err = instance.query_and_get_error(
+        f"""
+        RESTORE TABLE db_dst.sample AS db_dst.sample_restored FROM {backup_destination};
+        """,
+        query_id=restore_query_id,
+    )
+    assert "READONLY" in err
+    instance.query("DROP TABLE db_dst.sample SYNC")
+    instance.query("DROP DATABASE db_dst SYNC")
+    instance.query("DROP DATABASE db SYNC")
