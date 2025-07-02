@@ -7207,7 +7207,8 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     if (!reservation)
     {
         LOG_TRACE(log, "Trying to reserve {} using storage policy from min volume index {}", ReadableSize(expected_size), min_volume_index);
-        reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
+        auto reservation_or_error = getStoragePolicy()->reserve(expected_size, min_volume_index);
+        reservation = getStoragePolicy()->reserve(expected_size, min_volume_index).value_or(nullptr);
     }
 
     return reservation;
@@ -8083,12 +8084,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         dst_part_storage = src_part_storage->freezeRemote(
             relative_data_path,
             tmp_dst_part_name,
-            /* dst_disk = */reservation_on_dst->getDisk(),
+            /* dst_disk = */ (*reservation_on_dst)->getDisk(),
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params
-        );
+            params);
     }
 
     if (params.metadata_version_to_write.has_value())
