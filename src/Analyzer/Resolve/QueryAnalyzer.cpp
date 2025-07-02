@@ -800,6 +800,56 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node = std::move(get_scalar_function_node);
 }
 
+void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
+{
+    auto * constant_node = node->as<ConstantNode>();
+    if (!constant_node || !constant_node->hasSourceExpression())
+        return;
+
+    auto & source_expression = constant_node->getSourceExpression();
+
+    auto * function = source_expression->as<FunctionNode>();
+
+    if (!function)
+        return;
+
+    auto & context = scope.context;
+
+    auto node_without_alias = node->clone();
+    node_without_alias->removeAlias();
+
+    QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
+    auto str_hash = DB::toString(node_with_hash.hash);
+
+    Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), function->getFunctionName()}});
+
+    if (context->hasQueryContext() && !context->getQueryContext()->hasScalar(str_hash))
+        context->getQueryContext()->addScalar(str_hash, scalar_block);
+
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
+    auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
+
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
+
+    if (mutable_context->hasQueryContext())
+        mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
+
+    mutable_context->addScalar(scalar_query_hash_string, scalar_block);
+
+    std::string get_scalar_function_name = "__getScalar";
+
+    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+
+    auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
+    get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
+
+    auto get_scalar_function = FunctionFactory::instance().get(get_scalar_function_name, mutable_context);
+    get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
+
+    node = std::move(get_scalar_function_node);
+}
+
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
 {
     auto & window_node_typed = window_node->as<WindowNode &>();
@@ -3963,6 +4013,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         case QueryTreeNodeType::FUNCTION:
         {
             auto function_projection_names = resolveFunction(node, scope);
+            convertConstantToScalarIfNeeded(node, scope);
 
             if (result_projection_names.empty() || node->getNodeType() == QueryTreeNodeType::LIST)
                 result_projection_names = std::move(function_projection_names);
