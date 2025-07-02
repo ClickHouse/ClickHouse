@@ -26,7 +26,7 @@
 #endif
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include <Functions/vec_crc32.h>
+#include <vec_crc32.h>
 #endif
 
 namespace DB
