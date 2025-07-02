@@ -429,3 +429,19 @@ def test_non_existing_tables(started_cluster):
         except Exception as e:
             assert "DB::Exception: Table" in str(e)
             assert "doesn't exist" in str(e)
+
+
+def test_empty_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(catalog, root_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.{root_namespace}.{table_name}")) == 0
