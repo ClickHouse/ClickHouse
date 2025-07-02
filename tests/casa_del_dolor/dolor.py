@@ -31,10 +31,7 @@ os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_port
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from integration.helpers.postgres_utility import get_postgres_conn
 from generators import Generator, BuzzHouseGenerator
-from oracles import (
-    collect_table_hash_before_shutdown,
-    collect_table_hash_after_shutdown,
-)
+from oracles import ElOraculoDeTablas
 from properties import modify_server_settings, modify_user_settings
 
 
@@ -437,6 +434,7 @@ if args.with_redis:
 
 # This is the main loop, run while client and server are running
 all_running = True
+tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
@@ -463,7 +461,7 @@ while all_running:
         break
 
     dump_table = (
-        collect_table_hash_before_shutdown(cluster, logger)
+        tables_oracle.collect_table_hash_before_shutdown(cluster, logger)
         if random.randint(1, 100) <= args.compare_table_dump_prob
         else None
     )
@@ -529,4 +527,4 @@ while all_running:
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
 
-    collect_table_hash_after_shutdown(cluster, logger, dump_table)
+    tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
