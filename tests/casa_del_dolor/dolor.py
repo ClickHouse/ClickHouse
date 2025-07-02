@@ -403,7 +403,7 @@ generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster)
 logger.info("Start load generator")
-client = generator.run_generator(servers[0])
+client = generator.run_generator(servers[0], logger, args)
 
 
 def dolor_cleanup():
