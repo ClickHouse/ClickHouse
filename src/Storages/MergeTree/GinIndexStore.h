@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Compression/ICompressionCodec.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -40,6 +41,12 @@ namespace DB
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
 
+class GinIndexCompression
+{
+public:
+    static const CompressionCodecPtr & zstdCodec();
+};
+
 /// Build a postings list for a term
 class GinIndexPostingsBuilder
 {
@@ -60,9 +67,6 @@ public:
 
 private:
     constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
-
-    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
-    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
 
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
     /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
@@ -127,6 +131,13 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
+    enum class Format : uint8_t
+    {
+        v0 = 0,
+        v1 = 1, /// Initial version
+        v2 = 2, /// Supports compression
+    };
+
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
@@ -144,6 +155,9 @@ public:
 
     /// Get total number of segments in the store
     UInt32 getNumOfSegments();
+
+    /// Get version
+    uint8_t getVersion();
 
     /// Get current postings list builder
     const GinIndexPostingsBuilderContainer & getPostingsListBuilder() const { return current_postings; }
@@ -164,7 +178,8 @@ public:
     void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
-    void writeSegment();
+    /// Returns the version number it used to store FST blob
+    Format writeSegment();
 
     const String & getName() const { return name; }
 
@@ -178,12 +193,10 @@ private:
     void initSegmentId();
 
     /// Stores segment id into disk
-    void writeSegmentId();
+    void writeSegmentId(Format version);
 
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
-
-    void verifyFormatVersionIsSupported(size_t version);
 
     String name;
     DataPartStoragePtr storage;
@@ -220,13 +233,8 @@ private:
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
 
-    enum class Format : uint8_t
-    {
-        v0 = 0,
-        v1 = 1, /// Initial version
-    };
-
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
+    /// FST size less than 100KiB does not worth to compress.
+    static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
