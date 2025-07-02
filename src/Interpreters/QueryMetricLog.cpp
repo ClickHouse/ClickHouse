@@ -121,13 +121,17 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 
     auto & query_status = it->second;
     UniqueLock query_lock(query_status.getMutex());
-    global_lock.unlock();
 
-    if (query_status.finished)
+    /// query_status.finished needs to be written/read while holding the global_lock because
+    /// there's a data race between collectMetric and finishQuery. Due to the order in which
+    /// we need to unlock mutexes to ensure there's no mutex cycle, after getting the query_status.mutex
+    /// we need this extra check to ensure the query is still alive.
+    if (getQueryFinished(query_status))
     {
         LOG_TEST(logger, "Query {} finished while this collecting task was running", query_id);
         return;
     }
+    global_lock.unlock();
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
     if (elem)
@@ -175,7 +179,6 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     /// unlock a non-existing mutex.
     auto mutex = query_status.mutex;
     UniqueLock query_lock(query_status.getMutex());
-    global_lock.unlock();
 
     /// finishQuery may be called twice for the same query_id if a new query with the same query_id is attempted to run
     /// in case replace_running_query=0 (the default). Make sure we only execute the finishQuery once.
@@ -188,7 +191,12 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         return;
     }
 
-    query_status.finished = true;
+    /// query_status.finished needs to be written/read while holding the global_lock because
+    /// there's a data race between collectMetric and finishQuery. Due to the order in which
+    /// we need to unlock mutexes to ensure there's no mutex cycle, after getting the query_status.mutex
+    /// we need this extra check to ensure the query is still alive.
+    setQueryFinished(query_status);
+    global_lock.unlock();
 
     if (query_info)
     {
@@ -218,6 +226,16 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         /// scope which will lock `exec_mutex`.
         global_lock.unlock();
     }
+}
+
+void QueryMetricLog::setQueryFinished(QueryMetricLogStatus & status)
+{
+    status.finished = true;
+}
+
+bool QueryMetricLog::getQueryFinished(QueryMetricLogStatus & status)
+{
+    return status.finished;
 }
 
 void QueryMetricLogStatus::scheduleNext(String query_id)
