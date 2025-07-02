@@ -9,9 +9,9 @@ title: 'DataLakeCatalog'
 # DataLakeCatalog
 
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
-data catalogs and query open table format data (Apache Iceberg, Delta Lake) without 
-the need for data duplication. This transforms ClickHouse into a powerful query 
-engine that works seamlessly with your existing data lake infrastructure.
+data catalogs and query open table format data without the need for data duplication.
+This transforms ClickHouse into a powerful query engine that works seamlessly with
+your existing data lake infrastructure.
 
 ## Supported Catalogs {#supported-catalogs}
 
@@ -36,7 +36,7 @@ SET allow_experimental_database_hms_catalog = 1;
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:
 
 ```sql
-CREATE DATABASE <database_name>
+CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
 SETTINGS
 catalog_type
@@ -61,7 +61,7 @@ The following settings are supported:
 
 ## Examples {#examples}
 
-See below for examples of using the `DataLakeCatalog` engine:
+See below pages for examples of using the `DataLakeCatalog` engine:
 
 * [Unity Catalog](/use-cases/data-lake/unity-catalog)
 * [Glue Catalog](/use-cases/data-lake/glue-catalog)
