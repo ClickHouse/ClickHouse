@@ -1,15 +1,15 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
 #include <Columns/IColumn.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -26,6 +26,7 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -37,6 +38,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -47,7 +49,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Storages/Kafka/KeeperHandlingConsumer.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -57,6 +58,7 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <filesystem>
+#include <mutex>
 #include <string>
 
 namespace CurrentMetrics
@@ -410,17 +412,20 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 void StorageKafka2::startup()
 {
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
-    for (size_t i = 0; i < num_consumers; ++i)
     {
-        try
+        std::lock_guard lock(consumers_mutex);
+        for (size_t i = 0; i < num_consumers; ++i)
         {
-            consumers.push_back(std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
-            LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
-            ++num_created_consumers;
-        }
-        catch (const cppkafka::Exception &)
-        {
-            tryLogCurrentException(log);
+            try
+            {
+                consumers.push_back(
+                    std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
+                ++num_created_consumers;
+            }
+            catch (const cppkafka::Exception &)
+            {
+                tryLogCurrentException(log);
+            }
         }
     }
     activating_task->activateAndSchedule();
@@ -433,7 +438,7 @@ void StorageKafka2::shutdown(bool)
     activating_task->deactivate();
     partialShutdown();
     LOG_TRACE(log, "Closing consumers");
-    consumers.clear();
+    cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
 }
 
@@ -444,20 +449,13 @@ void StorageKafka2::drop()
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
 {
-    // Create a consumer and subscribe to topics
-    auto consumer_impl = std::make_shared<cppkafka::Consumer>(getConsumerConfiguration(consumer_number));
-    consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
     auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-    return std::make_shared<KafkaConsumer2>(
-        consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
-
+    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
 }
 
-
-cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number)
+cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -467,7 +465,7 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params);
+    auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
     kafka_config.set("statistics.interval.ms", "0");
     // Making more frequent updates, now 1 min
@@ -1005,7 +1003,10 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    auto & consumer = consumers[idx];
+    auto consumer = acquireConsumer(idx);
+
+    SCOPE_EXIT({ releaseConsumer(std::move(consumer)); });
+
     Stopwatch watch{CLOCK_MONOTONIC_COARSE};
 
     try
@@ -1044,6 +1045,58 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     return {};
 }
 
+StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
+{
+    std::lock_guard lock{consumers_mutex};
+    auto consumer = consumers[idx];
+    const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)
+                                                       { return getConsumerConfiguration(idx, std::move(exception_sink)); });
+
+    if (created_consumer)
+        LOG_TRACE(log, "Created #{} consumer", idx);
+
+    return consumer;
+}
+
+void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
+{
+    std::lock_guard lock{consumers_mutex};
+    consumer_ptr->stopUsing();
+    cv.notify_one();
+}
+
+void StorageKafka2::cleanConsumers()
+{
+    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer2 (for logging and stat callback).
+    /// So if we destroy cppkafka::Consumer in KafkaConsumer2 destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock.
+    /// Maybe we could do this in the destructor of KeeperHandlingConsumer, thus avoid this not obvious logic here, but this version is "battle tested" by our CI as we have
+    /// the very similar, if not the same approach in the old StorageKafka. Let's go with this now, later on we can improve it.
+    std::vector<CppKafkaConsumerPtr> consumers_to_close;
+    {
+        UniqueLock lock(consumers_mutex);
+        /// Wait until all consumers will be released
+        /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
+        cv.wait(
+            lock.getUnderlyingLock(),
+            [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
+            {
+                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
+                return it == consumers.end();
+            });
+
+        for (const auto & consumer : consumers)
+        {
+            if (!consumer->hasConsumer())
+                continue;
+            consumers_to_close.push_back(consumer->moveConsumer());
+        }
+    }
+
+    consumers_to_close.clear();
+
+    std::lock_guard lock(consumers_mutex);
+    consumers.clear();
+}
 
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
 {
