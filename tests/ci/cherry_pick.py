@@ -477,37 +477,32 @@ class BackportPRs:
         ]
         return min(date.fromisoformat(c_date) for c_date in commit_dates)
 
-    def _get_backporting_prs(
+    def receive_prs_for_backport(
         self,
-        since_date: date,
+        since_date: Optional[date] = None,
+        # The following arguments are used for a cross-repo labels synchronization
         labels_to_backport: Optional[Iterable[str]] = None,
-        # these two arguments are used for cross-repo labels synchronization
         backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
         repo_name: str = "",
-    ) -> PullRequests:
-        """
-        Get PRs that are supposed to be backported.
-        """
+    ) -> None:
+
+        since_date = since_date or self.oldest_commit_date()
         labels_to_backport = (
             labels_to_backport
             or self.labels_to_backport + self.must_create_backport_labels
         )
         repo_name = repo_name or self.repo.full_name
+        # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
+
         query_args = {
             "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
-        return self.gh.get_pulls_from_search(**query_args)
 
-    def receive_prs_for_backport(self) -> None:
-        since_date = self.oldest_commit_date()
-        # To not have a possible TZ issues
-        logging.info("Receive PRs supposed to be backported")
-
-        self.prs_for_backport = self._get_backporting_prs(since_date)
+        self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
         logging.info(
             "PRs to be backported:\n %s",
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
