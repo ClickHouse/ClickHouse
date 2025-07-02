@@ -1,4 +1,4 @@
-#include "LibraryBridgeHelper.h"
+#include <BridgeHelper/LibraryBridgeHelper.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
