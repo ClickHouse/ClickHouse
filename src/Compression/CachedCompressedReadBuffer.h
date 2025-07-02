@@ -53,6 +53,8 @@ public:
     /// seek inside nextImpl.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
+    off_t getPosition() const override { return file_pos; }
+
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {
         profile_callback = profile_callback_;

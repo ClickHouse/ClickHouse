@@ -115,8 +115,6 @@ SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
 SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
-The text index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.
-
 Like for other secondary indices, each column part has its own text index.
 Furthermore, each text index is internally divided into "segments".
 The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
@@ -218,23 +216,6 @@ Example:
 SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
 
 SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
-```
-
-#### has {#functions-example-has}
-
-Function `has` is also similar to `equals` in terms of matching the entire value.
-Instead it operates on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
-
-Example how to define a `text` index to use with the `has` function:
-
-```sql
-CREATE TABLE tbl (
-    id UInt64,
-    values Array(String),
-    INDEX idx_values(values) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY id;
 ```
 
 ## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
