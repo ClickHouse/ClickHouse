@@ -584,6 +584,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -2214,6 +2215,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
