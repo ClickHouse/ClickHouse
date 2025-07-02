@@ -352,13 +352,6 @@ done
 QUOTE_EXCLUSIONS=(
     --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
     # TODO (WIP)
-    --exclude "$ROOT_PATH/src/Common/*"
-    --exclude "$ROOT_PATH/src/Coordination/*"
-    --exclude "$ROOT_PATH/src/Core/*"
-    --exclude "$ROOT_PATH/src/Databases/*"
-    --exclude "$ROOT_PATH/src/DataTypes/*"
-    --exclude "$ROOT_PATH/src/Dictionaries/*"
-    --exclude "$ROOT_PATH/src/Disks/*"
     --exclude "$ROOT_PATH/src/Functions/*"
     --exclude "$ROOT_PATH/src/Interpreters/*"
     --exclude "$ROOT_PATH/src/IO/*"

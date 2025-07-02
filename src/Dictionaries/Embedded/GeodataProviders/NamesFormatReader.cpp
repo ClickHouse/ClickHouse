@@ -1,4 +1,4 @@
-#include "NamesFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
 
 #include <IO/ReadHelpers.h>
 

@@ -550,6 +550,7 @@ def test_s3_client_reused(started_cluster):
             "after_processing": "delete",
             "s3queue_processing_threads_num": 1,
             "keeper_path": keeper_path,
+            "polling_backoff_ms": 0,
         },
         auth=NO_AUTH,
         bucket=started_cluster.minio_public_bucket,

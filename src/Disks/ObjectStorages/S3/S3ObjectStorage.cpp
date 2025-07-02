@@ -1,5 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include "Common/ObjectStorageKey.h"
+#include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
 

@@ -28,7 +28,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 
-#include "Coordination/KeeperConstants.h"
+#include <Coordination/KeeperConstants.h>
 #include "config.h"
 
 #if USE_SSL
