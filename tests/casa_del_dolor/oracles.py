@@ -99,7 +99,7 @@ class ElOraculoDeTablas:
             # Rename table, so the client generator, won't update it
             self.increment_counter()
             client.query(
-                f"RENAME TABLE {next_tbl.get_sql_escaped_full_name()} TO {self.get_current_table_name()};"
+                f"RENAME TABLE {next_tbl.get_sql_escaped_full_name()} TO {next_tbl.get_sql_escaped_full_name(self.get_current_table_name())};"
             )
             # Make sure all replicas are in sync
             if next_tbl.get_is_shared_or_replicated_merge_tree():
