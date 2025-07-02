@@ -481,6 +481,9 @@ class BackportPRs:
         self,
         since_date: date,
         labels_to_backport: Optional[Iterable[str]] = None,
+        # these two arguments are used for cross-repo labels synchronization
+        backport_created_label: str = Labels.PR_BACKPORTS_CREATED,
+        repo_name: str = "",
     ) -> PullRequests:
         """
         Get PRs that are supposed to be backported.
@@ -489,9 +492,10 @@ class BackportPRs:
             labels_to_backport
             or self.labels_to_backport + self.must_create_backport_labels
         )
+        repo_name = repo_name or self.repo.full_name
         tomorrow = date.today() + timedelta(days=1)
         query_args = {
-            "query": f"type:pr repo:{self.repo.full_name} -label:{Labels.PR_BACKPORTS_CREATED}",
+            "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
