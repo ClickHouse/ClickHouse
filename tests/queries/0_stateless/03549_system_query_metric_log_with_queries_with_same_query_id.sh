@@ -35,7 +35,7 @@ while true; do
     sleep 0.5
 done
 
-$CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(3) SETTINGS query_metric_log_interval=100, replace_running_query=1 FORMAT Null;" &
+$CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(1) SETTINGS query_metric_log_interval=100, replace_running_query=1 FORMAT Null;" &
 $CLICKHOUSE_CLIENT --query-id="$same_query_not_finish" -q "SELECT 'a' SETTINGS query_metric_log_interval=0, replace_running_query=0 FORMAT Null;" 2> /dev/null
 
 # Kill the initial query because the second one didn't replace it
