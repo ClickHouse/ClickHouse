@@ -298,10 +298,10 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
 
     if (type == S3LatencyType::Connect)
     {
-        const Histogram::Buckets connect_buckets = {0.0001, 0.001, 0.01, 0.1, 0.2, 0.3, 0.5, 1.0, 1.5};
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
         static Histogram::MetricFamily & s3_connect = Histogram::Factory::instance().registerMetric(
-            "s3_connect_seconds",
-            "Time to establish connection with S3, in seconds.",
+            "s3_connect_microseconds",
+            "Time to establish connection with S3, in microseconds.",
             connect_buckets,
             {}
         );
@@ -310,8 +310,8 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         if (for_disk_s3)
         {
             static Histogram::MetricFamily & disk_s3_connect = Histogram::Factory::instance().registerMetric(
-                "disk_s3_connect_seconds",
-                "Time to establish connection with DiskS3, in seconds.",
+                "disk_s3_connect_microseconds",
+                "Time to establish connection with DiskS3, in microseconds.",
                 connect_buckets,
                 {}
             );
@@ -344,13 +344,13 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         }
     }(request.GetMethod());
 
-    const Histogram::Buckets first_byte_buckets = {0.0001, 0.001, 0.01, 0.1, 0.3, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0};
+    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
     const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
     const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
 
     static Histogram::MetricFamily & s3_first_byte = Histogram::Factory::instance().registerMetric(
-        "s3_first_byte_seconds",
-        "Time to receive the first byte from an S3 request, in seconds.",
+        "s3_first_byte_microseconds",
+        "Time to receive the first byte from an S3 request, in microseconds.",
         first_byte_buckets,
         first_byte_labels
     );
@@ -359,8 +359,8 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     if (for_disk_s3)
     {
         static Histogram::MetricFamily & disk_s3_first_byte = Histogram::Factory::instance().registerMetric(
-            "disk_s3_first_byte_seconds",
-            "Time to receive the first byte from a DiskS3 request, in seconds.",
+            "disk_s3_first_byte_microseconds",
+            "Time to receive the first byte from a DiskS3 request, in microseconds.",
             first_byte_buckets,
             first_byte_labels
         );
@@ -582,8 +582,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
-            observeLatency(request, S3LatencyType::Connect, connect_time / 1000000.0);
-            observeLatency(request, first_byte_latency_type, first_byte_time / 1000000.0);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
             latency_recorded = true;
 
             if (request.GetContentBody())
@@ -705,8 +705,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            observeLatency(request, S3LatencyType::Connect, connect_time / 1000000.0);
-            observeLatency(request, first_byte_latency_type, first_byte_time / 1000000.0);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
         }
         LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
@@ -719,8 +719,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            observeLatency(request, S3LatencyType::Connect, connect_time / 1000000.0);
-            observeLatency(request, first_byte_latency_type, first_byte_time / 1000000.0);
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
         }
         LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
