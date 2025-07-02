@@ -55,8 +55,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
             /// But we still need to do some processing on the set of requested columns:
             ///  * If a non-tuple-element subcolumn is requested, request the whole column.
             ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
-            ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is not
-            ///    (currently) supported by any format parser (though we might want to add it in
+            ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
+            ///    currently not supported by any format parser (though we might want to add it in
             ///    future for parquet variant columns).
             ///  * Don't request tuple element if the whole tuple is also requested.
             ///    E.g. `SELECT t, t.x` should just read `t`.
@@ -76,12 +76,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
             {
                 SCOPE_EXIT({ ++idx; });
 
-                /// Suppose column t.a.b.c.null was requested, and `t` and `t.a` are tuples,
-                /// but `t.a.b` is an Object (with dynamic subcolumn `c`), and `t.a.b.c.null` is
-                /// a null map subcolumn (of a Nullable column). Then we want to read `t.a.b`.
+                /// Suppose column `t.a.b.c` was requested, and `t` and `t.a` are tuples,
+                /// but `t.a.b` is an Object (with dynamic subcolumn `c`). We want to read `t.a.b`.
                 /// So, we're looking for the longest prefix of the requested path that consists
                 /// only of tuple element accesses. In this example we want path = {a, b}.
-                /// (Note that `t.a.b.c.null` will not be listed by enumerateStreams because `c`
+                /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
                 ///  is a dynamic subcolumn.)
                 auto & column_info = columns_info[idx];
                 bool found_full_path = false;
