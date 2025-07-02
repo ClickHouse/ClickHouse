@@ -1488,8 +1488,8 @@ private:
                         for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         {
                             /// check if the block has enough columns
-                            if (col < block->getSourceBlock().columns())
-                                columns_keys_and_right[col]->insertFrom(*block->getSourceBlock().getByPosition(col).column, row);
+                            if (col < columns->columns.size())
+                                columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
                         }
                         ++rows_added;
                     }
