@@ -50,7 +50,6 @@ namespace DB::Parquet
 //  * cache FileMetaData in something like SchemaCache
 //  * TSA
 //  * test with tsan
-//  * fix tuple element reading, see todo in prepareReadingFromFormat; request subcolumns only if it's tuple element, otherwise request the whole column (e.g. for json fields)
 //  * use dictionary page instead of bloom filter when possible
 //  * test performance with prewhere i%2=0, to have lots of range skips
 //  * remember to test these:
@@ -58,8 +57,8 @@ namespace DB::Parquet
 //     - prewhere with all 3 storages (maybe have the main big test pick random storage)
 //     - prewhere and where together
 //     - reading tuple element without reading the whole tuple
-//     - `select t, t.x`
-//     - `select t.x.x, t.x`
+//     - `select t, t.x`, `select t.x.x, t.x`, `select t.x.dyn_col`, `select t.`1``
+//        -- somehow assert that only the expected subcolumns are read
 //     - prewhere with tuple element access (prepareReadingFromFormat looks like it won't work)
 //     - prewhere with expression string equal to some (weird) column name in the file
 //     - prewhere with expression that's just a (UInt8) column name, present or not present in select

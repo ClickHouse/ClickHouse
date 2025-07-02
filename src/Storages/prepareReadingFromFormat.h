@@ -36,7 +36,17 @@ namespace DB
     };
 
     /// Get all needed information for reading from data in some input format.
-    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns, bool supports_subset_of_subcolumns = false);
+    ///
+    /// `supports_tuple_elements` controls how tuple element access is handled, e.g. "t.x".
+    /// If true, we'll request "t.x" from the format, expecting it to interpret the dot correctly.
+    /// If false, we'll ask the format to read the whole tuple "t"; then the needed subcolumns are
+    /// extracted by ExtractColumnsTransform later in the pipeline.
+    /// For subcolumns that are not tuple elements (e.g. dynamic subcolumns "json_column.some_map_key"
+    /// or special subcolumns like "nullable.null" for null map), we request the whole column either way.
+    /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
+    /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
+    /// this bool instead of adding another one.
+    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns, bool supports_tuple_elements = false);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 
