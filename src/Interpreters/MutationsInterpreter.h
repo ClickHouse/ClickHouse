@@ -58,8 +58,6 @@ public:
         bool return_mutated_rows = false;
         /// Where we should filter deleted rows by lightweight DELETE.
         bool apply_deleted_mask = true;
-        /// Where we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
-        bool recalculate_dependencies_of_updated_columns = true;
     };
 
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
@@ -91,30 +89,11 @@ public:
     /// Only changed columns.
     Block getUpdatedHeader() const;
 
-    const ColumnDependencies & getColumnDependencies() const;
+    /// TODO: comment.
+    Block getOutputHeader() const;
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
-
-    NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
-
-    NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
-
-    NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
-
-    struct MutationKind
-    {
-        enum MutationKindEnum
-        {
-            MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTICS_PROJECTION,
-            MUTATE_OTHER,
-        } mutation_kind = MUTATE_UNKNOWN;
-
-        void set(const MutationKindEnum & kind);
-    };
-
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands.
@@ -131,10 +110,6 @@ public:
         const MergeTreeData * getMergeTreeData() const;
         MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
         bool supportsLightweightDelete() const;
-        bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name) const;
-        bool hasProjection(const String & name) const;
-        bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(
@@ -218,6 +193,9 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// TODO: comment.
+        Names readonly_input_columns;
+
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
@@ -234,19 +212,12 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    std::unique_ptr<Block> output_header;
     std::unique_ptr<Block> updated_header;
+
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
     bool deleted_mask_updated = false;
-
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-    NameSet materialized_statistics;
-
-    MutationKind mutation_kind; /// Do we meet any index or projection mutation.
-
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
-    ColumnDependencies dependencies;
 };
 
 }

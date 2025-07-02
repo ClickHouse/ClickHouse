@@ -2,7 +2,6 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
@@ -175,15 +174,6 @@ struct StorageInMemoryMetadata
     // Just wrapper for table TTLs, return info about recompression ttl
     TTLDescriptions getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
-
-    using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
-
-    /// Returns columns, which will be needed to calculate dependencies (skip indices, projections,
-    /// TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(
-        const NameSet & updated_columns,
-        bool include_ttl_target,
-        const HasDependencyCallback & has_dependency) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;

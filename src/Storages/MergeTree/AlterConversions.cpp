@@ -277,7 +277,6 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
 
     MutationsInterpreter::Settings settings(true);
     settings.return_all_columns = true;
-    settings.recalculate_dependencies_of_updated_columns = false;
 
     const auto & part = loaded_part_info->getDataPart();
     auto alter_conversions = std::make_shared<AlterConversions>();

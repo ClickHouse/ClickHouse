@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_deflate_qpl_codec;
@@ -69,6 +70,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -1190,7 +1192,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     else if (type == DROP_INDEX)
     {
         result.type = MutationCommand::Type::DROP_INDEX;
-        result.column_name = index_name;
+        result.index_name = index_name;
         if (clear)
             result.clear = true;
         if (partition)
@@ -1213,7 +1215,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     else if (type == DROP_PROJECTION)
     {
         result.type = MutationCommand::Type::DROP_PROJECTION;
-        result.column_name = projection_name;
+        result.projection_name = projection_name;
         if (clear)
             result.clear = true;
         if (partition)
@@ -1445,18 +1447,27 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     const auto & metadata = table->getInMemoryMetadata();
     auto virtuals = table->getVirtualsPtr();
-
     auto all_columns = metadata.columns;
+
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NameSet modified_columns;
     NameSet renamed_columns;
+
+    bool allow_experimental_statistics = context->getSettingsRef()[Setting::allow_experimental_statistics];
+
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        if (!allow_experimental_statistics
+            && (command.type == AlterCommand::ADD_STATISTICS || command.type == AlterCommand::DROP_STATISTICS || command.type == AlterCommand::MODIFY_STATISTICS))
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
+        }
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

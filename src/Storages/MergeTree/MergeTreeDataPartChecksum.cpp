@@ -311,6 +311,14 @@ static void updateHash(SipHash & hash, const std::string & data)
     hash.update(data.data(), len);
 }
 
+NameSet MergeTreeDataPartChecksums::getAllFiles() const
+{
+    NameSet res;
+    for (const auto & [name, _] : files)
+        res.insert(name);
+    return res;
+}
+
 /// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {

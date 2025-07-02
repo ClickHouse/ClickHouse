@@ -53,11 +53,12 @@ public:
 private:
 
     bool prepare();
+    void setDataPartPromise();
 
     enum class State : uint8_t
     {
         NEED_PREPARE,
-        NEED_EXECUTE
+        NEED_EXECUTE,
     };
 
     State state{State::NEED_PREPARE};
@@ -66,7 +67,6 @@ private:
 
     std::shared_ptr<MutationContext> ctx;
     ExecutableTaskPtr task;
-
 };
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
