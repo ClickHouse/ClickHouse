@@ -572,14 +572,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'";
+            ret += "'-999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'";
+            ret += "'999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
