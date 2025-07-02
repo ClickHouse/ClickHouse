@@ -246,7 +246,7 @@ close it.
         title = f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}"
         self.cherrypick_pr = self.repo.create_pull(
             title=title,
-            body=self.body_header(False)
+            body=self.body_header()
             + self.CHERRYPICK_DESCRIPTION.format(pr_url=self.pr.html_url)
             + self.pr_source,
             base=self.backport_branch,
@@ -284,7 +284,7 @@ close it.
         )
         self.backport_pr = self.repo.create_pull(
             title=title,
-            body=f"{self.body_header(True)}{self.BACKPORT_DESCRIPTION}{self.pr_source}",
+            body=self.body_header() + self.BACKPORT_DESCRIPTION + self.pr_source,
             base=self.name,
             head=self.backport_branch,
         )
@@ -295,7 +295,7 @@ close it.
             self.backport_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.backport_pr)
 
-    def body_header(self, with_cherry_pick: bool) -> str:
+    def body_header(self) -> str:
         """
         Returns the description of the original PR, which is used in the
         cherry-pick and backport PRs.
@@ -316,8 +316,7 @@ close it.
                 )
         original_pr = f"Original pull-request {self.pr.html_url}\n"
         cherrypick_pr = ""
-        if with_cherry_pick:
-            assert self.cherrypick_pr is not None, "BUG! Using from a wrong context"
+        if self.cherrypick_pr is not None:
             cherrypick_pr = f"Cherry-pick pull-request {self.cherrypick_pr.html_url}\n"
         return f"{upstream_pr}{original_pr}{cherrypick_pr}\n"
 
