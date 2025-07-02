@@ -6,6 +6,7 @@ import random
 import string
 import typing
 
+from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
 
 
@@ -915,7 +916,6 @@ def modify_server_settings(
     cluster: ClickHouseCluster,
     is_private_binary: bool,
     input_config_path: str,
-    possible_timezones: list[str],
 ) -> tuple[bool, str, int]:
     modified = False
     number_clusters = 0
@@ -949,8 +949,10 @@ def modify_server_settings(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
 
-    if "timezone" not in possible_properties and len(possible_timezones) > 0:
-        possible_properties["timezone"] = lambda: random.choice(possible_timezones)
+    if "timezone" not in possible_properties:
+        possible_timezones = get_system_timezones()
+        if len(possible_timezones) > 0:
+            possible_properties["timezone"] = lambda: random.choice(possible_timezones)
 
     selected_properties = {}
     # Select random properties to the XML

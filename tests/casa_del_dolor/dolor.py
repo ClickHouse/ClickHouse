@@ -311,7 +311,7 @@ logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 cluster = ClickHouseCluster(__file__)
 
 # Set environment variables such as locales and timezones
-test_env_variables, possible_timezones = set_environment_variables(logger, args)
+test_env_variables = set_environment_variables(logger, args)
 
 # Use random server settings sometimes
 server_settings = args.server_config
@@ -320,9 +320,7 @@ modified_server_settings = modified_user_settings = False
 generated_clusters = 0
 if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
-        modify_server_settings(
-            args, cluster, is_private_binary, server_settings, possible_timezones
-        )
+        modify_server_settings(args, cluster, is_private_binary, server_settings)
     )
     if generated_clusters > 0:
         modified_user_settings, user_settings = modify_user_settings(
