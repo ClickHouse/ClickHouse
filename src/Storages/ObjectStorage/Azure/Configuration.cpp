@@ -194,8 +194,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         if (connection_url.starts_with("abfss"))
         {
             auto pos_slash = connection_url.find("://");
-            auto pos_at = connection_url.find("@");
-            auto pos_dot = connection_url.find(".");
+            auto pos_at = connection_url.find('@');
+            auto pos_dot = connection_url.find('.');
             auto pos_net = connection_url.find(".net");
 
             if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos)
