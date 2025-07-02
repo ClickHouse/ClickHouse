@@ -6,6 +6,7 @@ import sys
 import tempfile
 from typing import Optional
 
+from environment import set_environment_variables
 from integration.helpers.client import CommandRequest
 from integration.helpers.cluster import ClickHouseInstance
 from integration.helpers.config_cluster import (
@@ -26,8 +27,20 @@ class Generator:
             self.temp = tempfile.NamedTemporaryFile(suffix=_suffix)
 
     @abstractmethod
-    def run_generator(self, server: ClickHouseInstance) -> CommandRequest:
+    def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         pass
+
+    def run_generator(self, server: ClickHouseInstance, logger, args) -> CommandRequest:
+        return CommandRequest(
+            self.get_run_cmd(server),
+            stdin="",
+            timeout=None,
+            ignore_error=True,
+            parse=False,
+            stdout_file_path=sys.stdout,
+            stderr_file_path=sys.stderr,
+            env=set_environment_variables(logger, args, "generator"),
+        )
 
 
 class BuzzHouseGenerator(Generator):
@@ -114,21 +127,13 @@ class BuzzHouseGenerator(Generator):
         with open(self.temp.name, "w") as file2:
             file2.write(json.dumps(buzz_config))
 
-    def run_generator(self, server: ClickHouseInstance) -> CommandRequest:
-        return CommandRequest(
-            [
-                self.binary,
-                "--client",
-                "--host",
-                f"{server.ip_address}",
-                "--port",
-                "9000",
-                f"--buzz-house-config={self.temp.name}",
-            ],
-            stdin="",
-            timeout=None,
-            ignore_error=True,
-            parse=False,
-            stdout_file_path=sys.stdout,
-            stderr_file_path=sys.stderr,
-        )
+    def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
+        return [
+            str(self.binary),
+            "--client",
+            "--host",
+            f"{server.ip_address}",
+            "--port",
+            "9000",
+            f"--buzz-house-config={self.temp.name}",
+        ]

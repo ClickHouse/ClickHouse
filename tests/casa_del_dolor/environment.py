@@ -27,7 +27,7 @@ def get_system_timezones() -> list[str]:
 
 
 # Set environment variables for cluster
-def set_environment_variables(logger, args) -> dict[str, str]:
+def set_environment_variables(logger, args, process_name: str) -> dict[str, str]:
     test_env_variables: dict[str, str] = {}
 
     possible_locales: list[str] = (
@@ -50,7 +50,9 @@ def set_environment_variables(logger, args) -> dict[str, str]:
     if len(possible_timezones) > 0:
         test_env_variables["TZ"] = random.choice(possible_timezones)
 
-    for key, value in test_env_variables.items():
-        logger.info(f"Setting environment variable {key} = {value}")
+    if len(test_env_variables) > 0:
+        logger.info(
+            f"Setting environment variable(s) for {process_name}: {' '.join([f"{key} = {value}" for key, value in test_env_variables.items()])}"
+        )
 
     return test_env_variables

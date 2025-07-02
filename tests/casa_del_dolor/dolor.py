@@ -311,7 +311,7 @@ logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 cluster = ClickHouseCluster(__file__)
 
 # Set environment variables such as locales and timezones
-test_env_variables = set_environment_variables(logger, args)
+test_env_variables = set_environment_variables(logger, args, "cluster")
 
 # Use random server settings sometimes
 server_settings = args.server_config
