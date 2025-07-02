@@ -34,19 +34,24 @@ from typing import Iterable, List, Optional
 from ci_buddy import CIBuddy
 from ci_config import Labels
 from ci_utils import Shell
-from env_helper import GITHUB_REPOSITORY, IS_CI, TEMP_PATH
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_SERVER_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
+    IS_CI,
+    TEMP_PATH,
+)
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from report import GITHUB_JOB_URL
 from ssh import SSHKey
+from synchronizer_utils import SYNC_PR_PREFIX
 
 
 class ReleaseBranch:
     STALE_THRESHOLD = 24 * 3600
-    CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
-
-This pull-request is a first step of an automated backporting.
+    CHERRYPICK_DESCRIPTION = f"""This pull-request is a first step of an automated backporting.
 It contains changes similar to calling `git cherry-pick` locally.
 If you intend to continue backporting the changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
@@ -65,10 +70,10 @@ This pull-request will be merged automatically. Please, **do not merge it manual
 If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
 want to recreate it:
 
-- delete the `{label_cherrypick}` label from the PR
+- delete the `{Labels.PR_CHERRYPICK}` label from the PR
 - delete this branch from the repository
 
-You also need to check the original PR {pr_url} for `{backport_created_label}`, and \
+You also need to check the original PR {{pr_url}} for `{Labels.PR_BACKPORTS_CREATED}`, and \
 delete if it's presented there
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
@@ -101,7 +106,6 @@ close it.
         name: str,
         pr: PullRequest,
         repo: Repository,
-        backport_created_label: str,
     ):
         self.name = name
         self.pr = pr
@@ -112,8 +116,6 @@ close it.
         self.cherrypick_pr = None  # type: Optional[PullRequest]
         self.backport_pr = None  # type: Optional[PullRequest]
         self._backported = False
-
-        self.backport_created_label = backport_created_label
 
         self.pre_check()
 
@@ -241,14 +243,11 @@ close it.
         for branch in [self.cherrypick_branch, self.backport_branch]:
             git_runner(f"{GIT_PREFIX} push -f {self.REMOTE} {branch}:{branch}")
 
+        title = f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}"
         self.cherrypick_pr = self.repo.create_pull(
-            title=f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}",
-            body=self.CHERRYPICK_DESCRIPTION.format(
-                pr_number=self.pr.number,
-                pr_url=self.pr.html_url,
-                backport_created_label=self.backport_created_label,
-                label_cherrypick=Labels.PR_CHERRYPICK,
-            )
+            title=title,
+            body=self.body_header(False)
+            + self.CHERRYPICK_DESCRIPTION.format(pr_url=self.pr.html_url)
             + self.pr_source,
             base=self.backport_branch,
             head=self.cherrypick_branch,
@@ -285,10 +284,7 @@ close it.
         )
         self.backport_pr = self.repo.create_pull(
             title=title,
-            body=f"Original pull-request {self.pr.html_url}\n"
-            f"Cherry-pick pull-request #{self.cherrypick_pr.number}\n\n"
-            f"{self.BACKPORT_DESCRIPTION}"
-            f"{self.pr_source}",
+            body=f"{self.body_header(True)}{self.BACKPORT_DESCRIPTION}{self.pr_source}",
             base=self.name,
             head=self.backport_branch,
         )
@@ -298,6 +294,32 @@ close it.
         elif Labels.PR_BUGFIX in [label.name for label in self.pr.labels]:
             self.backport_pr.add_to_labels(Labels.PR_BUGFIX)
         self._assign_new_pr(self.backport_pr)
+
+    def body_header(self, with_cherry_pick: bool) -> str:
+        """
+        Returns the description of the original PR, which is used in the
+        cherry-pick and backport PRs.
+        """
+        upstream_pr = ""
+        if self.pr.head.ref.startswith(SYNC_PR_PREFIX):
+            try:
+                upstream_pr_number = int(self.pr.head.ref.rsplit("/", maxsplit=1)[-1])
+                upstream_pr = (
+                    f"Upstream pull-request {GITHUB_SERVER_URL}/"
+                    f"{GITHUB_UPSTREAM_REPOSITORY}/pull/{upstream_pr_number}\n"
+                )
+            except ValueError:
+                logging.error(
+                    "Sync PR #%s has an invalid head ref: %s",
+                    self.pr.number,
+                    self.pr.head.ref,
+                )
+        original_pr = f"Original pull-request {self.pr.html_url}\n"
+        cherrypick_pr = ""
+        if with_cherry_pick:
+            assert self.cherrypick_pr is not None, "BUG! Using from a wrong context"
+            cherrypick_pr = f"Cherry-pick pull-request {self.cherrypick_pr.html_url}\n"
+        return f"{upstream_pr}{original_pr}{cherrypick_pr}\n"
 
     def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
         assert self.cherrypick_pr is not None
@@ -375,7 +397,6 @@ class BackportPRs:
         self.dry_run = dry_run
 
         self.must_create_backport_labels = [Labels.MUST_BACKPORT]
-        self.backport_created_label = Labels.PR_BACKPORTS_CREATED
 
         self._remote = ""
         self._remote_line = ""
@@ -460,7 +481,6 @@ class BackportPRs:
         self,
         since_date: date,
         labels_to_backport: Optional[Iterable[str]] = None,
-        backport_created_label: str = "",
     ) -> PullRequests:
         """
         Get PRs that are supposed to be backported.
@@ -469,10 +489,9 @@ class BackportPRs:
             labels_to_backport
             or self.labels_to_backport + self.must_create_backport_labels
         )
-        backport_created_label = backport_created_label or self.backport_created_label
         tomorrow = date.today() + timedelta(days=1)
         query_args = {
-            "query": f"type:pr repo:{self.repo.full_name} -label:{backport_created_label}",
+            "query": f"type:pr repo:{self.repo.full_name} -label:{Labels.PR_BACKPORTS_CREATED}",
             "label": ",".join(labels_to_backport),
             "merged": [since_date, tomorrow],
         }
@@ -505,8 +524,7 @@ class BackportPRs:
 
         if any(label in pr_labels for label in self.must_create_backport_labels):
             branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
-                for br in self.release_branches
+                ReleaseBranch(br, pr, self.repo) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
@@ -518,7 +536,6 @@ class BackportPRs:
                     ),
                     pr,
                     self.repo,
-                    self.backport_created_label,
                 )
                 for br in [
                     label.split("-", 1)[0][1:]  # v21.8-must-backport
@@ -559,11 +576,11 @@ class BackportPRs:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
-        pr.add_to_labels(self.backport_created_label)
+        pr.add_to_labels(Labels.PR_BACKPORTS_CREATED)
         logging.info(
             "PR #%s is successfully labeled with `%s`",
             pr.number,
-            self.backport_created_label,
+            Labels.PR_BACKPORTS_CREATED,
         )
 
     @property
