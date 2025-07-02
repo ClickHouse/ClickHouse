@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283
+personal_ws-1.1 en 3283 
 AArch
 ACLs
 ALTERs
@@ -341,6 +341,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -802,6 +803,8 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
+ParallelParsingInputFormatThreads
+ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
