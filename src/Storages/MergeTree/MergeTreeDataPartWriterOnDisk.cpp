@@ -6,7 +6,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
-#include "Columns/IColumn.h"
 #include <Compression/CompressionFactory.h>
 
 namespace ProfileEvents
@@ -599,31 +598,6 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
                 new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
-            }
-        }
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
-{
-    if (codec->needsVectorDimensionUpfront())
-    {
-        Field sample_field;
-        column->get(0, sample_field);
-        if (sample_field.getType() == Field::Types::Array)
-        {
-            for (size_t j = 0; j < column->size(); ++j)
-            {
-                column->get(j, sample_field);
-                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
-            }
-        }
-        if (sample_field.getType() == Field::Types::Tuple)
-        {
-            for (size_t j = 0; j < column->size(); ++j)
-            {
-                column->get(j, sample_field);
-                codec->setAndCheckVectorDimension(sample_field.safeGet<Tuple>().size());
             }
         }
     }
