@@ -1,3 +1,4 @@
+#include <memory>
 #include "config.h"
 
 #if USE_AVRO
@@ -1049,7 +1050,22 @@ ObjectIterator IcebergMetadata::iterate(
      size_t /* list_batch_size */,
      ContextPtr local_context) const
  {
-     return std::make_shared<IcebergKeysIterator>(*this, getDataFiles(filter_dag, local_context), getPositionalDeleteFiles(filter_dag, local_context), object_storage, callback);
+     auto data_files = getDataFiles(filter_dag, local_context);
+     std::vector<IcebergDataObjectInfoPtr> data_file_keys = {};
+     auto position_deletes_files
+         = std::make_unique<std::vector<Iceberg::ManifestFileEntry>>(getPositionalDeleteFiles(filter_dag, local_context));
+     for (const auto & file : data_files)
+     {
+         auto key = file.file_path;
+         auto object_metadata = object_storage->getObjectMetadata(key);
+
+         data_file_keys.push_back(std::make_shared<IcebergDataObjectInfo>(
+             *this,
+             file,
+             std::nullopt, // metadata is not used in IcebergDataObjectInfo
+             *position_deletes_files));
+     }
+     return std::make_shared<IcebergKeysIterator>(std::move(data_file_keys), std::move(position_deletes_files), object_storage, callback);
  }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
@@ -1103,7 +1119,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     std::optional<ObjectMetadata> metadata_,
     const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
     : RelativePathWithMetadata(data_object_.file_path, std::move(metadata_))
-    , data_object(data_object_)
+    , data_object_file_path_key(data_object_.file_path_key)
 {
     ///Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -1142,14 +1158,12 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
 };
 
 IcebergKeysIterator::IcebergKeysIterator(
-    const IcebergMetadata & iceberg_metadata_,
-    std::vector<Iceberg::ManifestFileEntry> && data_files_,
-    std::vector<Iceberg::ManifestFileEntry> && position_deletes_files_,
+    std::vector<IcebergDataObjectInfoPtr> && data_files_,
+    std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> && position_deletes_files_,
     ObjectStoragePtr object_storage_,
     IDataLakeMetadata::FileProgressCallback callback_)
-    : iceberg_metadata(iceberg_metadata_)
-    , data_files(data_files_)
-    , position_deletes_files(position_deletes_files_)
+    : data_files(std::move(data_files_))
+    , position_deletes_files(std::move(position_deletes_files_))
     , object_storage(object_storage_)
     , callback(callback_)
 {
@@ -1164,14 +1178,10 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
         if (current_index >= data_files.size())
             return nullptr;
 
-        auto key = data_files[current_index].file_path;
-        auto object_metadata = object_storage->getObjectMetadata(key);
-
         if (callback)
-            callback(FileProgress(0, object_metadata.size_bytes));
+            callback(FileProgress(0, data_files[current_index]->metadata->size_bytes));
 
-        return std::make_shared<IcebergDataObjectInfo>(
-            iceberg_metadata, data_files[current_index], std::move(object_metadata), position_deletes_files);
+        return data_files[current_index];
     }
 }
 }

@@ -145,11 +145,8 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         std::optional<ObjectMetadata> metadata_ = std::nullopt,
         const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {});
 
-    const Iceberg::ManifestFileEntry data_object;
     std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-
-    // Return the path in the Iceberg metadata
-    std::string getIcebergDataPath() const { return data_object.file_path_key; }
+    String data_object_file_path_key;
 };
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
@@ -157,9 +154,8 @@ class IcebergKeysIterator : public IObjectIterator
 {
 public:
     IcebergKeysIterator(
-        const IcebergMetadata & iceberg_metadata_,
-        std::vector<Iceberg::ManifestFileEntry>&& data_files_,
-        std::vector<Iceberg::ManifestFileEntry>&& position_deletes_files_,
+        std::vector<IcebergDataObjectInfoPtr> && data_files_,
+        std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> && position_deletes_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_);
 
@@ -171,9 +167,8 @@ public:
     ObjectInfoPtr next(size_t) override;
 
 private:
-    const IcebergMetadata & iceberg_metadata;
-    std::vector<Iceberg::ManifestFileEntry> data_files;
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
+    std::vector<IcebergDataObjectInfoPtr> data_files;
+    std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> position_deletes_files;
     ObjectStoragePtr object_storage;
     std::atomic<size_t> index = 0;
     IDataLakeMetadata::FileProgressCallback callback;
