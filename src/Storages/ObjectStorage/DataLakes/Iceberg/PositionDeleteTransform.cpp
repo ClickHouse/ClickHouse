@@ -70,16 +70,6 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_read_buffers.push_back(StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, context, log));
 
-        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
-        std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-        std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
-        {
-            if (actions.has_value())
-                return std::make_shared<const ActionsDAG>(std::move(actions.value()));
-            return std::shared_ptr<const ActionsDAG>();
-        }();
-
         auto delete_format = FormatFactory::instance().getInput(
             delete_object_format,
             *delete_read_buffers.back(),
@@ -87,9 +77,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            std::make_shared<FormatParserGroup>(context->getSettingsRef(), 1, actions_dag_ptr, context),
+            1,
+            std::nullopt,
             true /* is_remote_fs */,
             compression_method);
+
+        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
+        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
+        const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
+        delete_format->setKeyCondition(actions, context);
 
         delete_sources.push_back(std::move(delete_format));
     }
@@ -156,6 +152,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
         }
     }
 }
+
 }
 
 #endif
