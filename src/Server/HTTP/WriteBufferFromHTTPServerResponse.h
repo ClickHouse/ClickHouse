@@ -80,7 +80,7 @@ private:
     void startSendHeaders();
 
     /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
-    void writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode);
+    void writeHeaderProgressImpl(const char * header_name);
     /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
     /// Used to write the header X-ClickHouse-Summary
@@ -97,6 +97,8 @@ private:
 
     bool is_http_method_head;
     bool add_cors_header = false;
+
+    bool initialized = false;
 
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.

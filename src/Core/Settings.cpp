@@ -3976,12 +3976,9 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE P
 
 Possible values:
 
-| Value | Description                                                                                                                                           |
-|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                                                                                                     |
-| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
-| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for all mutations to complete on the current server.
+- 2 - The query waits for all mutations to complete on all replicas (if they exist).
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -3999,12 +3996,9 @@ The same as [`mutations_sync`](#mutations_sync), but controls only execution of 
 
 Possible values:
 
-| Value | Description                                                                                                                                           |
-|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                                                                                                     |
-| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
-| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+- 0 - Mutations execute asynchronously.
+- 1 - The query waits for the lightweight deletes to complete on the current server.
+- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
 
 **See Also**
 
@@ -4171,12 +4165,12 @@ Possible values:
       0 — Disabled.
       1 — Enabled.
 
-When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
-This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
+Usage
 
-**See Also**
-
-- [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
+By default, deduplication is not performed for materialized views but is done upstream, in the source table.
+If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
+At the same time, this behaviour "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
+ignoring check result for the source table, and will insert rows lost because of the first failure.
 )", 0) \
     DECLARE(Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, true, R"(
 Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependent_materialized_views` is enabled along with `async_insert`. It guarantees correctness, because these features can't work together.
@@ -5459,9 +5453,6 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
-    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
-Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
-)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
@@ -5533,7 +5524,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiif), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -5635,9 +5626,6 @@ Max wait time when trying to read data for remote disk
 )", 0) \
     DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
 Max attempts to read with backoff
-)", 0) \
-    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
-If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
@@ -6134,7 +6122,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
     DECLARE(Bool, use_variant_as_common_type, false, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
 
@@ -6875,9 +6863,6 @@ Possible values:
  - '' - do not force any kind of Exchange operators, let the optimizer choose,
  - 'Persisted' - use temporary files in object storage,
  - 'Streaming' - stream exchange data over network.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
-Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \

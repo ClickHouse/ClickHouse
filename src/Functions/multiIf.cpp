@@ -559,11 +559,11 @@ All branch and else expressions must have a common supertype. `NULL` conditions 
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"cond_N", "The N-th evaluated condition which controls if `then_N` is returned.", {"UInt8", "Nullable(UInt8)", "NULL"}},
+        {"cond_N", "The N-th evaluated condition which controls if `then_N` is returned. Each must be UInt8, Nullable(UInt8), or NULL."},
         {"then_N", "The result of the function when `cond_N` is true."},
         {"else", "The result of the function if none of the conditions is true."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of `then_N` for matching `cond_N`, otherwise returns the `else` condition."};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of `then_N` for matching `cond_N`, otherwise returns the `else` condition.";
     FunctionDocumentation::Examples examples = {
         {"Example usage", R"(
 CREATE TABLE LEFT_RIGHT (left Nullable(UInt8), right Nullable(UInt8)) ENGINE = Memory;

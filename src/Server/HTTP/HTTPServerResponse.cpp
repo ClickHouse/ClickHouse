@@ -8,7 +8,6 @@
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPHeaderStream.h>
-#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPStream.h>
 #include <IO/NullWriteBuffer.h>
 
@@ -68,34 +67,20 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
     }
 
     Poco::Net::HTTPHeaderOutputStream hs(session);
-    writeStatusAndHeaders(hs);
+    beginWrite(hs);
+    hs << "\r\n";
+    hs.flush();
 
     return stream;
 }
 
 /// Only this method is called inside WriteBufferFromHTTPServerResponse
-void HTTPServerResponse::writeStatus(std::ostream & ostr)
-{
-    ostr << getVersion() << " " << static_cast<int>(getStatus()) << " " << getReason() << "\r\n";
-    ostr.flush();
-}
-
-/// Only this method is called inside WriteBufferFromHTTPServerResponse
-void HTTPServerResponse::writeHeaders(std::ostream & ostr)
+void HTTPServerResponse::beginWrite(std::ostream & ostr)
 {
     allowKeepAliveIFFRequestIsFullyRead();
 
-    Poco::Net::HTTPMessage::write(ostr); // NOLINT (bugprone-parent-virtual-call)
-    ostr << "\r\n";
-    ostr.flush();
-
+    HTTPResponse::beginWrite(ostr);
     send_started = true;
-}
-
-void HTTPServerResponse::writeStatusAndHeaders(std::ostream & ostr)
-{
-    writeStatus(ostr);
-    writeHeaders(ostr);
 }
 
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
@@ -105,7 +90,9 @@ void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
 
     // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
-    writeStatusAndHeaders(hs);
+    beginWrite(hs);
+    hs << "\r\n";
+    hs.flush();
 
     if (request && request->getMethod() != HTTPRequest::HTTP_HEAD)
     {
@@ -138,7 +125,9 @@ void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
 
     // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
-    writeStatusAndHeaders(hs);
+    beginWrite(hs);
+    hs << "\r\n";
+    hs.flush();
 }
 
 void HTTPServerResponse::allowKeepAliveIFFRequestIsFullyRead()

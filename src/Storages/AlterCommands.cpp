@@ -1153,14 +1153,10 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropOrRename() const
+bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN
-        || type == Type::DROP_INDEX
-        || type == Type::DROP_STATISTICS
-        || type == Type::DROP_CONSTRAINT
-        || type == Type::DROP_PROJECTION
-        || type == Type::RENAME_COLUMN;
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
+        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const

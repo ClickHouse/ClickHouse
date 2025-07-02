@@ -9,18 +9,18 @@ using FunctionAddMicroseconds = FunctionDateOrDateTimeAddInterval<AddMicrosecond
 
 REGISTER_FUNCTION(AddMicroseconds)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_addMicroseconds = R"(
 Adds a specified number of microseconds to a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_addMicroseconds = R"(
 addMicroseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date with time to add specified number of microseconds to.", {"DateTime", "DateTime64", "String"}},
-        {"num", "Number of microseconds to add.", {"(U)Int*", "Float*"}}
+    FunctionDocumentation::Arguments arguments_addMicroseconds = {
+        {"datetime", "Date with time to add specified number of microseconds to. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
+        {"num", "Number of microseconds to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `date_time` plus `num` microseconds", {"DateTime64"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_addMicroseconds = "Returns `date_time` plus `num` microseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_addMicroseconds = {
         {"Add microseconds to different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -43,11 +43,19 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 └────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_addMicroseconds = {22, 6};
+    FunctionDocumentation::Category category_addMicroseconds = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addMicroseconds = {
+        description_addMicroseconds,
+        syntax_addMicroseconds,
+        arguments_addMicroseconds,
+        returned_value_addMicroseconds,
+        examples_addMicroseconds,
+        introduced_in_addMicroseconds,
+        category_addMicroseconds
+    };
 
-    factory.registerFunction<FunctionAddMicroseconds>(documentation);
+    factory.registerFunction<FunctionAddMicroseconds>(documentation_addMicroseconds);
 }
 
 }
