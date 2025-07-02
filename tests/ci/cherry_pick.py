@@ -588,9 +588,12 @@ class CherryPickPRs:
         """
         Get all open cherry-pick PRs in the repository.
         """
-        query = f"type:pr repo:{self.repo.full_name} label:{Labels.PR_CHERRYPICK}"
-        logging.info("Query to find the cherry-pick PRs:\n %s", query)
-        return self.gh.get_pulls_from_search(query=query, state="open")
+        query_args = {
+            "query": f"type:pr repo:{self.repo.full_name} label:{Labels.PR_CHERRYPICK}",
+            "state": "open",
+        }
+        logging.info("Query to find the cherry-pick PRs:\n %s", query_args)
+        return self.gh.get_pulls_from_search(**query_args)
 
     def remove_backported_labels(self) -> None:
         """
@@ -599,6 +602,7 @@ class CherryPickPRs:
         """
         try:
             prs = self.get_open_cherry_pick_prs()
+            logging.info("Found %d open cherry-pick PRs", len(prs))
         except Exception as e:
             logging.error("Error while getting open cherry-pick PRs: %s", e)
             self.error = e
