@@ -39,7 +39,7 @@ Databases with the `DataLakeCatalog` engine can be created using the following s
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
 SETTINGS
-catalog_type
+catalog_type,
 [...]
 ```
 
