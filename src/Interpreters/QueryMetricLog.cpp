@@ -209,10 +209,10 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
         /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
         query_status.info.task = {};
+        query_lock.unlock();
 
         global_lock.lock();
         queries.erase(query_id);
-        query_lock.unlock();
 
         /// Ensure `queries_mutex` is unlocked before calling task's destructor at the end of this
         /// scope which will lock `exec_mutex`.
