@@ -409,7 +409,11 @@ client = generator.run_generator(servers[0])
 def dolor_cleanup():
     if client.process.poll() is None:
         client.process.kill()
-    cluster.shutdown()
+        client.process.wait()
+    try:
+        cluster.shutdown()
+    except:
+        pass
     if modified_server_settings:
         try:
             os.unlink(server_settings)
