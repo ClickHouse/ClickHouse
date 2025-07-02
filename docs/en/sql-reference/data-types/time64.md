@@ -26,6 +26,8 @@ Unlike DateTime64, Time64 does not store a date component, meaning that it only 
 
 Supported range of values: \[-999:59:59.999999999, 999:59:59.999999999\]
 
+The number of digits after the decimal point depends on the precision parameter.
+
 ## Examples {#examples}
 
 1. Creating a table with `Time64`-type column and inserting data into it:
