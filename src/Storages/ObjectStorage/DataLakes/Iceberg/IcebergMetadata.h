@@ -20,8 +20,7 @@
 #include <base/defines.h>
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
 namespace DB
 {
@@ -82,6 +81,12 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    std::optional<Iceberg::IcebergSnapshot> getRelevantSnapshot(ContextPtr local_context) const override
+    {
+        SharedLockGuard lock(mutex);
+        return relevant_snapshot;
+    }
+
 
     friend class IcebergKeysIterator;
     friend struct IcebergDataObjectInfo;
@@ -136,49 +141,6 @@ private:
 
     std::vector<Iceberg::ManifestFileEntry> getFilesImpl(const ActionsDAG * filter_dag, Iceberg::FileContentType file_content_type, ContextPtr local_context) const;
 };
-
-struct IcebergDataObjectInfo : public RelativePathWithMetadata
-{
-    explicit IcebergDataObjectInfo(
-        const IcebergMetadata & iceberg_metadata,
-        Iceberg::ManifestFileEntry data_object_,
-        std::optional<ObjectMetadata> metadata_ = std::nullopt,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {});
-
-    const Iceberg::ManifestFileEntry data_object;
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-
-    // Return the path in the Iceberg metadata
-    std::string getIcebergDataPath() const { return data_object.file_path_key; }
-};
-using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
-
-class IcebergKeysIterator : public IObjectIterator
-{
-public:
-    IcebergKeysIterator(
-        const IcebergMetadata & iceberg_metadata_,
-        std::vector<Iceberg::ManifestFileEntry>&& data_files_,
-        std::vector<Iceberg::ManifestFileEntry>&& position_deletes_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_);
-
-    size_t estimatedKeysCount() override
-    {
-        return data_files.size();
-    }
-
-    ObjectInfoPtr next(size_t) override;
-
-private:
-    const IcebergMetadata & iceberg_metadata;
-    std::vector<Iceberg::ManifestFileEntry> data_files;
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
-    ObjectStoragePtr object_storage;
-    std::atomic<size_t> index = 0;
-    IDataLakeMetadata::FileProgressCallback callback;
-};
-
 }
 
 #endif
