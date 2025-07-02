@@ -214,7 +214,7 @@ BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 SELECT
     *
 FROM system.backups
-where id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
 FORMAT Vertical
 ```
 ```response

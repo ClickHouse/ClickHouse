@@ -39,7 +39,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("part {} with ranges [{}]", info.getPartNameV1(), fmt::join(ranges, ","));
+    result += fmt::format("{}[{}]", info.getPartNameV1(), fmt::join(ranges, ","));
     return result;
 }
 
