@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query-id="$same_query_not_finish" -q "SELECT 'a' SETTINGS q
 
 # In this case, we let the first one running a little bit and run the second one so that it cancels the first one.
 $CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(3) SETTINGS query_metric_log_interval=0, replace_running_query=0 FORMAT Null; -- { serverError QUERY_WAS_CANCELLED }" &
-sleep 2
+sleep 0.2
 $CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(3) SETTINGS query_metric_log_interval=100, replace_running_query=1 FORMAT Null;"
 
 wait
