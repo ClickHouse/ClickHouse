@@ -92,7 +92,7 @@ namespace ErrorCodes
 
 Connection::~Connection()
 {
-    if (isConnected())
+    if (Connection::isConnected())
         Connection::disconnect();
 }
 
