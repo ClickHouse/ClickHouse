@@ -68,6 +68,12 @@ MESSAGES_TO_RETRY = [
     "Unable to get registers from thread",
 ]
 
+IGNORED_SANITIZER_ERRORS = [
+    "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!",
+    # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
+    #"LLVM ERROR: IO failure on output stream: Broken pipe",
+]
+
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
@@ -947,6 +953,7 @@ class FailureReason(enum.Enum):
     NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
+    NO_OPENSSL_FIPS = "no-openssl-fips"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1421,7 +1428,7 @@ class TestCase:
         self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
-        self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
+        self.tags: Set[str] = suite.all_tags[case]
         self.random_settings_limits = (
             suite.all_random_settings_limits[case]
             if case in suite.all_random_settings_limits
@@ -1549,7 +1556,7 @@ class TestCase:
 
         if tags and ("no-fasttest" in tags) and args.fast_tests_only:
             return FailureReason.FAST_ONLY
-        
+
         if tags and ("fasttest-only" in tags) and not args.fast_tests_only:
             return FailureReason.NOT_FAST_ONLY
 
@@ -1612,6 +1619,8 @@ class TestCase:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
             return FailureReason.NO_STATELESS
+        if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
+            return FailureReason.NO_OPENSSL_FIPS
 
         if tags:
             for build_flag in args.build_flags:
@@ -1652,7 +1661,9 @@ class TestCase:
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
-                content = "\n".join(filter(lambda l: "ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!" not in l, content.splitlines()))
+                def ignore_sanitizer_line(line):
+                    return any(filter(lambda exception: exception in line, IGNORED_SANITIZER_ERRORS))
+                content = "\n".join(filter(lambda line: not ignore_sanitizer_line(line), content.splitlines())).strip()
                 if content:
                     stderr += f"Path: {path}\n"
                     stderr += content
@@ -1874,6 +1885,8 @@ class TestCase:
                 print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
+
+            # FIXME: This is a race condition
             file_pattern = "coverage.*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
@@ -1889,8 +1902,13 @@ class TestCase:
                     )
                 except Exception as e:
                     print("Cannot insert coverage data: ", str(e))
+
                 # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print("FIXME: Race! Cannot remove coverage file: ", str(e))
+            # FIXME: This is a race condition. END
 
             _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
 
@@ -1930,6 +1948,9 @@ class TestCase:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
         self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # Ensure that we start with empty files
+        for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
+            os.remove(path)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -2440,8 +2461,7 @@ class TestSuite:
             ) = load_tags_and_random_settings_limits_from_file(
                 os.path.join(suite_dir, test_name)
             )  # noqa: ignore E203
-            if tags:
-                all_tags[test_name] = tags
+            all_tags[test_name] = tags or set()
             if random_settings_limits:
                 all_random_settings_limits[test_name] = random_settings_limits
         elapsed = (datetime.now() - start_time).total_seconds()
@@ -2496,13 +2516,20 @@ class TestSuite:
         self.all_tests = self.apply_test_runs(all_tests)
         self.all_tests.sort(key=self.tests_in_suite_key_func)
 
+        post_run_check_tests = []
+
         for test_name in self.all_tests:
+            if "post-run-check" in self.all_tags[test_name]:
+                # post_run_check_tests are tests that supposed to run after all normal tests finished
+                post_run_check_tests.append(test_name)
+                continue
             if self.is_sequential_test(test_name):
                 if not args.no_sequential:
                     self.sequential_tests.append(test_name)
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+        self.sequential_tests.extend(post_run_check_tests)
 
     def apply_test_runs(self, all_tests):
         test_runs = self.args.test_runs
@@ -2734,7 +2761,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1))
+                signal.alarm(int(args.timeout * 1.1) + 5)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -2993,7 +3020,13 @@ def run_tests_process(*args_, **kwargs):
 
 
 def do_run_tests(
-    jobs, test_suite: TestSuite, args, exit_code, restarted_tests, server_died
+    jobs,
+    test_suite: TestSuite,
+    args,
+    exit_code,
+    restarted_tests,
+    server_died,
+    runner_process_killed,
 ):
     print(
         "Found",
@@ -3074,7 +3107,14 @@ def do_run_tests(
 
             for p in processes[:]:
                 if not p.is_alive():
+                    # Check if process was killed with exception
+                    if p.exitcode is not None and p.exitcode != 0:
+                        print(
+                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
+                        )
+                        runner_process_killed.set()
                     processes.remove(p)
+
     if test_suite.sequential_tests:
         run_tests_array(
             (
@@ -3333,6 +3373,7 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
+    runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
 
@@ -3465,10 +3506,19 @@ def main(args):
         test_suite.private_skip_list = private_skip_list
         test_suite.blacklist_check = blacklist_check
         total_tests_run += do_run_tests(
-            args.jobs, test_suite, args, exit_code, restarted_tests, server_died
+            args.jobs,
+            test_suite,
+            args,
+            exit_code,
+            restarted_tests,
+            server_died,
+            runner_process_killed,
         )
 
     if server_died.is_set():
+        exit_code.value = 1
+
+    if runner_process_killed.is_set():
         exit_code.value = 1
 
     if args.hung_check:
@@ -3947,6 +3997,12 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
         help="Replace *Log and Memory engines with MergeTree",
+    )
+    parser.add_argument(
+        "--openssl-fips",
+        action="store_true",
+        default=False,
+        help="Do not include tests that fail in OpenSSL FIPS mode",
     )
 
     parser.add_argument(

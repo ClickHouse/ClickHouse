@@ -1,4 +1,4 @@
-#include "LocalServer.h"
+#include <LocalServer.h>
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -16,7 +16,7 @@
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabasesOverlay.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -129,9 +129,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
-    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
-    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
 }
 
 namespace ErrorCodes
@@ -269,11 +266,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
-
-    getFormatParsingThreadPool().initialize(
-        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
-        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
-        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 }
 
 
@@ -291,7 +283,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 
@@ -575,8 +567,6 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    thread_status.emplace();
-
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
     setupSignalHandler();
@@ -643,7 +633,8 @@ try
     /// Must be called after we stopped initializing the global context and changing its settings.
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
-    createClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {
@@ -902,7 +893,7 @@ void LocalServer::processConfig()
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
-    adjustSettings();
+    adjustSettings(global_context);
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -1080,16 +1071,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
-}
-
-
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("path"))
@@ -1172,6 +1153,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::LocalServer app;

@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <optional>
-#include "ObjectStorageKey.h"
+#include <Common/ObjectStorageKey.h>
 
 namespace DB
 {

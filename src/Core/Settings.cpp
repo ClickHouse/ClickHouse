@@ -27,7 +27,7 @@
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 0;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
@@ -3976,9 +3976,12 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE P
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for all mutations to complete on the current server.
-- 2 - The query waits for all mutations to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
+| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -3996,9 +3999,12 @@ The same as [`mutations_sync`](#mutations_sync), but controls only execution of 
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for the lightweight deletes to complete on the current server.
-- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
+| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
@@ -4165,12 +4171,12 @@ Possible values:
       0 — Disabled.
       1 — Enabled.
 
-Usage
+When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
+This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
 
-By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of the first failure.
+**See Also**
+
+- [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, true, R"(
 Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependent_materialized_views` is enabled along with `async_insert`. It guarantees correctness, because these features can't work together.
@@ -5453,6 +5459,9 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
+Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
@@ -5626,6 +5635,9 @@ Max wait time when trying to read data for remote disk
 )", 0) \
     DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
 Max attempts to read with backoff
+)", 0) \
+    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
+If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
@@ -6675,6 +6687,13 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
+)", 0) \
+    DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
+Allows to change the behaviour of the result type of `dateTrunc` function.
+
+Possible values:
+- 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
+- 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
     \
     /* ####################################################### */ \
