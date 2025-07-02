@@ -7207,7 +7207,6 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     if (!reservation)
     {
         LOG_TRACE(log, "Trying to reserve {} using storage policy from min volume index {}", ReadableSize(expected_size), min_volume_index);
-        auto reservation_or_error = getStoragePolicy()->reserve(expected_size, min_volume_index);
         reservation = getStoragePolicy()->reserve(expected_size, min_volume_index).value_or(nullptr);
     }
 
