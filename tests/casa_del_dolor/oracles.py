@@ -65,8 +65,7 @@ def collect_table_hash_before_shutdown(
             FROM system.tables
             WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
               AND NOT is_temporary
-              AND engine NOT IN ('Merge', 'GenerateRandom', 'Memory')
-              AND NOT match(engine, '.*View.*|Dictionary.*');
+              AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory');
             """
         )
         if not isinstance(tables_str, str) or tables_str == "":
