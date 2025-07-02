@@ -32,7 +32,8 @@ $CLICKHOUSE_CLIENT -q """
     WHERE
         event_date >= yesterday()
         AND query_id = '$same_query_not_finish'
-        AND query LIKE 'SELEC%';
+        AND query LIKE 'SELECT%'
+        AND current_database = currentDatabase();
     SELECT if(count() > 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '$same_query_not_finish';
 """
 
@@ -48,6 +49,7 @@ $CLICKHOUSE_CLIENT -q """
     WHERE
         event_date >= yesterday()
         AND query_id = '$same_query_finish'
-        AND query LIKE 'SELEC%';
+        AND query LIKE 'SELECT%'
+        AND current_database = currentDatabase();
     SELECT if(count() > 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '$same_query_finish';
 """
