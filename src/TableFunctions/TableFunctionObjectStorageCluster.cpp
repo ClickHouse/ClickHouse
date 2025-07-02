@@ -47,7 +47,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* distributed_processing */ true,
             /* partition_by_ */nullptr,
             /* is_table_function */true,
-            /*lazy_init*/ true);
+            /* lazy_init */ true);
     }
     else
     {
