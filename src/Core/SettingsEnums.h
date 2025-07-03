@@ -421,4 +421,13 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class S3UriStyleIdentifierMode : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyleIdentifierMode)
+
 }

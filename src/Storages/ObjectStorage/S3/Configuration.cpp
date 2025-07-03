@@ -21,6 +21,7 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -36,6 +37,7 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
+    extern const SettingsS3UriStyleIdentifierMode s3_uri_style_identifier_mode;
 }
 
 namespace S3AuthSetting
@@ -357,8 +359,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
-
+    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax], context->getSettingsRef()[Setting::s3_uri_style_identifier_mode]);
     s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))

@@ -9,8 +9,8 @@
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Core/SettingsEnums.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-
 
 namespace DB
 {
@@ -25,13 +25,15 @@ struct S3ObjectStorageSettings
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
-        bool read_only_)
+        bool read_only_,
+        S3UriStyleIdentifierMode uri_style_identifier_mode_)
         : request_settings(request_settings_)
         , auth_settings(auth_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , read_only(read_only_)
+        , uri_style_identifier_mode(uri_style_identifier_mode_)
     {}
 
     S3::S3RequestSettings request_settings;
@@ -41,6 +43,7 @@ struct S3ObjectStorageSettings
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
     bool read_only;
+    S3UriStyleIdentifierMode uri_style_identifier_mode;
 };
 
 class S3ObjectStorage : public IObjectStorage

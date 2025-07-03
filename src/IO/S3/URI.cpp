@@ -10,7 +10,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-
+#include <iostream>
 
 namespace DB
 {
@@ -27,27 +27,20 @@ struct URIConverter
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int NOT_IMPLEMENTED;
+    
 }
 
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyleIdentifierMode uri_style)
 {
-    /// Case when bucket name represented in domain name of S3 URL.
-    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss-data-acc|oss|eos)([.\-][a-z0-9\-.:]+))");
-
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
     static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce\.amazonaws\.com(:\d{1,5})?)");
-
-    /// Case when bucket name and key represented in the path of S3 URL.
-    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
 
     if (allow_archive_path_syntax)
         std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
@@ -106,56 +99,100 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         uri = Poco::URI(uri_with_question_mark_encode);
     }
 
-    String name;
-    String endpoint_authority_from_uri;
-
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
 
-    if (!is_using_aws_private_link_interface
-        && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+    if (uri_style == S3UriStyleIdentifierMode::AUTO)
     {
-        is_virtual_hosted_style = true;
-        if (name == "oss-data-acc")
-        {
-            bucket = bucket.substr(0, bucket.find('.'));
-            endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
-        }
-        else
-        {
-            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-        }
-
-        if (!uri.getPath().empty())
-        {
-            /// Remove leading '/' from path to extract key.
-            key = uri.getPath().substr(1);
-        }
-
-        boost::to_upper(name);
-        if (name == "COS")
-            storage_name = "COSN";
-        else
-            storage_name = name;
+        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, true))
+            if (!tryInitPathStyle())
+            {
+                /// Custom endpoint, e.g. a public domain of Cloudflare R2,
+                /// which could be served by a custom server-side code.
+                storage_name = "S3";
+                bucket = "default";
+                is_virtual_hosted_style = false;
+                endpoint = uri.getScheme() + "://" + uri.getAuthority();
+                if (!uri.getPath().empty())
+                    key = uri.getPath().substr(1);
+            }
     }
-    else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+    else if (uri_style == S3UriStyleIdentifierMode::VIRTUAL_HOSTED)
     {
-        is_virtual_hosted_style = false;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? uri.toString() : "");
+
+    }
+    else if (uri_style == S3UriStyleIdentifierMode::PATH)
+    {
+        if (!tryInitPathStyle())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? uri.toString() : "");
     }
     else
     {
-        /// Custom endpoint, e.g. a public domain of Cloudflare R2,
-        /// which could be served by a custom server-side code.
-        storage_name = "S3";
-        bucket = "default";
-        is_virtual_hosted_style = false;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        if (!uri.getPath().empty())
-            key = uri.getPath().substr(1);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "URI Style Indetifier unknown type.");
     }
 
     validateBucket(bucket, uri);
     validateKey(key, uri);
+}
+
+
+bool URI::tryInitPathStyle()
+{
+    /// Case when bucket name and key represented in the path of S3 URL.
+    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
+    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
+    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
+
+    if (!re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+        return false;
+
+    is_virtual_hosted_style = false;
+    endpoint = uri.getScheme() + "://" + uri.getAuthority();
+    return true;
+}
+
+bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern)
+{
+    /// Case when bucket name represented in domain name of S3 URL.
+    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
+    /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
+    static const RE2 virtual_hosted_style_pattern_strict(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss-data-acc|oss|eos)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern_light(R"(([\-a-z0-9]+)\.([\-a-z0-9]+)([.\-][a-z0-9\-.:]+))");
+
+    if (is_using_aws_private_link_interface)
+        return false;
+    
+    String name;
+    String endpoint_authority_from_uri;
+    std::cerr << uri.getAuthority() << "\n";
+    
+    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+        return false;
+
+    is_virtual_hosted_style = true;
+    if (name == "oss-data-acc")
+    {
+        bucket = bucket.substr(0, bucket.find('.'));
+        endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
+    }
+    else
+    {
+        endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+    }
+
+    if (!uri.getPath().empty())
+    {
+        /// Remove leading '/' from path to extract key.
+        key = uri.getPath().substr(1);
+    }
+
+    boost::to_upper(name);
+    if (name == "COS")
+        storage_name = "COSN";
+    else
+        storage_name = name;
+    return true;
 }
 
 void URI::addRegionToURI(const std::string &region)

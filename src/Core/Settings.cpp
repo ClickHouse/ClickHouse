@@ -6654,6 +6654,9 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \
+    DECLARE(S3UriStyleIdentifierMode, s3_uri_style_identifier_mode, S3UriStyleIdentifierMode::AUTO, R"(
+Force the s3 endpoint style. Possible valuse: auto, virtual_hosted, path.
+)", 0) \
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \

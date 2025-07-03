@@ -4,6 +4,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3Common.h>
+#include <Core/SettingsEnums.h>
 
 namespace
 {
@@ -227,6 +228,22 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("ab-test", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
+        S3::URI uri("https://some-bucket-name123.yet.another.object-storage.com/a/b/c", false, S3UriStyleIdentifierMode::VIRTUAL_HOSTED);
+        ASSERT_EQ("https://yet.another.object-storage.com", uri.endpoint);
+        ASSERT_EQ("some-bucket-name123", uri.bucket);
+        ASSERT_EQ("a/b/c", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
+        S3::URI uri("https://strage-prefix.s3.yet.another.object-storage.com/bucket-name123/a/b/c", false, S3UriStyleIdentifierMode::PATH);
+        ASSERT_EQ("https://strage-prefix.s3.yet.another.object-storage.com", uri.endpoint);
+        ASSERT_EQ("bucket-name123", uri.bucket);
+        ASSERT_EQ("a/b/c", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
 }
 

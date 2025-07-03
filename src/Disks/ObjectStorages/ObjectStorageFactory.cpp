@@ -151,7 +151,8 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
+    auto uri_style_indetifier_mode =  SettingFieldS3UriStyleIdentifierModeTraits::fromString(config.getString(config_prefix + ".s3_uri_style_identifier_mode", "auto"));
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, uri_style_indetifier_mode);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
