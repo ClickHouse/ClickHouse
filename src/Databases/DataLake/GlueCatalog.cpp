@@ -10,6 +10,7 @@
 #include <aws/glue/model/GetDatabasesRequest.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentMetrics.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -71,6 +72,12 @@ namespace DB::DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString region;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric MarkCacheBytes;
+    extern const Metric MarkCacheFiles;
+}
+
 namespace DataLake
 {
 
@@ -86,6 +93,7 @@ GlueCatalog::GlueCatalog(
     , region(settings_[DB::DatabaseDataLakeSetting::region].value)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
+    , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
@@ -432,7 +440,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
         storage_settings->loadFromSettingsChanges(settings.allChanged());
-        auto configuration = std::make_shared<DB::StorageS3DeltaLakeConfiguration>(storage_settings);
+        auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
         DB::StorageObjectStorage::Configuration::initialize(*configuration, args, getContext(), false);
 
         auto object_storage = configuration->createObjectStorage(getContext(), true);
@@ -445,11 +453,12 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);
-        metadata_objects.add(metadata_path, result.extract<Poco::JSON::Object::Ptr>());
+        auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
+        metadata_objects.set(metadata_path, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
     auto metadata_object = *metadata_objects.get(metadata_path);
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray("schemas");
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));

@@ -9,6 +9,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
 
+#include <Common/CacheBase.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 
 namespace Aws::Glue
@@ -73,7 +74,7 @@ private:
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
-    mutable Poco::LRUCache<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
 
 }
