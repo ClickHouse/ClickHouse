@@ -171,6 +171,7 @@ def main():
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
             run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+            run_shell("clang-tidy-cache logs", "cat /tmp/clang-tidy-cache.log")
         else:
             targets = "clickhouse-bundle"
         results.append(
