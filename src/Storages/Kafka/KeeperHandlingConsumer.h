@@ -150,6 +150,7 @@ private:
     KafkaConsumer2Ptr kafka_consumer;
     zkutil::ZooKeeperPtr keeper;
     size_t topic_partition_index_to_consume_from{0};
+    // TODO: handle KafkaAssignedPartitions and KafkaConsumersWithAssignment metric when assigned_topic_partitions is modified
     TopicPartitions assigned_topic_partitions{};
     size_t poll_count = 0;
 
@@ -165,7 +166,6 @@ private:
     std::atomic<UInt64> last_poll_timestamp = 0;
     std::atomic<UInt64> last_commit_timestamp = 0;
     std::atomic<UInt64> num_commits = 0;
-    // TODO(antaljanosbenjamin): what about rebalance based statistics?
     std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;

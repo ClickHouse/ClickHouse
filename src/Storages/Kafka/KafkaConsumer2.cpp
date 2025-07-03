@@ -148,6 +148,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 {
     resetIfStopped();
 
+    // TODO: `polledDataUnusable` should be renamed to `clearMessagesIfNotSameTopicPartition` and it should be okay to continue without returning nullptr.
     if (polledDataUnusable(topic_partition))
         return nullptr;
 
