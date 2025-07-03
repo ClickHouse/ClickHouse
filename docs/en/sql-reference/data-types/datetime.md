@@ -23,7 +23,7 @@ Resolution: 1 second.
 
 ## Speed {#speed}
 
-The `Date` data type is faster than `DateTime` under _most_ conditions.
+The `Date` datatype is faster than `DateTime` under _most_ conditions.
 
 The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
 
@@ -115,8 +115,8 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 
 ```sql
 SELECT
-toDateTime(timestamp, 'Europe/London') AS lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') AS mos_time
+toDateTime(timestamp, 'Europe/London') as lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 

@@ -248,7 +248,6 @@ public:
     /// Appends "default value" multiple times.
     virtual void insertManyDefaults(size_t length)
     {
-        reserve(size() + length);
         for (size_t i = 0; i < length; ++i)
             insertDefault();
     }
@@ -575,7 +574,7 @@ public:
 
     /// Fills column values from list of blocks and row numbers
     /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums);
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -817,9 +816,9 @@ private:
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
 
-    /// Fills column values from list of columns and row numbers
-    /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums) override;
+    /// Fills column values from list of blocks and row numbers
+    /// `blocks` and `row_nums` must have same size
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

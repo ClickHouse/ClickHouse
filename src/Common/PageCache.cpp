@@ -1,4 +1,4 @@
-#include <Common/PageCache.h>
+#include "PageCache.h"
 
 #include <sys/mman.h>
 #include <Common/Allocator.h>
@@ -7,14 +7,7 @@
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric PageCacheBytes;
-    extern const Metric PageCacheCells;
-}
 
 namespace ProfileEvents
 {
@@ -64,11 +57,7 @@ PageCache::PageCache(
     num_shards = std::max(num_shards, 1ul);
     size_t bytes_per_shard = (min_size_in_bytes + num_shards - 1) / num_shards;
     for (size_t i = 0; i < num_shards; ++i)
-    {
-        shards.push_back(std::make_unique<Shard>(cache_policy,
-            CurrentMetrics::PageCacheBytes, CurrentMetrics::PageCacheCells,
-            bytes_per_shard, Base::NO_MAX_COUNT, size_ratio));
-    }
+        shards.push_back(std::make_unique<Shard>(cache_policy, bytes_per_shard, Base::NO_MAX_COUNT, size_ratio));
 }
 
 PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
@@ -145,10 +134,9 @@ bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
     return shard.contains(key_hash);
 }
 
-void PageCache::Shard::onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr)
+void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
 {
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
-    UNUSED(mapped_ptr);
 }
 
 void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)

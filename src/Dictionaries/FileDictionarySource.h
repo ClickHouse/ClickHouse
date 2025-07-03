@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Poco/Timestamp.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "IDictionarySource.h"
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

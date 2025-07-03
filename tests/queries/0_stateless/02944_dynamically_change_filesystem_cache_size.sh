@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-disk_name="s3_cache_02944_lru"
+disk_name="s3_cache_02944"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"

@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>

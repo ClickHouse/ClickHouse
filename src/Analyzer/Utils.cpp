@@ -1122,9 +1122,7 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                /// Column source can be nullptr if JOIN node was replaced with a table expression.
-                /// In that case column is not from the specified table expression.
-                if (source != table_expression)
+                if (source && table_expression && !source->isEqual(*table_expression))
                     return true;
                 break;
             }

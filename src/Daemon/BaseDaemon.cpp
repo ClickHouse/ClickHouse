@@ -4,7 +4,7 @@
 #include <base/errnoToString.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
-#include <Daemon/CrashWriter.h>
+#include <Daemon/SentryWriter.h>
 #include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
@@ -138,13 +138,14 @@ BaseDaemon::~BaseDaemon()
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+        SentryWriter::resetInstance();
     }
     catch (...)
     {
         tryLogCurrentException(&logger());
     }
 
-    stopLogging();
+    disableLogging();
 }
 
 
@@ -412,22 +413,25 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    CrashWriter::initialize(config());
+    SentryWriter::initializeInstance(config());
     if (config().getBool("send_crash_reports.enabled", false)
-        && config().getBool("send_crash_reports.send_logical_errors", false)
-        && CrashWriter::initialized())
+        && config().getBool("send_crash_reports.send_logical_errors", false))
     {
-        LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
         {
-            if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+            LOG_DEBUG(&logger(), "Sending logical errors to sentry is enabled");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
-                CrashWriter::FramePointers frame_pointers;
-                for (size_t i = 0; i < trace.size(); ++i)
-                    frame_pointers[i] = trace[i];
-                CrashWriter::onException(code, format_string, frame_pointers, /* offset= */ 0, trace.size());
-            }
-        };
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
     }
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -561,14 +565,7 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
-        /// Temporarily close the logging thread and open it in each process later
-        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
-        if (async_channel)
-            async_channel->close();
         pid = fork();
-
-        if (async_channel)
-            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -631,12 +628,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (async_channel)
-        {
-            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
-        }
-        else if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");

@@ -1,6 +1,6 @@
-#include <Client/ProgressTable.h>
-#include <Common/ProfileEvents.h>
-#include <base/defines.h>
+#include "ProgressTable.h"
+#include "Common/ProfileEvents.h"
+#include "base/defines.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>

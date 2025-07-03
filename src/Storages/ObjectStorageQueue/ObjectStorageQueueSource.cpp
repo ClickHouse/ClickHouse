@@ -9,7 +9,6 @@
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
@@ -973,14 +972,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .size = reader.getObjectInfo()->metadata->size_bytes
                 }, getContext());
 
             return chunk;
