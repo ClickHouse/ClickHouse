@@ -52,6 +52,7 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Processors/Formats/PartitionOutputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -70,6 +71,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/DynamicWriteBufferManager.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -157,7 +159,7 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->is_outfile_truncate && query_with_output->out_file && !query_with_output->partition_by)
         {
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
@@ -169,7 +171,7 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->is_outfile_truncate && query_with_output->out_file && !query_with_output->partition_by)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
@@ -647,14 +649,20 @@ try
 
         select_into_file = false;
         select_into_file_and_stdout = false;
+        bool select_into_file_partition_by = false;
         String current_format = default_output_format;
+
+        using WriteBufferByPath = std::function<std::unique_ptr<WriteBuffer>(const String & buffer_filepath)>;
+        WriteBufferByPath outfile_buf_factory;
+        ASTPtr partition_by;
+        String out_file;
+
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file && isEmbeeddedClient())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
-            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
@@ -679,29 +687,45 @@ try
                     compression_level_node.value.tryGet<UInt64>(compression_level);
                 }
 
-                auto flags = O_WRONLY | O_EXCL;
+                outfile_buf_factory = [=, this](const String& out_filepath)
+                {
+                    auto flags = O_WRONLY | O_EXCL;
+                    auto file_exists = fs::exists(out_filepath);
+                    if (file_exists && query_with_output->is_outfile_append)
+                        flags |= O_APPEND;
+                    else if (file_exists && query_with_output->is_outfile_truncate)
+                        flags |= O_TRUNC;
+                    else
+                        flags |= O_CREAT;
 
-                auto file_exists = fs::exists(out_file);
-                if (file_exists && query_with_output->is_outfile_append)
-                    flags |= O_APPEND;
-                else if (file_exists && query_with_output->is_outfile_truncate)
-                    flags |= O_TRUNC;
-                else
-                    flags |= O_CREAT;
+                    auto res = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_filepath, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                        compression_method,
+                        static_cast<int>(compression_level)
+                    );
 
-                chassert(out_file_buf.get() == nullptr);
-
-                out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
-                    compression_method,
-                    static_cast<int>(compression_level)
-                );
-
+                    if (select_into_file_and_stdout)
+                    {
+                        res = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(res),
+                                std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                    }
+                    return res;
+                };
                 if (query_with_output->is_into_outfile_with_stdout)
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                }
+
+                chassert(out_file_buf.get() == nullptr);
+                if (query_with_output->partition_by)
+                {
+                    out_file_buf = std::make_unique<DynamicWriteBufferManager>();
+                    select_into_file_partition_by = true;
+                    partition_by = query_with_output->partition_by;
+                }
+                else
+                {
+                    out_file_buf = outfile_buf_factory(out_file);
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -726,26 +750,41 @@ try
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        bool logs_into_stdout = server_logs_file == "-";
-        bool extras_into_stdout = need_render_progress || logs_into_stdout;
-        bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
+        if (select_into_file_partition_by)
+        {
+            auto* manager = dynamic_cast<DynamicWriteBufferManager*>(out_file_buf.get());
+            OutputFormatForPath creator = [=, this](const String & out_filepath)
+            {
+                auto write_buffer = outfile_buf_factory(out_filepath);
+                auto format = client_context->getOutputFormat(current_format, *write_buffer, block);
+                manager->addWriteBuffer(std::move(write_buffer));
+                return format;
+            };
 
-        if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
-            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
-
-        auto format_settings = getFormatSettings(client_context);
-        format_settings.is_writing_to_terminal = stdout_is_a_tty;
-
-        /// It is not clear how to write progress and logs
-        /// intermixed with data with parallel formatting.
-        /// It may increase code complexity significantly.
-        if (!extras_into_stdout || select_only_into_file)
-            output_format = client_context->getOutputFormatParallelIfPossible(
-                current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+            output_format = std::make_shared<PartitionOutputFormat>(creator, *manager, block, out_file, partition_by, client_context);
+        }
         else
-            output_format = client_context->getOutputFormat(
-                current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+        {
+            bool logs_into_stdout = server_logs_file == "-";
+            bool extras_into_stdout = need_render_progress || logs_into_stdout;
+            bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
+            if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
+                out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+
+            auto format_settings = getFormatSettings(client_context);
+            format_settings.is_writing_to_terminal = stdout_is_a_tty;
+
+            /// It is not clear how to write progress and logs
+            /// intermixed with data with parallel formatting.
+            /// It may increase code complexity significantly.
+            if (!extras_into_stdout || select_only_into_file)
+                output_format = client_context->getOutputFormatParallelIfPossible(
+                    current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+            else
+                output_format = client_context->getOutputFormat(
+                    current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+        }
         output_format->setAutoFlush();
 
         if ((!select_into_file || select_into_file_and_stdout)
@@ -1197,7 +1236,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         range.second);
             }
 
-            if (fs::exists(out_file))
+            if (!query_with_output->partition_by && fs::exists(out_file))
             {
                 if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
                 {
@@ -1206,6 +1245,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         "File {} exists, consider using APPEND or TRUNCATE.",
                         out_file);
                 }
+            }
+
+            if (query_with_output->partition_by)
+            {
+                throwIfTemplateIsNotValid(out_file, query_with_output->partition_by);
             }
         }
     }

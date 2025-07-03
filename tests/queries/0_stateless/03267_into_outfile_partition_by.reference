@@ -1,0 +1,111 @@
+performing test: simple__identifier
+file: x
+x	1	1
+x	2	2
+x	3	3
+file: y
+y	1	4
+y	2	5
+y	3	6
+performing test: simple__partition_id
+file: x
+x	1	1
+x	2	2
+x	3	3
+file: y
+y	1	4
+y	2	5
+y	3	6
+performing test: simple__expr_with_alias
+file: 0
+x	2	2
+y	2	5
+file: 1
+x	1	1
+x	3	3
+y	1	4
+y	3	6
+performing test: simple__expr_without_alias
+file: 0
+x	2	2
+y	2	5
+file: 1
+x	1	1
+x	3	3
+y	1	4
+y	3	6
+performing test: simple__const
+file: 42
+x	1	1
+x	2	2
+x	3	3
+y	1	4
+y	2	5
+y	3	6
+performing test: simple__tulpe
+file: 1_1
+x	1	1
+file: 1_4
+y	1	4
+file: 2_2
+x	2	2
+file: 2_5
+y	2	5
+file: 3_3
+x	3	3
+file: 3_6
+y	3	6
+performing test: simple__all_keys
+file: 1_1_x
+x	1	1
+file: 2_2_x
+x	2	2
+file: 3_3_x
+x	3	3
+file: 4_1_y
+y	1	4
+file: 5_2_y
+y	2	5
+file: 6_3_y
+y	3	6
+performing test: simple__can_reuse
+file: x_x
+x	1	1
+x	2	2
+x	3	3
+file: y_y
+y	1	4
+y	2	5
+y	3	6
+performing test: escape__outside
+file: outside_{ 42 }
+42
+performing test: escape__inside
+file: inside_42
+42
+performing test: escape__heredoc
+file: heredoc_{42}
+42
+performing test: no_precheck_for_tempalte_itself
+file: 42
+42
+file: {42}
+performing test: simple_append
+file: 42
+42
+42
+performing test: simple_truncate
+file: 42
+42
+performing test: simple_format_with_prefix_and_suffix
+file: 42
+[
+{"42":42}
+]
+perform file exist test
+1
+perform wrong template test
+1
+1
+1
+1
