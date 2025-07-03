@@ -817,6 +817,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (shutdown_called)
         {
+            LOG_TEST(log, "Shutdown was called"); /// test_drop_table depends on this log message
+
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
