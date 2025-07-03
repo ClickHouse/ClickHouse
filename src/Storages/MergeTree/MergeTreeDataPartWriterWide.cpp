@@ -227,7 +227,6 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
 
-
         return &column_streams.at(stream_name)->compressed_hashing;
     };
 }
@@ -447,12 +446,6 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
             return;
-
-        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
-        /// require specifying the array dimensions before compression starts.
-        /// For 1D arrays, it's simply the length.
-        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
-        setVectorDimensionsIfNeeded(compression_codec, &column);
 
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());

@@ -1,4 +1,6 @@
 #pragma once
+#include <boost/noncopyable.hpp>
+
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>

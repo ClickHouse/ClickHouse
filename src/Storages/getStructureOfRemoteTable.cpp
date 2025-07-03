@@ -1,4 +1,4 @@
-#include "getStructureOfRemoteTable.h"
+#include <Storages/getStructureOfRemoteTable.h>
 
 #include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
