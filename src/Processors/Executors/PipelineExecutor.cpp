@@ -347,7 +347,10 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
                 /// Communicate with resource scheduler or ConcurrencyControl
                 /// Do upscaling, downscaling, or sleep for preemption
                 if (!controlConcurrency(cpu_lease, spawn_status == ExecutorTasks::SHOULD_SPAWN))
+                {
+                    yield = true;
                     break;
+                }
             }
             catch (...)
             {
@@ -420,7 +423,7 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
                 /// Allocate CPU slots through resource scheduler
                 if (query_context->getCPUSlotPreemption())
                 {
-                    auto quantum_ns = std::max(10uz, query_context->getCPUSlotQuantum());
+                    auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
                     return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
                         CPULeaseSettings
                         {
