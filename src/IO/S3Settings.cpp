@@ -47,7 +47,7 @@ void S3Settings::loadFromConfigForObjectStorage(
         ProxyConfiguration::protocolFromString(scheme), config_prefix, config);
 
     /// We override these request settings from configuration, because they are related to disk configuration,
-    /// which shouldn't be changed from user query.
+    /// which shouldn't be changed from user query
     request_settings[S3RequestSetting::read_only] = config.getBool(config_prefix + ".readonly", false);
     request_settings[S3RequestSetting::min_bytes_for_seek] = config.getUInt64(config_prefix + ".min_bytes_for_seek", S3::DEFAULT_MIN_BYTES_FOR_SEEK);
     request_settings[S3RequestSetting::list_object_keys_size] = config.getUInt64(config_prefix + ".list_object_keys_size", S3::DEFAULT_LIST_OBJECT_KEYS_SIZE);
