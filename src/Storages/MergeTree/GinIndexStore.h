@@ -158,7 +158,7 @@ public:
     UInt32 getNumOfSegments();
 
     /// Get version
-    uint8_t getVersion();
+    Format getVersion();
 
     /// Get current postings list builder
     const GinIndexPostingsBuilderContainer & getPostingsListBuilder() const { return current_postings; }

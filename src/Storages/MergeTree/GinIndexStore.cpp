@@ -200,10 +200,23 @@ UInt32 GinIndexStore::getNextSegmentID()
 
 namespace
 {
-void verifyFormatVersionIsSupported(uint8_t version)
+GinIndexStore::Format getFormatVersion(uint8_t version)
 {
-    if ((version != static_cast<std::underlying_type_t<GinIndexStore::Format>>(GinIndexStore::Format::v1))
-        && (version != static_cast<std::underlying_type_t<GinIndexStore::Format>>(GinIndexStore::Format::v2)))
+    using FormatAsInt = std::underlying_type_t<GinIndexStore::Format>;
+    switch (version)
+    {
+        case static_cast<FormatAsInt>(GinIndexStore::Format::v1):
+            return GinIndexStore::Format::v1;
+        case static_cast<FormatAsInt>(GinIndexStore::Format::v2):
+            return GinIndexStore::Format::v2;
+        default:
+            return GinIndexStore::Format::v0;
+    }
+}
+
+void verifyFormatVersionIsSupported(GinIndexStore::Format version)
+{
+    if ((version < GinIndexStore::Format::v1) || (version > GinIndexStore::Format::v2))
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT_VERSION,
             "Unsupported text index version: supported versions {} and {}, but got {}",
@@ -229,7 +242,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        verifyFormatVersionIsSupported(version);
+        verifyFormatVersionIsSupported(getFormatVersion(version));
 
         readVarUInt(result, *istr);
     }
@@ -238,16 +251,16 @@ UInt32 GinIndexStore::getNumOfSegments()
     return cached_segment_num;
 }
 
-uint8_t GinIndexStore::getVersion()
+GinIndexStore::Format GinIndexStore::getVersion()
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     if (!storage->existsFile(segment_id_file_name))
-        return 0;
+        return GinIndexStore::Format::v0;
 
     std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
     uint8_t version = 0;
     readBinary(version, *istr);
-    return version;
+    return getFormatVersion(version);
 }
 
 bool GinIndexStore::needToWrite() const
@@ -298,7 +311,7 @@ void GinIndexStore::initSegmentId()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        verifyFormatVersionIsSupported(version);
+        verifyFormatVersionIsSupported(getFormatVersion(version));
 
         readVarUInt(segment_id, *istr);
     }
@@ -479,7 +492,7 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
 
     switch (auto version = store->getVersion(); version)
     {
-        case std::underlying_type_t<GinIndexStore::Format>(GinIndexStore::Format::v1): {
+        case GinIndexStore::Format::v1: {
             /// Read FST size
             size_t fst_size = 0;
             readVarUInt(fst_size, *dict_file_stream);
@@ -490,7 +503,7 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
             dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
             break;
         }
-        case std::underlying_type_t<GinIndexStore::Format>(GinIndexStore::Format::v2): {
+        case GinIndexStore::Format::v2: {
             /// Read FST size header
             UInt64 fst_size_header;
             readVarUInt(fst_size_header, *dict_file_stream);
