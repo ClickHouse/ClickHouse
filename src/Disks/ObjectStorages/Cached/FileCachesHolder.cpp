@@ -13,7 +13,7 @@ namespace ErrorCodes
 SplitCacheType defineCacheType(const std::string & file_path)
 {
     auto file_extension = fs::path(file_path).extension();
-    return std::find(data_type_extensions.begin(), data_type_extensions.end(), file_extension) != data_type_extensions.end() ? SplitCacheType::DataCache : SplitCacheType::SystemCache;
+    return std::find(data_cache_type.begin(), data_cache_type.end(), file_extension) != data_cache_type.end() ? SplitCacheType::DataCache : SplitCacheType::SystemCache;
 }
 
 FileCachesHolder::FileCachesHolder(std::initializer_list<std::tuple<SplitCacheType, FileCachePtr, FileCacheSettings>> caches_)

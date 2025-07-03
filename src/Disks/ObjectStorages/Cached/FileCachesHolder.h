@@ -11,11 +11,14 @@ enum SplitCacheType
 {
     GeneralCache = 0,
     SystemCache, // cache system data(metadata, index, marks, etc.)
-    DataCache // cache for table data
+    DataCache, // cache table data
 };
 
-constexpr std::array<std::string, 1> data_type_extensions = {".bin"};
+constexpr std::array<std::string, 1> data_cache_type = {".bin"};
+
+bool isDataCacheType(const std::string & file_path);
 SplitCacheType defineCacheType(const std::string & file_path);
+
 
 class FileCachesHolder
 {

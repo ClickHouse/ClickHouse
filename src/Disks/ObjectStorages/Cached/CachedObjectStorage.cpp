@@ -121,7 +121,8 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    auto cache = holder.getCache(defineCacheType(object.local_path));
+    auto cache_type = defineCacheType(object.local_path);
+    auto cache = holder.getCache(cache_type);
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
@@ -131,7 +132,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
-    removeCacheIfExists(object.remote_path);
+    removeKeyFromCacheIfExists(object.remote_path, cache_type);
 
     if (cache_on_write && cache->isInitialized())
     {
@@ -150,26 +151,25 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     return implementation_buffer;
 }
 
-void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_cache)
+void CachedObjectStorage::removeKeyFromCacheIfExists(const std::string & path_key_for_cache, const SplitCacheType cache_type)
 {
     if (path_key_for_cache.empty())
         return;
-    auto cache = holder.getCache(defineCacheType(path_key_for_cache));
-    /// Add try catch?
+    auto cache = holder.getCache(cache_type);
     if (cache->isInitialized())
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.remote_path);
+    removeKeyFromCacheIfExists(object.remote_path, defineCacheType(object.local_path));
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
+        removeKeyFromCacheIfExists(object.remote_path, defineCacheType(object.local_path));
 
     object_storage->removeObjectsIfExist(objects);
 }
