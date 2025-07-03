@@ -101,21 +101,27 @@ TEST(Statistics, Estimator)
     estimator.addStatistics("onlypart", stats_c);
     estimator.incrementRowCount(10000);
 
-    auto test_f = [&](const String & expression, Int32 real_result, Float64 eps = 0.001)
+    auto test_impl = [&](const String & expression, Int32 real_result, Float64 eps)
     {
         ParserExpressionWithOptionalAlias exp_parser(false);
         ContextPtr context = getContext().context;
-        ///RPNBuilderTreeContext tree_context(context, Block({ColumnWithTypeAndName(data_type, "a"), ColumnWithTypeAndName(data_type, "b"), ColumnWithTypeAndName(data_type, "c")}), {});
         RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
         Float64 estimate_result = estimator.estimateRowCount(node);
-        /// EXPECT_EQ(Float64(real_result), estimate_result);
         std::cout << expression << " " << real_result << " "<< estimate_result << std::endl;
         EXPECT_LT(std::abs(real_result - estimate_result), 10000 * eps);
     };
+
+    auto test_f = [&](const String & expression, Int32 real_result, Float64 eps = 0.001)
+    {
+        test_impl(expression, real_result, eps);
+        /// Let's test 'not expression'
+        test_impl("not(" + expression + ")", 10000-real_result, eps);
+    };
     ///
     test_f("a < 3 and b = 500", 1);
+    test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
     test_f("a < 3 or b = 600", 5001);
     test_f("not (a < 3 and b = 500)", 10000-1);
     test_f("c between -1000 and -10", 3);
