@@ -1,4 +1,4 @@
-#include "StorageSystemQueryResultCache.h"
+#include <Storages/System/StorageSystemQueryResultCache.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
