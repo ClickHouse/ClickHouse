@@ -813,7 +813,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
     auto * function = source_expression->as<FunctionNode>();
 
-    if (!function || function->getFunctionName() == "_CAST" || function->getFunctionName() == "array")
+    if (!function || function->getFunctionName() == "_CAST" || function->getFunctionName() == "array" || function->getFunctionName() == "range")
         return;
 
     auto & context = scope.context;
