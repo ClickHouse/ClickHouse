@@ -42,7 +42,7 @@ void StorageSystemDimensionalMetrics::fillData(MutableColumns & res_columns, Con
                 labels_map.push_back(Tuple{labels[i], label_values[i]});
             }
             res_columns[0]->insert(record->name);
-            res_columns[1]->insert(record.get());
+            res_columns[1]->insert(metric->get());
             res_columns[2]->insert(record->documentation);
             res_columns[3]->insert(labels_map);
         }
