@@ -1,10 +1,12 @@
 #include <Storages/Kafka/KafkaConfigLoader.h>
 
 #include <Access/KerberosInit.h>
+#include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadStatus.h>
@@ -23,6 +25,14 @@ extern const Event KafkaConsumerErrors;
 
 namespace DB
 {
+
+namespace KafkaSetting
+{
+    extern const KafkaSettingsString kafka_security_protocol;
+    extern const KafkaSettingsString kafka_sasl_mechanism;
+    extern const KafkaSettingsString kafka_sasl_username;
+    extern const KafkaSettingsString kafka_sasl_password;
+}
 
 namespace ErrorCodes
 {
@@ -340,6 +350,16 @@ void updateGlobalConfiguration(
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
+    auto kafka_settings = storage.getKafkaSettings();
+    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
+        kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
+        kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
+    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
+        kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
+    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
+        kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
+
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
@@ -356,9 +376,9 @@ void updateGlobalConfiguration(
         {
             kerberosInit(keytab, principal);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessage(e, false));
+            LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessageForLogging(e, false));
         }
         LOG_DEBUG(params.log, "Finished KerberosInit");
     }

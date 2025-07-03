@@ -59,7 +59,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -831,10 +830,10 @@ public:
                     value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
                 case ElementType::UINT64:
-                    value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale);
+                    value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
-                    value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale);
+                    value.value = element.getInt64();
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -1445,8 +1444,13 @@ public:
         auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
         auto insert_settings_with_no_type_conversion = insert_settings;
         insert_settings_with_no_type_conversion.allow_type_conversion = false;
-        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
-        for (size_t i : order)
+
+        /// Check if we already have variants order for this Variant type in cache.
+        auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
+        if (variants_order_it == variants_order_cache.end())
+            variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+
+        for (size_t i : variants_order_it->second)
         {
             if (i != shared_variant_discr)
             {
@@ -1467,11 +1471,11 @@ public:
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
+            error = fmt::format(
                 "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
                 "type, enable setting input_format_json_infer_incomplete_types_as_strings",
                 jsonElementToString<JSONParser>(element, format_settings));
+            return false;
         }
 
         auto element_type_name = element_type->getName();
@@ -1592,6 +1596,8 @@ private:
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
+    /// Avoid calling getVariantsDeserializeTextOrder for the same data types on each row by using cache.
+    mutable std::unordered_map<String, std::vector<size_t>> variants_order_cache;
 };
 
 template <typename JSONParser>
@@ -1699,12 +1705,22 @@ private:
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
+            std::unordered_set<std::string_view> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
                 path += key;
+
+                if (!visited_keys.insert(key).second)
+                {
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    return false;
+                }
+
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }
@@ -1936,7 +1952,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
                 elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {

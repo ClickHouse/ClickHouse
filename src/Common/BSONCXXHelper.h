@@ -8,8 +8,9 @@
 #include <Common/JSONBuilder.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <DataTypes/FieldToDataType.h>
-#include "DataTypes/DataTypeNullable.h"
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <mongocxx/client.hpp>
 
@@ -97,15 +98,32 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::Tuple:
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
-            for (const auto & elem : field.safeGet<Tuple>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), is_oid));
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+
+            if (!tuple_type)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Tuple type, got {}.", type->getPrettyName());
+
+            const auto & elem_types = tuple_type->getElements();
+            const auto & tuple_value = field.safeGet<Tuple>();
+
+            if (elem_types.size() != tuple_value.size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Tuple size mismatch, expected {} elements, got {} in field.", elem_types.size(), tuple_value.size());
+
+            for (size_t i = 0; i < elem_types.size(); ++i)
+                arr.append(fieldAsBSONValue(tuple_value[i], elem_types[i], is_oid));
             return arr.view();
         }
         case TypeIndex::Array:
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+
+            if (!array_type)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Array type, got {}.", type->getPrettyName());
+
+            const auto & elem_type = array_type->getNestedType();
             for (const auto & elem : field.safeGet<Array>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), is_oid));
+                arr.append(fieldAsBSONValue(elem, elem_type, is_oid));
             return arr.view();
         }
         default:

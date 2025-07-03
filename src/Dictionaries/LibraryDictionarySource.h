@@ -3,9 +3,9 @@
 #include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
 #include <Core/UUID.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 #include <Core/ExternalResultDescription.h>
-#include "IDictionarySource.h"
+#include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
 
 

@@ -68,4 +68,5 @@ ObjectStorageKey PlainRewritableObjectStorage<BaseObjectStorage>::generateObject
 
     return key_generator->generate(path, /* is_directory */ true, key_prefix);
 }
+
 }

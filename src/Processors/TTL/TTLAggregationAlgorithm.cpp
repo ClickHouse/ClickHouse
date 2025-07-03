@@ -3,6 +3,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -11,7 +13,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
@@ -103,7 +105,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -208,25 +210,33 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true, 1);
+        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
 
         for (auto & agg_block : aggregated_res)
         {
             for (const auto & it : description.set_parts)
                 it.expression->execute(agg_block);
 
-            for (const auto & name : description.group_by_keys)
-            {
-                const IColumn * values_column = agg_block.getByName(name).column.get();
-                auto & result_column = result_columns[header.getPositionByName(name)];
-                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-            }
-
+            /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
+            /// the SET values over the GROUP BY because doing it the other way causes unexpected
+            /// results.
+            std::unordered_set<String> columns_added;
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(it.column_name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                columns_added.emplace(it.column_name);
+            }
+
+            for (const auto & name : description.group_by_keys)
+            {
+                if (!columns_added.contains(name))
+                {
+                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
+                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                }
             }
         }
     }
@@ -236,8 +246,14 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    if (new_ttl_info.finished())
+    {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+        return;
+    }
+    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
 }
 
 }

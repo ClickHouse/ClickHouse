@@ -7,6 +7,7 @@ set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;
 set max_block_size = 100000;
 set max_insert_threads = 1;
+set input_format_parquet_bloom_filter_push_down = 0;
 
 -- Try all the types.
 insert into function file('02841.parquet')

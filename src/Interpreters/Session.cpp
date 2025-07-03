@@ -164,7 +164,6 @@ public:
     void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
         session_data = nullptr;
 
         Key key{user_id, session_id};
@@ -227,14 +226,18 @@ private:
         std::unique_lock lock{mutex};
         while (!quit)
         {
-            closeSessions(lock);
+            auto closed_sessions = closeSessions(lock);
+            lock.unlock();
+            closed_sessions.clear();
+            lock.lock();
             if (cond.wait_for(lock, close_interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
-    void closeSessions(std::unique_lock<std::mutex> & lock)
+    std::vector<std::shared_ptr<NamedSessionData>> closeSessions(std::unique_lock<std::mutex> & lock)
     {
+        std::vector<std::shared_ptr<NamedSessionData>> closed_sessions;
         const auto now = std::chrono::steady_clock::now();
 
         for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
@@ -254,6 +257,13 @@ private:
 
                 if (session.use_count() != 1)
                 {
+                    /// We can get here only if the session is still in use somehow. But since we don't allow concurrent usage
+                    /// of the same session, the only way we can get here is when the session was released, but the pointer
+                    /// wasn't reset yet. And since the pointer is reset without a lock, it's technically possible to get
+                    /// into a situation when refcount > 1. In this case, we want to delay closing the session, but set the
+                    /// timeout to 0 explicitly. This should be a very rare situation, since in order for it to happen, we should
+                    /// have a session timeout less than close_interval, and also be able to reach this code before
+                    /// resetting a pointer.
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
                         key.second, toString(key.first), session.use_count());
 
@@ -264,10 +274,12 @@ private:
                 }
 
                 LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
-
+                closed_sessions.push_back(session);
                 sessions.erase(session_it);
             }
         }
+
+        return closed_sessions;
     }
 
     std::mutex mutex;
@@ -308,7 +320,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
             session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());

@@ -1,0 +1,732 @@
+-- { echoOn }
+
+
+
+
+
+
+
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=0,
+    max_insert_threads=0,
+    materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=0,
+    max_insert_threads=0,
+    materialized_views_ignore_errors=1;
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=0,
+    max_insert_threads=5,
+    materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=0,
+    max_insert_threads=5,
+    materialized_views_ignore_errors=1;
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=1,
+    max_insert_threads=0,
+    materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=1,
+    max_insert_threads=0,
+    materialized_views_ignore_errors=1;
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=1,
+    max_insert_threads=5,
+    materialized_views_ignore_errors=0; -- { serverError ILLEGAL_DIVISION }
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing=1,
+    max_insert_threads=5,
+    materialized_views_ignore_errors=1;
+system flush logs query_views_log, query_log;
+set joined_subquery_requires_alias = 0;
+select
+    parallel_view_processing,
+    max_insert_threads,
+    materialized_views_ignore_errors,
+    view_name,
+    if(view_exception_code == '0', toString(written_rows), 'partial') as written_rows,
+    view_exception_code,
+    query_exception_code
+from (
+select
+    initial_query_id as query_id,
+    view_name,
+    written_rows,
+    exception_code as view_exception_code
+from system.query_views_log
+where
+    startsWith(view_name, currentDatabase() || '.mv')
+)
+JOIN
+(
+select
+    query_id,
+    exception_code as query_exception_code,
+    Settings['parallel_view_processing'] as parallel_view_processing,
+    Settings['max_insert_threads'] as max_insert_threads,
+    Settings['materialized_views_ignore_errors'] as materialized_views_ignore_errors
+from system.query_log
+where
+    type != 'QueryStart' and
+    query_kind = 'Insert' and
+    current_database = currentDatabase()
+)
+using query_id
+order by ALL
+format Vertical;
+Row 1:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 2:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 3:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 4:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 5:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 6:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 7:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 8:
+──────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_4
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 9:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 10:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 11:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 12:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_3
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 13:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 14:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 15:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 16:
+───────
+parallel_view_processing:         0
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_4
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 17:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 18:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 19:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 20:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 21:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 22:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 23:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 24:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_4
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 25:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 26:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 27:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 28:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_3
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 29:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 30:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 31:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 32:
+───────
+parallel_view_processing:         0
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_4
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 33:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 34:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 35:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 36:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 37:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 38:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 39:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 40:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_4
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 41:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 42:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 43:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 44:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_3
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 45:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 46:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 47:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 48:
+───────
+parallel_view_processing:         1
+max_insert_threads:               0
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_4
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 49:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 50:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 51:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 52:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_2_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 53:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_1
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 54:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 55:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 56:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 0
+view_name:                        default.mv_3_4
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             153
+
+Row 57:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 58:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 59:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 60:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_2_3
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 61:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_1
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0
+
+Row 62:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_2
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 63:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_3
+written_rows:                     partial
+view_exception_code:              153
+query_exception_code:             0
+
+Row 64:
+───────
+parallel_view_processing:         1
+max_insert_threads:               5
+materialized_views_ignore_errors: 1
+view_name:                        default.mv_3_4
+written_rows:                     100
+view_exception_code:              0
+query_exception_code:             0

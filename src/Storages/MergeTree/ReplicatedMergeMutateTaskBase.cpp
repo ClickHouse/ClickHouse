@@ -113,7 +113,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             auto source_part_info = MergeTreePartInfo::fromPartName(
                 log_entry->source_parts.at(0), storage.queue.format_version);
 
-            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.partition_id);
+            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.getPartitionId());
             if (in_partition != storage.queue.mutations_by_partition.end())
             {
                 auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());

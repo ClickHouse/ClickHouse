@@ -1,4 +1,4 @@
-#include "Runner.h"
+#include <Runner.h>
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -41,7 +41,7 @@ namespace CurrentMetrics
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes

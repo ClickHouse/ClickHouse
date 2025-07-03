@@ -3,6 +3,7 @@ SET optimize_read_in_order=1;
 DROP TABLE IF EXISTS read_in_order_with_parallel_replicas;
 CREATE TABLE read_in_order_with_parallel_replicas(id UInt64) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity=1;
 
+SET max_execution_time = 300;
 INSERT INTO read_in_order_with_parallel_replicas SELECT number from system.numbers limit 100000;
 
 SELECT * from read_in_order_with_parallel_replicas ORDER BY id desc limit 1;

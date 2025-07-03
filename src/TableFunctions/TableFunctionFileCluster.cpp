@@ -57,10 +57,12 @@ StoragePtr TableFunctionFileCluster::getStorage(
 void registerTableFunctionFileCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFileCluster>(
-        {.documentation = {
-            .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
-            .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .category{""}},
+        {
+            .documentation = {
+                .description = R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
+                .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
         .allow_readonly = false});
 }
 

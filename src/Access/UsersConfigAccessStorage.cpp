@@ -1,5 +1,4 @@
 #include <Access/UsersConfigAccessStorage.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -198,6 +197,7 @@ namespace
         }
         else if (has_certificates)
         {
+#if USE_SSL
             user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
 
             /// Fill list of allowed certificates.
@@ -208,18 +208,21 @@ namespace
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
+                    user->authentication_methods.back().addSSLCertificateSubject(X509Certificate::Subjects::Type::CN, std::move(value));
                 }
                 else if (key.starts_with("subject_alt_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
                     if (value.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ssl_certificates.subject_alt_name to not be empty");
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
+                    user->authentication_methods.back().addSSLCertificateSubject(X509Certificate::Subjects::Type::SAN, std::move(value));
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else if (has_ssh_keys)
         {
@@ -696,6 +699,19 @@ namespace
                     profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                /// When the xml config is parsed, the first constraint_type is parsed as `disallowed` and the subsequent ones are parsed as
+                /// disallowed[1], disallowed[2] and so on. So, both `disallowed` and `disallowed[` should be considered as valid constraint types.
+                /// Example:
+                ///   <constraints>
+                ///     <max_execution_time>
+                ///         <max>50</max>
+                ///         <disallowed>3</disallowed>
+                ///         <disallowed>4</disallowed>
+                ///         <disallowed>5</disallowed>
+                ///     </max_execution_time>
+                /// </constraints>
+                else if (constraint_type == "disallowed" || constraint_type.starts_with("disallowed["))
+                    profile_element.disallowed_values.push_back(settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type)));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
                     writability_count++;

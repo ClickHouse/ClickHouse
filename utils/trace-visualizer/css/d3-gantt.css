@@ -44,12 +44,20 @@ rect.zoom-panel {
     border-radius: 2px;
 }
 
-.d3-tip pre {
-    font-weight: bold;
-    padding: 12px;
-    background: rgba(0, 0, 0, 0);
-    color: #fff;
-    border: 0px;
+.d3-tip table {
+    border-collapse: collapse;
+}
+
+.d3-tip td {
+    padding: 4px 8px;
+}
+
+.d3-tip tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.d3-tip td:nth-child(even) {
+    text-align: right;
 }
 
 /* Style northward tooltips differently */

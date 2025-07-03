@@ -167,9 +167,6 @@ Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
-    if (blocks.size() == 1)
-        return blocks[0];
-
     return concatenateBlocks(blocks);
 }
 
@@ -208,7 +205,8 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
         }});
 }
 
