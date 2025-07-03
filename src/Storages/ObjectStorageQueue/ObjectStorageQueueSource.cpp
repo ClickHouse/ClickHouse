@@ -60,6 +60,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int TOO_MANY_PARTS;
+    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_BEING_RESTARTED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -1021,7 +1024,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
-    const std::string & exception_message)
+    const std::string & exception_message,
+    int error_code)
 {
     if (processed_files.empty())
         return;
@@ -1055,6 +1059,12 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             }
         }
     }
+
+    /// We do not want to reduce retry count on certain errors,
+    /// because their incidence does not depend on the user.
+    const bool reduce_retry_count = !(error_code == ErrorCodes::TOO_MANY_PARTS
+                                      || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
+                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
@@ -1094,7 +1104,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        /* reduce_retry_count */false);
+                        reduce_retry_count);
                 }
                 break;
             }
@@ -1118,7 +1128,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    /* reduce_retry_count */false);
+                    reduce_retry_count);
                 break;
             }
             case FileState::ErrorOnRead:

@@ -1235,7 +1235,7 @@ public:
                                                    {nullptr, right_tuple->getElements()[i], ""}};
                     element_type = func->build(args)->getResultType();
                 }
-                has_nullable = has_nullable || element_type->isNullable();
+                has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
                 has_null = has_null || element_type->onlyNull();
             }
 

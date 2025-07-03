@@ -91,7 +91,6 @@ public:
     }
 
     /// Check if conversion to AST requires wrapping with _CAST function.
-    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
     /// Check if constant is a result of _CAST function constant folding.

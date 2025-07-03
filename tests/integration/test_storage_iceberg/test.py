@@ -2167,3 +2167,60 @@ def test_explicit_metadata_file(started_cluster, storage_type):
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v11.metadata.json")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_cluster_table_function_with_partition_pruning(
+    started_cluster, format_version, storage_type
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = (
+        "test_cluster_table_function_with_partition_pruning_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                a int,
+                b float
+            )
+            USING iceberg
+            PARTITIONED BY (identity(a))
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 1.0), (2, 2.0), (3, 3.0)")
+
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+    )
+
+    instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")

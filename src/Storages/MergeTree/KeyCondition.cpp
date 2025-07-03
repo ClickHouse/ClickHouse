@@ -66,7 +66,7 @@ extern const int BAD_TYPE_OF_FIELD;
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -79,27 +79,39 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
         {
             case '%':
             case '_':
+            {
+                bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                 if (requires_perfect_prefix)
                 {
-                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                    return is_prefect_prefix ? fixed_prefix : "";
+                    if (is_perfect_prefix)
+                        return {fixed_prefix, true};
+                    else
+                        return {"", false};
                 }
-            return fixed_prefix;
+                else
+                {
+                    return {fixed_prefix, is_perfect_prefix};
+                }
+            }
             case '\\':
+            {
                 ++pos;
-            if (pos == end)
-                break;
-            [[fallthrough]];
+                if (pos == end)
+                    break;
+                [[fallthrough]];
+            }
             default:
+            {
                 fixed_prefix += *pos;
+            }
         }
 
         ++pos;
     }
     /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
     if (requires_perfect_prefix)
-        return "";
-    return fixed_prefix;
+        return {"", false};
+    return {fixed_prefix, false};
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -361,9 +373,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
                 if (prefix.empty())
                     return false;
+
+                if (!is_perfect)
+                    out.relaxed = true;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -382,9 +397,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
                 if (prefix.empty())
                     return false;
+
+                chassert(is_perfect);
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -441,6 +458,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.range = !right_bound.empty()
                     ? Range(prefix, true, right_bound, false)
                     : Range::createLeftBounded(prefix, true);
+                out.relaxed = true;
 
                 return true;
             }
@@ -477,7 +495,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
 };
 
-static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
     = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
@@ -2041,9 +2058,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             return atom_it->second(out, const_value);
         };
 
-        if (always_relaxed_atom_functions.contains(func_name))
-            relaxed = true;
-
         bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
         {
@@ -2259,7 +2273,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        bool valid_atom = atom_it->second(out, const_value);
+        if (valid_atom && out.relaxed)
+            relaxed = true;
+        return valid_atom;
     }
     if (node.tryGetConstant(const_value, const_type))
     {

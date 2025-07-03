@@ -2498,6 +2498,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         if (identifier_node)
         {
             node = parent_window_node->clone();
+            node->removeAlias();
             result_projection_name = parent_window_name;
         }
         else
@@ -3518,7 +3519,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
-            auto hash = function_arguments[1]->getTreeHash();
+            auto hash = function_arguments[1]->getTreeHash({ .ignore_cte = true });
             auto ast = function_arguments[1]->toAST();
             auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(ast), std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 
@@ -4836,10 +4837,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(insertion_table, scope_context)
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            auto insert_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
+            const auto & insert_columns = insert_storage->getInMemoryMetadataPtr()->getColumns();
             const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 

@@ -371,7 +371,7 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
     size_t num_rows = self.size();
     for (size_t i = 1; i < num_rows; ++i)
     {
-        if (self.compareAt(i, 0, self, 0) != 0)
+        if (self.compareAt(i, 0, self, 1) != 0)
             return false;
     }
     return true;
