@@ -1,10 +1,4 @@
-#include <algorithm>
-#include <limits>
-#include <memory>
-#include <numeric>
-#include <queue>
-#include <unordered_map>
-#include <vector>
+#include <Processors/QueryPlan/PartsSplitter.h>
 
 #include <Core/Field.h>
 #include <Common/logger_useful.h>
@@ -20,7 +14,6 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -250,7 +243,9 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
+                initial_ranges_in_data_parts[part_index].parent_part,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
+                initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
                 MarkRanges{mark_range});
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
@@ -947,10 +942,11 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         return skip_and_return_all_part_ranges();
     }
 
+    PartsRangesIterator selected_upper_bound;
+    std::vector<std::vector<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::vector<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        std::vector<bool> is_selected_range(index_granularity->getMarksCountWithoutFinal(), false);
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -960,32 +956,58 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             }
 
             selected_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, true});
-            for (auto i = range.begin; i < range.end;i++)
-               is_selected_range[i] = true;
-        }
+                {index_access.getValue(part_index, range.begin), false, range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, true});
 
-        for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
-        {
-            const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
-            if (!value_is_defined_at_end_mark)
-            {
-                return skip_and_return_all_part_ranges();
-            }
+            const auto & range_end_value = index_access.getValue(part_index, range.end);
+            if (selected_upper_bound.value.empty() || (compareValues(range_end_value, selected_upper_bound.value, false) > 0))
+                selected_upper_bound = {range_end_value, false, range, part_index, PartsRangesIterator::EventType::RangeStart, true};
 
-            if (is_selected_range[range_begin])
-                continue;
-            MarkRange rejected_range(range_begin, range_begin + 1);
-            rejected_ranges.push_back(
-                {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
+            for (auto i = range.begin; i < range.end; ++i)
+               part_selected_ranges[part_index].push_back(i);
         }
     }
 
+    if (selected_ranges.empty())
+        return result.getCurrentRangesInDataParts();
+
     ::sort(selected_ranges.begin(), selected_ranges.end());
 
-    ::sort(rejected_ranges.begin(), rejected_ranges.end());
+    const PartsRangesIterator selected_lower_bound = selected_ranges[0];
 
-    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : sorting phase complete");
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+        const auto & part_lower_bound = index_access.getValue(part_index, 0);
+        const auto & part_upper_bound = index_access.getValue(part_index, index_granularity->getMarksCountWithoutFinal());
+        if ((compareValues(selected_lower_bound.value, part_upper_bound, false) > 0) ||
+            (compareValues(selected_upper_bound.value, part_lower_bound, false) < 0))
+        {
+            continue; /// early exit, intersection infeasible in this part
+        }
+
+        auto candidates_start = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        if (!candidates_start)
+            continue; /// no intersection possible in this part
+        if (candidates_start.value() > 0)
+            candidates_start = candidates_start.value() - 1;
+
+        auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        if (!candidates_end)
+            candidates_end = index_granularity->getMarksCountWithoutFinal();
+
+        for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
+        {
+            if (std::binary_search(part_selected_ranges[part_index].begin(), part_selected_ranges[part_index].end(), range_begin))
+                continue;
+            MarkRange rejected_range(range_begin, range_begin + 1);
+            rejected_ranges.push_back(
+                {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, false});
+        }
+    }
+
+    ::sort(rejected_ranges.begin(), rejected_ranges.end());
 
     std::vector<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
     std::vector<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();

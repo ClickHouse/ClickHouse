@@ -156,6 +156,9 @@ def test_table_rotation(start_cluster):
     node1.query("CREATE TABLE system.transposed_metric_log_2 as system.transposed_metric_log")
     node1.query("CREATE TABLE system.transposed_metric_log_3 as system.transposed_metric_log")
     node1.query("INSERT INTO system.transposed_metric_log_3 SELECT * FROM system.transposed_metric_log")
+
+    # to have some data accumulated before flush
+    time.sleep(1)
     node1.query("SYSTEM FLUSH LOGS")
 
     assert "SystemMetricLogView" in node1.query("SHOW CREATE TABLE system.metric_log_3")

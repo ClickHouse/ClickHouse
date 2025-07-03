@@ -7,8 +7,6 @@ set -x
 
 # Avoid overlaps with previous runs
 dmesg --clear
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
 
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 
@@ -53,13 +51,14 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
+# run before start_minio to have valid aws creds
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
-config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
-start_server
+start_server || { echo "Failed to start server"; exit 1; }
 
-setup_logs_replication
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
@@ -263,7 +262,7 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-start_server
+start_server || (echo "Failed to start server" && exit 1)
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \

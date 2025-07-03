@@ -1,8 +1,9 @@
-#include "LocalConnection.h"
+#include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -58,7 +59,9 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    session->makeSessionContext();
+    ContextMutablePtr session_context = session->makeSessionContext();
+    /// Re-apply settings from the command line arguments
+    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
 }
 
 LocalConnection::LocalConnection(
@@ -466,6 +469,23 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
+    // pushing executors have to be finished before the final stats are sent
+    if (state->is_finished)
+    {
+        if (state->executor)
+        {
+            // no op
+        }
+        else if (state->pushing_async_executor)
+        {
+            state->pushing_async_executor->finish();
+        }
+        else if (state->pushing_executor)
+        {
+            state->pushing_executor->finish();
+        }
+    }
+
     if (state->is_finished && !state->sent_totals)
     {
         state->sent_totals = true;
@@ -514,7 +534,7 @@ bool LocalConnection::poll(size_t)
     {
         state->sent_profile_events = true;
 
-        if (send_profile_events && state->executor)
+        if (send_profile_events && (state->executor || state->pushing_async_executor || state->pushing_executor))
         {
             sendProfileEvents();
             return true;

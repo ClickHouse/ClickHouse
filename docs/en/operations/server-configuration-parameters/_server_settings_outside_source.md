@@ -510,23 +510,23 @@ Example:
 
 ```xml
 <http_options_response>
-        <header>
+     <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Methods</name>
-            <value>POST, GET, OPTIONS</value>
-        </header>
-        <header>
-            <name>Access-Control-Max-Age</name>
-            <value>86400</value>
-        </header>
-    </http_options_response>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Headers</name>
+          <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Methods</name>
+          <value>POST, GET, OPTIONS</value>
+     </header>
+     <header>
+          <name>Access-Control-Max-Age</name>
+          <value>86400</value>
+     </header>
+</http_options_response>
 ```
 
 ## hsts_max_age {#hsts_max_age}
@@ -812,19 +812,20 @@ The location and format of log messages.
 
 **Keys**:
 
-| Key                       | Description                                                                                                                                                                         |
-|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `level`                   | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
-| `log`                     | The path to the log file.                                                                                                                                                           |
-| `errorlog`                | The path to the error log file.                                                                                                                                                     |
-| `size`                    | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
-| `count`                   | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
-| `stream_compress`         | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
-| `console`                 | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
-| `console_log_level`       | Log level for console output. Defaults to `level`.                                                                                                                                  |
-| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  |
-| `use_syslog`              | Also forward log output to syslog.                                                                                                                                                  |
-| `syslog_level`            | Log level for logging to syslog.                                                                                                                                                    |
+| Key                 | Description                                                                                                                                                                         |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `level`             | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
+| `log`               | The path to the log file.                                                                                                                                                           |
+| `errorlog`          | The path to the error log file.                                                                                                                                                     |
+| `size`              | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
+| `count`             | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
+| `stream_compress`   | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
+| `console`           | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
+| `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                                  |
+| `formatting`        | Log format for console output. Currently, only `json` is supported                                                                                                                  |
+| `use_syslog`        | Also forward log output to syslog.                                                                                                                                                  |
+| `syslog_level`      | Log level for logging to syslog.                                                                                                                                                    |
+| `async`             | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG                            |
 
 **Log format specifiers**
 
@@ -992,24 +993,17 @@ Log properties can be omitted by commenting out the property. For example, if yo
 
 ## send_crash_reports {#send_crash_reports}
 
-Settings for opt-in sending of crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
+Settings for sending of crash reports to the ClickHouse core developers team.
 
 Enabling it, especially in pre-production environments, is highly appreciated.
 
-The server will need access to the public internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to function properly.
-
 Keys:
 
-| Key                   | Description                                                                                                                                                                                            |
-|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`             | Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.                                                                                                  |
-| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (Default: `false`).                                                        |
-| `endpoint`            | You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.                  |
-| `anonymize`           | Avoid attaching the server hostname to the crash report.                                                                                                                                               |
-| `http_proxy`          | Configure HTTP proxy for sending crash reports.                                                                                                                                                        |
-| `debug`               | Sets the Sentry client into debug mode.                                                                                                                                                                |
-| `tmp_path`            | Filesystem path for temporary crash report state.                                                                                                                                                      |
-| `environment`         | An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.|
+| Key                   | Description                                                                                                                          |
+|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`             | Boolean flag to enable the feature, `true` by default. Set to `false` to avoid sending crash reports.                                |
+| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions (Default: `true`). |
+| `endpoint`            | You can override the endpoint URL for sending crash reports.                                                                         |
 
 **Recommended usage**
 
@@ -1747,7 +1741,7 @@ Settings for the [backup_log](../../operations/system-tables/backup_log.md) syst
 </clickhouse>
 ```
 
-## blog_storage_log {#blog_storage_log}
+## blob_storage_log {#blob_storage_log}
 
 Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
 
@@ -1894,7 +1888,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 - Positive integers specify the port number to listen to
-- Empty values are used to disable communication with clients over MySQL protocol.
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 :::
 
 **Example**

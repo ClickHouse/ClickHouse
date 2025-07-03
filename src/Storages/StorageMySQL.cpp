@@ -1,4 +1,4 @@
-#include "StorageMySQL.h"
+#include <Storages/StorageMySQL.h>
 
 #if USE_MYSQL
 
@@ -9,6 +9,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>

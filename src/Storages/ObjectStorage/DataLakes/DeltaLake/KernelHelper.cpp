@@ -2,8 +2,9 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
-#include "KernelHelper.h"
-#include "KernelUtils.h"
+#include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
@@ -81,7 +82,9 @@ public:
         if (no_sign || (access_key_id.empty() && secret_access_key.empty()))
             set_option("aws_skip_signature", "true");
 
-        set_option("aws_region", region);
+        if (!region.empty())
+            set_option("aws_region", region);
+
         set_option("aws_bucket", url.bucket);
 
         if (url.uri_str.starts_with("http"))
@@ -114,6 +117,36 @@ private:
     }
 };
 
+/// A helper class to manage local fs storage.
+class LocalKernelHelper final : public IKernelHelper
+{
+public:
+    explicit LocalKernelHelper(const std::string & path_) : table_location(getTableLocation(path_)), path(path_) {}
+
+    const std::string & getTableLocation() const override { return table_location; }
+
+    const std::string & getDataPath() const override { return path; }
+
+    ffi::EngineBuilder * createBuilder() const override
+    {
+        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ffi::get_engine_builder(
+                KernelUtils::toDeltaString(table_location),
+                &KernelUtils::allocateError),
+            "get_engine_builder");
+
+        return builder;
+    }
+
+private:
+    const std::string table_location;
+    const std::string path;
+
+    static std::string getTableLocation(const std::string & path)
+    {
+        return "file://" + path + "/";
+    }
+};
 }
 
 namespace DB
@@ -140,13 +173,22 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & s3_credentials = s3_client->getCredentials();
             const auto & url = s3_conf->getURL();
 
+            auto region = s3_client->getRegion();
+            if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+                region = s3_client->getRegionForBucket(url.bucket, /* force_detect */true);
+
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 url,
                 s3_credentials.GetAWSAccessKeyId(),
                 s3_credentials.GetAWSSecretKey(),
-                s3_client->getRegionForBucket(url.bucket),
+                std::move(region),
                 s3_credentials.GetSessionToken(),
                 auth_settings[S3AuthSetting::no_sign_request]);
+        }
+        case DB::ObjectStorageType::Local:
+        {
+            const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPath());
         }
         default:
         {

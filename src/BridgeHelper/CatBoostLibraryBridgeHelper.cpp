@@ -1,4 +1,4 @@
-#include "CatBoostLibraryBridgeHelper.h"
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/escapeForFileName.h>
@@ -8,6 +8,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 
 #include <random>

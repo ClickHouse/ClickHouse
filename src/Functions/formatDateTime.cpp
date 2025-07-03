@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool formatdatetime_f_prints_single_zero;
     extern const SettingsBool formatdatetime_format_without_leading_zeros;
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool formatdatetime_e_with_space_padding;
 }
 
 namespace ErrorCodes
@@ -297,12 +298,25 @@ private:
             return writeNumber2(dest, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        size_t mysqlAmericanDate(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlAmericanDate(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToDayOfMonthImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToYearImpl::execute(source, timezone) % 100);
             return 8;
+        }
+
+        size_t mysqlAmericanDateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlAmericanDate(dest, source, timezone);
+        }
+
+        size_t mysqlAmericanDateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlAmericanDate(dest, source, timezone);
+            dest[2] = '/';
+            dest[5] = '/';
+            return total_bytes;
         }
 
         size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -315,12 +329,47 @@ private:
             return 2;
         }
 
-        size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlISO8601Date(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber4(dest, ToYearImpl::execute(source, timezone));
             writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 8, ToDayOfMonthImpl::execute(source, timezone));
             return 10;
+        }
+
+        size_t mysqlISO8601DateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlISO8601Date(dest, source, timezone);
+        }
+
+        size_t mysqlDayOfMonthWithSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            if (day < 10)
+                dest[1] = '0' + day;
+            else
+                writeNumber2(dest, day);
+            return 2;
+        }
+
+        size_t mysqlDayOfMonthWithoutSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            if (day < 10)
+            {
+                dest[0] = '0' + day;
+                return 1;
+            }
+            writeNumber2(dest, day);
+            return 2;
+        }
+
+        size_t mysqlISO8601DateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlISO8601Date(dest, source, timezone);
+            dest[4] = '-';
+            dest[7] = '-';
+            return total_bytes;
         }
 
         size_t mysqlDayOfYear(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -474,14 +523,26 @@ private:
             return AMPM(dest, source, fractional_second, scale, timezone);
         }
 
-        size_t mysqlHHMM24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             return 5;
         }
 
-        size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM24(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM24WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM24(dest, source, timezone);
+            dest[2] = ':';
+            return total_bytes;
+        }
+
+        size_t mysqlHHMM12(char * dest, Time source, const DateLUTImpl & timezone)
         {
             auto hour = ToHourImpl::execute(source, timezone);
             writeNumber2(dest, hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour));
@@ -489,6 +550,20 @@ private:
 
             dest[6] = hour >= 12 ? 'P' : 'A';
             return 8;
+        }
+
+        size_t mysqlHHMM12WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM12(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM12WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM12(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ' ';
+            dest[7] = 'M';
+            return total_bytes;
         }
 
         size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -506,11 +581,17 @@ private:
                 fractional_second /= 10;
             }
 
-            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
+            size_t writes = 0;
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
+                ++writes;
             }
+
+            for (UInt32 i = writes; i < 6; ++i)
+                dest[i] = '0';
+
             return 6;
         }
 
@@ -542,12 +623,25 @@ private:
             return scale;
         }
 
-        size_t mysqlISO8601Time(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Time(char * dest, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToSecondImpl::execute(source, timezone));
             return 8;
+        }
+
+        size_t mysqlISO8601TimeWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            return mysqlISO8601Time(dest, source, timezone);
+        }
+
+        size_t mysqlISO8601TimeWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            size_t total_bytes = mysqlISO8601Time(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ':';
+            return total_bytes;
         }
 
         size_t mysqlTimezoneOffset(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -754,11 +848,12 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
+        static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -778,6 +873,13 @@ private:
                     {
                         if (std::any_of(
                                 variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
+                                [&](char c){ return c == format[i + 1]; }))
+                            return false;
+                    }
+                    if (!mysql_e_with_space_padding)
+                    {
+                        if (std::any_of(
+                                variable_width_formatter_e_with_space_padding.begin(), variable_width_formatter_e_with_space_padding.end(),
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
@@ -802,6 +904,7 @@ private:
     const bool mysql_f_prints_single_zero;
     const bool mysql_f_prints_scale_number_of_digits;
     const bool mysql_format_ckl_without_leading_zeros;
+    const bool mysql_e_with_space_padding;
 
 public:
     static constexpr auto name = Name::name;
@@ -813,6 +916,7 @@ public:
         , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
         , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
         , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
+        , mysql_e_with_space_padding(context->getSettingsRef()[Setting::formatdatetime_e_with_space_padding])
     {
     }
 
@@ -966,7 +1070,9 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL)
+            ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros, mysql_e_with_space_padding)
+            : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -1117,11 +1223,11 @@ public:
         };
 
         Pos pos = format.data();
-        Pos const end = format.data() + format.size();
+        const Pos end = format.data() + format.size();
 
         while (true)
         {
-            Pos const percent_pos = find_first_symbols<'%'>(pos, end);
+            const Pos percent_pos = find_first_symbols<'%'>(pos, end);
 
             if (percent_pos < end)
             {
@@ -1202,19 +1308,33 @@ public:
                     case 'D':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlAmericanDate);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlAmericanDateWithoutSeparators /// assumes that `/` is already there
+                                                    : &Instruction<T>::mysqlAmericanDateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "00/00/00";
                         break;
                     }
 
-                    // Day of month, space-padded ( 1-31)  23
+                    // Day of month
                     case 'e':
                     {
-                        Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthSpacePadded);
-                        instructions.push_back(std::move(std::move(instruction)));
-                        out_template += " 0";
+                        if (mysql_e_with_space_padding)
+                        {
+                            /// Space-padded ( 1-31)
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithSpacePadding);
+                            instructions.push_back(std::move(std::move(instruction)));
+                            out_template += " 0";
+                        }
+                        else
+                        {
+                            /// Not space-padded (1-31)
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithoutSpacePadding);
+                            instructions.push_back(std::move(std::move(instruction)));
+                            out_template += "00";
+                        }
                         break;
                     }
 
@@ -1242,9 +1362,10 @@ public:
                     // Fractional seconds
                     case 'f':
                     {
-                        /// If the time data type has no fractional part, we print (default) '000000' or (deprecated) '0' as fractional part.
                         if (mysql_f_prints_single_zero)
                         {
+                            /// If the time data type has no fractional part, print '0' as fractional part.
+                            /// Legacy behavior.
                             Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondSingleZero);
                             instructions.push_back(std::move(instruction));
@@ -1252,6 +1373,7 @@ public:
                         }
                         else
                         {
+                            /// If the time data type has no fractional part, print '000000' as fractional part.
                             if (mysql_f_prints_scale_number_of_digits)
                             {
                                 /// Print as many digits as specified by scale. Legacy behavior.
@@ -1262,7 +1384,8 @@ public:
                             }
                             else
                             {
-                                /// Unconditionally print six digits (independent of scale). This is what MySQL does, may it live long and prosper.
+                                /// Unconditionally print six digits (independent of scale).
+                                /// This is what MySQL does, may it live long and prosper.
                                 Instruction<T> instruction;
                                 instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
                                 instructions.push_back(std::move(instruction));
@@ -1276,7 +1399,9 @@ public:
                     case 'F':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlISO8601Date);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601DateWithoutSeparators /// assumes that `-` is already there
+                                                    : &Instruction<T>::mysqlISO8601DateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "0000-00-00";
                         break;
@@ -1417,7 +1542,10 @@ public:
                     case 'r':
                     {
                         static constexpr std::string_view val = "12:00 AM";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM12, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM12WithoutSeparator /// assumes that `:`, ` ` and `M` are already there
+                                                    : &Instruction<T>::mysqlHHMM12WithSeparator,
+                                             val);
                         out_template += val;
                         break;
                     }
@@ -1426,7 +1554,10 @@ public:
                     case 'R':
                     {
                         static constexpr std::string_view val = "00:00";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM24, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM24WithoutSeparator /// assumes that ':' is already there
+                                                    : &Instruction<T>::mysqlHHMM24WithSeparator,
+                                                    val);
                         out_template += val;
                         break;
                     }
@@ -1453,7 +1584,10 @@ public:
                     case 'T':
                     {
                         static constexpr std::string_view val = "00:00:00";
-                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601TimeWithoutSeparators /// assumes that `:` is already there
+                                                    : &Instruction<T>::mysqlISO8601TimeWithSeparators,
+                                                    val);
                         out_template += val;
                         break;
                     }

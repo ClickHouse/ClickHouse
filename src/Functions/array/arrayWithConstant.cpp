@@ -88,7 +88,21 @@ public:
 
 REGISTER_FUNCTION(ArrayWithConstant)
 {
-    factory.registerFunction<FunctionArrayWithConstant>();
+    FunctionDocumentation::Description description = R"(
+Creates an array of length `length` filled with the constant `x`.
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayWithConstant(N, x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Number of elements in the array.", {"(U)Int*"}},
+        {"x", "The value of the `N` elements in the array, of any type."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an Array with `N` elements of value `x`.", {"Array(T)"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1, 1, 1]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayWithConstant>(documentation);
 }
 
 }

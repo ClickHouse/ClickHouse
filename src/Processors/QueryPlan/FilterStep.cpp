@@ -271,7 +271,7 @@ void FilterStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
@@ -287,6 +287,11 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+}
+
+QueryPlanStepPtr FilterStep::clone() const
+{
+    return std::make_unique<FilterStep>(*this);
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)
