@@ -345,18 +345,20 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
 
 void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
 {
-    if (this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
+    if (this->fc.max_depth > this->depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
     {
         /// Generate a few arrays/tuples with literal values
         ExprList * elist
             = (!complex || rg.nextBool()) ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 8);
 
+        this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
             /// There are no recursive calls here, so don't bother about width and depth
-            this->generateLiteralValueInternal(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+            this->generateLiteralValue(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
         }
+        this->depth--;
     }
     else
     {

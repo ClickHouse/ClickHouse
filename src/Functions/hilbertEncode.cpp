@@ -1,6 +1,6 @@
 #include <optional>
 #include <Functions/FunctionFactory.h>
-#include "hilbertEncode2DLUT.h"
+#include <Functions/hilbertEncode2DLUT.h>
 
 
 namespace DB
