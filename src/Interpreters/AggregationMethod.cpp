@@ -212,4 +212,22 @@ template struct AggregationMethodSerialized<AggregatedDataWithStringKey, true, t
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, true, true>;
 
+template <typename TData>
+void AggregationMethodABSerialized<TData>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+{
+    size_t keys_size = key_columns.size();
+    size_t pos = 0;
+    for (size_t i = 0; i < keys_size - 1; ++i)
+    {
+        size_t size = key_sizes[i];
+        key_columns[i]->insertData(key.data + pos, size);
+        pos += size;
+    }
+
+    key_columns.back()->insertData(key.data + pos, key.size - pos);
+}
+
+template struct AggregationMethodABSerialized<AggregatedDataWithABStringKey>;
+template struct AggregationMethodABSerialized<AggregatedDataWithABStringKeyTwoLevel>;
+
 }

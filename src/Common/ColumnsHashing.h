@@ -452,6 +452,221 @@ struct HashMethodSerialized
     }
 };
 
+template <typename Value, typename Mapped>
+struct HashMethodABSerialized
+    : public columns_hashing_impl::HashMethodBase<HashMethodABSerialized<Value, Mapped>, Value, Mapped, false>
+{
+    using Self = HashMethodABSerialized<Value, Mapped>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = true;
+
+    ColumnRawPtrs key_columns;
+    const ColumnString * column_string = nullptr;
+    size_t num_keys;
+    size_t fixed_keys_size = 0;
+    PaddedPODArray<UInt64> row_sizes;
+    PODArray<char> serialized_buffer;
+    std::vector<ABStringRef> serialized_keys;
+    WeakHash32 hashes{0};
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    HashMethodABSerialized(const ColumnRawPtrs & key_columns_, const Sizes & key_sizes_, const HashMethodContextPtr &)
+        : num_keys(key_columns_.size())
+    {
+        /// Shuffle key columns so that the only non-fixed length column is at the end
+        key_columns.reserve(num_keys);
+        Sizes key_sizes;
+        key_sizes.reserve(num_keys);
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if (key_sizes_[i] > 0)
+            {
+                key_columns.push_back(key_columns_[i]);
+                key_sizes.push_back(key_sizes_[i]);
+            }
+        }
+
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if (key_sizes_[i] == 0)
+            {
+                key_columns.push_back(key_columns_[i]);
+                key_sizes.push_back(key_sizes_[i]);
+                break;
+            }
+        }
+
+        chassert(key_sizes.size() == key_sizes_.size());
+
+        size_t rows = key_columns[0]->size();
+        for (auto key_size : key_sizes)
+            fixed_keys_size += key_size;
+
+        if (key_sizes.back() == 0)
+        {
+            column_string = assert_cast<const ColumnString *>(key_columns.back());
+            row_sizes.resize_exact(rows);
+            const auto & offsets = column_string->getOffsets();
+            for (size_t i = 0; i < rows; ++i)
+                row_sizes[i] = fixed_keys_size + offsets[i] - offsets[i - 1];
+        }
+        else
+        {
+            row_sizes.assign(rows, fixed_keys_size);
+        }
+
+        size_t total_size = 0;
+        for (auto row_size : row_sizes)
+        {
+            if (row_size >= 12)
+                total_size += row_size;
+        }
+        serialized_buffer.resize(total_size);
+
+        char * memory = serialized_buffer.data();
+        std::vector<char *> memories(rows);
+        serialized_keys.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (row_sizes[i] < 12)
+            {
+                serialized_keys[i].high = row_sizes[i] << 59;
+                serialized_keys[i].low = 0;
+                memories[i] = serialized_keys[i].getSmallPtr();
+            }
+            else
+            {
+                serialized_keys[i].high = reinterpret_cast<uintptr_t>(memory);
+                memories[i] = memory;
+                memory += row_sizes[i];
+            }
+        }
+
+        if (column_string)
+        {
+            for (size_t i = 0; i < num_keys - 1; ++i)
+                key_columns[i]->batchSerializeValueIntoMemory(memories);
+
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto str = column_string->getDataAt(i);
+                memcpy(memories[i], str.data, str.size);
+                memories[i] += str.size;
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < num_keys; ++i)
+                key_columns[i]->batchSerializeValueIntoMemory(memories);
+        }
+
+        hashes.reset(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (row_sizes[i] <= std::numeric_limits<UInt32>::max())
+            {
+                auto h = StringRefHash()({memories[i] - row_sizes[i], row_sizes[i]});
+                hashes.getData()[i] = h;
+                if (row_sizes[i] < 12)
+                    serialized_keys[i].low |= static_cast<uint32_t>(h);
+                else
+                    serialized_keys[i].low = (row_sizes[i] << 32) | static_cast<uint32_t>(h);
+            }
+            else
+            {
+                hashes.getData()[i] = static_cast<UInt32>(row_sizes[i]);
+                serialized_keys[i].high |= 0x8000000000000000ULL;
+                serialized_keys[i].low = row_sizes[i];
+            }
+        }
+
+        prefetching = std::make_unique<PrefetchingHelper>();
+    }
+
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    ALWAYS_INLINE ArenaABStringHolder getKeyHolder(size_t row, Arena & pool) const
+    {
+        return ArenaABStringHolder{serialized_keys[row], pool};
+    }
+
+    // ALWAYS_INLINE SerializedABKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    // {
+    //     if (row_sizes[row] < 12)
+    //     {
+    //         SerializedABKeyHolder r{{}, pool};
+    //         r.key.low = hashes.getData()[row];
+    //         r.key.high = row_sizes[row] << 59;
+    //         char * memory = r.key.getSmallPtr();
+    //         if (column_string)
+    //         {
+    //             for (size_t j = 0; j < num_keys - 1; ++j)
+    //                 memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+    //             auto str = column_string->getDataAt(row);
+    //             memcpy(memory, str.data, str.size);
+    //         }
+    //         else
+    //         {
+    //             for (size_t j = 0; j < num_keys; ++j)
+    //                 memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+    //         }
+    //         return r;
+    //     }
+    //     else
+    //     {
+    //         char * memory = pool.alloc(row_sizes[row]);
+    //         char * data = memory;
+    //         if (column_string)
+    //         {
+    //             for (size_t j = 0; j < num_keys - 1; ++j)
+    //                 memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+    //             auto str = column_string->getDataAt(row);
+    //             memcpy(memory, str.data, str.size);
+    //         }
+    //         else
+    //         {
+    //             for (size_t j = 0; j < num_keys; ++j)
+    //                 memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+    //         }
+    //         return SerializedABKeyHolder{ABStringRef::build(data, row_sizes[row], hashes.getData()[row]), pool};
+    //     }
+    // }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+
+        Sizes new_sizes;
+        new_sizes.reserve(key_columns.size());
+        for (size_t i = 0; i < key_sizes.size(); ++i)
+        {
+            if (key_sizes[i] > 0)
+            {
+                new_columns.push_back(key_columns[i]);
+                new_sizes.push_back(key_sizes[i]);
+            }
+        }
+
+        for (size_t i = 0; i < key_sizes.size(); ++i)
+        {
+            if (key_sizes[i] == 0)
+            {
+                new_columns.push_back(key_columns[i]);
+                new_sizes.push_back(key_sizes[i]);
+                break;
+            }
+        }
+
+        chassert(key_sizes.size() == new_sizes.size());
+
+        key_columns.swap(new_columns);
+        return new_sizes;
+    }
+};
 }
 
 /// Explicit instantiation of LowCardinalityDictionaryCache::cache which is a really heavy template

@@ -23,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -678,6 +679,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     bool all_keys_are_numbers_or_strings = true;
+    size_t num_string_keys = 0;
     for (size_t j = 0; j < params.keys_size; ++j)
     {
         if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
@@ -686,6 +688,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             all_keys_are_numbers_or_strings = false;
             break;
         }
+
+        if (isString(types_removed_nullable[j]))
+            ++num_string_keys;
     }
 
     if (has_nullable_key)
@@ -827,11 +832,32 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
+
+        if (CurrentThread::isInitialized())
+        {
+            auto query_context = CurrentThread::get().getQueryContext();
+            if (query_context && query_context->getSettingsRef().has("SQL_ab_string"))
+                return AggregatedDataVariants::Type::key_ab_string;
+        }
+
         return AggregatedDataVariants::Type::key_string;
     }
 
     if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+    {
+        /// TODO(ab): We can optimize more cases
+        if (num_string_keys <= 1 && !has_low_cardinality && !has_nullable_key)
+        {
+            if (CurrentThread::isInitialized())
+            {
+                auto query_context = CurrentThread::get().getQueryContext();
+                if (query_context && query_context->getSettingsRef().has("SQL_ab_string"))
+                    return AggregatedDataVariants::Type::ab_serialized;
+            }
+        }
+
         return AggregatedDataVariants::Type::prealloc_serialized;
+    }
 
     return AggregatedDataVariants::Type::serialized;
 }

@@ -39,6 +39,9 @@ using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
+// using AggregatedDataWithABStringKey = ABHashMap<AggregateDataPtr>;
+using AggregatedDataWithABStringKey = HashMap<ABStringRef, AggregateDataPtr>;
+// using AggregatedDataWithABStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
@@ -49,6 +52,9 @@ using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDat
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
+// using AggregatedDataWithABStringKeyTwoLevel = TwoLevelABHashMap<AggregateDataPtr>;
+using AggregatedDataWithABStringKeyTwoLevel = TwoLevelHashMap<ABStringRef, AggregateDataPtr>;
+// using AggregatedDataWithABStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
 

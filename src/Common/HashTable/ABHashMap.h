@@ -1,81 +1,73 @@
 #pragma once
 
-#include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashTable.h>
-#include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/Prefetching.h>
-
-
-/** NOTE HashMap could only be used for memmoveable (position independent) types.
-  * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of a type, such as that zero bytes are compared equals to zero key.
-  *
-  * Please keep in sync with PackedHashMap.h
-  */
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 }
 
-struct NoInitTag
+struct ABHashTableHash
 {
+    size_t ALWAYS_INLINE operator()(StringRef key) const
+    {
+        // if (key.data == nullptr)
+        //     return 0;
+
+        // if ((reinterpret_cast<uintptr_t>(key.data) >> 63) == 1) [[unlikely]]
+        //     return key.size;
+
+        // size_t inlined_size = reinterpret_cast<uintptr_t>(key.data) >> 59;
+        // if (inlined_size > 0)
+        //     return StringRefHash()({reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(&key) + 1), inlined_size});
+
+        return key.size;
+    }
 };
 
-/// A pair that does not initialize the elements, if not needed.
-template <typename First, typename Second>
-struct PairNoInit
+template <typename TMapped>
+struct ABHashMapCell
 {
-    First first;
-    Second second;
-
-    PairNoInit() {} /// NOLINT
-
-    template <typename FirstValue>
-    PairNoInit(FirstValue && first_, NoInitTag)
-        : first(std::forward<FirstValue>(first_))
-    {
-    }
-
-    template <typename FirstValue, typename SecondValue>
-    PairNoInit(FirstValue && first_, SecondValue && second_)
-        : first(std::forward<FirstValue>(first_))
-        , second(std::forward<SecondValue>(second_))
-    {
-    }
-
-    auto operator<=>(const PairNoInit &) const = default;
-};
-
-template <typename First, typename Second>
-PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && first, Second && second)
-{
-    return PairNoInit<std::decay_t<First>, std::decay_t<Second>>(std::forward<First>(first), std::forward<Second>(second));
-}
-
-
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, typename Pair = PairNoInit<Key, TMapped>>
-struct HashMapCell
-{
+    using Key = StringRef;
     using Mapped = TMapped;
-    using State = TState;
+    using State = HashTableNoState;
 
-    using value_type = Pair;
+    using value_type = PairNoInit<Key, TMapped>;
     using mapped_type = Mapped;
     using key_type = Key;
-    using ExternalKey = std::conditional_t<std::is_same_v<std::decay_t<Key>, ABStringRef>, StringRef, Key>;
 
     value_type value;
 
-    HashMapCell() = default;
-    HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
-    HashMapCell(const value_type & value_, const State &) : value(value_) {}
+    ABHashMapCell() = default;
+    ABHashMapCell(const Key & key_, const State &)
+        : value(key_, NoInitTag())
+    {
+    }
+    ABHashMapCell(const value_type & value_, const State &)
+        : value(value_)
+    {
+    }
 
     /// Get the key (externally).
-    ExternalKey getKey() const { return static_cast<ExternalKey>(value.first); }
+    StringRef ALWAYS_INLINE getKey() const
+    {
+        // if (value.first.data == nullptr)
+        //     return {};
+
+        // if ((reinterpret_cast<uintptr_t>(value.first.data) >> 63) == 1)
+        //     return {reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(value.first.data) & ~(1ULL << 63)), value.first.size};
+
+        // size_t inlined_size = reinterpret_cast<uintptr_t>(value.first.data) >> 59;
+        // if (inlined_size > 0)
+        //     return {reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(&value.first) + 1), inlined_size};
+
+        return StringRef(value.first.data, value.first.size >> 32);
+    }
+
     Mapped & getMapped() { return value.second; }
     const Mapped & getMapped() const { return value.second; }
     const value_type & getValue() const { return value; }
@@ -83,18 +75,68 @@ struct HashMapCell
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_) const
+    {
+        if (value.first.size != key_.size)
+            return false;
 
-    void setHash(size_t /*hash_value*/) {}
-    size_t getHash(const Hash & hash) const { return hash(value.first); }
+        // if (value.first.data == nullptr)
+        //     return key_.data == nullptr;
+
+//         if ((reinterpret_cast<uintptr_t>(value.first.data) >> 63) == 1)
+//         {
+//             if ((reinterpret_cast<uintptr_t>(key_.data) >> 63) == 1)
+//             {
+//                 if (value.first.size != key_.size)
+//                     return false;
+// #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+//                 return memequalWide(
+//                     reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(value.first.data) & ~(1ULL << 63)),
+//                     reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(key_.data) & ~(1ULL << 63)),
+//                     key_.size);
+// #else
+//                 return 0
+//                     == memcmp(
+//                            reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(value.first.data) & ~(1ULL << 63)),
+//                            reinterpret_cast<const char *>(reinterpret_cast<uintptr_t>(key_.data) & ~(1ULL << 63)),
+//                            key_.size);
+// #endif
+//             }
+//             else
+//             {
+//                 return false;
+//             }
+//         }
+
+//         size_t inlined_size = reinterpret_cast<uintptr_t>(value.first.data) >> 59;
+
+//         if (inlined_size > 0)
+//             return value.first.data == key_.data && value.first.size == key_.size;
+
+//         size_t key_inlined_size = reinterpret_cast<uintptr_t>(key_.data) >> 59;
+//         if (key_inlined_size > 0)
+//             return false;
+
+        size_t size = value.first.size >> 32;
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        return memequalWide(value.first.data, key_.data, size);
+#else
+        return 0 == memcmp(value.first.data, key_.data, size);
+#endif
+    }
+
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /* hash_ */) const { return keyEquals(key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /* hash_ */, const State & /*state*/) const { return keyEquals(key_); }
+
+    void setHash(size_t /*hash_value*/) { }
+    size_t getHash(const ABHashTableHash & hash) const { return hash(value.first); }
 
     bool isZero(const State & state) const { return isZero(value.first, state); }
-    static bool isZero(const Key & key, const State & /*state*/) { return ZeroTraits::check(key); }
+    static bool isZero(const Key & key, const State & /*state*/) { return key.data == nullptr; }
 
     /// Set the key value to zero.
-    void setZero() { ZeroTraits::set(value.first); }
+    void setZero() { value.first.data = nullptr; }
 
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
@@ -130,68 +172,44 @@ struct HashMapCell
     }
 
     template <size_t I>
-    auto & get() & {
-        if constexpr (I == 0) return value.first;
-        else if constexpr (I == 1) return value.second;
+    auto & get() &
+    {
+        if constexpr (I == 0)
+            return value.first;
+        else if constexpr (I == 1)
+            return value.second;
     }
 
     template <size_t I>
-    auto const & get() const & {
-        if constexpr (I == 0) return value.first;
-        else if constexpr (I == 1) return value.second;
+    auto const & get() const &
+    {
+        if constexpr (I == 0)
+            return value.first;
+        else if constexpr (I == 1)
+            return value.second;
     }
 
     template <size_t I>
-    auto && get() && {
-        if constexpr (I == 0) return std::move(value.first);
-        else if constexpr (I == 1) return std::move(value.second);
+    auto && get() &&
+    {
+        if constexpr (I == 0)
+            return std::move(value.first);
+        else if constexpr (I == 1)
+            return std::move(value.second);
     }
-
 };
 
-namespace std
-{
-
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState, Pair>> : std::integral_constant<size_t, 2> { };
-
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = Key; };
-
-    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
-    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = TMapped; };
-}
-
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
-struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
-{
-    using Base = HashMapCell<Key, TMapped, Hash, TState>;
-
-    size_t saved_hash;
-
-    using Base::Base;
-
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
-
-    void setHash(size_t hash_value) { saved_hash = hash_value; }
-    size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
-};
-
-template <
-    typename Key,
-    typename Cell,
-    typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
-    typename Allocator = HashTableAllocator>
-class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
+template <typename TMapped>
+class ABHashMap
+    : public HashTable<StringRef, ABHashMapCell<TMapped>, ABHashTableHash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>
 {
 public:
-    using Self = HashMapTable;
-    using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
+    using Self = ABHashMap;
+    using Base = HashTable<StringRef, ABHashMapCell<TMapped>, ABHashTableHash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>;
     using LookupResult = typename Base::LookupResult;
     using Iterator = typename Base::iterator;
+    using Cell = ABHashMapCell<TMapped>;
+    using Key = StringRef;
 
     using Base::Base;
     using Base::prefetch;
@@ -290,7 +308,7 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (reinterpret_cast<void*>(&it->getMapped())) typename Cell::Mapped();
+            new (reinterpret_cast<void *>(&it->getMapped())) typename Cell::Mapped();
 
         return it->getMapped();
     }
@@ -327,45 +345,3 @@ private:
         return it;
     }
 };
-
-namespace std
-{
-
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_size<HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
-
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<0, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = Key; };
-
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<1, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = TMapped; };
-}
-
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
-    typename Allocator = HashTableAllocator>
-using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
-
-
-template <
-    typename Key,
-    typename Mapped,
-    typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
-    typename Allocator = HashTableAllocator>
-using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
-
-template <typename Key, typename Mapped, typename Hash,
-    size_t initial_size_degree>
-using HashMapWithStackMemory = HashMapTable<
-    Key,
-    HashMapCellWithSavedHash<Key, Mapped, Hash>,
-    Hash,
-    HashTableGrower<initial_size_degree>,
-    HashTableAllocatorWithStackMemory<
-        (1ULL << initial_size_degree)
-        * sizeof(HashMapCellWithSavedHash<Key, Mapped, Hash>)>>;

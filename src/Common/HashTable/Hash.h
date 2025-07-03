@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <base/StringRef.h>
+#include <base/ABStringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -541,3 +542,12 @@ struct IntHash32
 
 template <>
 struct DefaultHash<StringRef> : public StringRefHash {};
+
+template <>
+struct DefaultHash<ABStringRef>
+{
+    size_t operator() (ABStringRef key) const
+    {
+        return key.low & 0xFFFFFFFF;
+    }
+};

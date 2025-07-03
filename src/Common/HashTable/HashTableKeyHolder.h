@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/StringRef.h>
+#include <base/ABStringRef.h>
 
 #include <Common/Arena.h>
 
@@ -133,3 +134,63 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key.size = 0;
 }
 
+namespace DB
+{
+struct ArenaABStringHolder
+{
+    ABStringRef key;
+    Arena & pool;
+};
+}
+
+inline ABStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaABStringHolder & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaABStringHolder & holder)
+{
+    size_t len = holder.key.heapSize();
+
+    if (len == 0)
+        return;
+
+    if (holder.key.isMedium())
+    {
+        holder.key.high = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
+    }
+    else
+    {
+        holder.key.high
+            = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize())) | 0x8000000000000000ULL;
+    }
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaABStringHolder &)
+{
+}
+
+namespace DB
+{
+
+struct SerializedABKeyHolder
+{
+    ABStringRef key;
+    Arena & pool;
+};
+
+}
+
+inline ABStringRef & ALWAYS_INLINE keyHolderGetKey(DB::SerializedABKeyHolder & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::SerializedABKeyHolder &)
+{
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedABKeyHolder & holder)
+{
+    holder.pool.rollback(holder.key.heapSize());
+}
