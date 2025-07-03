@@ -91,6 +91,10 @@ struct QueryPlanOptimizationSettings
     VectorSearchFilterStrategy vector_search_filter_strategy;
     size_t max_limit_for_vector_search_queries;
 
+    /// If full text search using index in payload is enabled.
+    // TODO: JAM unset this on merging..
+    bool allow_experimental_text_index_pipeline = true;
+
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;

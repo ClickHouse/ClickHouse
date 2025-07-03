@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
+    extern const SettingsBool allow_experimental_text_index_pipeline;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsMaxThreads max_threads;
@@ -109,6 +110,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
+
+    allow_experimental_text_index_pipeline = from[Setting::allow_experimental_text_index_pipeline];
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

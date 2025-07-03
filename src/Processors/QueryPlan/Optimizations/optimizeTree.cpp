@@ -8,6 +8,11 @@
 
 #include <stack>
 
+#include <cstdio>
+
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+
 namespace DB
 {
 
@@ -21,8 +26,65 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
+static void printHierarchicalDAG(const QueryPlan::Node * parent_node, int indent)
+{
+    const QueryPlan::Node * node = parent_node;
+
+    if (indent == 0)
+        printf("\n=== Optimize Tree ===\n");
+
+    for (int i = 0; i < indent; ++i)
+        printf(" ");
+
+    if (node->step->getName() == "Expression")
+    {
+        auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+        const ActionsDAG & expression = expression_step->getExpression();
+
+        printf("%s: Inputs: ", node->step->getName().c_str());
+        for (auto const inputs : expression.getInputs())
+            printf(" %s ", inputs->result_name.c_str());
+
+        printf("Outputs: ");
+        for (auto const output : expression.getOutputs())
+            printf(" %s ", output->result_name.c_str());
+
+        printf("\n");
+    }
+    else if (node->step->getName() == "Filter")
+    {
+        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+        const ActionsDAG & expression = filter_step->getExpression();
+
+        printf("%s: Inputs: ", node->step->getName().c_str());
+        for (auto const inputs : expression.getInputs())
+            printf(" %s ", inputs->result_name.c_str());
+
+        printf("Outputs: ");
+        for (auto const output : expression.getOutputs())
+            printf(" %s ", output->result_name.c_str());
+
+        printf("\n");
+
+        //printf(") %s\n", expression.dumpNames().c_str());
+    }
+    else
+    {
+        printf("|%s|\n", node->step->getName().c_str());
+    }
+
+    for (QueryPlan::Node * subnode : node->children)
+        printHierarchicalDAG(subnode, indent + 1);
+}
+
+
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+
+    printf("\n=== optimizeTreeFirstPass ===\n");
+    printHierarchicalDAG(&root, 0);
+    //printf("\n=== optimizeTreeFirstPass Done ===\n");
+
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -48,6 +110,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
     Optimization::ExtraSettings extra_settings = {
+        optimization_settings.allow_experimental_text_index_pipeline,
         optimization_settings.max_limit_for_vector_search_queries,
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
