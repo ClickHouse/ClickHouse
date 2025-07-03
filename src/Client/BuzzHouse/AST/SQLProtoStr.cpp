@@ -4746,6 +4746,14 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP QUERY CONDITION CACHE";
             can_set_cluster = true;
             break;
+        case CmdType::kEnableFailpoint:
+            ret += "ENABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.enable_failpoint());
+            break;
+        case CmdType::kDisableFailpoint:
+            ret += "DISABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.disable_failpoint());
+            break;
         default:
             ret += "FLUSH LOGS";
     }

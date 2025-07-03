@@ -3760,6 +3760,69 @@ message SyncReplica {
     required SyncPolicy policy = 2;
 }
 
+enum FailPoint {
+    replicated_merge_tree_commit_zk_fail_after_op = 1;
+    replicated_queue_fail_next_entry = 2;
+    replicated_queue_unfail_entries = 3;
+    replicated_merge_tree_insert_quorum_fail_0 = 4;
+    replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault = 5;
+    use_delayed_remote_source = 6;
+    cluster_discovery_faults = 7;
+    replicated_sends_failpoint = 8;
+    stripe_log_sink_write_fallpoint = 9;
+    smt_commit_merge_mutate_zk_fail_after_op = 10;
+    smt_commit_merge_mutate_zk_fail_before_op = 11;
+    smt_commit_write_zk_fail_after_op = 12;
+    smt_commit_write_zk_fail_before_op = 13;
+    smt_commit_merge_change_version_before_op = 14;
+    smt_merge_mutate_intention_freeze_in_destructor = 15;
+    smt_add_part_sleep_after_add_before_commit = 16;
+    smt_sleep_in_constructor = 17;
+    meta_in_keeper_create_metadata_failure = 18;
+    smt_insert_retry_timeout = 19;
+    smt_insert_fake_hardware_error = 20;
+    smt_sleep_after_hardware_in_insert = 21;
+    smt_throw_keeper_exception_after_successful_insert = 22;
+    smt_lightweight_snapshot_fail = 23;
+    object_storage_queue_fail_commit = 24;
+    smt_dont_merge_first_part = 25;
+    smt_sleep_in_schedule_data_processing_job = 26;
+    cache_warmer_stall = 27;
+    file_cache_dynamic_resize_fail_to_evict = 28;
+    check_table_query_delay_for_part = 29;
+    dummy_failpoint = 30;
+    prefetched_reader_pool_failpoint = 31;
+    shared_set_sleep_during_update = 32;
+    smt_outdated_parts_exception_response = 33;
+    object_storage_queue_fail_in_the_middle_of_file = 34;
+    replicated_merge_tree_insert_retry_pause = 35;
+    finish_set_quorum_failed_parts = 36;
+    finish_clean_quorum_failed_parts = 37;
+    dummy_pausable_failpoint = 38;
+    execute_query_calling_empty_set_result_func_on_exception = 39;
+    receive_timeout_on_table_status_response = 40;
+    keepermap_fail_drop_data = 41;
+    lazy_pipe_fds_fail_close = 42;
+    infinite_sleep = 43;
+    stop_moving_part_before_swap_with_active = 44;
+    slowdown_index_analysis = 45;
+    replicated_merge_tree_all_replicas_stale = 46;
+    zero_copy_lock_zk_fail_before_op = 47;
+    zero_copy_lock_zk_fail_after_op = 48;
+    plain_object_storage_write_fail_on_directory_create = 49;
+    plain_object_storage_write_fail_on_directory_move = 50;
+    zero_copy_unlock_zk_fail_before_op = 51;
+    zero_copy_unlock_zk_fail_after_op = 52;
+    plain_rewritable_object_storage_azure_not_found_on_init = 53;
+    storage_merge_tree_background_clear_old_parts_pause = 54;
+    database_replicated_startup_pause = 55;
+    keeper_leader_sets_invalid_digest = 56;
+    parallel_replicas_wait_for_unused_replicas = 57;
+    plain_object_storage_copy_fail_on_file_move = 58;
+    plain_object_storage_copy_temp_source_file_fail_on_file_move = 59;
+    plain_object_storage_copy_temp_target_file_fail_on_file_move = 60;
+}
+
 message SystemCommand {
     oneof system_cmd_oneof {
         bool reload_embedded_dictionaries = 1;
@@ -3830,8 +3893,10 @@ message SystemCommand {
         ExprSchemaTable stop_distributed_sends = 65;
         ExprSchemaTable start_distributed_sends = 66;
         bool drop_query_condition_cache = 67;
+        FailPoint enable_failpoint = 68;
+        FailPoint disable_failpoint = 69;
     }
-    optional Cluster cluster = 68;
+    optional Cluster cluster = 70;
 }
 
 message BackupRestoreObject {
