@@ -32,6 +32,9 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
+    extern const Event GranulesSkippedByPrewhereReaders;
+    extern const Event GranulesReadByPrewhereReaders;
+    extern const Event RowsSkippedByPrewhereReaders;
 }
 
 namespace DB
@@ -336,6 +339,8 @@ void MergeTreeRangeReader::ReadResult::clear()
     num_rows = 0;
     columns.clear();
     additional_columns.clear();
+    /// Clear granule tracking state for new read operation
+    already_counted_skipped_granules.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
@@ -462,6 +467,10 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
+    /// Save before filtering to calculate how many rows/granules were skipped.
+    size_t rows_before_filter = num_rows;
+    ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders, countSkippedGranules(filter));
+
     filterColumns(columns, filter);
 
     {
@@ -475,7 +484,47 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     num_rows = filter.countBytesInFilter();
 
+    ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_filter - num_rows);
+
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
+}
+
+size_t MergeTreeRangeReader::ReadResult::countSkippedGranules(const FilterWithCachedCount & filter) const
+{
+    if (rows_per_granule.empty() || filter.size() < total_rows_per_granule)
+        return 0;
+
+    size_t skipped_granules = 0;
+    size_t row_offset = 0;
+    const auto & filter_data = filter.getData();
+
+    for (const auto & num_rows_in_granule : rows_per_granule)
+    {
+        if (row_offset + num_rows_in_granule > filter_data.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Filter size mismatch: expected at least {} rows, got {}",
+                row_offset + num_rows_in_granule, filter_data.size());
+
+        /// Count granules where ALL rows are filtered out. We don't count partially filtered granules.
+        bool has_any_rows_passing_filter = std::any_of(
+            filter_data.begin() + row_offset,
+            filter_data.begin() + row_offset + num_rows_in_granule,
+            [](UInt8 value) { return value != 0; });
+
+        if (!has_any_rows_passing_filter && num_rows_in_granule > 0)
+        {
+            /// Only count this granule if we haven't already counted it in a previous PREWHERE step
+            if (already_counted_skipped_granules.find(row_offset) == already_counted_skipped_granules.end())
+            {
+                already_counted_skipped_granules.insert(row_offset);
+                ++skipped_granules;
+            }
+        }
+
+        row_offset += num_rows_in_granule;
+    }
+
+    return skipped_granules;
 }
 
 void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules)
@@ -1433,6 +1482,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
+
+        /// Track total granules and rows being processed
+        ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders, result.rows_per_granule.size());
+
         result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
