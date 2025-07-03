@@ -553,7 +553,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
-            executeSingleThread(0);
+            executeSingleThread(slot->slot_id, slot.get());
         }
     }
     catch (...)

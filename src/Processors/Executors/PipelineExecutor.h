@@ -116,7 +116,7 @@ private:
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
     void executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot = nullptr);
+    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
 
