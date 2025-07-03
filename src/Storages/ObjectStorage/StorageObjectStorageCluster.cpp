@@ -23,12 +23,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 lock_object_storage_task_distribution_ms;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -234,7 +236,22 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         }
     }
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, ids_of_hosts);
+    uint64_t lock_object_storage_task_distribution_ms = local_context->getSettingsRef()[Setting::lock_object_storage_task_distribution_ms];
+
+    /// Check value to avoid negative result after conversion in microseconds.
+    /// Poco::Timestamp::TimeDiff is signed int 64.
+    static const uint64_t lock_object_storage_task_distribution_ms_max = 0x0020000000000000ULL;
+    if (lock_object_storage_task_distribution_ms > lock_object_storage_task_distribution_ms_max)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Value lock_object_storage_task_distribution_ms is too big: {}, allowed maximum is {}",
+            lock_object_storage_task_distribution_ms,
+            lock_object_storage_task_distribution_ms_max
+        );
+
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+        iterator,
+        ids_of_hosts,
+        lock_object_storage_task_distribution_ms);
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor](size_t number_of_current_replica) mutable -> String

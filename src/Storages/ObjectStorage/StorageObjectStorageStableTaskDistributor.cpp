@@ -13,10 +13,12 @@ namespace ErrorCodes
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
-    std::vector<std::string> ids_of_nodes_)
+    std::vector<std::string> ids_of_nodes_,
+    uint64_t lock_object_storage_task_distribution_ms_)
     : iterator(std::move(iterator_))
     , connection_to_files(ids_of_nodes_.size())
     , ids_of_nodes(ids_of_nodes_)
+    , lock_object_storage_task_distribution_us(lock_object_storage_task_distribution_ms_ * 1000)
     , iterator_exhausted(false)
 {
 }
@@ -31,6 +33,8 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(siz
             "Received request with invalid replica number {}, max possible replica number {}",
             number_of_current_replica,
             connection_to_files.size() - 1);
+
+    saveLastNodeActivity(number_of_current_replica);
 
     // 1. Check pre-queued files first
     if (auto file = getPreQueuedFile(number_of_current_replica))
@@ -156,7 +160,7 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            unprocessed_files.insert(file_path);
+            unprocessed_files[file_path] = number_of_current_replica;
             connection_to_files[file_replica_idx].push_back(file_path);
         }
     }
@@ -166,25 +170,64 @@ std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFile
 
 std::optional<String> StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
+    /// Limit time of node activity to keep task in queue
+    Poco::Timestamp activity_limit;
+    Poco::Timestamp oldest_activity;
+    if (lock_object_storage_task_distribution_us > 0)
+        activity_limit -= lock_object_storage_task_distribution_us;
+
     std::lock_guard lock(mutex);
 
     if (!unprocessed_files.empty())
     {
         auto it = unprocessed_files.begin();
-        String next_file = *it;
-        unprocessed_files.erase(it);
+
+        while (it != unprocessed_files.end())
+        {
+            auto last_activity = last_node_activity.find(it->second);
+            if (lock_object_storage_task_distribution_us <= 0
+                || last_activity == last_node_activity.end()
+                || activity_limit > last_activity->second)
+            {
+                String next_file = it->first;
+                unprocessed_files.erase(it);
+
+                LOG_TRACE(
+                    log,
+                    "Iterator exhausted. Assigning unprocessed file {} to replica {}",
+                    next_file,
+                    number_of_current_replica
+                );
+
+                return next_file;
+            }
+
+            oldest_activity = std::min(oldest_activity, last_activity->second);
+            ++it;
+        }
 
         LOG_TRACE(
             log,
-            "Iterator exhausted. Assigning unprocessed file {} to replica {}",
-            next_file,
-            number_of_current_replica
+            "No unprocessed file for replica {}, need to retry after {} us",
+            number_of_current_replica,
+            oldest_activity - activity_limit
         );
 
-        return next_file;
+        /// All unprocessed files owned by alive replicas with recenlty activity
+        /// Need to retry after (oldest_activity - activity_limit) microseconds
+        RelativePathWithMetadata::CommandInTaskResponse response;
+        response.set_retry_after_us(oldest_activity - activity_limit);
+        return response.to_string();
     }
 
     return std::nullopt;
+}
+
+void StorageObjectStorageStableTaskDistributor::saveLastNodeActivity(size_t number_of_current_replica)
+{
+    Poco::Timestamp now;
+    std::lock_guard lock(mutex);
+    last_node_activity[number_of_current_replica] = now;
 }
 
 }

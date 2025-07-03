@@ -16,12 +16,12 @@ logging.getLogger().addHandler(logging.StreamHandler())
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def create_buckets_s3(cluster):
+def create_buckets_s3(cluster, files=1000):
     minio = cluster.minio_client
 
     s3_data = []
 
-    for file_number in range(1000):
+    for file_number in range(files):
         file_name = f"data/generated/file_{file_number}.csv"
         os.makedirs(os.path.join(SCRIPT_DIR, "data/generated/"), exist_ok=True)
         s3_data.append(file_name)
@@ -61,6 +61,7 @@ def started_cluster():
                 macros={"replica": f"clickhouse{i}"},
                 with_minio=True,
                 with_zookeeper=True,
+                stay_alive=True,
             )
 
         logging.info("Starting cluster...")
@@ -71,13 +72,22 @@ def started_cluster():
 
         yield cluster
     finally:
-        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"))
+        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"), ignore_errors=True)
         cluster.shutdown()
 
 
-def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache):
+def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache,
+                  lock_object_storage_task_distribution_ms):
     for host in list(cluster.instances.values()):
-        host.query("SYSTEM DROP FILESYSTEM CACHE 'raw_s3_cache'", timeout=30)
+        host.query("SYSTEM DROP FILESYSTEM CACHE 'raw_s3_cache'", ignore_error=True)
+
+    settings = {
+        "enable_filesystem_cache": enable_filesystem_cache,
+        "filesystem_cache_name": "'raw_s3_cache'",
+        }
+
+    if lock_object_storage_task_distribution_ms > 0:
+        settings["lock_object_storage_task_distribution_ms"] = lock_object_storage_task_distribution_ms
 
     query_id_first = str(uuid.uuid4())
     result_first = node.query(
@@ -85,12 +95,9 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
         SELECT count(*)
           FROM s3Cluster('{cluster_first}', 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
           WHERE b=42
-        SETTINGS
-          enable_filesystem_cache={enable_filesystem_cache},
-          filesystem_cache_name='raw_s3_cache'
+        SETTINGS {",".join(f"{k}={v}" for k, v in settings.items())}
         """,
         query_id=query_id_first,
-        timeout=30,
     )
     assert result_first == expected_result
     query_id_second = str(uuid.uuid4())
@@ -99,18 +106,14 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
         SELECT count(*)
           FROM s3Cluster('{cluster_second}', 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
           WHERE b=42
-        SETTINGS
-          enable_filesystem_cache={enable_filesystem_cache},
-          filesystem_cache_name='raw_s3_cache'
+        SETTINGS {",".join(f"{k}={v}" for k, v in settings.items())}
         """,
         query_id=query_id_second,
-        timeout=30,
     )
     assert result_second == expected_result
 
-    node.query("SYSTEM FLUSH LOGS", timeout=30)
-    node.query(f"SYSTEM FLUSH LOGS ON CLUSTER {cluster_first}", timeout=30)
-    node.query(f"SYSTEM FLUSH LOGS ON CLUSTER {cluster_second}", timeout=30)
+    node.query(f"SYSTEM FLUSH LOGS ON CLUSTER {cluster_first}")
+    node.query(f"SYSTEM FLUSH LOGS ON CLUSTER {cluster_second}")
 
     s3_get_first = node.query(
         f"""
@@ -119,7 +122,6 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
           WHERE type='QueryFinish'
             AND initial_query_id='{query_id_first}'
         """,
-        timeout=30,
     )
     s3_get_second = node.query(
         f"""
@@ -128,25 +130,26 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
           WHERE type='QueryFinish'
             AND initial_query_id='{query_id_second}'
         """,
-        timeout=30,
     )
 
     return int(s3_get_first), int(s3_get_second)
 
 
-def check_s3_gets_repeat(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache):
+def check_s3_gets_repeat(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache,
+                         lock_object_storage_task_distribution_ms):
     # Repeat test several times to get average result
-    iterations = 10
+    iterations = 1 if lock_object_storage_task_distribution_ms > 0 else 10
     s3_get_first_sum = 0
     s3_get_second_sum = 0
     for _ in range(iterations):
-        (s3_get_first, s3_get_second) = check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache)
+        (s3_get_first, s3_get_second) = check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second, enable_filesystem_cache, lock_object_storage_task_distribution_ms)
         s3_get_first_sum += s3_get_first
         s3_get_second_sum += s3_get_second
     return s3_get_first_sum, s3_get_second_sum
 
 
-def test_cache_locality(started_cluster):
+@pytest.mark.parametrize("lock_object_storage_task_distribution_ms ", [0, 30000])
+def test_cache_locality(started_cluster, lock_object_storage_task_distribution_ms):
     node = started_cluster.instances["clickhouse0"]
 
     expected_result = node.query(
@@ -158,36 +161,36 @@ def test_cache_locality(started_cluster):
     )
 
     # Algorithm does not give 100% guarantee, so add 10% on dispersion
-    dispersion = 0.1
+    dispersion = 0.0 if lock_object_storage_task_distribution_ms > 0 else 0.1
 
     # No cache
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_12345', 0)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_12345', 0, lock_object_storage_task_distribution_ms)
     assert s3_get_second == s3_get_first
 
     # With cache
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_12345', 1)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_12345', 1, lock_object_storage_task_distribution_ms)
     assert s3_get_second <= s3_get_first * dispersion
 
     # Different nodes order
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_34512', 1)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_34512', 1, lock_object_storage_task_distribution_ms)
     assert s3_get_second <= s3_get_first * dispersion
 
     # No last node
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_1234', 1)
-    assert s3_get_second <= s3_get_first * (0.2 + dispersion)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_1234', 1, lock_object_storage_task_distribution_ms)
+    assert s3_get_second <= s3_get_first * (0.211 + dispersion) # actual value - 24 for 100 files, 211 for 1000
 
     # No first node
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_2345', 1)
-    assert s3_get_second <= s3_get_first * (0.2 + dispersion)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_2345', 1, lock_object_storage_task_distribution_ms)
+    assert s3_get_second <= s3_get_first * (0.189 + dispersion) # actual value - 12 for 100 files, 189 for 1000
 
     # No first node, different nodes order
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_4523', 1)
-    assert s3_get_second <= s3_get_first * (0.2 + dispersion)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_12345', 'cluster_4523', 1, lock_object_storage_task_distribution_ms)
+    assert s3_get_second <= s3_get_first * (0.189 + dispersion)
 
     # Add new node, different nodes order
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_4523', 'cluster_12345', 1)
-    assert s3_get_second <= s3_get_first * (0.2 + dispersion)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_4523', 'cluster_12345', 1, lock_object_storage_task_distribution_ms)
+    assert s3_get_second <= s3_get_first * (0.189 + dispersion)
 
     # New node and old node, different nodes order
-    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_1234', 'cluster_4523', 1)
-    assert s3_get_second <= s3_get_first * (0.4375 + dispersion)
+    (s3_get_first, s3_get_second) = check_s3_gets_repeat(started_cluster, node, expected_result, 'cluster_1234', 'cluster_4523', 1, lock_object_storage_task_distribution_ms)
+    assert s3_get_second <= s3_get_first * (0.400 + dispersion) # actual value - 36 for 100 files, 400 for 1000
