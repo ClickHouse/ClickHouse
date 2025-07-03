@@ -43,24 +43,10 @@ private:
         bool operator==(const StorageIDPrivate & other) const;
     };
 
-    class StorageIDPrivateSet
-    {
-    private:
-        std::set<StorageIDPrivate> visited;
-    public:
-        void insert(const StorageIDPrivate & id) { visited.insert(id); }
-        /// std::set::contains() uses the operator< and if it is inconsistent
-        /// with the operator== then it will not work correctly.
-        /// Take a look at the comment for operator== in the StorageID itself.
-        bool contains(const StorageIDPrivate & id) const
-        {
-            for (const auto & x : visited)
-                if (x == id)
-                    return true;
-            return false;
-        }
-        void erase(const StorageIDPrivate & id) { visited.erase(id); }
-    };
+    /// We cannot use std::set, because operator< is inconsistent with operator==
+    /// for StorageId and StorageIDPrivate.
+    /// Take a look at the detailed comment in StorageID::operator==.
+    using StorageIDPrivateSet = std::unordered_set<StorageIDPrivate, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
     friend class ViewErrorsRegistry;
 
@@ -68,7 +54,7 @@ private:
     {
     private:
         std::vector<StorageIDPrivate> path;
-        StorageIDPrivateSet visited;
+        std::unordered_set<StorageIDPrivate, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
 
     public:
         void pushBack(StorageIDPrivate id);
