@@ -57,6 +57,7 @@ workflow = Workflow.Config(
     dockers=DOCKERS,
     set_latest_in_dockers_build=True,
     secrets=SECRETS,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,

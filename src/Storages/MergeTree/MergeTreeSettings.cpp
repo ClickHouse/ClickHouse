@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -10,7 +11,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-#define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
+#define MERGE_TREE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, R"(
     Minimum size of blocks of uncompressed data required for compression when
     writing the next mark. You can also specify this setting in the global settings
@@ -57,7 +57,7 @@ namespace ErrorCodes
     for this setting.
     )", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, R"(
-    Maximum size of blocks of uncompressed data before compressing for writing
+    The maximum size of blocks of uncompressed data before compressing for writing
     to a table. You can also specify this setting in the global settings
     (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size)
     setting). The value specified when the table is created overrides the global
@@ -252,6 +252,10 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
+    Enables writing marks per each substream instead of per each column in Compact parts.
+    It allows to read individual subcolumns from the data part efficiently.
+    )", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
@@ -284,11 +288,11 @@ namespace ErrorCodes
     DECLARE(UInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, R"(
     The maximum total parts size (in bytes) to be merged into one part, if there
     are enough resources available. Corresponds roughly to the maximum possible
-    part size created by an automatic background merge.
+    part size created by an automatic background merge. (0 means merges will be disabled)
 
     Possible values:
 
-    - Any positive integer.
+    - Any non-negative integer.
 
     The merge scheduler periodically analyzes the sizes and number of parts in
     partitions, and if there are enough free resources in the pool, it starts
@@ -595,6 +599,9 @@ namespace ErrorCodes
     Minimal amount of data parts which merge selector can pick to merge at once
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
+    )", 0) \
+    DECLARE(Bool, apply_patches_on_merge, true, R"(
+    If true patch parts are applied on merges
     )", 0) \
     \
     /** Inserts settings. */ \
@@ -1271,6 +1278,10 @@ namespace ErrorCodes
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
     )", 0) \
+    DECLARE(Seconds, refresh_parts_interval, 0, R"(
+    If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
+    It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
+    )", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, R"(
@@ -1440,6 +1451,9 @@ namespace ErrorCodes
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
     )", 0) \
+    DECLARE(Bool, remove_unused_patch_parts, true, R"(
+    Remove in background patch parts which are applied for all active parts.
+    )", 0) \
     DECLARE(Bool, assign_part_uuids, false, R"(
     When enabled, a unique part identifier will be assigned for every new part.
     Before enabling, check that all replicas support UUID version 4.
@@ -1562,9 +1576,9 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
     Disable FETCH PARTITION query for zero copy replication.
     )", 0) \
-    DECLARE(Bool, enable_block_number_column, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
     Enable persisting column _block_number for each row.
-    )", 0) ALIAS(allow_experimental_block_number_column) \
+    )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
@@ -1619,6 +1633,13 @@ namespace ErrorCodes
     - [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
     - [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
     - [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+    )", 0) \
+    DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
+    :::note
+    This setting applies only to ClickHouse Cloud.
+    :::
+
+    If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
     )", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, R"(
     Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted`
@@ -1677,6 +1698,36 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    Enables coordinated merges strategy
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
+    Number of merge entries that coordinator should prepare and distribute across workers
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    How often merge coordinator should sync with zookeeper to take fresh metadata
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
+    Number of merges that coordinator can request from MergerMutator at once
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    Time between runs of merge coordinator election thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    Minimum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    Maximum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
+    Time changing factor for delay of coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    Time between runs of merge worker thread
+    )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
@@ -1695,10 +1746,10 @@ namespace ErrorCodes
     Compression encoding used by primary, primary key is small enough and cached,
     so the default compression is ZSTD(3).
     )", 0) \
-    DECLARE(UInt64, marks_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, marks_compress_block_size, 65536, R"(
     Mark compress block size, the actual size of the block to compress.
     )", 0) \
-    DECLARE(UInt64, primary_key_compress_block_size, 65536, R"(
+    DECLARE(NonZeroUInt64, primary_key_compress_block_size, 65536, R"(
     Primary compress block size, the actual size of the block to compress.
     )", 0) \
     DECLARE(Bool, primary_key_lazy_load, true, R"(Load primary key in memory on
@@ -1770,6 +1821,14 @@ namespace ErrorCodes
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
     Calculate columns and secondary indices sizes lazily on first request instead
     of on table initialization.
+    )", 0) \
+    DECLARE(String, default_compression_codec, "", R"(
+    Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
+    Compression codec selecting order for a column:
+        1. Compression codec defined for the column in the table declaration
+        2. Compression codec defined in `default_compression_codec` (this setting)
+        3. Default compression codec defined in `compression` settings
+    Default value: an empty string (not defined).
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2083,11 +2142,11 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
 
 namespace MergeTreeSetting
 {
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT(misc-use-internal-linkage)
+    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT(misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -2229,16 +2288,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
-        res_columns[3]->insert(setting.isValueChanged());
-        res_columns[4]->insert(setting.getDescription());
-
+        size_t col = 0;
+        res_columns[col++]->insert(setting_name);
+        res_columns[col++]->insert(setting.getValueString());
+        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.isValueChanged());
+        res_columns[col++]->insert(setting.getDescription());
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, writability);
+        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -2246,12 +2306,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[5]->insert(min);
-        res_columns[6]->insert(max);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[10]->insert(setting.getTier());
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
+
+        res_columns[col++]->insert(min);
+        res_columns[col++]->insert(max);
+        res_columns[col++]->insert(disallowed_array);
+        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[col++]->insert(setting.getTypeName());
+        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.getTier());
     }
 }
 

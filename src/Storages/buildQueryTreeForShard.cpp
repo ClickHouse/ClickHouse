@@ -352,7 +352,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -373,7 +373,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            if (join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
+            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
                 join_table_expression = join_node->getRightTableExpression();
             }

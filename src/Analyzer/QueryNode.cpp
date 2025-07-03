@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -22,6 +23,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -33,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -46,6 +49,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
     children[window_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
+    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
@@ -108,6 +112,47 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
+ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
+{
+    ColumnNodePtrWithHashSet result;
+
+    const auto & correlated_columns = getCorrelatedColumns().getNodes();
+    result.reserve(correlated_columns.size());
+
+    for (const auto & column : correlated_columns)
+    {
+        result.insert(std::static_pointer_cast<ColumnNode>(column));
+    }
+    return result;
+}
+
+void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
+{
+    auto & correlated_columns = getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        if (column->isEqual(*correlated_column))
+            return;
+    }
+    correlated_columns.push_back(correlated_column);
+}
+
+DataTypePtr QueryNode::getResultType() const
+{
+    if (isCorrelated())
+    {
+        if (projection_columns.size() == 1)
+        {
+            return projection_columns[0].type;
+        }
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+                projection_columns.size());
+    }
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
@@ -152,6 +197,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
+
+    if (isCorrelated())
+    {
+        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
+        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     if (hasWith())
     {

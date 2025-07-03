@@ -139,35 +139,22 @@ def test_data_directory_symlinks(started_cluster):
     s3_symlink = database_dir / "s3"
     jbod_symlink = database_dir / "jbod"
 
-    default_data = (
-        clickhouse_dir / "store" / "876" / "87654321-1000-4000-8000-000000000001"
-    )
-    s3_data = (
-        clickhouse_dir
-        / "disks"
-        / "s3"
-        / "store"
-        / "876"
-        / "87654321-1000-4000-8000-000000000002"
-    )
-    jbod_data = Path("jbod1") / "store" / "876" / "87654321-1000-4000-8000-000000000003"
-
     node.restart_clickhouse()
 
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {default_symlink}"])
         .strip()
-        .endswith(f"{default_symlink} -> {default_data}")
+        .endswith(f"{default_symlink} -> ../../store/876/87654321-1000-4000-8000-000000000001")
     )
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {s3_symlink}"])
         .strip()
-        .endswith(f"{s3_symlink} -> {s3_data}")
+        .endswith(f"{s3_symlink} -> ../../disks/s3/store/876/87654321-1000-4000-8000-000000000002")
     )
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {jbod_symlink}"])
         .strip()
-        .endswith(f"{jbod_symlink} -> /{jbod_data}")
+        .endswith(f"{jbod_symlink} -> ../../../../../jbod1/store/876/87654321-1000-4000-8000-000000000003")
     )
 
     node.query("DROP TABLE test_symlinks.default SYNC")

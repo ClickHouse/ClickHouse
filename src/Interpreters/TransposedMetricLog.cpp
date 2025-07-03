@@ -30,7 +30,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -178,9 +181,9 @@ ColumnsDescription getColumnsDescriptionForView()
 class StorageSystemMetricLogView final : public IStorage
 {
 public:
-
     StorageSystemMetricLogView(const StorageID & table_id_, const StorageID & source_storage_id)
         : IStorage(table_id_)
+        , view_storage_id(source_storage_id)
         , internal_view(table_id_, getCreateQuery(source_storage_id), getColumnsDescriptionForView(), "")
     {
         StorageInMemoryMetadata storage_metadata;
@@ -207,12 +210,22 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
+        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
+        /// If destination table is dropped return null source
+        if (!DatabaseCatalog::instance().isTableExist(view_storage_id, context))
+        {
+            Pipe pipe(std::make_shared<NullSource>(full_output_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+            return;
+        }
+
         std::shared_ptr<StorageSnapshot> snapshot_for_view = std::make_shared<StorageSnapshot>(internal_view, internal_view.getInMemoryMetadataPtr());
         Block input_header = snapshot_for_view->metadata->getSampleBlock();
 
         internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-        Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
 
         /// Doesn't make sense to filter by metric, we will not filter out anything
         bool read_all_columns = full_output_header.columns() == column_names.size();
@@ -269,6 +282,7 @@ public:
     }
 
 private:
+    StorageID view_storage_id;
     StorageView internal_view;
 };
 
@@ -277,7 +291,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
-    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
@@ -336,8 +350,8 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     TransposedMetricLogElement elem;
-    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
@@ -370,60 +384,99 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 }
 
 
+ASTPtr TransposedMetricLog::getDefaultOrderByAST()
+{
+    /// Always use default ORDER BY because it's the most effective for view
+    std::string order_by_str = std::string{"("} + getDefaultOrderBy() + ")";
+    ParserStorageOrderByClause order_by_p(/*allow_order_*/ false);
+    return parseQuery(order_by_p, order_by_str, "Order by for transposed metric log", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+}
+
+void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, StorageID log_table_storage_id, const std::string & view_table_name, size_t view_table_suffix)
+{
+    auto table = system_database->tryGetTable(view_table_name, getContext());
+    if (table && table->getName() != "SystemMetricLogView")
+    {
+        /// Rename the existing table.
+        int suffix = view_table_suffix;
+        while (DatabaseCatalog::instance().isTableExist(
+            {system_database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
+            ++suffix;
+
+        std::string rename_to_name = view_name + "_" + toString(suffix);
+
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
+                std::make_shared<ASTIdentifier>(view_table_name)
+            },
+            ASTRenameQuery::Table
+            {
+                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
+                std::make_shared<ASTIdentifier>(rename_to_name)
+            }
+        };
+
+        auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+
+        ActionLock merges_lock;
+        if (DatabaseCatalog::instance().getDatabase(system_database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
+            merges_lock = table->getActionLock(ActionLocks::PartsMerge);
+
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+        query_context->setSetting("check_table_dependencies", Field{false});
+        query_context->setSetting("check_referential_table_dependencies", Field{false});
+
+        InterpreterRenameQuery(rename, query_context).execute();
+
+        attachNoDescription<StorageSystemMetricLogView>(getContext(), *system_database, view_table_name, "Metric log view", log_table_storage_id);
+    }
+    else if (!table)
+    {
+        attachNoDescription<StorageSystemMetricLogView>(getContext(), *system_database, view_table_name, "Metric log view", log_table_storage_id);
+    }
+}
+
 void TransposedMetricLog::prepareTable()
 {
     SystemLog<TransposedMetricLogElement>::prepareTable();
 
-    /// Now we need to create a view and potentially rotate old
-    /// system.metric_log if it existed
+    /// Now we need to create a view for every system.transposed_metric_X and potentially rotate old
+    /// system.metric_log_X if it existed
     if (!view_name.empty())
     {
         auto storage_id = getTableID();
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
         {
-            auto table = database->tryGetTable(view_name, getContext());
-            if (table && table->getName() != "SystemMetricLogView")
+            auto filter = [] (const String & name) { return name.starts_with(TABLE_NAME_WITH_VIEW); };
+            auto iterator = database->getTablesIterator(getContext(), filter);
+            while (iterator->isValid())
             {
-                /// Rename the existing table.
-                int suffix = 0;
-                while (DatabaseCatalog::instance().isTableExist(
-                    {database->getDatabaseName(), view_name + "_" + toString(suffix)}, getContext()))
-                    ++suffix;
+                /// Do for all existing transposed metric logs
+                const auto & name = iterator->name();
 
-                ASTRenameQuery::Element elem
+                std::vector<std::string> name_parts;
+                splitInto<'_'>(name_parts, name);
+                // ['transposed', 'metric', 'log', 'X']
+                if (name_parts.size() == 4)
                 {
-                    ASTRenameQuery::Table
-                    {
-                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
-                        std::make_shared<ASTIdentifier>(view_name)
-                    },
-                    ASTRenameQuery::Table
-                    {
-                        std::make_shared<ASTIdentifier>(database->getDatabaseName()),
-                        std::make_shared<ASTIdentifier>(view_name + "_" + toString(suffix))
-                    }
-                };
+                    int suffix;
+                    /// Ignore weird tables like transposed_metric_log_aaa
+                    if (tryParse<Int32>(suffix, name_parts.back()))
+                        prepareViewForTable(database, iterator->table()->getStorageID(), view_name + "_" + toString(suffix), suffix);
+                }
+                else if (name_parts.size() == 3) // ['transposed', 'metric', 'log']
+                {
+                    prepareViewForTable(database, storage_id, view_name, 0);
+                }
+                /// All other non-standard names are intentionally ignored
 
-                auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
-
-                ActionLock merges_lock;
-                if (DatabaseCatalog::instance().getDatabase(database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
-                    merges_lock = table->getActionLock(ActionLocks::PartsMerge);
-
-                auto query_context = Context::createCopy(context);
-                query_context->makeQueryContext();
-                /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-                query_context->setSetting("check_table_dependencies", Field{false});
-                query_context->setSetting("check_referential_table_dependencies", Field{false});
-
-                InterpreterRenameQuery(rename, query_context).execute();
-
-                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
-            }
-            else if (!table)
-            {
-                attachNoDescription<StorageSystemMetricLogView>(getContext(), *database, "metric_log", "Metric log view", storage_id);
+                iterator->next();
             }
         }
     }

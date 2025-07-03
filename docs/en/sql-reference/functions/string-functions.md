@@ -1140,6 +1140,102 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 convertCharset(s, from, to)
 ```
 
+## base32Encode {#base32encode}
+
+Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
+
+**Syntax**
+
+```sql
+base32Encode(plaintext)
+```
+
+**Arguments**
+
+- `plaintext` — [String](../data-types/string.md) column or constant.
+
+**Returned value**
+
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+```sql
+SELECT base32Encode('Encoded');
+```
+
+Result:
+
+```result
+┌─base32Encode('Encoded')─┐
+│ IVXGG33EMVSA====        │
+└─────────────────────────┘
+```
+
+## base32Decode {#base32decode}
+
+Accepts a string and decodes it using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) encoding scheme.
+
+**Syntax**
+
+```sql
+base32Decode(encoded)
+```
+
+**Arguments**
+
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, an exception is thrown.
+
+**Returned value**
+
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
+
+**Example**
+
+```sql
+SELECT base32Decode('IVXGG33EMVSA====');
+```
+
+Result:
+
+```result
+┌─base32Decode('IVXGG33EMVSA====')─┐
+│ Encoded                          │
+└──────────────────────────────────┘
+```
+
+## tryBase32Decode {#trybase32decode}
+
+Like `base32Decode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase32Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase32Decode('IVXGG33EMVSA====') as res, tryBase32Decode('invalid') as res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
+
 ## base58Encode {#base58encode}
 
 Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
@@ -2636,4 +2732,68 @@ Result:
    ┌─result───────────────────────────┐
 1. │ [417784657,728683856,3071092609] │
    └──────────────────────────────────┘
+```
+
+## stringBytesUniq {#stringbytesuniq}
+
+Counts the number of distinct bytes in a string.
+
+**Syntax**
+
+```sql
+stringBytesUniq(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+```sql
+SELECT stringBytesUniq('Hello');
+```
+
+Result:
+
+```result
+┌─stringBytesUniq('Hello')─┐
+│                        4 │
+└──────────────────────────┘
+```
+
+## stringBytesEntropy {#stringbytesentropy}
+
+Calculates Shannon's entropy of byte distribution in a string.
+
+**Syntax**
+
+```sql
+stringBytesEntropy(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
+
+**Example**
+
+```sql
+SELECT stringBytesEntropy('Hello, world!');
+```
+
+Result:
+
+```result
+┌─stringBytesEntropy('Hello, world!')─┐
+│                         3.07049960  │
+└─────────────────────────────────────┘
 ```

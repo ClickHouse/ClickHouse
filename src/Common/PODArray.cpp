@@ -42,7 +42,7 @@ ALWAYS_INLINE size_t minimum_memory_for_elements(size_t num_elements, size_t ele
 
 
 /// Used for left padding of PODArray when empty
-const char empty_pod_array[empty_pod_array_size]{};
+alignas(std::max_align_t) const char empty_pod_array[empty_pod_array_size]{};
 
 template class PODArray<UInt8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 template class PODArray<UInt16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;

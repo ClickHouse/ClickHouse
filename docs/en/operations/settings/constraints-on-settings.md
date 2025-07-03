@@ -46,6 +46,14 @@ Constraints are defined as follows:
         <max>upper_boundary</max>
         <changeable_in_readonly/>
       </setting_name_5>
+      <setting_name_6>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <disallowed>value1</disallowed>
+        <disallowed>value2</disallowed>
+        <disallowed>value3</disallowed>
+        <changeable_in_readonly/>
+      </setting_name_6>
     </constraints>
   </user_name>
 </profiles>
@@ -59,11 +67,15 @@ setting remains unchanged.
 There are a few types of constraints supported in ClickHouse:
 - `min`
 - `max`
+- `disallowed`
 - `readonly` (with alias `const`)
 - `changeable_in_readonly`
 
 The `min` and `max` constraints specify upper and lower boundaries for a numeric 
 setting and can be used in combination with each other. 
+
+The `disallowed` constraint can be used to specify specific value(s) which should not
+be allowed for a specific setting.
 
 The `readonly` or `const` constraint specifies that the user cannot change the 
 corresponding setting at all. 

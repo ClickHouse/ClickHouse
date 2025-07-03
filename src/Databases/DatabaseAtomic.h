@@ -88,8 +88,9 @@ protected:
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);
-    String path_to_table_symlinks;
-    String path_to_metadata_symlink;
+    std::filesystem::path root_path;
+    std::filesystem::path path_to_table_symlinks;
+    std::filesystem::path path_to_metadata_symlink;
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);

@@ -680,16 +680,16 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
     if (object_state->serialization_version.value == ObjectSerializationVersion::Value::STRING)
         return;
 
-    settings.path.push_back(Substream::ObjectStructure);
-    auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
-
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object column structure during serialization of binary bulk state suffix");
-
     /// Write statistics in suffix if needed.
     if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
     {
+        settings.path.push_back(Substream::ObjectStructure);
+        auto * stream = settings.getter(settings.path);
+        settings.path.pop_back();
+
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object column structure during serialization of binary bulk state suffix");
+
         /// First, write dynamic paths statistics.
         for (const auto & path : object_state->sorted_dynamic_paths)
             writeVarUInt(object_state->statistics.dynamic_paths_statistics[path], *stream);

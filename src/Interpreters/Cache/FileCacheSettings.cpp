@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <DataTypes/DataTypeString.h>
@@ -45,7 +46,9 @@ namespace ErrorCodes
     DECLARE(UInt64, cache_hits_threshold, FILECACHE_DEFAULT_HITS_THRESHOLD, "Number of cache hits required to cache corresponding file segment", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
-    DECLARE(Bool, write_cache_per_user_id_directory, false, "Private setting", 0)
+    DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
+    DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
+    DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -54,12 +57,12 @@ struct FileCacheSettingsImpl : public BaseSettings<FileCacheSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     FileCacheSettings##TYPE NAME = &FileCacheSettingsImpl ::NAME;
 
 namespace FileCacheSetting
 {
-LIST_OF_FILE_CACHE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_FILE_CACHE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -156,7 +159,10 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(cache->getFileSegmentsNum());
 }
 
-void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_empty_path)
+void FileCacheSettings::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & default_cache_path)
 {
     if (!config.has(config_prefix))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", config_prefix);
@@ -176,7 +182,10 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     boost::to_upper(cache_policy);
     (*this)[FileCacheSetting::cache_policy] = cache_policy;
 
-    validate(allow_empty_path);
+    if (!(*this)[FileCacheSetting::path].changed)
+        (*this)[FileCacheSetting::path] = default_cache_path;
+
+    validate();
 }
 
 void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
@@ -193,15 +202,37 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     validate();
 }
 
-void FileCacheSettings::validate(bool allow_empty_path)
+void FileCacheSettings::validate()
 {
-    auto settings = *this;
-    if (!allow_empty_path && !settings[FileCacheSetting::path].changed)
+    auto & settings = *this;
+
+    if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
-    if (!settings[FileCacheSetting::max_size].changed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` is required parameter of cache configuration");
-    if (settings[FileCacheSetting::max_size] == 0)
+
+    if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");
+
+    if (settings[FileCacheSetting::max_size].changed && settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` and `max_size_ratio_to_total_space` cannot be specified at the same time");
+
+    if (settings[FileCacheSetting::max_size].changed && settings[FileCacheSetting::max_size] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` cannot be 0");
+
+    if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
+    {
+        if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size_ratio_to_total_space` must be in range (0, 1]");
+
+        std::filesystem::create_directories(settings[FileCacheSetting::path].value);
+        struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
+        const auto total_space = stat.f_blocks * stat.f_frsize;
+        settings[FileCacheSetting::max_size] = static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+
+        LOG_TRACE(
+            getLogger("FileCacheSettings"),
+            "Using max_size as ratio {} to total disk space: {} (total space: {})",
+            settings[FileCacheSetting::max_size_ratio_to_total_space].value, settings[FileCacheSetting::max_size].value, total_space);
+    }
 }
 
 }

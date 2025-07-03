@@ -302,6 +302,7 @@ CREATE TABLE system.functions
     `arguments` String,
     `returned_value` String,
     `examples` String,
+    `introduced_in` String,
     `categories` String
 )
 ENGINE = SystemFunctions
@@ -346,6 +347,7 @@ CREATE TABLE system.merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
+    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -942,6 +944,7 @@ CREATE TABLE system.replicated_merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
+    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -1018,6 +1021,7 @@ CREATE TABLE system.settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
+    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `default` String,

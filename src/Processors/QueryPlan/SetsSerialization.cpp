@@ -11,6 +11,8 @@
 #include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
@@ -111,7 +113,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
 
                 encodeDataType(types[col], out);
                 auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
-                serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
+                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
@@ -179,8 +181,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
-                auto column = type->createColumn();
-                serialization->deserializeBinaryBulk(*column, in, 0, num_rows, 0);
+                ColumnPtr column = type->createColumn();
+                NativeReader::readData(*serialization, column, in, {}, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -208,7 +210,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     for (auto & set : sets)
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
-        auto * table_node = resolveTable(identifier, context);
+        auto table_node = resolveTable(identifier, context);
         const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);

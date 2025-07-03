@@ -38,6 +38,18 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     bool split_parts_ranges_into_intersecting_and_non_intersecting,
     bool split_intersecting_parts_ranges_into_layers);
 
+/**
+  *
+  * If setting use_skip_indexes_if_final_exact_mode=1, then we need to expand
+  * the initial set of granules returned from the skip index by
+  * looking for that initial set of PK ranges across all other newer parts.
+  */
+RangesInDataParts findPKRangesForFinalAfterSkipIndex(
+    const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
+    RangesInDataParts & ranges_in_data_parts,
+    const LoggerPtr & logger);
+
 struct SplitPartsByRanges
 {
     using Values = std::vector<Field>;

@@ -18,7 +18,7 @@ ClickHouse recommend using built-in table functions in ClickHouse which provide 
 This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
 It supports Nullable types (based on DDL of remote table that is queried).
 
-**Examples**
+## Examples {#examples}
 
 ```sql
 SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')

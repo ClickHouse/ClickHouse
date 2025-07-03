@@ -1,5 +1,6 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
@@ -15,6 +16,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -191,6 +193,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
     if (process_list_element)
     {
         bool continuing = process_list_element->checkTimeLimitSoft();
+
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
@@ -205,6 +208,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
 bool PipelineExecutor::checkTimeLimit()
 {
     bool continuing = checkTimeLimitSoft();
+
     if (!continuing)
         process_list_element->checkTimeLimit(); // Will throw if needed
 
@@ -293,15 +297,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
-        /// Just traverse graph and prepare any processor.
         while (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 
-        while (context.hasTask() && !yield)
+        while (!tasks.isFinished() && context.hasTask() && !yield)
         {
-            if (tasks.isFinished())
-                break;
-
             if (!context.executeTask())
                 cancel(ExecutionStatus::Exception);
 
@@ -482,36 +482,34 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
     initializeExecution(num_threads, concurrency_control);
 
-    bool finished_flag = false;
-
-    SCOPE_EXIT_SAFE(
-        if (!finished_flag)
-        {
-            /// If finished_flag is not set, there was an exception.
-            /// Cancel execution in this case.
-            cancel(ExecutionStatus::Exception);
-            if (pool)
-                pool->wait();
-        }
-    );
-
-    if (num_threads > 1)
+    try
     {
+        if (num_threads > 1)
         {
-            std::lock_guard lock(spawn_mutex);
-            // Start at least one thread, could block to acquire the first CPU slot
-            spawnThreadsImpl(cpu_slots->acquire());
+            {
+                std::lock_guard lock(spawn_mutex);
+                // Start at least one thread, could block to acquire the first CPU slot
+                spawnThreadsImpl(cpu_slots->acquire());
+            }
+            tasks.processAsyncTasks();
+            pool->wait();
         }
-        tasks.processAsyncTasks();
-        pool->wait();
+        else
+        {
+            auto slot = cpu_slots->tryAcquire();
+            executeSingleThread(0);
+        }
     }
-    else
+    catch (...)
     {
-        auto slot = cpu_slots->acquire();
-        executeSingleThread(0);
-    }
+        tryLogCurrentException(__PRETTY_FUNCTION__);
 
-    finished_flag = true;
+        cancel(ExecutionStatus::Exception);
+        if (pool)
+            pool->wait();
+
+        throw;
+    }
 }
 
 String PipelineExecutor::dumpPipeline() const

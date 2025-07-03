@@ -31,6 +31,7 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
 _part	LowCardinality(String)			Name of part			1
 _part_index	UInt64			Sequential index of the part in the query result			1
+_part_starting_offset	UInt64			Cumulative starting row of the part in the query result			1
 _part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			1
 _partition_id	LowCardinality(String)			Name of partition			1
 _sample_factor	Float64			Sample factor (from the query)			1
@@ -45,6 +46,7 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
 _part	LowCardinality(String)			Name of part			1
 _part_index	UInt64			Sequential index of the part in the query result			1
+_part_starting_offset	UInt64			Cumulative starting row of the part in the query result			1
 _part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			1
 _partition_id	LowCardinality(String)			Name of partition			1
 _sample_factor	Float64			Sample factor (from the query)			1
@@ -63,6 +65,7 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0	0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0	0
 _part	LowCardinality(String)			Name of part			0	1
 _part_index	UInt64			Sequential index of the part in the query result			0	1
+_part_starting_offset	UInt64			Cumulative starting row of the part in the query result			0	1
 _part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			0	1
 _partition_id	LowCardinality(String)			Name of partition			0	1
 _sample_factor	Float64			Sample factor (from the query)			0	1
@@ -80,6 +83,7 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0	0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0	0
 _part	LowCardinality(String)			Name of part			0	1
 _part_index	UInt64			Sequential index of the part in the query result			0	1
+_part_starting_offset	UInt64			Cumulative starting row of the part in the query result			0	1
 _part_uuid	UUID			Unique part identifier (if enabled MergeTree setting assign_part_uuids)			0	1
 _partition_id	LowCardinality(String)			Name of partition			0	1
 _sample_factor	Float64			Sample factor (from the query)			0	1
@@ -125,6 +129,7 @@ arr	Array(UInt64)	0
 t	Tuple(a String, b UInt64)	0
 _part	LowCardinality(String)	1
 _part_index	UInt64	1
+_part_starting_offset	UInt64	1
 _part_uuid	UUID	1
 _partition_id	LowCardinality(String)	1
 _sample_factor	Float64	1
@@ -139,6 +144,7 @@ arr	Array(UInt64)	0
 t	Tuple(a String, b UInt64)	0
 _part	LowCardinality(String)	1
 _part_index	UInt64	1
+_part_starting_offset	UInt64	1
 _part_uuid	UUID	1
 _partition_id	LowCardinality(String)	1
 _sample_factor	Float64	1
@@ -157,6 +163,7 @@ arr	Array(UInt64)	0	0
 t	Tuple(a String, b UInt64)	0	0
 _part	LowCardinality(String)	0	1
 _part_index	UInt64	0	1
+_part_starting_offset	UInt64	0	1
 _part_uuid	UUID	0	1
 _partition_id	LowCardinality(String)	0	1
 _sample_factor	Float64	0	1
@@ -174,6 +181,7 @@ arr	Array(UInt64)	0	0
 t	Tuple(a String, b UInt64)	0	0
 _part	LowCardinality(String)	0	1
 _part_index	UInt64	0	1
+_part_starting_offset	UInt64	0	1
 _part_uuid	UUID	0	1
 _partition_id	LowCardinality(String)	0	1
 _sample_factor	Float64	0	1

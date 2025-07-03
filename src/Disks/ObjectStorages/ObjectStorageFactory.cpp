@@ -76,6 +76,7 @@ ObjectStoragePtr createObjectStorage(
 {
     if (isPlainStorage(type, config, config_prefix))
         return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
+
     if (isPlainRewritableStorage(type, config, config_prefix))
     {
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
@@ -94,6 +95,7 @@ ObjectStoragePtr createObjectStorage(
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
             std::move(metadata_storage_metrics), std::forward<Args>(args)...);
     }
+
     return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
 }
 }
@@ -354,9 +356,14 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         String object_key_prefix;
         UInt64 keep_free_space_bytes;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
-        return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, object_key_prefix);
+
+        bool read_only = config.getBool(config_prefix + ".readonly", false);
+        LocalObjectStorageSettings settings(object_key_prefix, read_only);
+
+        return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, settings);
     };
 
     factory.registerObjectStorageType("local_blob_storage", creator);

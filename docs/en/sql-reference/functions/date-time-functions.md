@@ -1644,15 +1644,17 @@ Result:
 **See Also**
 - [date_trunc](#date_trunc)
 
-## toTime {#totime}
+## toTimeWithFixedDate {#totimewithfixeddate}
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
 **Syntax**
 
 ```sql
-toTime(date[,timezone])
+toTimeWithFixedDate(date[,timezone])
 ```
+
+Alias: `toTime` - can be used only when the `use_legacy_to_time` setting is enabled.
 
 **Arguments**
 
@@ -4373,7 +4375,7 @@ Using replacement fields, you can define a pattern for the resulting string. "Ex
 | %C       | year divided by 100 and truncated to integer (00-99)                                                                                                                                                | 20        |
 | %d       | day of the month, zero-padded (01-31)                                                                                                                                                               | 02        |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                                                                                                         | 01/02/18  |
-| %e       | day of the month, space-padded ( 1-31)                                                                                                                                                              | &nbsp; 2  |
+| %e       | day of the month, space-padded ( 1-31), see 'Note 5' below                                                                                                                                          | &nbsp; 2  |
 | %f       | fractional second, see 'Note 1' and 'Note 2' below                                                                                                                                                  | 123456    |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                                                                                                       | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                                                                                                    | 18       |
@@ -4411,7 +4413,9 @@ Note 2: In ClickHouse versions earlier than v25.1, `%f` prints as many digits as
 
 Note 3: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 
-Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime()` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime()` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
+Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
+
+Note 5: In ClickHouse versions earlier than v25.5, function `parseDateTime` required for formatter `%e` that single-digit days are space padded, e.g. ` 3`. In later versions, space padding is optional, e.g. `3` and ` 3` work. To retain the previous behaviour, set setting `parsedatetime_e_requires_space_padding = 1`. Similarly, formatter `%e` in function `formatDateTime` previously space-padded single-printed unconditionally whereas it now prints them without leading whitespace. To retain the previous behavior, set setting `formatdatetime_e_with_space_padding = 1`.
 
 **Example**
 

@@ -311,33 +311,6 @@ bool WorkloadEntityStorageBase::has(const String & entity_name) const
     return tryGet(entity_name) != nullptr;
 }
 
-std::vector<String> WorkloadEntityStorageBase::getAllEntityNames() const
-{
-    std::vector<String> entity_names;
-
-    std::lock_guard lock(mutex);
-    entity_names.reserve(entities.size());
-
-    for (const auto & [name, _] : entities)
-        entity_names.emplace_back(name);
-
-    return entity_names;
-}
-
-std::vector<String> WorkloadEntityStorageBase::getAllEntityNames(WorkloadEntityType entity_type) const
-{
-    std::vector<String> entity_names;
-
-    std::lock_guard lock(mutex);
-    for (const auto & [name, entity] : entities)
-    {
-        if (getEntityType(entity) == entity_type)
-            entity_names.emplace_back(name);
-    }
-
-    return entity_names;
-}
-
 bool WorkloadEntityStorageBase::empty() const
 {
     std::lock_guard lock(mutex);

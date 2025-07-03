@@ -47,7 +47,7 @@ enum class QueryTreeNodeType : uint8_t
     ARRAY_JOIN,
     CROSS_JOIN,
     JOIN,
-    UNION
+    UNION,
 };
 
 /// Convert query tree node type to string
@@ -91,12 +91,12 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
     }
 
     struct CompareOptions

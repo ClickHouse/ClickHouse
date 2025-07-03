@@ -97,6 +97,7 @@ public:
     size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
 
     size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
+    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 

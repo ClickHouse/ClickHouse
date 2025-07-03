@@ -42,9 +42,11 @@
 
 #include <Core/Settings.h>
 
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerActionsVisitor.h>
+
+#include <Processors/QueryPlan/ExpressionStep.h>
 
 #include <stack>
 
@@ -134,6 +136,30 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
     }
 
     return common_header;
+}
+
+void addConvertingToCommonHeaderActionsIfNeeded(
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    const Block & union_common_header,
+    Blocks & query_plans_headers)
+{
+    size_t queries_size = query_plans.size();
+    for (size_t i = 0; i < queries_size; ++i)
+    {
+        auto & query_node_plan = query_plans[i];
+        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
+            continue;
+
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
+            union_common_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
+        converting_step->setStepDescription("Conversion before UNION");
+        query_node_plan->addStep(std::move(converting_step));
+
+        query_plans_headers[i] = query_node_plan->getCurrentHeader();
+    }
 }
 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
@@ -243,16 +269,18 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
+    const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context);
-    auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
-    return action_dag;
+    return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
@@ -492,8 +520,10 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+    auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    correlated_subtrees.assertEmpty("in row-policy and additional table filters");
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",

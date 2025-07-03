@@ -265,6 +265,13 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER DATABASE query");
     }
 
+    if (!alter.cluster.empty())
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
+
     if (!alter_commands.empty())
     {
         /// Only ALTER SETTING and ALTER COMMENT is supported.
@@ -542,6 +549,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_SQL_SECURITY:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_SQL_SECURITY, database, table);
+            break;
+        }
+        case ASTAlterCommand::APPLY_PATCHES:
+        {
+            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table);
             break;
         }
     }

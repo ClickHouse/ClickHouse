@@ -37,6 +37,8 @@ REGISTER_FUNCTION(FirstLine)
         .examples = {
             {.name = "Return first line", .query = "firstLine('Hello\\nWorld')", .result = "'Hello'"},
             {.name = "Return whole string", .query = "firstLine('Hello World')", .result = "'Hello World'"},
-        }});
+        },
+        .category = FunctionDocumentation::Category::String}
+        );
 }
 }

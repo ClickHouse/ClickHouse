@@ -15,12 +15,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const re2::RE2 range_regex(R"({([\d]+\.\.[\d]+)})"); /// regexp for {M..N}, where M and N - non-negative integers
-static const re2::RE2 enum_regex(R"({([^{}*,]+[^{}*]*[^{}*,])})"); /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+namespace
+{
+struct Regexps
+{
+    static const Regexps & instance()
+    {
+        static Regexps regexps;
+        return regexps;
+    }
+
+    /// regexp for {M..N}, where M and N - non-negative integers
+    re2::RE2 range_regex{R"({([\d]+\.\.[\d]+)})"};
+
+    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+    re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
+};
+}
 
 bool containsRangeGlob(const std::string & input)
 {
-    return RE2::PartialMatch(input, range_regex);
+    return RE2::PartialMatch(input, Regexps::instance().range_regex);
 }
 
 bool containsOnlyEnumGlobs(const std::string & input)
@@ -67,8 +82,8 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         std::string_view matched_range;
         std::string_view matched_enum;
 
-        auto did_match_range = RE2::PartialMatch(input, range_regex, &matched_range);
-        auto did_match_enum = RE2::PartialMatch(input, enum_regex, &matched_enum);
+        auto did_match_range = RE2::PartialMatch(input, Regexps::instance().range_regex, &matched_range);
+        auto did_match_enum = RE2::PartialMatch(input, Regexps::instance().enum_regex, &matched_enum);
 
         /// Enum regex matches ranges, so if they both match and point to the same data,
         /// it is a range.
@@ -78,7 +93,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         /// We matched a range, and range comes earlier than enum
         if (did_match_range && (!did_match_enum || matched_range.data() < matched_enum.data()))
         {
-            RE2::FindAndConsume(&input, range_regex, &matched);
+            RE2::FindAndConsume(&input, Regexps::instance().range_regex, &matched);
             std::string buffer(matched);
             oss_for_replacing << escaped_with_globs.substr(current_index, matched_range.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
@@ -122,7 +137,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         /// We matched enum, and it comes earlier than range.
         else if (did_match_enum && (!did_match_range || matched_enum.data() < matched_range.data()))
         {
-            RE2::FindAndConsume(&input, enum_regex, &matched);
+            RE2::FindAndConsume(&input, Regexps::instance().enum_regex, &matched);
             std::string buffer(matched);
 
             oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';

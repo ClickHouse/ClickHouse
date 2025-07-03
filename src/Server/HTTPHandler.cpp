@@ -591,6 +591,22 @@ void HTTPHandler::processQuery(
         }
     };
 
+    auto query_finish_callback = [&]()
+    {
+        releaseOrCloseSession(session_id, close_session);
+
+        if (used_output.hasDelayed())
+        {
+            /// TODO: set Content-Length if possible
+            pushDelayedResults(used_output);
+        }
+
+        /// Flush all the data from one buffer to another, to track
+        /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
+        /// context
+        used_output.finalize();
+    };
+
     executeQuery(
         *in,
         *used_output.out_maybe_delayed_and_compressed,
@@ -599,18 +615,8 @@ void HTTPHandler::processQuery(
         set_query_result,
         QueryFlags{},
         {},
-        handle_exception_in_output_format);
-
-    releaseOrCloseSession(session_id, close_session);
-
-    if (used_output.hasDelayed())
-    {
-        /// TODO: set Content-Length if possible
-        pushDelayedResults(used_output);
-    }
-
-    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
-    used_output.finalize();
+        handle_exception_in_output_format,
+        query_finish_callback);
 }
 
 bool HTTPHandler::trySendExceptionToClient(

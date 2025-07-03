@@ -43,11 +43,11 @@ rsa==4.8
 s3transfer==0.5.0
 scipy==1.12.0
 SecretStorage==3.3.1
-setuptools==59.6.0
+setuptools==78.1.1
 six==1.16.0
 termcolor==1.1.0
 urllib3==1.26.5
 wadllib==1.3.6
-wheel==0.37.1
+wheel==0.46.1
 zipp==1.0.0
 clickhouse-driver==0.2.7

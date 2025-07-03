@@ -582,7 +582,10 @@ def test_registry(started_cluster):
     ).strip()
     assert uuid1 in str(registry)
 
-    expected = [f"0\\ninstance\\n{uuid1}\\n", f"0\\ninstance2\\n{uuid1}\\n"]
+    server_uuid_1 = node1.query("SELECT serverUUID()").strip()
+    server_uuid_2 = node2.query("SELECT serverUUID()").strip()
+
+    expected = [f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n", f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n"]
 
     for elem in expected:
         assert elem in str(registry)
@@ -637,10 +640,10 @@ def test_registry(started_cluster):
     assert uuid2 in str(registry)
 
     expected = [
-        f"0\\ninstance\\n{uuid1}\\n",
-        f"0\\ninstance2\\n{uuid1}\\n",
-        f"0\\ninstance\\n{uuid2}\\n",
-        f"0\\ninstance2\\n{uuid2}\\n",
+        f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n",
+        f"1\\ninstance\\n{uuid2}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid2}\\n{server_uuid_2}\\n",
     ]
 
     for elem in expected:
@@ -663,8 +666,8 @@ def test_registry(started_cluster):
     assert uuid2 not in str(registry)
 
     expected = [
-        f"0\\ninstance\\n{uuid1}\\n",
-        f"0\\ninstance2\\n{uuid1}\\n",
+        f"1\\ninstance\\n{uuid1}\\n{server_uuid_1}\\n",
+        f"1\\ninstance2\\n{uuid1}\\n{server_uuid_2}\\n",
     ]
 
     for elem in expected:

@@ -168,6 +168,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
+    OPENSSL_NO_ENGINE
     CURL_OS="${CMAKE_SYSTEM_NAME}"
 )
 

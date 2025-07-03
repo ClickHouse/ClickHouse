@@ -79,6 +79,9 @@ public:
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
+    void checkTableNameLength(const String & table_name) const override;
+    void checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
+
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
     void alterDatabaseComment(const AlterCommand & alter_command) override;

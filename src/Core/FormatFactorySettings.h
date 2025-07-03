@@ -3,6 +3,8 @@
 /// This header exists so we can share it between multiple setting objects that include format settings
 
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsFields.h>
+#include <Core/Defines.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -171,7 +173,7 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+    DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
@@ -656,6 +658,10 @@ Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 Text to represent false bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
     \
+    DECLARE(Bool, allow_special_bool_values_inside_variant, false, R"(
+Allows to parse Bool values inside Variant type from special text bool values like "on", "off", "enable", "disable", etc.
+)", 0) \
+    \
     DECLARE(Bool, input_format_values_interpret_expressions, true, R"(
 For Values format: if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.
 )", 0) \
@@ -914,6 +920,11 @@ Output the pending block in pretty formats if more than the specified number of 
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
+    DECLARE(UInt64Auto, output_format_pretty_glue_chunks, "auto", R"(
+If the data rendered in Pretty formats arrived in multiple chunks, even after a delay, but the next chunk has the same column widths as the previous, use ANSI escape sequences to move back to the previous line and overwrite the footer of the previous chunk to continue it with the data of the new chunk. This makes the result more visually pleasant.
+
+0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
+)", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
 Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
 )", 0) \
@@ -979,7 +990,7 @@ Do Parquet encoding in multiple threads. Requires output_format_parquet_use_cust
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
-    DECLARE(UInt64, output_format_parquet_batch_size, 1024, R"(
+    DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
@@ -1301,6 +1312,14 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
+Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
+0 means no limit in bytes.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+)", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 

@@ -11,29 +11,24 @@ title: 'mongodb'
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `host:port` — MongoDB server address.
-
-- `database` — Remote database name.
-
-- `collection` — Remote collection name.
-
-- `user` — MongoDB user.
-
-- `password` — User password.
-
-- `structure` - The schema for the ClickHouse table returned from this function.
-
-- `options` - MongoDB connection string options (optional parameter).
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+| Argument      | Description                                                                                            |
+|---------------|--------------------------------------------------------------------------------------------------------|
+| `host:port`   | MongoDB server address.                                                                                |
+| `database`    | Remote database name.                                                                                  |
+| `collection`  | Remote collection name.                                                                                |
+| `user`        | MongoDB user.                                                                                          |
+| `password`    | User password.                                                                                         |
+| `structure`   | The schema for the ClickHouse table returned from this function.                                       |
+| `options`     | MongoDB connection string options (optional parameter).                                                |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
 
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
@@ -49,22 +44,18 @@ You can also connect by URI:
 mongodb(uri, collection, structure[, oid_columns])
 ```
 
-**Arguments**
+| Argument      | Description                                                                                            |
+|---------------|--------------------------------------------------------------------------------------------------------|
+| `uri`         | Connection string.                                                                                     |
+| `collection`  | Remote collection name.                                                                                |
+| `structure`   | The schema for the ClickHouse table returned from this function.                                       |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
 
-- `uri` — Connection string.
-
-- `collection` — Remote collection name.
-
-- `structure` — The schema for the ClickHouse table returned from this function.
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
-
-**Returned Value**
+## Returned value {#returned_value}
 
 A table object with the same columns as the original MongoDB table.
 
-
-**Examples**
+## Examples {#examples}
 
 Suppose we have a collection named `my_collection` defined in a MongoDB database named `test`, and we insert a couple of documents:
 
@@ -106,7 +97,7 @@ SELECT * FROM mongodb(
 )
 ```
 
-**See Also**
+## Related {#related}
 
 - [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
 - [Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)

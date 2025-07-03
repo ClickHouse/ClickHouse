@@ -19,15 +19,37 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 }
 
 void QueryConditionCache::write(
-    const UUID & table_id, const String & part_name, size_t condition_hash,
+    const UUID & table_id, const String & part_name, size_t condition_hash, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
-    Key key = {table_id, part_name, condition_hash};
+    Key key = {table_id, part_name, condition_hash, condition};
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    std::lock_guard lock(entry->mutex);
+    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    {
+        std::shared_lock shared_lock(entry->mutex); /// cheap
+
+        bool need_not_update_marks = true;
+        for (const auto & mark_range : mark_ranges)
+        {
+            /// If the bits are already in the desired state (false), we don't need to update them.
+            need_not_update_marks = std::all_of(entry->matching_marks.begin() + mark_range.begin,
+                                                entry->matching_marks.begin() + mark_range.end,
+                                                [](auto b) { return b == false; });
+            if (!need_not_update_marks)
+                break;
+        }
+
+        /// Do we either have no final mark or final mark is already in the desired state?
+        bool need_not_update_final_mark = !has_final_mark || entry->matching_marks[marks_count - 1] == false;
+
+        if (need_not_update_marks && need_not_update_final_mark)
+            return;
+    }
+
+    std::lock_guard lock(entry->mutex); /// (*)
 
     chassert(marks_count == entry->matching_marks.size());
 
@@ -38,21 +60,21 @@ void QueryConditionCache::write(
     if (has_final_mark)
         entry->matching_marks[marks_count - 1] = false;
 
-    LOG_DEBUG(
+    LOG_TEST(
         logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
         inserted ? "Inserted" : "Updated",
         table_id,
         part_name,
         condition_hash,
+        condition,
         marks_count,
-        has_final_mark,
-        toString(mark_ranges));
+        has_final_mark);
 }
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t condition_hash)
 {
-    Key key = {table_id, part_name, condition_hash};
+    Key key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))
     {
@@ -60,13 +82,12 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
         std::shared_lock lock(entry->mutex);
 
-        LOG_DEBUG(
+        LOG_TEST(
             logger,
-            "Read entry for table_uuid: {}, part: {}, condition_hash: {}, ranges: {}",
+            "Read entry for table_uuid: {}, part: {}, condition_hash: {}",
             table_id,
             part_name,
-            condition_hash,
-            toString(entry->matching_marks));
+            condition_hash);
 
         return {entry->matching_marks};
     }
@@ -74,7 +95,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
-        LOG_DEBUG(
+        LOG_TEST(
             logger,
             "Could not find entry for table_uuid: {}, part: {}, condition_hash: {}",
             table_id,
@@ -130,7 +151,8 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
 size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Entry & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
-    return dynamic_memory + sizeof(decltype(entry.matching_marks));
+    size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
+    return memory + sizeof(decltype(entry.matching_marks));
 }
+
 }

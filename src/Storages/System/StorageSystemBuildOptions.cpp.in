@@ -55,7 +55,6 @@ const char * auto_config_build[]
     "USE_AWS_S3", "@USE_AWS_S3@",
     "USE_CASSANDRA", "@USE_CASSANDRA@",
     "USE_YAML_CPP", "@USE_YAML_CPP@",
-    "USE_SENTRY", "@USE_SENTRY@",
     "USE_DATASKETCHES", "@USE_DATASKETCHES@",
     "USE_AVRO", "@USE_AVRO@",
     "USE_ARROW", "@USE_ARROW@",

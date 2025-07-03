@@ -21,6 +21,19 @@ namespace
 
 REGISTER_FUNCTION(Max2)
 {
-    factory.registerFunction<FunctionMax2>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+    Returns the bigger of two numeric values `x` and `y`. The returned value is of type Float64.
+    )";
+    FunctionDocumentation::Syntax syntax = "max2(x, y)";
+    FunctionDocumentation::Argument argument1 = {"x", "First value"};
+    FunctionDocumentation::Argument argument2 = {"y", "Second value"};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the bigger value of `x` and `y`";
+    FunctionDocumentation::Examples examples = {{"", "SELECT max2(-1, 2)", "2"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionMax2>(documentation, FunctionFactory::Case::Insensitive);
 }
 }

@@ -56,7 +56,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
-        FORK_NAME = ""
+        FORK_NAME = REPOSITORY
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []

@@ -58,6 +58,8 @@ To clear the query condition cache, run [`SYSTEM DROP QUERY CONDITION CACHE`](..
 
 The content of the cache is displayed in system table [system.query_condition_cache](system-tables/query_condition_cache.md).
 To calculate the current size of the query condition cache in MB, run `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.
+If you like to investigate individual filter conditions, you can check field `condition` in `system.query_condition_cache`.
+Note that the field is only populated if the query runs with enabled setting [query_condition_cache_store_conditions_as_plaintext](settings/settings#query_condition_cache_store_conditions_as_plaintext).
 
 The number of query condition cache hits and misses since database start are shown as events "QueryConditionCacheHits" and "QueryConditionCacheMisses" in system table [system.events](system-tables/events.md).
 Both counters are only updated for `SELECT` queries which run with setting `use_query_condition_cache = true`, other queries do not affect "QueryCacheMisses".

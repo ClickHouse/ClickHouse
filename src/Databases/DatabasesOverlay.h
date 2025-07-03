@@ -66,6 +66,40 @@ public:
 
     void shutdown() override;
 
+    bool canContainMergeTreeTables() const override;
+    bool canContainDistributedTables() const override;
+    void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
+    bool supportsLoadingInTopologicalOrder() const override;
+    void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
+    void loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup) override;
+    void loadTableFromMetadata(
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
+    LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet load_after,
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
+    [[nodiscard]] LoadTaskPtr startupTableAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet startup_after,
+        const QualifiedTableName & name,
+        LoadingStrictnessLevel mode) override;
+    [[nodiscard]] LoadTaskPtr startupDatabaseAsync(
+        AsyncLoader & async_loader,
+        LoadJobSet startup_after,
+        LoadingStrictnessLevel mode) override;
+    void waitTableStarted(const String & name) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
+
 protected:
     std::vector<DatabasePtr> databases;
     LoggerPtr log;

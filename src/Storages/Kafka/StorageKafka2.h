@@ -6,6 +6,7 @@
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
@@ -66,9 +67,9 @@ public:
 
     ~StorageKafka2() override;
 
-    std::string getName() const override { return "Kafka"; }
+    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -96,6 +97,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;

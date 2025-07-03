@@ -91,7 +91,7 @@ String RandomGenerator::nextDate32()
     return fmt::format("{}-{}{}-{}{}", 1900 + datetime64_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day);
 }
 
-String RandomGenerator::nextDateTime()
+String RandomGenerator::nextDateTime(const bool has_subseconds)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -100,7 +100,7 @@ String RandomGenerator::nextDateTime()
     const uint32_t second = minutes(generator);
 
     return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
         1970 + datetime_years(generator),
         month < 10 ? "0" : "",
         month,
@@ -111,10 +111,12 @@ String RandomGenerator::nextDateTime()
         minute < 10 ? "0" : "",
         minute,
         second < 10 ? "0" : "",
-        second);
+        second,
+        has_subseconds ? "." : "",
+        has_subseconds ? std::to_string(subseconds(generator)) : "");
 }
 
-String RandomGenerator::nextDateTime64()
+String RandomGenerator::nextDateTime64(const bool has_subseconds)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -123,7 +125,7 @@ String RandomGenerator::nextDateTime64()
     const uint32_t second = minutes(generator);
 
     return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
         1900 + datetime64_years(generator),
         month < 10 ? "0" : "",
         month,
@@ -134,7 +136,9 @@ String RandomGenerator::nextDateTime64()
         minute < 10 ? "0" : "",
         minute,
         second < 10 ? "0" : "",
-        second);
+        second,
+        has_subseconds ? "." : "",
+        has_subseconds ? std::to_string(subseconds(generator)) : "");
 }
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
@@ -166,43 +170,47 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         use_bad_utf8 = true;
     }
     ret += delimiter;
-    const String & pick = pickRandomly(
-        use_bad_utf8 ? bad_utf8
-                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
-
-    if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
+    /* A few times generate empty strings */
+    if (this->nextMediumNumber() > 2)
     {
-        ret += pick;
-        /// A few times, generate a large string
-        if (this->nextLargeNumber() < 4)
+        const String & pick = pickRandomly(
+            use_bad_utf8
+                ? bad_utf8
+                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
+        if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
         {
-            uint32_t i = 0;
-            uint32_t len = static_cast<uint32_t>(pick.size());
-            const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
-
-            while (i < max_iterations)
+            ret += pick;
+            /// A few times, generate a large string
+            if (this->nextLargeNumber() < 4)
             {
-                const String & npick = pickRandomly(
-                    use_bad_utf8 ? bad_utf8
-                                 : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
-                                                                               : (this->nextBool() ? common_english : common_chinese)));
+                uint32_t i = 0;
+                uint32_t len = static_cast<uint32_t>(pick.size());
+                const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
-                len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
-                if (len < limit)
+                while (i < max_iterations)
                 {
-                    ret += npick;
+                    const String & npick = pickRandomly(
+                        use_bad_utf8 ? bad_utf8
+                                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
+                                                                                   : (this->nextBool() ? common_english : common_chinese)));
+
+                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
+                    if (len < limit)
+                    {
+                        ret += npick;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    i++;
                 }
-                else
-                {
-                    break;
-                }
-                i++;
             }
         }
-    }
-    else
-    {
-        ret += "a";
+        else
+        {
+            ret += "a";
+        }
     }
     ret += delimiter;
     return ret;

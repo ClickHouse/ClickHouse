@@ -112,6 +112,8 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
+    size_t max_block_size_bytes = 0;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -156,6 +158,8 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
+    bool allow_special_bool_values = true;
+    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {
@@ -292,7 +296,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
-        ParquetVersion output_version;
+        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -300,6 +304,7 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+        bool allow_geoparquet_parser = true;
     } parquet{};
 
     struct Pretty
@@ -323,6 +328,8 @@ struct FormatSettings
 
         UInt64 squash_consecutive_ms = 50;
         UInt64 squash_max_wait_ms = 1000;
+        /// Set to 2 for auto
+        UInt64 glue_chunks = 2;
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;

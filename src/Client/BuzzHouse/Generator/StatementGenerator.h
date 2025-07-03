@@ -281,6 +281,7 @@ private:
     String getNextAlias() { return "a" + std::to_string(this->levels[this->current_level].aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    String nextComment(RandomGenerator & rg);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
@@ -288,6 +289,7 @@ private:
     void flatTableColumnPath(
         uint32_t flags, const std::unordered_map<uint32_t, SQLColumn> & cols, std::function<bool(const SQLColumn & c)> col_filter);
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
+    void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, bool escape, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
@@ -322,15 +324,17 @@ private:
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
-    void generateNextInsert(RandomGenerator & rg, Insert * ins);
+    void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
     void generateNextDelete(RandomGenerator & rg, LightDelete * del);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
+    void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
     void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
-    void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
+    void generateNextRename(RandomGenerator & rg, Rename * ren);
+    void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
-    void generateAlterTable(RandomGenerator & rg, AlterTable * at);
+    void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
@@ -339,7 +343,7 @@ private:
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
-    void generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc);
+    void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
@@ -347,6 +351,7 @@ private:
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
     void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);
+    void generateLiteralValueInternal(RandomGenerator & rg, bool complex, Expr * expr);
     void generateLiteralValue(RandomGenerator & rg, bool complex, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
     void generateFrameBound(RandomGenerator & rg, Expr * expr);
@@ -387,8 +392,8 @@ private:
     void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
-    void generateNextExplain(RandomGenerator & rg, ExplainQuery * eq);
-    void generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
+    void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
+    void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
     std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
     std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
@@ -404,6 +409,14 @@ private:
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
+    void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
+
+    template <typename T>
+    void exchangeObjects(uint32_t tname1, uint32_t tname2);
+    template <typename T>
+    void renameObjects(uint32_t old_tname, uint32_t new_tname, const std::optional<uint32_t> & new_db);
+    template <typename T>
+    void attachOrDetachObject(uint32_t tname, DetachStatus status);
 
     static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
 
@@ -449,7 +462,7 @@ public:
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
 
-    void generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);
+    void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 

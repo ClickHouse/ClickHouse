@@ -52,16 +52,15 @@ def test_old_dirs_cleanup(start_cluster):
 
     node1.start_clickhouse()
 
+    assert_logs_contain_with_retry(node1, "Removing temporary directory .*delete_tmp_20200101_0_0_0")
+
+    assert_logs_contain_with_retry(node1, "Created empty part 20200101_0_0_0 instead of lost part")
+    # Replaced empty part
     result = node1.exec_in_container(
         ["bash", "-c", f"ls {data_path}/"],
         privileged=True,
     )
-
-    # Replaced empty part
     assert "20200101_0_0_0" in result
     assert node1.query("SELECT count() FROM test_table") == "0\n"
-
-    assert_logs_contain_with_retry(node1, "Removing temporary directory")
-    assert_logs_contain_with_retry(node1, "delete_tmp_20200101_0_0_0")
 
     node1.query("DROP TABLE test_table SYNC")
