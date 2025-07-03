@@ -1,4 +1,4 @@
-#include "Client.h"
+#include <Client.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -345,7 +345,9 @@ void Client::initialize(Poco::Util::Application & self)
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    auto & thread_status = MainThreadStatus::getInstance();
+    /// For memory tracking
+    MainThreadStatus::getInstance();
+
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
@@ -360,14 +362,6 @@ try
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
-
-    {
-        // All that just to set DB::CurrentThread::get().getGlobalContext()
-        // which is required for client timezone (pushed from server) to work.
-        auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr &>(thread_group->global_context) = global_context;
-        thread_status.attachToGroup(thread_group, false);
-    }
 
     /// Includes delayed_interactive.
     if (is_interactive)

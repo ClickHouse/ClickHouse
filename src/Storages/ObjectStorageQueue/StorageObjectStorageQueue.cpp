@@ -67,6 +67,7 @@ namespace FailPoints
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 keeper_multiread_batch_size;
+    extern const ServerSettingsBool s3queue_disable_streaming;
 }
 
 namespace ObjectStorageQueueSetting
@@ -423,11 +424,14 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
+
+    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), /*num_streams_=*/ processing_threads_num, nullptr, nullptr);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
+                               parser_group,
                                progress,
                                iterator,
                                max_block_size,
@@ -447,6 +451,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
+    FormatParserGroupPtr parser_group,
     ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
@@ -461,7 +466,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
         file_iterator, configuration, object_storage, progress_,
-        info, format_settings,
+        info, format_settings, parser_group,
         commit_settings_copy,
         files_metadata,
         local_context, max_block_size, shutdown_called, table_is_being_dropped,
@@ -505,41 +510,55 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    try
+    const auto & settings = getContext()->getServerSettings();
+
+    if (settings[ServerSetting::s3queue_disable_streaming])
     {
-        const size_t dependencies_count = getDependencies();
-        if (dependencies_count)
+        static constexpr auto disabled_streaming_reschedule_period = 5000;
+
+        LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
+
+        std::lock_guard lock(mutex);
+        reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
+    }
+    else
+    {
+        try
         {
-            mv_attached.store(true);
-            SCOPE_EXIT({ mv_attached.store(false); });
-
-            LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-            files_metadata->registerIfNot(storage_id, /* active */true);
-
-            if (streamToViews(streaming_tasks_index))
+            const size_t dependencies_count = getDependencies();
+            if (dependencies_count)
             {
-                /// Reset the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = polling_min_timeout_ms;
+                mv_attached.store(true);
+                SCOPE_EXIT({ mv_attached.store(false); });
+
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+                files_metadata->registerIfNot(storage_id, /* active */true);
+
+                if (streamToViews(streaming_tasks_index))
+                {
+                    /// Reset the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = polling_min_timeout_ms;
+                }
+                else
+                {
+                    /// Increase the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                }
+
+                LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
             }
             else
             {
-                /// Increase the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                LOG_TEST(log, "No attached dependencies");
             }
-
-            LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
         }
-        else
+        catch (...)
         {
-            LOG_TEST(log, "No attached dependencies");
+            LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
         }
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)
@@ -628,6 +647,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         pipes.reserve(threads);
         sources.reserve(threads);
 
+        auto parser_group = std::make_shared<FormatParserGroup>(queue_context->getSettingsRef(), /*num_streams_=*/ threads, nullptr, nullptr);
+
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
@@ -635,6 +656,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
+                parser_group,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,

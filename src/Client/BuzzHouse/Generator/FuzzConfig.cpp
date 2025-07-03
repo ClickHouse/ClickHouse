@@ -130,6 +130,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
         {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
+        {"max_string_length", [&](const JSONObjectType & value) { max_string_length = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_columns", [&](const JSONObjectType & value) { max_columns = std::max(UINT64_C(1), value.getUInt64()); }},
@@ -415,7 +416,46 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
-String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table)
+bool FuzzConfig::hasMutations()
+{
+    String buf;
+
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out);
+        if (std::getline(infile, buf))
+        {
+            return !buf.empty() && buf[0] != '0';
+        }
+    }
+    return false;
+}
+
+String FuzzConfig::getRandomMutation(const uint64_t rand_val)
+{
+    String res;
+
+    /// The system.mutations table doesn't support sampling, so pick up a random part with a window function
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
+                "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
+                "FORMAT RawBlob;",
+                rand_val,
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
+}
+
+String FuzzConfig::tableGetRandomPartitionOrPart(
+    const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
@@ -426,7 +466,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
             true,
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
                 "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
@@ -434,6 +474,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
                 detached_tbl,
                 db_clause,
                 table,
+                rand_val,
                 detached_tbl,
                 db_clause,
                 table,
