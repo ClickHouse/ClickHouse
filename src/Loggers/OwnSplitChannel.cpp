@@ -11,7 +11,6 @@
 #include <Common/setThreadName.h>
 
 #include <Poco/Message.h>
-#include <Poco/RefCountedObject.h>
 
 namespace DB
 {
@@ -272,7 +271,7 @@ void OwnAsyncSplitChannel::close()
     }
 }
 
-class AsyncLogMessage : public Poco::RefCountedObject
+class AsyncLogMessage
 {
 public:
     AsyncLogMessage(const Message & msg_)
@@ -313,18 +312,18 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     std::unique_lock lock(mutex);
     if (!message_queue.empty())
     {
-        auto & notification = message_queue.front();
+        auto notification = message_queue.front();
         message_queue.pop_front();
-        return notification.duplicate();
+        return notification;
     }
 
     condition.wait(lock);
     if (message_queue.empty())
         return nullptr;
 
-    auto & notification = message_queue.front();
+    auto notification = message_queue.front();
     message_queue.pop_front();
-    return notification.duplicate();
+    return notification;
 }
 
 AsyncLogMessageQueue::Queue AsyncLogMessageQueue::getCurrentQueueAndClear()
@@ -351,7 +350,7 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
             logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
-            notification = AsyncLogMessagePtr(new AsyncLogMessage(msg), true);
+            notification = std::make_shared<AsyncLogMessage>(msg);
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
         }
 
@@ -360,7 +359,7 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
             return;
 
         if (!notification)
-            notification = AsyncLogMessagePtr(new AsyncLogMessage(msg), true);
+            notification = std::make_shared<AsyncLogMessage>(msg);
 
         if (msg.getPriority() <= text_log_max_priority_loaded)
             text_log_queue.enqueueMessage(notification);

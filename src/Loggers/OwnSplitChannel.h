@@ -79,7 +79,7 @@ struct OwnRunnableForChannel;
 struct OwnRunnableForTextLog;
 
 class AsyncLogMessage;
-using AsyncLogMessagePtr = Poco::AutoPtr<AsyncLogMessage>;
+using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
 class AsyncLogMessageQueue
 {
