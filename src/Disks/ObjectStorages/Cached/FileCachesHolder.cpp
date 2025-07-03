@@ -20,11 +20,11 @@ FileCachesHolder::FileCachesHolder(std::initializer_list<std::tuple<SplitCacheTy
 {
     for (auto&& [cache_type, cache, cache_settings] : caches_)
     {
-        if (holder.count(cache_type))
+        if (holder.contains(cache_type))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Multiple caches with the same type");
         }
-        holder[cache_type] = {std::move(cache), std::move(cache_settings)};
+        holder[cache_type] = {cache, cache_settings};
     }
 }
 
@@ -36,9 +36,9 @@ void FileCachesHolder::setCache(SplitCacheType cache_type, const FileCachePtr & 
 
 FileCachePtr FileCachesHolder::getCache(SplitCacheType cache_type) const
 {
-    if (!holder.count(cache_type))
+    if (!holder.contains(cache_type))
     {
-        if (!holder.count(SplitCacheType::GeneralCache))
+        if (!holder.contains(SplitCacheType::GeneralCache))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get cache with non-existing cache_type");
         }
@@ -49,9 +49,9 @@ FileCachePtr FileCachesHolder::getCache(SplitCacheType cache_type) const
 
 const FileCacheSettings & FileCachesHolder::getCacheSetting(SplitCacheType cache_type) const
 {
-    if (!holder.count(cache_type))
+    if (!holder.contains(cache_type))
     {
-        if (!holder.count(SplitCacheType::GeneralCache))
+        if (!holder.contains(SplitCacheType::GeneralCache))
         {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get cache settings with non-existing cache_type");
         }

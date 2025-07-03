@@ -102,7 +102,7 @@ public:
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
-    void removeKeyFromCacheIfExists(const std::string & path_key_for_cache, const SplitCacheType cache_type);
+    void removeKeyFromCacheIfExists(const std::string & path_key_for_cache, SplitCacheType cache_type);
 
     bool supportsCache() const override { return true; }
 

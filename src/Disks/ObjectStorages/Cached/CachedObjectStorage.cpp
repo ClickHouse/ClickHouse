@@ -151,7 +151,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     return implementation_buffer;
 }
 
-void CachedObjectStorage::removeKeyFromCacheIfExists(const std::string & path_key_for_cache, const SplitCacheType cache_type)
+void CachedObjectStorage::removeKeyFromCacheIfExists(const std::string & path_key_for_cache, SplitCacheType cache_type)
 {
     if (path_key_for_cache.empty())
         return;
