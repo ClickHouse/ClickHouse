@@ -244,6 +244,10 @@ private:
     void openSensorsChips();
     void openEDAC();
 
+    std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
+    void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
+    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
