@@ -187,8 +187,9 @@ def main():
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell("clang-tidy-cache log stats", f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
+            run_shell("clang-tidy-cache.log stats", f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                                                     f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"')
+            run_shell("clang-tidy-cache files not in cache", f'grep -B1 "does not exist in cache" {clang_tidy_cache_log}')
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
