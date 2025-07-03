@@ -5,6 +5,6 @@
 
 output=$(clang-tidy-cache.py $@ 2>&1)
 ret=$?
-echo -e "clang-tidy-cache output for \"$@\":\n\t$output" >> /tmp/clang-tidy-cache.log
+echo -e "clang-tidy-cache output for \"${!#}\":\n\t$output" >> /tmp/clang-tidy-cache.log
 echo "$output"
 exit $ret
