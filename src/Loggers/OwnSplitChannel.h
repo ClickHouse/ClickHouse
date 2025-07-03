@@ -84,13 +84,13 @@ using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 class AsyncLogMessageQueue
 {
     /// Maximum size of the queue, to prevent memory overflow
-    static constexpr size_t max_size = 100'000;
+    static constexpr size_t max_size = 10'000;
 
 public:
     using Queue = std::deque<AsyncLogMessagePtr>;
 
     /// Enqueues a single message notification
-    void enqueueMessage(AsyncLogMessagePtr pNotification);
+    void enqueueMessage(AsyncLogMessagePtr message);
 
     /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
     /// or a spurious wakeup occurs
@@ -105,6 +105,7 @@ public:
 private:
     Queue message_queue;
     std::condition_variable condition;
+    size_t dropped_messages = 0;
     std::mutex mutex;
 };
 

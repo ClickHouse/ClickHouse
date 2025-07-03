@@ -300,8 +300,19 @@ public:
 void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr pNotification)
 {
     std::unique_lock lock(mutex);
-    if (message_queue.size() > max_size)
+    size_t current_size = message_queue.size();
+    if (unlikely(current_size > max_size || dropped_messages && current_size > max_size / 2))
+    {
+        dropped_messages++;
         return;
+    }
+
+    if (unlikely(dropped_messages))
+    {
+        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        message_queue.push_back(std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING)));
+        dropped_messages = 0;
+    }
 
     message_queue.push_back(pNotification);
     condition.notify_one();
