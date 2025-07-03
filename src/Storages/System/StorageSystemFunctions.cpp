@@ -15,69 +15,49 @@
 namespace DB
 {
 
-enum class FunctionOrigin : int8_t
-{
-    SYSTEM = 0,
-    SQL_USER_DEFINED = 1,
-    EXECUTABLE_USER_DEFINED = 2
-};
-
 namespace
 {
-    template <typename Factory>
-    void fillRow(
-        MutableColumns & res_columns,
-        const String & name,
-        UInt64 is_aggregate,
-        const String & create_query,
-        FunctionOrigin function_origin,
-        const Factory & factory)
+
+/// Obsolete
+enum class FunctionOrigin : int8_t
+{
+    System = 0,
+    SqlUserDefines = 1,
+    ExecutableUserDefined = 2
+};
+
+template <typename Factory>
+void fillRow(
+    MutableColumns & res_columns,
+    const String & name,
+    UInt64 is_aggregate,
+    const String & create_query,
+    FunctionOrigin function_origin,
+    const Factory & factory)
+{
+    res_columns[0]->insert(name);
+    res_columns[1]->insert(is_aggregate);
+
+    if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory> || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>)
     {
-        res_columns[0]->insert(name);
-        res_columns[1]->insert(is_aggregate);
-
-        if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory> || std::is_same_v<Factory, UserDefinedExecutableFunctionFactory>)
-        {
-            res_columns[2]->insert(false);
+        res_columns[2]->insert(false);
+        res_columns[3]->insertDefault();
+    }
+    else
+    {
+        res_columns[2]->insert(factory.isCaseInsensitive(name));
+        if (factory.isAlias(name))
+            res_columns[3]->insert(factory.aliasTo(name));
+        else
             res_columns[3]->insertDefault();
-        }
-        else
-        {
-            res_columns[2]->insert(factory.isCaseInsensitive(name));
-            if (factory.isAlias(name))
-                res_columns[3]->insert(factory.aliasTo(name));
-            else
-                res_columns[3]->insertDefault();
-        }
+    }
 
-        res_columns[4]->insert(create_query);
-        res_columns[5]->insert(static_cast<Int8>(function_origin));
+    res_columns[4]->insert(create_query);
+    res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
-        {
-            if (factory.isAlias(name))
-            {
-                res_columns[6]->insertDefault();
-                res_columns[7]->insertDefault();
-                res_columns[8]->insertDefault();
-                res_columns[9]->insertDefault();
-                res_columns[10]->insertDefault();
-                res_columns[11]->insertDefault();
-                res_columns[12]->insertDefault();
-            }
-            else
-            {
-                auto documentation = factory.getDocumentation(name);
-                res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntaxAsString());
-                res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returnedValueAsString());
-                res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.introducedInAsString());
-                res_columns[12]->insert(documentation.categoryAsString());
-            }
-        }
-        else
+    if constexpr (std::is_same_v<Factory, FunctionFactory>)
+    {
+        if (factory.isAlias(name))
         {
             res_columns[6]->insertDefault();
             res_columns[7]->insertDefault();
@@ -87,17 +67,40 @@ namespace
             res_columns[11]->insertDefault();
             res_columns[12]->insertDefault();
         }
+        else
+        {
+            auto documentation = factory.getDocumentation(name);
+            res_columns[6]->insert(documentation.description);
+            res_columns[7]->insert(documentation.syntaxAsString());
+            res_columns[8]->insert(documentation.argumentsAsString());
+            res_columns[9]->insert(documentation.returnedValueAsString());
+            res_columns[10]->insert(documentation.examplesAsString());
+            res_columns[11]->insert(documentation.introducedInAsString());
+            res_columns[12]->insert(documentation.categoryAsString());
+        }
+    }
+    else
+    {
+        res_columns[6]->insertDefault();
+        res_columns[7]->insertDefault();
+        res_columns[8]->insertDefault();
+        res_columns[9]->insertDefault();
+        res_columns[10]->insertDefault();
+        res_columns[11]->insertDefault();
+        res_columns[12]->insertDefault();
     }
 }
 
-
+/// Obsolete
 std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
-        {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
-        {"SQLUserDefined", static_cast<Int8>(FunctionOrigin::SQL_USER_DEFINED)},
-        {"ExecutableUserDefined", static_cast<Int8>(FunctionOrigin::EXECUTABLE_USER_DEFINED)}
+        {"System", static_cast<Int8>(FunctionOrigin::System)},
+        {"SQLUserDefined", static_cast<Int8>(FunctionOrigin::SqlUserDefines)},
+        {"ExecutableUserDefined", static_cast<Int8>(FunctionOrigin::ExecutableUserDefined)}
     };
+}
+
 }
 
 ColumnsDescription StorageSystemFunctions::getColumnsDescription()
@@ -126,14 +129,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::System, functions_factory);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::System, aggregate_functions_factory);
     }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
@@ -141,14 +144,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & function_name : user_defined_sql_functions_names)
     {
         auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SqlUserDefines, user_defined_sql_functions_factory);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::ExecutableUserDefined, user_defined_executable_functions_factory);
     }
 }
 
