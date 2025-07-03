@@ -400,14 +400,17 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
 }
 
-void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const uint64_t intent)
+void KeeperHandlingConsumer::saveIntentSize(
+    const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
+    // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is not expensive to get it.
     LOG_TEST(
         log,
-        "Saving intent of {} for topic-partition [{}:{}]",
+        "Saving intent of {} for topic-partition [{}:{}] at offset {}",
         intent,
         topic_partition.topic,
-        topic_partition.partition_id);
+        topic_partition.partition_id,
+        offset.value_or(KafkaConsumer2::INVALID_OFFSET));
 
     {
         std::lock_guard lock(topic_partition_locks_mutex);
@@ -498,11 +501,12 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
         topic_partition.partition_id,
         topic_partition_index_to_consume_from);
 
-    const auto intent_size = std::invoke(
+    const auto [committed_offset, intent_size] = std::invoke(
         [&]
         {
             std::lock_guard lock(topic_partition_locks_mutex);
-            return getTopicPartitionLockLocked(topic_partition).intent_size;
+            const auto & lock_info = getTopicPartitionLockLocked(topic_partition);
+            return std::make_pair(lock_info.committed_offset, lock_info.intent_size);
         });
 
     MessageInfo message_info(*kafka_consumer);
@@ -524,7 +528,7 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             if (consumed_messages == 0)
                 return std::nullopt;
 
-            saveIntentSize(topic_partition, consumed_messages);
+            saveIntentSize(topic_partition, committed_offset, consumed_messages);
             return OffsetGuard(*this, last_read_offset + 1);
         }
     }
