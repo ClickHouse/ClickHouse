@@ -1173,7 +1173,7 @@ bool ZooKeeper::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
     return impl->isFeatureEnabled(feature_flag);
 }
 
-Int64 ZooKeeper::getClientID()
+Int64 ZooKeeper::getClientID() const
 {
     return impl->getSessionID();
 }
