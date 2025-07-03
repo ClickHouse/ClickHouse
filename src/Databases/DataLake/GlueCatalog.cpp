@@ -412,7 +412,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     else
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
-    if (!metadata_objects[metadata_path])
+    if (!metadata_objects.get(metadata_path))
     {
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
@@ -445,9 +445,9 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);
-        metadata_objects[metadata_path] = result.extract<Poco::JSON::Object::Ptr>();
+        metadata_objects.add(metadata_path, result.extract<Poco::JSON::Object::Ptr>());
     }
-    auto metadata_object = metadata_objects[metadata_path];
+    auto metadata_object = *metadata_objects.get(metadata_path);
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray("schemas");
     for (size_t i = 0; i < schemas->size(); ++i)

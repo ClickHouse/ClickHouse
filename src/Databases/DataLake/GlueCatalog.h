@@ -7,6 +7,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/LRUCache.h>
 
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 
@@ -72,7 +73,7 @@ private:
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
-    mutable std::unordered_map<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable Poco::LRUCache<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
 
 }
