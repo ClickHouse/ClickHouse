@@ -526,12 +526,12 @@ void registerStorageJoin(StorageFactory & factory)
 }
 
 template <typename T>
-static const char * rawData(T & t)
+static const char * rawData(const T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
 template <typename T>
-static size_t rawSize(T &)
+static size_t rawSize(const T &)
 {
     return sizeof(T);
 }

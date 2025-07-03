@@ -1,8 +1,7 @@
 #pragma once
 
-#include <functional>
-
 #include <Common/Arena.h>
+#include <base/PackedStringRef.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
@@ -138,6 +137,42 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size());
     chassert(new_head == holder.key.data());
     holder.key = std::string_view();
+}
+
+namespace DB
+{
+struct ArenaPackedStringHolder
+{
+    PackedStringRef key;
+    Arena & pool;
+};
+}
+
+inline PackedStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaPackedStringHolder & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & holder)
+{
+    size_t len = holder.key.heapSize();
+
+    if (len == 0)
+        return;
+
+    if (holder.key.isMedium())
+    {
+        holder.key.high = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
+    }
+    else
+    {
+        holder.key.high = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize()))
+            | PackedStringRef::LARGE_TAG;
+    }
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaPackedStringHolder &)
+{
 }
 
 inline void keyPrefetch(const std::string_view key)
