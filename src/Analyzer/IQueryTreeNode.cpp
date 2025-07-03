@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include <Common/SipHash.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
