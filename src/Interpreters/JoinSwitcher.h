@@ -31,9 +31,9 @@ public:
         join->checkTypesOfKeys(block);
     }
 
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
+    JoinResultPtr joinBlock(Block block) override
     {
-        join->joinBlock(block, not_processed);
+        return join->joinBlock(block);
     }
 
     const Block & getTotals() const override

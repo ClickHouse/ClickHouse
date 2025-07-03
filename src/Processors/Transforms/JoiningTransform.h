@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include "Interpreters/IJoin.h"
 
 #include <deque>
 #include <memory>
@@ -67,9 +68,8 @@ protected:
 
 private:
     Chunk input_chunk;
-    std::deque<Chunk> output_chunks;
+    std::optional<Chunk> output_chunk;
     bool has_input = false;
-    bool has_output = false;
     bool stop_reading = false;
     bool process_non_joined = true;
 
@@ -81,16 +81,13 @@ private:
     bool default_totals;
     bool initialized = false;
 
-    /// Only used with ConcurrentHashJoin
-    ExtraScatteredBlocks remaining_blocks;
-
-    ExtraBlockPtr not_processed;
+    JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
-    Blocks readExecute(Chunk & chunk);
+    Block readExecute(Chunk & chunk);
 };
 
 /// Fills Join with block from right table.

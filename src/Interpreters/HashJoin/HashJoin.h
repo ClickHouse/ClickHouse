@@ -151,10 +151,10 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
+    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -452,8 +452,9 @@ public:
 
 private:
     friend class NotJoinedHash;
-
     friend class JoinSource;
+    friend class HashJoinResult;
+    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -522,7 +523,7 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
+    JoinResultPtr joinBlockImplCross(Block block) const;
 
     bool empty() const;
 

@@ -15,9 +15,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-struct ExtraBlock;
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
-
 class TableJoin;
 class NotJoinedBlocks;
 class IBlocksStream;
@@ -45,6 +42,25 @@ enum class JoinPipelineType : uint8_t
      * The pipelines are sorted.
      */
     YShaped,
+};
+
+class IJoinResult;
+using JoinResultPtr = std::unique_ptr<IJoinResult>;
+
+class IJoinResult
+{
+public:
+    virtual ~IJoinResult() = default;
+
+    struct JoinResultBlock
+    {
+        Block block;
+        bool is_last;
+    };
+
+    virtual JoinResultBlock next() = 0;
+
+    static JoinResultPtr createFromBlock(Block block);
 };
 
 class IJoin
@@ -91,14 +107,7 @@ public:
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
-    virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
-
-    virtual bool isScatteredJoin() const { return false; }
-    virtual void joinBlock(
-        [[maybe_unused]] Block & block, [[maybe_unused]] ExtraScatteredBlocks & extra_blocks, [[maybe_unused]] std::vector<Block> & res)
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "joinBlock is not supported for {}", getName());
-    }
+    virtual JoinResultPtr joinBlock(Block block) = 0;
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.

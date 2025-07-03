@@ -49,20 +49,20 @@ struct LazyOutput
     IColumn::Filter filter;
 
 
-    struct TypeAndName
-    {
-        DataTypePtr type;
-        String name;
-        String qualified_name;
+    // struct TypeAndName
+    // {
+    //     DataTypePtr type;
+    //     String name;
+    //     String qualified_name;
 
-        TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
-            : type(type_), name(name_), qualified_name(qualified_name_)
-        {
-        }
-    };
+    //     TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
+    //         : type(type_), name(name_), qualified_name(qualified_name_)
+    //     {
+    //     }
+    // };
 
     std::vector<size_t> right_indexes;
-    std::vector<TypeAndName> type_name;
+    NamesAndTypes type_name;
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
@@ -151,14 +151,14 @@ public:
             auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
             if (!left_block.has(qualified_name))
-                addColumn(src_column, qualified_name);
+                addColumn(src_column);
         }
 
         if (is_asof_join)
         {
             assert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column, right_asof_column.name);
+            addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
         }
 
@@ -181,7 +181,7 @@ public:
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
-        return ColumnWithTypeAndName(std::move(lazy_output.columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].qualified_name);
+        return ColumnWithTypeAndName(std::move(lazy_output.columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
     void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
@@ -263,11 +263,11 @@ private:
     const IColumn * left_asof_key = nullptr;
 
 
-    void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
+    void addColumn(const ColumnWithTypeAndName & src_column)
     {
         lazy_output.columns.push_back(src_column.column->cloneEmpty());
         lazy_output.columns.back()->reserve(rows_to_add);
-        lazy_output.type_name.emplace_back(src_column.type, src_column.name, qualified_name);
+        lazy_output.type_name.emplace_back(src_column.name, src_column.type);
     }
 };
 

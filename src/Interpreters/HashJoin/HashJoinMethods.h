@@ -81,16 +81,16 @@ public:
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 
-    static Block joinBlockImpl(
+    static JoinResultPtr joinBlockImpl(
         const HashJoin & join,
-        Block & block,
+        Block block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
 
-    static ScatteredBlock joinBlockImpl(
+    static JoinResultPtr joinBlockImpl(
         const HashJoin & join,
-        ScatteredBlock & block,
+        ScatteredBlock block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
@@ -113,7 +113,7 @@ private:
         bool & is_inserted);
 
     template <typename AddedColumns>
-    static size_t switchJoinRightColumns(
+    static void switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
         AddedColumns & added_columns,
         const ScatteredBlock::Selector & selector,
@@ -121,7 +121,7 @@ private:
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static size_t joinRightColumnsSwitchNullability(
+    static void joinRightColumnsSwitchNullability(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -129,7 +129,7 @@ private:
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
-    static size_t joinRightColumnsSwitchMultipleDisjuncts(
+    static void joinRightColumnsSwitchMultipleDisjuncts(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -139,7 +139,7 @@ private:
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
     template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
-    static size_t joinRightColumns(
+    static void joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -151,7 +151,6 @@ private:
 
     template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
-        size_t left_start_row,
         const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
@@ -159,7 +158,7 @@ private:
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static size_t joinRightColumnsWithAddtitionalFilter(
+    static void joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,

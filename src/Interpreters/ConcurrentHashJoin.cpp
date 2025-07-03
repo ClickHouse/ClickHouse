@@ -300,66 +300,52 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     return true;
 }
 
-void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
+class ConcurrentHashJoinResult : public IJoinResult
 {
-    Blocks res;
-    ExtraScatteredBlocks extra_blocks;
-    joinBlock(block, extra_blocks, res);
-    chassert(!extra_blocks.rows());
-    block = concatenateBlocks(res);
-}
+    const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins;
+    ScatteredBlocks dispatched_blocks;
+    size_t next_block = 0;
+    JoinResultPtr current_result;
+public:
+    explicit ConcurrentHashJoinResult(
+        const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_,
+        ScatteredBlocks && dispatched_blocks_)
+        : hash_joins(hash_joins_)
+        , dispatched_blocks(std::move(dispatched_blocks_))
+    {}
 
-void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
+    JoinResultBlock next() override
+    {
+        if (!current_result)
+        {
+            if (next_block >= dispatched_blocks.size())
+                return {Block(), true};
+
+            current_result = hash_joins[next_block]->data->joinScatteredBlock(std::move(dispatched_blocks[next_block]));
+            ++next_block;
+        }
+
+        auto data = current_result->next();
+        if (data.is_last)
+            current_result.reset();
+        bool is_last = next_block >= dispatched_blocks.size() && data.is_last;
+        return {std::move(data.block), is_last};
+    }
+};
+
+JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
 {
     ScatteredBlocks dispatched_blocks;
-    auto & remaining_blocks = extra_blocks.remaining_blocks;
-    if (extra_blocks.rows())
-    {
-        dispatched_blocks.swap(remaining_blocks);
-    }
+
+    hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+        dispatched_blocks.emplace_back(std::move(block));
     else
-    {
-        hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        if (hash_joins[0]->data->twoLevelMapIsUsed())
-            dispatched_blocks.emplace_back(std::move(block));
-        else
-            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
-    }
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
-    block = {};
-
-    /// Just in case, should be no-op always
-    remaining_blocks.resize(dispatched_blocks.size());
-
-    chassert(res.empty());
-    res.clear();
-    res.reserve(dispatched_blocks.size());
-
-    /// Might be zero, which means unlimited
-    size_t remaining_rows_before_limit = table_join->maxJoinedBlockRows();
-
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    {
-        if (table_join->maxJoinedBlockRows() && remaining_rows_before_limit == 0)
-        {
-            /// Joining previous blocks produced enough rows already, skipping the rest of the blocks until the next call
-            remaining_blocks[i] = std::move(dispatched_blocks[i]);
-            continue;
-        }
-        auto & hash_join = hash_joins[i];
-        auto & current_block = dispatched_blocks[i];
-        if (current_block && (i == 0 || current_block.rows()))
-            hash_join->data->joinBlock(current_block, remaining_blocks[i]);
-        remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
-    }
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    {
-        auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
-            res.emplace_back(std::move(dispatched_block).getSourceBlock());
-    }
+    return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

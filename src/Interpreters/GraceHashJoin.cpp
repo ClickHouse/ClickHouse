@@ -10,6 +10,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include "Interpreters/IJoin.h"
 #include <Core/Settings.h>
 
 #include <numeric>
@@ -417,23 +418,18 @@ void GraceHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = sample_block.cloneEmpty();
     output_sample_block = left_sample_block.cloneEmpty();
-    ExtraBlockPtr not_processed = nullptr;
-    hash_join->joinBlock(output_sample_block, not_processed);
-    if (not_processed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
+    auto res = hash_join->joinBlock(output_sample_block)->next();
+    output_sample_block = std::move(res.block);
     initBuckets();
 }
 
-void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
+JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
     if (rightTableCanBeReranged())
         tryRerangeRightTableData();
 
     if (block.rows() == 0)
-    {
-        hash_join->joinBlock(block, not_processed);
-        return;
-    }
+        return hash_join->joinBlock(block);
 
     materializeBlockInplace(block);
 
@@ -444,8 +440,9 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 
     block = std::move(blocks[current_bucket->idx]);
 
-    hash_join->joinBlock(block, not_processed);
+    auto res = hash_join->joinBlock(std::move(block));
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
+    return res;
 }
 
 void GraceHashJoin::setTotals(const Block & block)
@@ -523,28 +520,29 @@ public:
 
     Block nextImpl() override
     {
-        ExtraBlockPtr not_processed = nullptr;
+        JoinResultPtr not_processed = nullptr;
         std::shared_lock shared(eof_mutex);
 
+        while (true)
         {
-            std::lock_guard lock(extra_block_mutex);
-            if (!not_processed_blocks.empty())
-            {
-                not_processed = std::move(not_processed_blocks.front());
-                not_processed_blocks.pop_front();
-            }
-        }
-
-        if (not_processed)
-        {
-            Block block = std::move(not_processed->block);
-            hash_join->joinBlock(block, not_processed);
             if (not_processed)
             {
-                std::lock_guard lock(extra_block_mutex);
-                not_processed_blocks.emplace_back(std::move(not_processed));
+                auto res = not_processed->next();
+                if (!res.is_last)
+                {
+                    std::lock_guard lock(extra_block_mutex);
+                    not_processed_results.emplace_back(std::move(not_processed));
+                }
+
+                return std::move(res.block);
             }
-            return block;
+
+            std::lock_guard lock(extra_block_mutex);
+            if (not_processed_results.empty())
+                break;
+
+            not_processed = std::move(not_processed_results.front());
+            not_processed_results.pop_front();
         }
 
         Block block;
@@ -572,7 +570,7 @@ public:
                     std::unique_lock exclusive(eof_mutex);
 
                     std::lock_guard lock(extra_block_mutex);
-                    if (!not_processed_blocks.empty())
+                    if (!not_processed_results.empty())
                         there_are_still_might_be_rows_to_process = true;
                 }
                 return there_are_still_might_be_rows_to_process ? nextImpl() : Block();
@@ -601,13 +599,16 @@ public:
             }
         } while (block.rows() == 0);
 
-        hash_join->joinBlock(block, not_processed);
-        if (not_processed)
+        auto res = hash_join->joinBlock(block);
+        auto next = res->next();
+
+        if (!next.is_last)
         {
             std::lock_guard lock(extra_block_mutex);
-            not_processed_blocks.emplace_back(std::move(not_processed));
+            not_processed_results.emplace_back(std::move(res));
         }
-        return block;
+
+        return std::move(next.block);
     }
 
     const size_t current_bucket;
@@ -620,7 +621,7 @@ public:
     Names right_key_names;
 
     std::mutex extra_block_mutex;
-    std::list<ExtraBlockPtr> not_processed_blocks TSA_GUARDED_BY(extra_block_mutex);
+    std::list<JoinResultPtr> not_processed_results TSA_GUARDED_BY(extra_block_mutex);
 
     std::shared_mutex eof_mutex;
 };
