@@ -10,8 +10,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
-#include "Columns/IColumn_fwd.h"
-#include "Compression/ICompressionCodec.h"
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
