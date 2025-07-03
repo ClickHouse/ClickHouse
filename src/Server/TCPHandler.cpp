@@ -43,7 +43,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/OpenTelemetryTraceContext.h"
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -77,7 +77,7 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
-#include "TCPHandler.h"
+#include <Server/TCPHandler.h>
 
 #include <Common/config_version.h>
 

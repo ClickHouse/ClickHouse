@@ -1425,21 +1425,6 @@ void MutationsInterpreter::validate()
         }
     }
 
-    const auto & storage_columns = source.getStorageSnapshot(metadata_snapshot, context)->metadata->getColumns();
-    for (const auto & command : commands)
-    {
-        for (const auto & [column_name, _] : command.column_to_update_expression)
-        {
-            auto column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
-            if (column && column->type->hasDynamicSubcolumns())
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                                "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                                backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
-            }
-        }
-    }
-
     // Make sure the mutation query is valid
     if (context->getSettingsRef()[Setting::validate_mutation_query])
     {
