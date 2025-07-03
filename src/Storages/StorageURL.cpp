@@ -311,12 +311,12 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    FormatParserGroupPtr parser_group_,
+    size_t max_parsing_threads,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : ISource(info.source_header, false)
+    : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -327,7 +327,6 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
 {
@@ -393,12 +392,16 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                parser_group,
+                max_parsing_threads,
+                /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+
+            if (key_condition)
+                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -482,7 +485,7 @@ Chunk StorageURLSource::generate()
         }
 
         if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            !parser_group->hasFilter())
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -1253,7 +1256,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
+    const size_t max_parsing_threads = num_streams >= settings[Setting::max_parsing_threads] ? 1 : (settings[Setting::max_parsing_threads] / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1269,12 +1272,13 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            parser_group,
+            max_parsing_threads,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
             need_only_count);
 
+        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 
