@@ -400,8 +400,7 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
 }
 
-void KeeperHandlingConsumer::saveIntentSize(
-    const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
+void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
     // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is not expensive to get it.
     LOG_TEST(
