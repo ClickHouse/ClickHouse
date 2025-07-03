@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
-#include "Common/Logger.h"
 
 namespace DB::QueryPlanOptimizations
 {

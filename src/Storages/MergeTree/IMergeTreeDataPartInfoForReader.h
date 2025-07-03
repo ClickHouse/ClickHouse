@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
