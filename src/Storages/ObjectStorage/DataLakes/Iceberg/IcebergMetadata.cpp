@@ -1059,11 +1059,7 @@ ObjectIterator IcebergMetadata::iterate(
          auto key = file.file_path;
          auto object_metadata = object_storage->getObjectMetadata(key);
 
-         data_file_keys.push_back(std::make_shared<IcebergDataObjectInfo>(
-             *this,
-             file,
-             std::nullopt, // metadata is not used in IcebergDataObjectInfo
-             *position_deletes_files));
+         data_file_keys.push_back(std::make_shared<IcebergDataObjectInfo>(*this, file, object_metadata, *position_deletes_files));
      }
      return std::make_shared<IcebergKeysIterator>(std::move(data_file_keys), std::move(position_deletes_files), object_storage, callback);
  }
