@@ -793,7 +793,8 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown([this](){
+        DatabaseCatalog::shutdown([this]()
+        {
             SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
         });
 
