@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-#include "DataTypes/IDataType.h"
 
 #include <Columns/ColumnNullable.h>
 
