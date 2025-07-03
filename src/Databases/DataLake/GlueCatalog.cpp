@@ -43,6 +43,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
 }
 
@@ -291,7 +292,8 @@ bool GlueCatalog::tryGetTableMetadata(
         if (result.requiresCredentials())
             setCredentials(result);
 
-        auto setup_specific_properties = [&] () {
+        auto setup_specific_properties = [&]() 
+        {
             const auto & table_params = table_outcome.GetParameters();
             if (table_params.contains("metadata_location"))
             {
@@ -406,11 +408,10 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
             // Delete bucket
             std::size_t pos = metadata_path.find('/');
-            if (pos != std::string::npos) {
+            if (pos != std::string::npos)
                 metadata_path = metadata_path.substr(pos + 1);
-            }
         }
-        else 
+        else
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
@@ -459,7 +460,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
                 auto field = fields->getObject(static_cast<UInt32>(j));
                 if (field->getValue<String>(Iceberg::f_name) == column_name)
                     return field->getValue<String>(Iceberg::f_type) == Iceberg::f_timestamptz;
-            }            
+            }
         }
     }
 
