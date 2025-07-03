@@ -8,7 +8,7 @@
    └─────────┴─────────┴───────────────────────┘
 >> inner_string_or_string
    ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-   ┃ outer_string  ┃ inner_string1 ┃ inner_string2 ┃ inner_string_oneof_presence ┃
+   ┃ outer.string  ┃ inner.string1 ┃ inner.string2 ┃ inner.string.oneof.presence ┃
    ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 1. │ outer_string1 │ string1       │               │ hello                       │
    ├───────────────┼───────────────┼───────────────┼─────────────────────────────┤

@@ -22,11 +22,11 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS inner_string_or_string_3447;
 SELECT '>> inner_string_or_string';
-CREATE TABLE inner_string_or_string_3447 ( outer_string String, inner_string1 String, inner_string2 String, inner_string_oneof_presence Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string2\` String, \`inner.string.oneof.presence\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString2' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
-SELECT * FROM inner_string_or_string_3447 ORDER BY outer_string Format pretty;
+SELECT * FROM inner_string_or_string_3447 ORDER BY \`outer.string\` Format pretty;
 EOF
 
 $CLICKHOUSE_CLIENT <<EOF

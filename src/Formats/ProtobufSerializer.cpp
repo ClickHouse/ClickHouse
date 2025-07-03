@@ -3491,7 +3491,7 @@ namespace
                         LOG_DEBUG(
                             getLogger("ProtobufSerializer"), "maybe_add_oneof_wrapper: expected name {} vs name {}", expected_name, name);
 
-                        if (name == expected_name && (data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8 || data_type_id == TypeIndex::Int16))
+                        if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name) && (data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8 || data_type_id == TypeIndex::Int16))
                         {
 
                             serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
@@ -3620,7 +3620,7 @@ namespace
                             oneof_presence,
                             field_descriptor,
                             used_column_indices_in_nested,
-                            /* columns_are_reordered_outside = */  true   /* !oneof_presence */,
+                            /* columns_are_reordered_outside = */  true,
                             /* top_level_message = */ false);
 
                         /// `columns_are_reordered_outside` is true because column indices are
