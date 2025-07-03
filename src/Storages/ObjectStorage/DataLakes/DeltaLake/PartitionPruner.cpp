@@ -1,4 +1,4 @@
-#include "PartitionPruner.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 
 #if USE_DELTA_KERNEL_RS
 #include <DataTypes/DataTypeNullable.h>
@@ -12,8 +12,8 @@
 
 #include <Storages/KeyDescription.h>
 #include <Storages/ColumnsDescription.h>
-#include "ExpressionVisitor.h"
-#include "KernelUtils.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
 
 namespace DB::ErrorCodes

@@ -220,12 +220,20 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 void OwnAsyncSplitChannel::open()
 {
     is_open = true;
-    if (text_log_max_priority && text_log_thread && !text_log_thread->isRunning())
+    if (text_log_max_priority && !text_log_thread)
+    {
+        text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
         text_log_thread->start(*text_log_runnable);
+    }
 
     for (size_t i = 0; i < channels.size(); i++)
-        if (!threads[i]->isRunning())
+    {
+        if (!threads[i])
+        {
+            threads[i] = std::make_unique<Poco::Thread>("AsyncLog");
             threads[i]->start(*runnables[i]);
+        }
+    }
 }
 
 void OwnAsyncSplitChannel::close()
@@ -233,23 +241,25 @@ void OwnAsyncSplitChannel::close()
     is_open = false;
     try
     {
-        if (text_log_thread && text_log_thread->isRunning())
+        if (text_log_thread)
         {
             do
             {
                 text_log_queue.wakeUpAll();
             } while (!text_log_thread->tryJoin(100));
+            text_log_thread.reset();
         }
 
         for (size_t i = 0; i < channels.size(); i++)
         {
-            if (threads[i]->isRunning())
+            if (threads[i])
             {
                 do
                 {
                     queues[i]->wakeUpAll();
                 } while (!threads[i]->tryJoin(100));
             }
+            threads[i].reset();
         }
     }
     catch (...)
@@ -471,7 +481,7 @@ void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, cons
 
     channels.emplace_back(extended);
     queues.emplace_back(std::make_unique<Poco::NotificationQueue>());
-    threads.emplace_back(std::make_unique<Poco::Thread>("AsyncLog"));
+    threads.emplace_back(nullptr);
     const size_t i = threads.size() - 1;
     runnables.emplace_back(new OwnRunnableForChannel(*this, i));
 }
@@ -482,7 +492,7 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel for text_log while the split channel is open");
     text_log = log_queue;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
-    text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
+    text_log_thread = nullptr;
     text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
 }
 

@@ -33,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 
 #include <base/range.h>
 
