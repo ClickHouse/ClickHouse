@@ -157,6 +157,7 @@ public:
     std::vector<String> tryGetCachePaths(const Key & key);
 
     size_t getUsedCacheSize() const;
+    size_t getMaxCacheSize() const;
 
     size_t getFileSegmentsNum() const;
 
@@ -210,6 +211,7 @@ private:
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
+    const bool allow_dynamic_cache_resize;
 
     BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
@@ -302,6 +304,19 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CachePriorityGuard::Lock *);
+
+    struct SizeLimits
+    {
+        size_t max_size;
+        size_t max_elements;
+        double slru_size_ratio;
+    };
+    SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
+    bool doDynamicResizeImpl(
+        const SizeLimits & current_limits,
+        const SizeLimits & desired_limits,
+        SizeLimits & result_limits,
+        CachePriorityGuard::Lock &);
 };
 
 }

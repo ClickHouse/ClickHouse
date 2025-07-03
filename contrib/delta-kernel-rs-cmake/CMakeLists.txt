@@ -9,23 +9,24 @@ set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 # MSAN: Disabled because ring does not generate the appropriate symbols
 # NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
 # Darwin: Issues with reqwest -> system-configuration (requires other frameworks)
-if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
+if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
 
 option(ENABLE_DELTA_KERNEL_RS "Enable delta-kernel-rs" ${USE_DELTA_KERNEL_RS})
-if (NOT ENABLE_DELTA_KERNEL_RS)
+if (NOT ENABLE_DELTA_KERNEL_RS OR NOT ENABLE_RUST)
   message(STATUS "Not using delta-kernel-rs")
   return()
 endif()
 
 # Ideally we would disable all features to remove dependencies but:
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
-# * delta_kernel/cloud: s3 client
 clickhouse_import_crate(
-        MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-        FEATURES "default-engine, delta_kernel/cloud")
+    MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
+    FEATURES "default-engine, test-ffi"
+)
+clickhouse_config_crate_flags(delta_kernel_ffi)
 
 # We use our own OpenSSL headers and libs
 if(ARCH_AMD64)
@@ -57,31 +58,12 @@ file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/ DESTINATION ${DELTA_
 set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 
 corrosion_set_env_vars(delta_kernel_ffi
+        "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/"
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
         "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
-
-# We set manually the cargo config flags via command line `--config` option
-# This is needed to pass the proper compilation flags (CC, CXX, CFLAGS, etc)
-# We have to do it this way because the project is built from the source folder and we can't place the `config.toml`
-# there, as it would conflict if you have multiple build folders
-get_property(
-        INTERFACE_DELTA_CARGO_FLAGS
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-set_property(
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_DELTA_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}"
-)
-get_property(
-        INTERFACE_DELTA_CARGO_FLAGS
-        TARGET delta_kernel_ffi
-        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
-)
-message(STATUS "Delta-kernel cargo flags: ${INTERFACE_DELTA_CARGO_FLAGS}")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)

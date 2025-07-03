@@ -31,7 +31,7 @@ struct ProgressValues
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
-    void writeJSON(WriteBuffer & out) const;
+    void writeJSON(WriteBuffer & out, bool write_zero_values) const;
 };
 
 struct ReadProgress
@@ -117,8 +117,14 @@ struct Progress
 
     void write(WriteBuffer & out, UInt64 client_revision) const;
 
+    enum class DisplayMode
+    {
+        Verbose,  // Display zero values. Needed for X-ClickHouse-Summary
+        Minimal   // Do not write zero values. Needed to send less data for frequent progress updates (X-ClickHouse-Progress)
+    };
+
     /// Progress in JSON format (single line, without whitespaces) is used in HTTP headers.
-    void writeJSON(WriteBuffer & out) const;
+    void writeJSON(WriteBuffer & out, DisplayMode mode) const;
 
     /// Each value separately is changed atomically (but not whole object).
     bool incrementPiecewiseAtomically(const Progress & rhs);

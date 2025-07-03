@@ -7,12 +7,17 @@
 #include <Common/assert_cast.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease;
+}
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -27,26 +32,50 @@ SLRUFileCachePriority::SLRUFileCachePriority(
     size_t max_size_,
     size_t max_elements_,
     double size_ratio_,
+    const std::string & description_,
     LRUFileCachePriority::StatePtr probationary_state_,
-    LRUFileCachePriority::StatePtr protected_state_,
-    const std::string & description_)
+    LRUFileCachePriority::StatePtr protected_state_)
     : IFileCachePriority(max_size_, max_elements_)
+    , description(description_)
     , size_ratio(size_ratio_)
     , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio),
                                            getRatio(max_elements_, size_ratio),
-                                           protected_state_,
-                                           description_ + ", protected"))
+                                           description_ + ", protected",
+                                           protected_state_))
     , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio),
                                               getRatio(max_elements_, 1 - size_ratio),
-                                              probationary_state_,
-                                              description_ + ", probationary"))
+                                              description_ + ", probationary",
+                                              probationary_state_))
     , log(getLogger("SLRUFileCachePriority(" + description_ + ")"))
 {
-    LOG_DEBUG(
+    LOG_INFO(
         log, "Probationary queue {} in size and {} in elements. "
         "Protected queue {} in size and {} in elements",
         probationary_queue.max_size.load(), probationary_queue.max_elements.load(),
         protected_queue.max_size.load(), protected_queue.max_elements.load());
+
+    if (probationary_queue.max_size == 0 || protected_queue.max_size == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Incorrect max size cache configuration. Max size: {}, size ratio: {}. "
+            "Cannot have zero max size after ratio is applied.",
+            max_size_, size_ratio_);
+    }
+    if (probationary_queue.max_elements == 0 || protected_queue.max_elements == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Incorrect max elements cache configuration. Max size: {}, size ratio: {}. "
+            "Cannot have zero max elements after ratio is applied.",
+            max_elements_, size_ratio_);
+    }
+}
+
+FileCachePriorityPtr SLRUFileCachePriority::copy() const
+{
+    return std::make_unique<SLRUFileCachePriority>(
+        max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
 }
 
 size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const
@@ -129,6 +158,12 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     }
 
     return iterator;
+}
+
+void SLRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::Lock & lock)
+{
+    protected_queue.iterate(func, lock);
+    probationary_queue.iterate(func, lock);
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(
@@ -348,18 +383,24 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
+    /// Entry can be not movable (between probationary and protected queues)
+    /// in case it is in process of being evicted.
     if (!iterator.movable)
     {
+        /// Entry could not be chosen for eviction
+        /// in case there is at least one reference to the corresponding file segment.
+        /// But if someone called increasePriority(), then there must be one.
         iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
 
+    EntryPtr entry = iterator.getEntry();
+
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
-    const size_t entry_size = iterator.getEntry()->size;
-    if (entry_size > protected_queue.getSizeLimit(lock))
+    if (entry->size > protected_queue.getSizeLimit(lock))
     {
         /// Entry size is bigger than the whole protected queue limit.
         /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
@@ -368,7 +409,6 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
-    EntryPtr entry = iterator.getEntry();
     /// We need to remove the entry from probationary first
     /// in order to make space for downgrade from protected.
     iterator.lru_iterator.remove(lock);
@@ -393,6 +433,12 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
         eviction_candidates.evict();
         eviction_candidates.finalize(nullptr, lock);
+
+        /// Count how much we evict,
+        /// because it could affect performance if we have to do this often.
+        ProfileEvents::increment(
+            ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+            eviction_candidates.size());
     }
     catch (...)
     {
@@ -405,7 +451,9 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 }
 
 LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
-    EntryPtr entry, LRUFileCachePriority & queue, const CachePriorityGuard::Lock & lock)
+    EntryPtr entry,
+    LRUFileCachePriority & queue,
+    const CachePriorityGuard::Lock & lock)
 {
     try
     {
@@ -430,14 +478,15 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected exception: {} (Initial exception: {}). Cache will become inconsistent",
-                            getCurrentExceptionMessage(true), initial_exception);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected exception: {} (Initial exception: {}). Cache will become inconsistent",
+                getCurrentExceptionMessage(true), initial_exception);
         }
 
-        /// Let's try to catch such cases in CI.
-        chassert(false);
-        throw;
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to create queue entry: {}", getCurrentExceptionMessage(true));
     }
 }
 

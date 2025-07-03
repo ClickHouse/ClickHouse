@@ -223,9 +223,11 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
-        nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
             (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }

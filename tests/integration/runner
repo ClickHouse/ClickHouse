@@ -333,6 +333,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--distributed-plan",
+        action="store_true",
+        default=False,
+        dest="distributed_plan",
+        help="Use serialized query plan in distributed queries",
+    )
+
+    parser.add_argument(
         "--cleanup-containers",
         action="store_true",
         default=False,
@@ -443,6 +451,10 @@ if __name__ == "__main__":
     if args.old_analyzer:
         use_old_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
+    use_distributed_plan = ""
+    if args.distributed_plan:
+        use_distributed_plan = "-e CLICKHOUSE_USE_DISTRIBUTED_PLAN=1"
+
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
         map(lambda x: shlex.quote(x).replace('"', '\\"'), args.pytest_args)
@@ -463,7 +475,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} {use_distributed_plan} -e PYTHONUNBUFFERED=1 "
         f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv "'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )

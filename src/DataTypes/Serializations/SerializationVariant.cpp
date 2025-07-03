@@ -18,7 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -68,6 +68,13 @@ void SerializationVariant::enumerateStreams(
 
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
+
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
 
     settings.path.push_back(Substream::VariantDiscriminators);
     auto discriminators_data = SubstreamData(discriminators_serialization)
@@ -130,7 +137,7 @@ void SerializationVariant::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
     auto * discriminators_stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -204,7 +211,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     DeserializeBinaryBulkSettings & settings,
     SubstreamsDeserializeStatesCache * cache)
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -246,9 +253,22 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
 
     auto * variant_state = checkAndGetState<SerializeBinaryBulkStateVariant>(state);
 
-    /// Don't write anything if column is empty.
+    /// Even if there is no data to write, we still have to call nested serialization,
+    /// because we might need to call the stream getter for all existing substreams even
+    /// if nothing is written there. It's needed in Compact parts when we write
+    /// marks per substreams inside the stream getter.
     if (limit == 0)
+    {
+        settings.path.push_back(Substream::VariantElements);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
+        settings.path.pop_back();
         return;
+    }
 
     /// Write number of rows in this granule in compact mode.
     if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
@@ -274,12 +294,18 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         }
 
         settings.path.push_back(Substream::VariantElements);
-        addVariantElementToPath(settings.path, non_empty_global_discr);
-        /// We can use the same offset/limit as for whole Variant column
-        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->variant_states[non_empty_global_discr]);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            /// We can use the same offset/limit as for whole Variant column
+            if (i == non_empty_global_discr)
+                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), offset, limit, settings, variant_state->variant_states[i]);
+            else
+                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
         variants_statistics[variant_names[non_empty_global_discr]] += limit;
         total_size_of_variants += limit;
-        settings.path.pop_back();
         settings.path.pop_back();
         return;
     }
@@ -298,6 +324,15 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
             for (size_t i = 0; i < limit; ++i)
                 writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
         }
+
+        settings.path.push_back(Substream::VariantElements);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
+        settings.path.pop_back();
         return;
     }
 
@@ -391,20 +426,16 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        /// Serialize variant only if we have its discriminator in the range.
-        if (variant_offsets_and_limits[i].second)
-        {
-            addVariantElementToPath(settings.path, i);
-            variants[i]->serializeBinaryBulkWithMultipleStreams(
-                col.getVariantByGlobalDiscriminator(i),
-                variant_offsets_and_limits[i].first,
-                variant_offsets_and_limits[i].second,
-                settings,
-                variant_state->variant_states[i]);
-            variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
-            total_size_of_variants += variant_offsets_and_limits[i].second;
-            settings.path.pop_back();
-        }
+        addVariantElementToPath(settings.path, i);
+        variants[i]->serializeBinaryBulkWithMultipleStreams(
+            col.getVariantByGlobalDiscriminator(i),
+            variant_offsets_and_limits[i].second ? variant_offsets_and_limits[i].first : col.getVariantByGlobalDiscriminator(i).size(),
+            variant_offsets_and_limits[i].second,
+            settings,
+            variant_state->variant_states[i]);
+        variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
+        total_size_of_variants += variant_offsets_and_limits[i].second;
+        settings.path.pop_back();
     }
     settings.path.pop_back();
 }
@@ -452,12 +483,15 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
+        /// Now we are sure that discriminators are not in cache and we can save the size of discriminators now to know how
+        /// many discriminators were actually deserialized to iterate over them later to calculate limits for variants.
+        variant_state->num_rows_read = col.getLocalDiscriminatorsPtr()->size();
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
-                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, rows_offset, limit, 0);
         }
         else
         {
@@ -738,12 +772,16 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
     {
         col.insertDefault();
     }
-    else
+    else if (global_discr < variants.size())
     {
         auto & variant_column = col.getVariantByGlobalDiscriminator(global_discr);
         variants[global_discr]->deserializeBinary(variant_column, istr, settings);
         col.getLocalDiscriminators().push_back(col.localDiscriminatorByGlobal(global_discr));
         col.getOffsets().push_back(variant_column.size() - 1);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read value of {}: unexpected discriminator {}", variant_name, UInt64(global_discr));
     }
 }
 
@@ -920,7 +958,8 @@ bool SerializationVariant::tryDeserializeImpl(
     IColumn & column,
     const String & field,
     std::function<bool(ReadBuffer &)> check_for_null,
-    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &)> try_deserialize_nested) const
+    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+    const FormatSettings & settings) const
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
     ReadBufferFromString null_buf(field);
@@ -930,12 +969,14 @@ bool SerializationVariant::tryDeserializeImpl(
         return true;
     }
 
+    FormatSettings modified_settings = settings;
+    modified_settings.allow_special_bool_values = settings.allow_special_bool_values_inside_variant;
     for (size_t global_discr : deserialize_text_order)
     {
         ReadBufferFromString variant_buf(field);
         auto & variant_column = column_variant.getVariantByGlobalDiscriminator(global_discr);
         size_t prev_size = variant_column.size();
-        if (try_deserialize_nested(variant_column, variants[global_discr], variant_buf) && variant_buf.eof())
+        if (try_deserialize_nested(variant_column, variants[global_discr], variant_buf, modified_settings) && variant_buf.eof())
         {
             column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
             column_variant.getOffsets().push_back(prev_size);
@@ -981,12 +1022,12 @@ bool SerializationVariant::tryDeserializeTextEscapedImpl(DB::IColumn & column, c
     {
         return SerializationNullable::tryDeserializeNullEscaped(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1020,12 +1061,12 @@ bool SerializationVariant::tryDeserializeTextRawImpl(DB::IColumn & column, const
     {
         return SerializationNullable::tryDeserializeNullRaw(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1060,12 +1101,12 @@ bool SerializationVariant::tryDeserializeTextQuotedImpl(DB::IColumn & column, co
     {
         return SerializationNullable::tryDeserializeNullQuoted(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextQuoted(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextQuoted(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1099,12 +1140,12 @@ bool SerializationVariant::tryDeserializeTextCSVImpl(DB::IColumn & column, const
     {
         return SerializationNullable::tryDeserializeNullCSV(buf, settings);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextCSV(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextCSV(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1138,12 +1179,12 @@ bool SerializationVariant::tryDeserializeWholeTextImpl(DB::IColumn & column, con
     {
         return SerializationNullable::tryDeserializeNullText(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeWholeText(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeWholeText(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1188,12 +1229,12 @@ bool SerializationVariant::tryDeserializeTextJSONImpl(DB::IColumn & column, cons
     {
         return SerializationNullable::tryDeserializeNullJSON(buf);
     };
-    auto try_deserialize_variant =[&](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf)
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
-        return variant_serialization->tryDeserializeTextJSON(variant_column, buf, settings);
+        return variant_serialization->tryDeserializeTextJSON(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant);
+    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
 }
 
 void SerializationVariant::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

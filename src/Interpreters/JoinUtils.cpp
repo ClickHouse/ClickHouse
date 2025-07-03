@@ -470,9 +470,7 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 {
-    column.reserve(column.size() + count);
-    for (size_t i = 0; i < count; ++i)
-        type->insertDefaultInto(column);
+    type->insertManyDefaultsInto(column, count);
 }
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)

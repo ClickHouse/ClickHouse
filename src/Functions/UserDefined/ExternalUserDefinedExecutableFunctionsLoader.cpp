@@ -3,6 +3,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -180,7 +181,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
     ExternalCommandStderrReaction stderr_reaction
-        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "none"));
+        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "log_last"));
     bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
 
     size_t pool_size = 0;

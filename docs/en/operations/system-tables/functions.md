@@ -20,6 +20,7 @@ Columns:
 - `arguments`, ([String](../../sql-reference/data-types/string.md)) - What arguments does the function take.
 - `returned_value`, ([String](../../sql-reference/data-types/string.md)) - What does the function return.
 - `examples`, ([String](../../sql-reference/data-types/string.md)) - Example usage of the function.
+- `introduced_in`, ([String](../../sql-reference/data-types/string.md)) - ClickHouse version in which the function was first introduced.
 - `categories`, ([String](../../sql-reference/data-types/string.md)) - The category of the function.
 
 **Example**

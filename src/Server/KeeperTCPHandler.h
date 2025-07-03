@@ -24,7 +24,7 @@ namespace DB
 {
 
 struct SocketInterruptablePollWrapper;
-using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+using SocketInterruptablePollWrapperPtr = std::shared_ptr<SocketInterruptablePollWrapper>;
 
 struct RequestWithResponse
 {

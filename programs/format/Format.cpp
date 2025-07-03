@@ -1,6 +1,7 @@
 #include <functional>
 #include <iostream>
 #include <string_view>
+#include <Client/ClientBaseHelpers.h>
 #include <boost/program_options.hpp>
 
 #include <Core/Settings.h>
@@ -54,32 +55,6 @@ namespace DB::ErrorCodes
 
 namespace
 {
-
-void skipSpacesAndComments(const char*& pos, const char* end, bool print_comments)
-{
-    do
-    {
-        /// skip spaces to avoid throw exception after last query
-        while (pos != end && std::isspace(*pos))
-            ++pos;
-
-        const char * comment_begin = pos;
-        /// for skip comment after the last query and to not throw exception
-        if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
-        {
-            pos += 2;
-            /// skip until the end of the line
-            while (pos != end && *pos != '\n')
-                ++pos;
-            if (print_comments)
-                std::cout << std::string_view(comment_begin, pos - comment_begin) << "\n";
-        }
-        /// need to parse next sql
-        else
-            break;
-    } while (pos != end);
-}
-
 }
 
 #pragma clang diagnostic ignored "-Wunused-function"
@@ -107,7 +82,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
-            ("format_alter_operations_with_parentheses", po::value<bool>()->default_value(true), "If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.")
         ;
 
         Settings cmd_settings;
@@ -129,12 +103,14 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool oneline = options.count("oneline");
         bool quiet = options.count("quiet");
         bool multiple = options.count("multiquery");
-        bool print_comments = options.count("comments");
         size_t max_line_length = options["max_line_length"].as<size_t>();
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
-        bool format_alter_operations_with_parentheses = options["format_alter_operations_with_parentheses"].as<bool>();
+
+        std::function<void(std::string_view)> comments_callback;
+        if (options.count("comments"))
+            comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -159,8 +135,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             std::cerr << "Option 'max_line_length' must be less than 256." << std::endl;
             return 2;
         }
-
-        ASTAlterCommand::setFormatAlterCommandsWithParentheses(format_alter_operations_with_parentheses);
 
         String query;
 
@@ -242,7 +216,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             const char * pos = query.data();
             const char * end = pos + query.size();
-            skipSpacesAndComments(pos, end, print_comments);
+            skipSpacesAndComments(pos, end, comments_callback);
 
             ParserQuery parser(end, allow_settings_after_format_in_insert);
             while (pos != end)
@@ -353,7 +327,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         std::cout << std::endl;
                     }
                 }
-                skipSpacesAndComments(pos, end, print_comments);
+                skipSpacesAndComments(pos, end, comments_callback);
                 if (!multiple)
                     break;
             }

@@ -630,6 +630,7 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     Poco::Net::HTTPBasicCredentials empty_creds;
     auto buf_from_http = DB::BuilderRWBufferFromHTTP(uri)
+                             .withBypassProxy(true)
                              .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
                              .withOutCallback(
                                  [&] (std::ostream & in)

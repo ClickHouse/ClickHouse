@@ -12,6 +12,19 @@ Hash functions can be used for the deterministic pseudo-random shuffling of elem
 
 Simhash is a hash function, which returns close hash values for close (similar) arguments.
 
+Most hash functions accept any number of arguments of any types.
+
+:::note
+Hash of NULL is NULL. To get a non-NULL hash of a Nullable column, wrap it in a tuple:
+```sql
+SELECT cityHash64(tuple(NULL))
+```
+:::
+
+:::note
+To calculate hash of the whole contents of a table, use `sum(cityHash64(tuple(*)))` (or other hash function). `tuple` ensures that rows with NULL values are not skipped. `sum` ensures that the order of rows doesn't matter.
+:::
+
 ## halfMD5 {#halfmd5}
 
 [Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
@@ -969,7 +982,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1006,7 +1019,7 @@ Result:
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](/sql-reference/functions/bit-functions#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1043,7 +1056,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1080,7 +1093,7 @@ Result:
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1117,7 +1130,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1154,7 +1167,7 @@ Result:
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1191,7 +1204,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1228,7 +1241,7 @@ Result:
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1962,7 +1975,7 @@ Calculates Keccak-256 hash string and returns the resulting set of bytes as [Fix
 keccak256('s')
 ```
 
-This cryptographic hash-function is used a lot in [EVM-based blockchains](https://ethereum.github.io/yellowpaper/paper.pdf). 
+This cryptographic hash-function is used a lot in [EVM-based blockchains](https://ethereum.github.io/yellowpaper/paper.pdf).
 
 **Arguments**
 
@@ -1978,7 +1991,7 @@ Use function [hex](../functions/encoding-functions.md/#hex) to format the result
 
 Query:
 ```sql
-select hex(keccak256('hello'))
+SELECT hex(keccak256('hello'))
 ```
 
 Result:
@@ -1987,3 +2000,12 @@ Result:
 1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
    └──────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

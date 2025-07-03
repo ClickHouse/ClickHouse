@@ -1,10 +1,10 @@
-#include "ThreadProfileEvents.h"
+#include <Common/ThreadProfileEvents.h>
 
 #if defined(OS_LINUX)
 
-#include "NetlinkMetricsProvider.h"
-#include "ProcfsMetricsProvider.h"
-#include "hasLinuxCapability.h"
+#include <Common/NetlinkMetricsProvider.h>
+#include <Common/ProcfsMetricsProvider.h>
+#include <Common/hasLinuxCapability.h>
 
 #include <fstream>
 #include <optional>
@@ -124,8 +124,12 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
                 };
         break;
     case MetricsProvider::Procfs:
-        stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
+        /// Note that in the case of Procfs we are always reading the same files over an over
+        /// In order to avoid opening and closing them for every task we use a ThreadLocal variable so we'll keep
+        /// the files under this thread until the thread exits
+        stats_getter = [tid]()
                 {
+                    thread_local auto metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid);
                     ::taskstats result{};
                     metrics_provider->getTaskStats(result);
                     return result;

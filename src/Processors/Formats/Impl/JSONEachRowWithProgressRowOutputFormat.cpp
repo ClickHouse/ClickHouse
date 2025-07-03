@@ -81,7 +81,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     if (value.empty())
         return;
     writeCString("{\"progress\":", *ostr);
-    value.writeJSON(*ostr);
+    value.writeJSON(*ostr, Progress::DisplayMode::Minimal);
     writeCString("}\n", *ostr);
 }
 
@@ -118,6 +118,7 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
         settings.json.serialize_as_strings = false;
         return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
     });
+    factory.setContentType("JSONEachRowWithProgress", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
@@ -128,6 +129,7 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
         settings.json.serialize_as_strings = true;
         return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
     });
+    factory.setContentType("JSONStringsEachRowWithProgress", "application/json; charset=UTF-8");
 }
 
 }

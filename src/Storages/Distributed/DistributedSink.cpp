@@ -33,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 
 #include <base/range.h>
 
@@ -448,9 +449,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     copy_query_ast,
                     job.local_context,
                     allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert_= */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -755,9 +756,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             query_ast,
             context,
             allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+            /* no_squash= */ false,
+            /* no_destination= */ false,
+            /* async_insert_= */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

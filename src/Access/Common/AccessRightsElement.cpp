@@ -1,7 +1,10 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 
 
@@ -139,16 +142,40 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
 
 void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
 {
+    auto is_enabled_user_name_access_type = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+    }
+
     buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
     if (isGlobalWithParameter())
     {
-        if (anyParameter())
-            buffer << "*";
+        /// Special check for backward compatibility.
+        /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
+        /// This will allow us to run old replicas in the same cluster.
+        if (access_flags.getParameterType() == AccessFlags::USER_NAME
+            && !is_enabled_user_name_access_type)
+        {
+            if (!anyParameter())
+                LOG_WARNING(getLogger("AccessRightsElement"),
+                    "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
+                    "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
+                    parameter);
+
+            buffer << "*.*";
+        }
         else
         {
-            buffer << backQuoteIfNeed(parameter);
-            if (wildcard)
+            if (anyParameter())
                 buffer << "*";
+            else
+            {
+                buffer << backQuoteIfNeed(parameter);
+                if (wildcard)
+                    buffer << "*";
+            }
         }
     }
     else if (anyDatabase())
