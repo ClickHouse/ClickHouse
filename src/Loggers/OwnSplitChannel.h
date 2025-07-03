@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Loggers/ExtendedLogChannel.h>
-#include <base/defines.h>
 
 #include <atomic>
 #include <map>
@@ -54,6 +53,9 @@ public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
+    void open() override;
+    void close() override;
+
     void setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value) override;
 
     /// Adds a child channel
@@ -69,6 +71,7 @@ public:
     std::map<std::string, ExtendedChannelPtrPair> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
+    std::atomic<bool> stop_logging = false;
 };
 
 struct OwnRunnableForChannel;
@@ -97,10 +100,11 @@ public:
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
     void setLevel(const std::string & name, int level) override;
 
-    void flushTextLogs() const;
+    void flushTextLogs();
 
 private:
     std::atomic<bool> is_open = false;
+
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
     std::vector<ExtendedChannelPtrPair> channels;
@@ -114,6 +118,7 @@ private:
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
+    std::atomic<bool> flush_text_logs = false;
 };
 
 

@@ -10,8 +10,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include "KernelPointerWrapper.h"
-#include "KernelHelper.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include "delta_kernel_ffi.hpp"
 
@@ -71,9 +71,12 @@ private:
     mutable KernelScan scan;
     mutable size_t snapshot_version;
 
-    mutable DB::NamesAndTypesList table_schema;
+    using TableSchema = DB::NamesAndTypesList;
+    using ReadSchema = DB::NamesAndTypesList;
+
+    mutable TableSchema table_schema;
+    mutable ReadSchema read_schema;
     mutable DB::NameToNameMap physical_names_map;
-    mutable DB::NamesAndTypesList read_schema;
     mutable DB::Names partition_columns;
 
     void initSnapshot() const;

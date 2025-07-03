@@ -1,7 +1,7 @@
-#include "StoragePolicy.h"
-#include "DiskFactory.h"
-#include "DiskLocal.h"
-#include "createVolume.h"
+#include <Disks/StoragePolicy.h>
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
 #include <Common/StringUtils.h>
