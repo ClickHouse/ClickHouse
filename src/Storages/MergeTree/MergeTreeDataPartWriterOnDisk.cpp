@@ -1,15 +1,14 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GinIndexStore.h>
-#include "Common/Logger.h"
+#include <Compression/CompressionFactory.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionFactory.h>
+#include <base/defines.h>
 
 namespace ProfileEvents
 {
@@ -148,8 +147,6 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::addToChecksums(Merg
 {
     String name = escaped_column_name;
 
-    LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk::Stream"), "addToChecksums {}", name + data_file_extension);
-
     checksums.files[name + data_file_extension].is_compressed = true;
     checksums.files[name + data_file_extension].uncompressed_size = compressed_hashing.count();
     checksums.files[name + data_file_extension].uncompressed_hash = compressed_hashing.getHash();
@@ -164,8 +161,6 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::addToChecksums(Merg
             checksums.files[name + marks_file_extension].uncompressed_size = marks_compressed_hashing.count();
             checksums.files[name + marks_file_extension].uncompressed_hash = marks_compressed_hashing.getHash();
         }
-
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk::Stream"), "addToChecksums {}", name + marks_file_extension);
 
         checksums.files[name + marks_file_extension].file_size = marks_hashing.count();
         checksums.files[name + marks_file_extension].file_hash = marks_hashing.getHash();
@@ -491,17 +486,12 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
 
 void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
-    LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "fillSkipIndicesChecksums");
-
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
         const auto & index = *skip_indices[i];
         auto & stream = *skip_indices_streams[i];
 
         chassert(index.getFileName() == stream.escaped_column_name);
-
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"),
-                "fillSkipIndicesChecksums stream {}, skip_indices_aggregators[i]->empty() {}", stream.escaped_column_name, skip_indices_aggregators[i]->empty());
 
         /// when there is no data in inder, the files are not written, so do not add them the checksums
         if (!skip_indices_aggregators[i]->empty())
@@ -510,18 +500,10 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         stream.preFinalize();
         stream.addToChecksums(checksums);
 
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"),
-        "fillSkipIndicesChecksums adding stranges, compressed_hashing {} compressor {} plain_hashing {} plain_file {}",
-            stream.compressed_hashing.count(), stream.compressor.count(), stream.plain_hashing.count(), stream.plain_file->count());
-
-
         if (!gin_index_stores.contains(index.getFileName()))
             continue;
 
         auto & gstore = gin_index_stores[index.getFileName()];
-
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "fillSkipIndicesChecksums gstore filesWouldBeWritten {}",
-            gstore->filesWouldBeWritten());
 
         if (!gstore->filesWouldBeWritten())
             continue;
@@ -531,8 +513,6 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
-            LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "fillSkipIndicesChecksums adding stranges");
-
             String filename_without_extension = skip_indices[i]->getFileName();
             checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
@@ -568,34 +548,15 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
 {
-
-    for (auto & gstore: gin_index_stores)
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "finishSkipIndicesSerialization  1 gstore filesWouldBeWritten {}",
-            gstore.second->filesWouldBeWritten());
-
     for (auto & stream : skip_indices_streams)
     {
-        LOG_DEBUG(log, "finishSkipIndicesSerialization skip_indices_streams {}", stream->escaped_column_name);
-
         stream->finalize();
         if (sync)
             stream->sync();
     }
 
-    for (auto & gstore: gin_index_stores)
-        LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "finishSkipIndicesSerialization  2 gstore filesWouldBeWritten {}",
-            gstore.second->filesWouldBeWritten());
-
     for (auto & store: gin_index_stores)
-    {
-        LOG_DEBUG(log, "finishSkipIndicesSerialization gin_index_stores {}", store.first);
         store.second->finalize();
-    }
-
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-    {
-        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part_name);
-    }
 
     gin_index_stores.clear();
     skip_indices_streams.clear();

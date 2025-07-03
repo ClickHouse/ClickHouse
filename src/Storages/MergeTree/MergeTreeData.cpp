@@ -10,7 +10,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
@@ -118,7 +118,6 @@
 #include <vector>
 
 #include <fmt/format.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -5004,33 +5003,14 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 }
 
 
-Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part, bool with_projection_files = false)
+Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part)
 {
     constexpr std::string proj_suffix = ".proj";
+    auto & storage = part->getDataPartStorage();
 
     Strings files_in_part;
-
-    auto & storage = part->getDataPartStorage();
     for (auto it = storage.iterate(); it->isValid(); it->next())
-    {
-        if (!it->isFile() && with_projection_files)
-        {
-            auto prj_name = it->name();
-            chassert(prj_name.ends_with(proj_suffix), "not a projection name");
-
-            auto prj_storage = storage.getProjection(prj_name);
-            for (auto prj_it = prj_storage->iterate(); prj_it->isValid(); prj_it->next())
-            {
-                chassert(prj_it->isFile(), "supposed to be a file");
-                auto fname = fs::path(prj_name) / prj_it->name();
-                files_in_part.push_back(fname);
-            }
-
-            continue;
-        }
-
         files_in_part.push_back(it->name());
-    }
 
     std::sort(files_in_part.begin(), files_in_part.end());
     return files_in_part;

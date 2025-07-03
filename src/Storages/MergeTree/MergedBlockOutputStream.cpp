@@ -4,9 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
-#include "Common/Logger.h"
-#include "Common/StackTrace.h"
-#include "Common/logger_useful.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -165,7 +164,6 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 
     for (const auto & file_name : files_to_remove_after_finish)
     {
-        LOG_DEBUG(getLogger("MergedBlockOutputStream::Finalizer"), "remove {}", file_name);
         part->getDataPartStorage().removeFile(file_name);
     }
 }

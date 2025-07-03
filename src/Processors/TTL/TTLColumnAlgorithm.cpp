@@ -1,5 +1,4 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
-#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -58,15 +57,11 @@ void TTLColumnAlgorithm::execute(Block & block)
     MutableColumnPtr result_column = values_column->cloneEmpty();
     result_column->reserve(block.rows());
 
-    LOG_DEBUG(getLogger("TTLColumnAlgorithm"), "executem block rows {}", block.rows());
-
     for (size_t i = 0; i < block.rows(); ++i)
     {
         Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
         if (isTTLExpired(cur_ttl))
         {
-            LOG_DEBUG(getLogger("TTLColumnAlgorithm"), "isTTLExpired for i {}", i);
-
             if (default_column)
                 result_column->insertFrom(*default_column, i);
             else
@@ -74,8 +69,6 @@ void TTLColumnAlgorithm::execute(Block & block)
         }
         else
         {
-            LOG_DEBUG(getLogger("TTLColumnAlgorithm"), "not isTTLExpired for i {}", i);
-
             new_ttl_info.update(cur_ttl);
             is_fully_empty = false;
             result_column->insertFrom(*values_column, i);
@@ -91,9 +84,6 @@ void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     if (is_fully_empty)
         data_part->expired_columns.insert(column_name);
-
-    LOG_DEBUG(getLogger("TTLColumnAlgorithm"), "finalize is_fully_empty: {} expired columns count: {}, the first: {}",
-        is_fully_empty, data_part->expired_columns.size(), data_part->expired_columns.empty() ? "" : *data_part->expired_columns.begin());
 }
 
 }

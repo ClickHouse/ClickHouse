@@ -1298,8 +1298,6 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
     // Otherwise new files are not visible because they have not been written yet
     for (const String & removed_file : ctx->removed_files)
     {
-        LOG_DEBUG(getLogger("VerticalMergeStage"), "remove file from fs {}, existsFile {}",
-            removed_file, global_ctx->new_data_part->getDataPartStorage().existsFile(removed_file));
         global_ctx->new_data_part->getDataPartStorage().removeFileIfExists(removed_file);
     }
 
