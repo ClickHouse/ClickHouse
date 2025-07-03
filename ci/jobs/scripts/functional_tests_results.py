@@ -90,7 +90,7 @@ class FTResultsProcessor:
                         )
                         continue
 
-                    test_time = ""
+                    test_time = None
                     try:
                         time_token = line.split("]")[1].strip().split()[0]
                         float(time_token)
