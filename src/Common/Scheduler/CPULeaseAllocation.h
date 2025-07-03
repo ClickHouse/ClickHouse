@@ -42,7 +42,42 @@ struct CPULeaseSettings
 class CPULeaseAllocation;
 using CPULeaseAllocationPtr = std::shared_ptr<CPULeaseAllocation>;
 
-/// TODO(serxa): add description and implementation details
+/**
+ * CPULeaseAllocation provides an ISlotAllocation implementation that
+ * grants CPU "lease" slots to threads (a master slot and worker slots)
+ * up to a configurable maximum. Each slot is consumed in fixed‐size
+ * quanta (configurable via CPULeaseSettings) and must be periodically
+ * renewed by reporting actual CPU usage. If a lease cannot be renewed
+ * in time, the thread is preempted and blocks until another slot is
+ * granted or a timeout occurs, in which case the thread scales down.
+ *
+ * Implementation details:
+ *  - Tracks leased and preempted threads using dynamic bitsets.
+ *  - Sends and re‐enqueues ResourceRequest objects to the scheduler
+ *    for acquiring or renewing CPU quanta. Requests are preallocated
+ *    in a circular buffer and reused according to lifecycle:
+ *     not-used -> enqueued -> in consumption -> not-used.
+ *  - Only one request is enqueued at a time, but multiple requests
+ *    can be in consumption state.
+ *  - There is no one-to-one mapping between requests and threads,
+ *    instead all consumed CPU goes to the oldest request and it finishes
+ *    consumption when total consumed CPU exceeds quantum.
+ *  - Ensures number of active threads correspond to the number of acquired slots.
+ *    with some exceptions:
+ *    - Master threads is never downscaled, but can be preempted.
+ *    - When resource request is done for a renewal, the thread can still run for
+ *      a while without an acquired slot to avoid unnecessary preemptions.
+ *  - Although master thread is never downscaled, its request follows the same logic
+ *    as worker requests and lives in the same circular buffer. It has a marker meaning
+ *    that is should be enqueued into its own queue (which may be the same of different
+ *    from queue for worker requests).
+ *  - Thread acquired though acquire() call is granted immediately (master thread)
+ *    to avoid delay, request is enqueued in the background.
+ *  - If consumed CPU exceeds granted and requests (not yet granted) CPU,
+ *    the thread is preempted and waits for a slot to be granted.
+ *  - Upon destruction, a pending request (if any) is cancelled.
+ *
+ */
 class CPULeaseAllocation final : public ISlotAllocation
 {
 private:
