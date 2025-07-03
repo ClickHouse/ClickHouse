@@ -24,7 +24,6 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
@@ -69,6 +68,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 }
 
 namespace
@@ -577,7 +577,7 @@ bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_
 
 bool TableJoin::oneDisjunct() const
 {
-    return clauses.size() == 1;
+    return clauses.size() == 1 && !clauses.front().isEmpty();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -740,6 +740,9 @@ TableJoin::createConvertingActions(
       * This will be semantically transformed to:
       *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
       */
+    if (isSpecialStorage() && std::ranges::any_of(clauses, [](const auto & clause) { return !clause.nullsafe_compare_key_indexes.empty(); }))
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Null-safe comparison is not supported for StorageJoin");
+
     auto [left_keys_nullsafe_comparison, right_keys_nullsafe_comparison] = getKeysForNullSafeComparion(
         left_dag ? left_dag->getResultColumns() : left_sample_columns,
         right_dag ? right_dag->getResultColumns() : right_sample_columns);
@@ -1025,7 +1028,7 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
     LOG_TRACE(getLogger("TableJoin"), "Adding join condition for {} table: {} -> {}",
-              (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
+              (is_left ? "left" : "right"), ast ? ast->formatForLogging() : "NULL", cond_ast ? cond_ast->formatForLogging() : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
 }
 
@@ -1077,7 +1080,7 @@ void TableJoin::assertHasOneOnExpr() const
         for (const auto & onexpr : clauses)
             text.push_back(onexpr.formatDebug());
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}: [{}], query: '{}'",
-                            clauses.size(), fmt::join(text, " | "), queryToString(table_join));
+                            clauses.size(), fmt::join(text, " | "), table_join.formatForErrorMessage());
     }
 }
 
@@ -1118,7 +1121,7 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
-    assertEnableEnalyzer();
+    assertEnableAnalyzer();
 
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
@@ -1136,7 +1139,7 @@ void TableJoin::swapSides()
     setKind(updated_kind);
 }
 
-void TableJoin::assertEnableEnalyzer() const
+void TableJoin::assertEnableAnalyzer() const
 {
     if (!enable_analyzer)
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");

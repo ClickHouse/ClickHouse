@@ -40,6 +40,22 @@ public:
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
 
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
+    struct ComparatorCollationBase;
+
+    using ComparatorCollationAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorCollationBase>;
+    using ComparatorCollationAscendingStable = ComparatorAscendingStableImpl<ComparatorCollationBase>;
+    using ComparatorCollationDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorCollationBase>;
+    using ComparatorCollationDescendingStable = ComparatorDescendingStableImpl<ComparatorCollationBase>;
+    using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
@@ -142,11 +158,11 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+    void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                           size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
-    /// Values of ColumnObject are not comparable for less and greater functions.
-    /// But we still support equal comparison.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #else
@@ -156,7 +172,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns) override;
+    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -230,6 +246,8 @@ public:
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
+    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
+    bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
@@ -246,6 +264,8 @@ public:
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
 private:
+    class SortedPathsIterator;
+
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
 

@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -251,7 +252,7 @@ bool PartLog::addNewParts(
             elem.database_name = table_id.database_name;
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
-            elem.partition_id = part->info.partition_id;
+            elem.partition_id = part->info.getPartitionId();
             elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();

@@ -300,6 +300,33 @@ DECLARE_SETTING_ENUM(Dialect)
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
+enum class AlterUpdateMode : uint8_t
+{
+    HEAVY,
+    LIGHTWEIGHT,
+    LIGHTWEIGHT_FORCE,
+};
+
+DECLARE_SETTING_ENUM(AlterUpdateMode)
+
+enum class UpdateParallelMode : uint8_t
+{
+    SYNC,
+    ASYNC,
+    AUTO,
+};
+
+DECLARE_SETTING_ENUM(UpdateParallelMode)
+
+enum class LightweightDeleteMode : uint8_t
+{
+    ALTER_UPDATE,
+    LIGHTWEIGHT_UPDATE,
+    LIGHTWEIGHT_UPDATE_FORCE,
+};
+
+DECLARE_SETTING_ENUM(LightweightDeleteMode)
+
 enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
@@ -359,11 +386,39 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
-enum class DatabaseIcebergCatalogType : uint8_t
+enum class DatabaseDataLakeCatalogType : uint8_t
 {
-    REST,
+    ICEBERG_REST,
+    UNITY,
+    GLUE,
+    ICEBERG_HIVE,
 };
 
-DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
+DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
+
+enum class FileCachePolicy : uint8_t
+{
+    LRU,
+    SLRU,
+};
+
+DECLARE_SETTING_ENUM(FileCachePolicy)
+
+enum class VectorSearchFilterStrategy : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+
+enum class GeoToH3ArgumentOrder : uint8_t
+{
+    LAT_LON,
+    LON_LAT,
+};
+
+DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
 }

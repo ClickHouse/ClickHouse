@@ -3,7 +3,7 @@ services:
         image: mysql:5.7
         restart: always
         environment:
-            MYSQL_ROOT_PASSWORD: clickhouse
+            MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
             MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
             DATADIR: /var/log/mysql/
         expose:

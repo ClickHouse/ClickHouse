@@ -55,7 +55,6 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -833,7 +832,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);
             func->setAlias(untuple_alias + "." + element_alias);
         }
 
@@ -1466,7 +1465,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
-            set_key = query_tree->getTreeHash();
+            set_key = query_tree->getTreeHash({.ignore_cte = true});
         }
         else
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);

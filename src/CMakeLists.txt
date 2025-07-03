@@ -94,6 +94,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -103,6 +104,7 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
+add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 
@@ -162,7 +164,7 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Databases/Iceberg)
+add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -299,7 +301,7 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -456,10 +458,6 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
-
-if (USE_MONGODB)
-    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
-endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
@@ -722,6 +720,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::delta_kernel_rs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
+    endif ()
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)

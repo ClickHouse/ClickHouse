@@ -27,6 +27,7 @@ struct ConnectionParameters
     SSHKey ssh_private_key;
     std::string jwt;
     Protocol::Secure security = Protocol::Secure::Disable;
+    std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
 

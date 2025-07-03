@@ -1,7 +1,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 
-#include <Common/assert_cast.h>
 #include <Parsers/ASTSetQuery.h>
+
 
 namespace DB
 {
@@ -97,5 +97,9 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     return false;
 }
 
+bool ASTQueryWithOutput::hasOutputOptions() const
+{
+    return out_file || format_ast || settings_ast || compression || compression_level;
+}
 
 }

@@ -2,6 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
@@ -21,12 +22,14 @@
 namespace DB
 {
 
+
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -174,6 +177,8 @@ public:
 
     virtual bool canContainDistributedTables() const { return true; }
 
+    virtual bool canContainRocksDBTables() const { return true; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
@@ -243,6 +248,8 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
+    /// Check if the table name exceeds the max allowed length
+    virtual void checkTableNameLength(const String & /*table_name*/) const {}
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
@@ -257,6 +264,13 @@ public:
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
+    /// Useful for queries like "SHOW TABLES"
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    {
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
+    }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;
@@ -364,6 +378,9 @@ public:
         return database_name;
     }
 
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &);
+
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
@@ -410,6 +427,9 @@ public:
 
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
+
+    /// Get the disk storing metedata files of the tables
+    virtual DiskPtr getDisk() const;
 
     virtual ~IDatabase();
 

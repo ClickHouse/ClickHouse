@@ -14,7 +14,7 @@ To calculate the delta sum across an ordered collection you can simply use the [
 
 **Syntax**
 
-``` sql
+```sql
 deltaSumTimestamp(value, timestamp)
 ```
 
@@ -40,7 +40,7 @@ FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS valu
 
 Result:
 
-``` text
+```text
 ┌─deltaSumTimestamp(value, timestamp)─┐
 │                                  13 │
 └─────────────────────────────────────┘

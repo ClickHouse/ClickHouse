@@ -12,7 +12,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
-#include "Coordination/CoordinationSettings.h"
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {

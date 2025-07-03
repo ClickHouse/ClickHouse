@@ -1,9 +1,11 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -13,8 +15,7 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryNode.h>
+#include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
@@ -35,7 +36,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return serializeAST(list);
+    return list.formatWithSecretsOneLine();
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)
@@ -79,9 +80,9 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
-std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::buildConstraintData() const
+std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
-    std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
+    std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
@@ -93,9 +94,9 @@ std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::buildC
     return constraint_data;
 }
 
-std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
+std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
 {
-    std::vector<CNFQuery::AtomicFormula> constraint_data;
+    std::vector<CNFQueryAtomicFormula> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
@@ -118,7 +119,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     auto atomic_formulas = getAtomicConstraintData();
     for (const auto & atomic_formula : atomic_formulas)
     {
-        CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+        CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
         auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.contains(func->name))
@@ -155,7 +156,7 @@ const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
     return *graph;
 }
 
-const std::vector<std::vector<CNFQuery::AtomicFormula>> & ConstraintsDescription::getConstraintData() const
+const std::vector<std::vector<CNFQueryAtomicFormula>> & ConstraintsDescription::getConstraintData() const
 {
     return cnf_constraints;
 }
@@ -174,9 +175,9 @@ std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::getAtomId
     return std::nullopt;
 }
 
-std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomsById(const ConstraintsDescription::AtomIds & ids) const
+std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const ConstraintsDescription::AtomIds & ids) const
 {
-    std::vector<CNFQuery::AtomicFormula> result;
+    std::vector<CNFQueryAtomicFormula> result;
     for (const auto & id : ids)
         result.push_back(cnf_constraints[id.group_id][id.atom_id]);
     return result;
@@ -185,7 +186,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomsById(const 
 ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
 {
     QueryTreeData data;
-    std::vector<Analyzer::CNF::AtomicFormula> atomic_constraints_data;
+    std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
 
     QueryAnalysisPass pass(table_node);
 
@@ -223,7 +224,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
         QueryTreeNodes constraints_for_graph;
         for (const auto & atomic_formula : atomic_constraints_data)
         {
-            Analyzer::CNF::AtomicFormula atom{atomic_formula.negative, atomic_formula.node_with_hash.node->clone()};
+            Analyzer::CNFAtomicFormula atom{atomic_formula.negative, atomic_formula.node_with_hash.node->clone()};
             atom = Analyzer::CNF::pushNotIntoFunction(atom, context);
 
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
@@ -244,7 +245,7 @@ const QueryTreeNodes & ConstraintsDescription::QueryTreeData::getConstraints() c
     return constraints;
 }
 
-const std::vector<std::vector<Analyzer::CNF::AtomicFormula>> & ConstraintsDescription::QueryTreeData::getConstraintData() const
+const std::vector<std::vector<Analyzer::CNFAtomicFormula>> & ConstraintsDescription::QueryTreeData::getConstraintData() const
 {
     return cnf_constraints;
 }
@@ -262,9 +263,9 @@ std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::QueryTree
     return std::nullopt;
 }
 
-std::vector<Analyzer::CNF::AtomicFormula> ConstraintsDescription::QueryTreeData::getAtomsById(const AtomIds & ids) const
+std::vector<Analyzer::CNFAtomicFormula> ConstraintsDescription::QueryTreeData::getAtomsById(const AtomIds & ids) const
 {
-    std::vector<Analyzer::CNF::AtomicFormula> result;
+    std::vector<Analyzer::CNFAtomicFormula> result;
     for (const auto & id : ids)
         result.push_back(cnf_constraints[id.group_id][id.atom_id]);
     return result;

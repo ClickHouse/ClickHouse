@@ -124,12 +124,6 @@ private:
     [[maybe_unused]] const bool update_rss;
     ContextPtr context;
 
-
-    Int64 prev_cpu_wait_microseconds = 0;
-    Int64 prev_cpu_virtual_time_microseconds = 0;
-
-    double getCPUOverloadMetric();
-
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> loadavg TSA_GUARDED_BY(data_mutex);
@@ -138,6 +132,14 @@ private:
     std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp6 TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> cpu_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
+
+    std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);

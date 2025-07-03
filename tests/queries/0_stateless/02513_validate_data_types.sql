@@ -2,7 +2,6 @@
 
 set allow_experimental_object_type=0;
 select CAST('{"x" : 1}', 'Object(''json'')'); -- {serverError ILLEGAL_COLUMN}
-desc file(nonexist.json, JSONAsObject); -- {serverError ILLEGAL_COLUMN}
 desc file(nonexist.json, JSONEachRow, 'x Object(''json'')'); -- {serverError ILLEGAL_COLUMN}
 
 set allow_suspicious_low_cardinality_types=0;

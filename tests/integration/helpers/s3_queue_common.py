@@ -8,136 +8,11 @@ import uuid
 from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 
-DEFAULT_AUTH = ["'minio'", "'minio123'"]
+DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
-
-def add_instances(cluster):
-    cluster.add_instance(
-        "instance",
-        user_configs=["configs/users.xml"],
-        with_minio=True,
-        with_azurite=True,
-        with_zookeeper=True,
-        main_configs=[
-            "configs/zookeeper.xml",
-            "configs/s3queue_log.xml",
-        ],
-        stay_alive=True,
-    )
-    cluster.add_instance(
-        "instance2",
-        user_configs=["configs/users.xml"],
-        with_minio=True,
-        with_zookeeper=True,
-        main_configs=[
-            "configs/s3queue_log.xml",
-        ],
-        stay_alive=True,
-    )
-    cluster.add_instance(
-        "old_instance",
-        with_zookeeper=True,
-        image="clickhouse/clickhouse-server",
-        tag="23.12",
-        stay_alive=True,
-        with_installed_binary=True,
-        use_old_analyzer=True,
-    )
-    cluster.add_instance(
-        "node1",
-        with_zookeeper=True,
-        stay_alive=True,
-        main_configs=[
-            "configs/zookeeper.xml",
-            "configs/s3queue_log.xml",
-            "configs/remote_servers.xml",
-        ],
-    )
-    cluster.add_instance(
-        "node2",
-        with_zookeeper=True,
-        stay_alive=True,
-        main_configs=[
-            "configs/zookeeper.xml",
-            "configs/s3queue_log.xml",
-            "configs/remote_servers.xml",
-        ],
-    )
-    cluster.add_instance(
-        "instance_too_many_parts",
-        user_configs=["configs/users.xml"],
-        with_minio=True,
-        with_zookeeper=True,
-        main_configs=[
-            "configs/s3queue_log.xml",
-            "configs/merge_tree.xml",
-        ],
-        stay_alive=True,
-    )
-    cluster.add_instance(
-        "instance_24.5",
-        with_zookeeper=True,
-        image="clickhouse/clickhouse-server",
-        tag="24.5",
-        stay_alive=True,
-        user_configs=[
-            "configs/users.xml",
-        ],
-        with_installed_binary=True,
-    )
-    cluster.add_instance(
-        "instance2_24.5",
-        with_zookeeper=True,
-        keeper_required_feature_flags=["create_if_not_exists"],
-        image="clickhouse/clickhouse-server",
-        tag="24.5",
-        stay_alive=True,
-        user_configs=[
-            "configs/users.xml",
-        ],
-        with_installed_binary=True,
-    )
-    cluster.add_instance(
-        "instance3_24.5",
-        with_zookeeper=True,
-        image="clickhouse/clickhouse-server",
-        tag="24.5",
-        stay_alive=True,
-        main_configs=[
-            "configs/remote_servers_245.xml",
-        ],
-        user_configs=[
-            "configs/users.xml",
-        ],
-        with_installed_binary=True,
-    )
-    cluster.add_instance(
-        "instance4_24.5",
-        with_zookeeper=True,
-        keeper_required_feature_flags=["create_if_not_exists"],
-        image="clickhouse/clickhouse-server",
-        tag="24.5",
-        stay_alive=True,
-        main_configs=[
-            "configs/remote_servers_245.xml",
-        ],
-        user_configs=[
-            "configs/users.xml",
-        ],
-        with_installed_binary=True,
-    )
-    cluster.add_instance(
-        "node_cloud_mode",
-        with_zookeeper=True,
-        stay_alive=True,
-        main_configs=[
-            "configs/zookeeper.xml",
-            "configs/s3queue_log.xml",
-        ],
-        user_configs=["configs/cloud_mode.xml"],
-    )
 
 def run_query(instance, query, stdin=None, settings=None):
     # type: (ClickHouseInstance, str, object, dict) -> str
@@ -256,7 +131,7 @@ def create_table(
     else:
         engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
             CREATE TABLE {database_name}.{table_name} ({format})
@@ -280,21 +155,50 @@ def create_mv(
     src_table_name,
     dst_table_name,
     mv_name=None,
+    create_dst_table_first=True,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
+    virtual_columns="_path String",
+    extra_dst_format=None,
+    dst_table_engine="MergeTree()",
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
-    node.query(
-        f"""
+    if extra_dst_format is not None:
+        extra_dst_format = f", {extra_dst_format}"
+    else:
+        extra_dst_format = ""
+
+    node.query(f"""
         DROP TABLE IF EXISTS {dst_table_name};
         DROP TABLE IF EXISTS {mv_name};
+    """)
 
-        CREATE TABLE {dst_table_name} ({format}, _path String)
-        ENGINE = MergeTree()
-        ORDER BY column1;
+    virtual_format = ""
+    virtual_names = ""
+    virtual_columns_list = virtual_columns.split(",")
+    for column in virtual_columns_list:
+        virtual_format += f", {column}"
+        name, _ = column.strip().rsplit(" ", 1)
+        virtual_names += f", {name}"
 
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
-        """
+    if create_dst_table_first:
+        node.query(
+            f"""
+            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+            ENGINE = {dst_table_engine}
+            ORDER BY column1;
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            """
+        )
+    else:
+        node.query(
+            f"""
+            SET allow_materialized_view_with_bad_select=1;
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+            ENGINE = {dst_table_engine}
+            ORDER BY column1;
+            """
     )
 
 

@@ -13,7 +13,6 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
@@ -49,8 +48,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>();
-        query->names->push_back(user.getName());
+        query->names = std::make_shared<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -273,7 +271,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    String desc = serializeAST(show_query);
+    String desc = show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.

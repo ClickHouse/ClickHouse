@@ -32,7 +32,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -108,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
@@ -424,7 +423,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        if (!type_tuple->haveExplicitNames())
+        if (!type_tuple->hasExplicitNames())
         {
             ++it;
             continue;
@@ -613,7 +612,7 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
     /// Check for dynamic subcolumns
     auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
     auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
     {
         if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
             return true;

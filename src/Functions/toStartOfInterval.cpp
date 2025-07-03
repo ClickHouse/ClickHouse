@@ -389,11 +389,11 @@ private:
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
-            UInt64 origin = origin_column.column->get64(0);
+            Int64 origin = origin_column.column->getInt(0);
             for (size_t i = 0; i != size; ++i)
             {
-                UInt64 time_arg = time_data[i];
-                if (origin > static_cast<size_t>(time_arg))
+                Int64 time_arg = time_data[i];
+                if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
                 if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.

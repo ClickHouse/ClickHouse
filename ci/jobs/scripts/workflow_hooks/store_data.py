@@ -1,32 +1,47 @@
-import sys
+import copy
 
-from praktika.info import Info
-from praktika.utils import Shell
-
-sys.path.append("./tests/ci")
-from digest_helper import DockerDigester
-
-# TODO: script ensures seamless migration to praktika
-#  it stores docker digests in old format for legacy ci jobs, as a praktika pipeline pre-hook
-#  to be removed once migrated
+from ci.defs.job_configs import JobConfigs
+from ci.praktika.digest import Digest
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 if __name__ == "__main__":
     info = Info()
 
-    # store docker digests
-    image_to_digest_map = DockerDigester().get_all_digests()
-    info.store_custom_data(key="digest_dockers", value=image_to_digest_map)
-
     # store changed files
     if info.pr_number > 0:
-        changed_files_str = Shell.get_output(
+        exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
             f"gh pr view {info.pr_number} --repo {info.repo_name} --json files --jq '.files[].path'",
-            strict=True,
         )
+        assert exit_code == 0, "Failed to retrive changed files list"
     else:
-        changed_files_str = Shell.get_output(
+        exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
             f"gh api repos/{info.repo_name}/commits/{info.sha} | jq -r '.files[].filename'",
         )
-    if changed_files_str:
-        changed_files = changed_files_str.split("\n")
+        # not fail on master or release branches
+
+    if exit_code == 0:
+        changed_files = changed_files_str.split("\n") if changed_files_str else []
         info.store_custom_data("changed_files", changed_files)
+
+    # hack to get build digest
+    some_build_job = copy.deepcopy(JobConfigs.build_jobs[0])
+    some_build_job.run_in_docker = ""
+    some_build_job.provides = []
+    digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
+    info.store_custom_data("build_digest", digest)
+
+    if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+        # store previous commits for perf tests
+        raw = Shell.get_output(
+            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
+            verbose=True,
+        )
+        commits = raw.splitlines()
+
+        for sha in commits:
+            if sha == info.sha:
+                break
+            commits.pop(0)
+
+        info.store_custom_data("previous_commits_sha", commits)

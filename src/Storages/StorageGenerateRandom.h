@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <Storages/IStorage.h>
+#include <pcg_random.hpp>
 
 #include <pcg_random.hpp>
 

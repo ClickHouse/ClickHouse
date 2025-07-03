@@ -1,4 +1,4 @@
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
@@ -11,8 +11,8 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -52,7 +52,7 @@ StorageURLCluster::StorageURLCluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const StorageURL::Configuration & configuration_)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.table_name + ")"))
+    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
     , uri(uri_), format_name(format_)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
@@ -101,11 +101,11 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,
@@ -115,11 +115,23 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     );
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * /* filter */,
+    const ContextPtr & context,
+    size_t) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
-    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
+
+    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    {
+        auto url = iter->next();
+        if (url.empty())
+            return std::make_shared<ClusterFunctionReadTaskResponse>();
+        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
+    };
+    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

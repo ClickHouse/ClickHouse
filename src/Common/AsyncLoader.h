@@ -395,17 +395,20 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
-    // Start workers to execute scheduled load jobs. Note that AsyncLoader is constructed as already started.
-    void start();
-
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
     void wait();
 
+    // Wait for currently executing jobs to finish, cancel pending jobs with an exception,
+    // prevent scheduling of new jobs.
+    void shutdown();
+
     // Wait for currently executing jobs to finish, but do not run any other pending jobs.
     // Not finished jobs are left in pending state:
-    //  - they can be executed by calling start() again;
+    //  - they can be executed by calling unpause() again;
     //  - or canceled using ~Task() or remove() later.
-    void stop();
+    // Currently only used in tests.
+    void pause();
+    void unpause();
 
     // Schedule all jobs of given `task` and their dependencies (even if they are not in task).
     // All dependencies of a scheduled job inherit its pool if it has higher priority. This way higher priority job
@@ -484,6 +487,7 @@ private:
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
+    bool shutdown_requested = false;
     std::optional<Priority> current_priority; // highest priority among active pools
     UInt64 last_ready_seqno = 0; // Increasing counter for ready queue keys.
     UInt64 last_job_id = 0; // Increasing counter for job IDs

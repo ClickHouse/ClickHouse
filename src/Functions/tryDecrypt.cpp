@@ -25,7 +25,7 @@ struct TryDecryptImpl
 REGISTER_FUNCTION(TryDecrypt)
 {
     factory.registerFunction<FunctionDecrypt<TryDecryptImpl>>(FunctionDocumentation{
-        .description="Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key."});
+        .description="Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.", .category = FunctionDocumentation::Category::Encryption});
 }
 
 }

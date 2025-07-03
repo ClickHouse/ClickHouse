@@ -1,9 +1,10 @@
 ---
 description: 'Documentation for Table Engines'
 slug: /engines/table-engines/
-toc_folder_title: Table Engines
+toc_folder_title: 'Table Engines'
 toc_priority: 26
-toc_title: Introduction
+toc_title: 'Introduction'
+title: 'Table Engines'
 ---
 
 # Table Engines
@@ -28,12 +29,13 @@ Engines in the family:
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
 | [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
-| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replication)                               |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
 | [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
 | [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
 | [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |
 | [VersionedCollapsingMergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree)                                  |
+| [CoalescingMergeTree](/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
 
 ### Log {#log}
 

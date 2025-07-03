@@ -38,7 +38,9 @@ private:
 
     struct MutationStats
     {
-        size_t stuck_mutations;
+        /// For keeping track of the number of pending mutations that are over the maximum execution time
+        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
+        size_t pending_mutations_over_execution_time;
         size_t pending_mutations;
     };
 

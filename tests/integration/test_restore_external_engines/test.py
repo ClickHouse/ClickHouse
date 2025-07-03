@@ -2,6 +2,7 @@ import pymysql.cursors
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mysql_pass
 
 cluster = ClickHouseCluster(__file__)
 configs = ["configs/remote_servers.xml", "configs/backups_disk.xml"]
@@ -59,7 +60,7 @@ def drop_mysql_table(conn, tableName):
 def get_mysql_conn(cluster):
     conn = pymysql.connect(
         user="root",
-        password="clickhouse",
+        password=mysql_pass,
         host=cluster.mysql8_ip,
         port=cluster.mysql8_port,
     )
@@ -89,7 +90,7 @@ SETTINGS input_format_with_names_use_header = 0"""
         )
         conn.commit()
 
-    parameters = "'mysql80:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
+    parameters = f"'mysql80:3306', 'clickhouse', 'inference_table', 'root', '{mysql_pass}'"
 
     node1.query(
         f"CREATE TABLE {dbname}.mysql_schema_inference_engine ENGINE=MySQL({parameters})"
@@ -122,7 +123,7 @@ SETTINGS input_format_with_names_use_header = 0"""
 
     node1.query(
         f"CREATE DICTIONARY {dbname}.dict1 (id INT, data String) PRIMARY KEY id "
-        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD 'clickhouse' DB 'clickhouse' TABLE 'inference_table'))"
+        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD '{mysql_pass}' DB 'clickhouse' TABLE 'inference_table'))"
         f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
     )
 

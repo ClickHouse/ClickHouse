@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -38,6 +39,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// This optimization pass doesn't change the structure of the query plan.
     constexpr size_t updated_layers = 0;
 
+    bool additional_filters_present = false; /// WHERE or PREWHERE
+
     /// Expect this query plan:
     /// LimitStep
     ///    ^
@@ -46,6 +49,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     ///    ^
     ///    |
     /// ExpressionStep
+    ///    ^
+    ///    |
+    /// (FilterStep, optional)
     ///    ^
     ///    |
     /// ReadFromMergeTree
@@ -73,13 +79,31 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     node = node->children.front();
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
-        return updated_layers;
+    {
+        /// Do we have a FilterStep on top of ReadFromMergeTree?
+        auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+        if (!filter_step)
+            return updated_layers;
+        if (node->children.size() != 1)
+            return updated_layers;
+        node = node->children.front();
+        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (!read_from_mergetree_step)
+            return updated_layers;
+        additional_filters_present = true;
+    }
+
+    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        additional_filters_present = true;
+
+    if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
+        return updated_layers; /// user explicitly wanted exact (brute-force) vector search
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (n > settings.max_limit_for_ann_queries)
+    if (n > settings.max_limit_for_vector_search_queries)
         return updated_layers;
 
     /// Not 100% sure but other sort types are likely not what we want
@@ -108,14 +132,30 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     else
         return updated_layers;
 
-    /// Extract reference_vec. It is expected to be a COLUMN-type node and of type Const(Array(Float*)).
+    /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
+    /// - The search column is 'vec1'.
+    /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
     std::vector<Float64> reference_vector;
+    String search_column;
+
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::COLUMN)
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
         {
-            /// Is it an Array(Float32) or Array(Float64) column?
+            const auto * search_column_node = child->children.at(0);
+            if (search_column_node->type == ActionsDAG::ActionType::INPUT)
+                search_column = search_column_node->result_name;
+        }
+        else if (child->type == ActionsDAG::ActionType::INPUT) /// old analyzer
+        {
+            search_column = child->result_name;
+            if (search_column.contains('.'))
+                search_column = search_column.substr(search_column.find('.') + 1); /// admittedly fragile but hey, it's the old path ...
+        }
+        else if (child->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
@@ -123,7 +163,8 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             DataTypePtr data_type_array_nested = data_type_array->getNestedType();
             const auto * data_type_nested_float64 = typeid_cast<const DataTypeFloat64 *>(data_type_array_nested.get());
             const auto * data_type_nested_float32 = typeid_cast<const DataTypeFloat32 *>(data_type_array_nested.get());
-            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr)
+            const auto * data_type_nested_bfloat16 = typeid_cast<const DataTypeBFloat16 *>(data_type_array_nested.get());
+            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr && data_type_nested_bfloat16 == nullptr)
                 continue;
 
             /// Read value from column
@@ -148,10 +189,10 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
         }
     }
 
-    if (reference_vector.empty())
+    if (search_column.empty() || reference_vector.empty())
         return updated_layers;
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(distance_function, n, reference_vector);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return updated_layers;

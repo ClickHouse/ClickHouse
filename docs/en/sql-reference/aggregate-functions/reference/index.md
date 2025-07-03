@@ -4,7 +4,7 @@ description: 'Landing page for aggregate functions with complete list of aggrega
 sidebar_position: 36
 slug: /sql-reference/aggregate-functions/reference/
 title: 'Aggregate Functions'
-toc_folder_title: Reference
+toc_folder_title: 'Reference'
 toc_hidden: true
 ---
 

@@ -1,3 +1,6 @@
+-- Tags: no-async-insert
+-- The correct profile event appears in the secondary query with query_kind: AsyncInsertFlush
+
 DROP TABLE IF EXISTS rows_events_test;
 CREATE TABLE rows_events_test (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
 

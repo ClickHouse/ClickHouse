@@ -1,4 +1,4 @@
-#include "StorageSQLite.h"
+#include <Storages/StorageSQLite.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
@@ -58,7 +59,7 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
     , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;

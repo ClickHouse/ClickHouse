@@ -45,12 +45,12 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `UINT32`                                      | [IPv4](/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                      |
 | `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [IPv6](/sql-reference/data-types/ipv6.md)                                                          | `FIXED_LENGTH_BYTE_ARRAY`     |
 | `FIXED_LENGTH_BYTE_ARRAY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                             | `FIXED_LENGTH_BYTE_ARRAY`     |
+| `JSON`                                        | [JSON](/sql-reference/data-types/newjson.md)                                                          | `JSON`                        |
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
 Unsupported Parquet data types are: 
 - `FIXED_SIZE_BINARY`
-- `JSON`
 - `UUID`
 - `ENUM`.
 
@@ -58,19 +58,52 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 
 ## Example Usage {#example-usage}
 
-### Inserting and Selecting Data {#inserting-and-selecting-data-parquet}
+### Inserting Data {#inserting-data}
 
-You can insert Parquet data from a file into ClickHouse table using the following command:
+Using a Parquet file with the following data, named as `football.parquet`:
 
-``` bash
-$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
 ```
 
-You can select data from a ClickHouse table and save it into some file in the Parquet format using the following command:
+Insert the data:
 
-``` bash
-$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```sql
+INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
+
+### Reading Data {#reading-data}
+
+Read data using the `Parquet` format:
+
+```sql
+SELECT *
+FROM football
+INTO OUTFILE 'football.parquet'
+FORMAT Parquet
+```
+
+:::tip
+Parquet is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output Parquet files.
+:::
 
 To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/table-engines/integrations/hdfs.md).
 
@@ -78,27 +111,28 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 
 | Setting                                                                        | Description                                                                                                                                                                                                                       | Default     |
 |--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
-| `input_format_parquet_case_insensitive_column_matching`                        | Ignore case when matching Parquet columns with CH columns.	                                                                                                                                                                      | `0`         |
-| `input_format_parquet_preserve_order`                                          | Avoid reordering rows when reading from Parquet files. Usually makes it much slower.	                                                                                                                                          | `0`         |
-| `input_format_parquet_filter_push_down`                                        | When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.	                                                                                      | `1`         |
-| `input_format_parquet_bloom_filter_push_down`                                  | When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.	                                                                                                      | `0`         |
-| `input_format_parquet_use_native_reader`                                       | When reading Parquet files, to use native reader instead of arrow reader.	                                                                                                                                                      | `0`         |
-| `input_format_parquet_allow_missing_columns`                                   | Allow missing columns while reading Parquet input formats	                                                                                                                                                                      | `1`         |
-| `input_format_parquet_local_file_min_bytes_for_seek`                           | Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format	                                                                                                                      | `8192`      |
-| `input_format_parquet_enable_row_group_prefetch`                               | Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.	                                                                                                                      | `1`         |
-| `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` | Skip columns with unsupported types while schema inference for format Parquet	                                                                                                                                                  | `0`         |
+| `input_format_parquet_case_insensitive_column_matching`                        | Ignore case when matching Parquet columns with CH columns.                                                                                                                                                                          | `0`         |
+| `input_format_parquet_preserve_order`                                          | Avoid reordering rows when reading from Parquet files. Usually makes it much slower.                                                                                                                                              | `0`         |
+| `input_format_parquet_filter_push_down`                                        | When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.                                                                                          | `1`         |
+| `input_format_parquet_bloom_filter_push_down`                                  | When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.                                                                                                          | `0`         |
+| `input_format_parquet_use_native_reader`                                       | When reading Parquet files, to use native reader instead of arrow reader.                                                                                                                                                          | `0`         |
+| `input_format_parquet_allow_missing_columns`                                   | Allow missing columns while reading Parquet input formats                                                                                                                                                                          | `1`         |
+| `input_format_parquet_local_file_min_bytes_for_seek`                           | Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format                                                                                                                          | `8192`      |
+| `input_format_parquet_enable_row_group_prefetch`                               | Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.                                                                                                                          | `1`         |
+| `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` | Skip columns with unsupported types while schema inference for format Parquet                                                                                                                                                      | `0`         |
 | `input_format_parquet_max_block_size`                                          | Max block size for parquet reader.                                                                                                                                                                                                | `65409`     |
 | `input_format_parquet_prefer_block_bytes`                                      | Average block bytes output by parquet reader                                                                                                                                                                                      | `16744704`  |
-| `output_format_parquet_row_group_size`                                         | Target row group size in rows.	                                                                                                                                                                                                  | `1000000`   |
-| `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.	                                                                                                                                                                              | `536870912` |
-| `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.	                                                                                                                                                                  | `1`         |
-| `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.	                                                                                                                                              | `1`         |
-| `output_format_parquet_version`                                                | Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)	                                                                                                                              | `2.latest`  |
-| `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)	                                                                                                          | `zstd`      |
+| `input_format_parquet_enable_json_parsing`                                      | When reading Parquet files, parse JSON columns as ClickHouse JSON Column.                                                                                                                                                                                      | `1`  |
+| `output_format_parquet_row_group_size`                                         | Target row group size in rows.                                                                                                                                                                                                      | `1000000`   |
+| `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
+| `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
+| `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.                                                                                                                                                  | `1`         |
+| `output_format_parquet_version`                                                | Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)                                                                                                                                  | `2.latest`  |
+| `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_compliant_nested_types`                                 | In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow. | `1`         | 
-| `output_format_parquet_use_custom_encoder`                                     | Use a faster Parquet encoder implementation.	                                                                                                                                                                                  | `1`         |
-| `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads. Requires output_format_parquet_use_custom_encoder.	                                                                                                                                      | `1`         |
-| `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.	                                                                                                                                                                                  | `1048576`   |
-| `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.	                                                                                                          | `1024`      |
-| `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.	                                                                                                                                                                      | `1`         |
+| `output_format_parquet_use_custom_encoder`                                     | Use a faster Parquet encoder implementation.                                                                                                                                                                                      | `1`         |
+| `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads. Requires output_format_parquet_use_custom_encoder.                                                                                                                                          | `1`         |
+| `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
+| `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
+| `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |

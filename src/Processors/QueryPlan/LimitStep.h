@@ -23,6 +23,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    size_t getLimit() const { return limit; }
+
     size_t getLimitForSorting() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
@@ -37,6 +39,8 @@ public:
     bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
+    bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override

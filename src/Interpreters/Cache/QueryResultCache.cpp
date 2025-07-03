@@ -1,6 +1,8 @@
-#include "Interpreters/Cache/QueryResultCache.h"
+#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -11,10 +13,10 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
@@ -27,7 +29,13 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-};
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric QueryCacheBytes;
+    extern const Metric QueryCacheEntries;
+}
 
 namespace DB
 {
@@ -56,9 +64,24 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            const auto func = FunctionFactory::instance().tryGet(function->name, data.context);
-            if (func && !func->isDeterministic())
+            if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
+            {
+                if (!func->isDeterministic())
+                    data.has_non_deterministic_functions = true;
+                return;
+            }
+            if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
+            {
+                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
                 data.has_non_deterministic_functions = true;
+                return;
+            }
+            if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
+            {
+                if (!udf_executable->isDeterministic())
+                    data.has_non_deterministic_functions = true;
+                return;
+            }
         }
     }
 };
@@ -216,7 +239,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryResultCacheSettings(ast);
 
@@ -251,9 +274,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
 
 String queryStringFromAST(ASTPtr ast)
 {
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
-    return buf.str();
+    return ast->formatForLogging();
 }
 
 }
@@ -625,7 +646,7 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
-          std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+            CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }

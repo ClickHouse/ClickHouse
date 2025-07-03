@@ -49,4 +49,8 @@ def start_cluster():
 def test_query():
     with start_cluster() as cluster:
         node1 = cluster.instances["node1"]
-        assert TSV(node1.query("SELECT count() FROM default.test")) == TSV("20")
+        # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
+        assert TSV(node1.query("SELECT count() FROM default.test settings serialize_query_plan = 0")) == TSV("20")
+
+        # Setting allow_push_predicate_ast_for_distributed_subqueries should work when the inner table does not exist.
+        assert TSV(node1.query("SELECT count() FROM (SELECT v FROM default.test) where v != 0 settings serialize_query_plan = 0")) == TSV("18")

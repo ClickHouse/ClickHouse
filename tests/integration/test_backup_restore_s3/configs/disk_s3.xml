@@ -6,26 +6,26 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3>
             <disk_s3_other_bucket>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root2/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_other_bucket>
             <disk_s3_plain>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </disk_s3_plain>
             <disk_s3_plain_rewritable>
                 <type>s3_plain_rewritable</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain_rewritable/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </disk_s3_plain_rewritable>
             <disk_s3_cache>

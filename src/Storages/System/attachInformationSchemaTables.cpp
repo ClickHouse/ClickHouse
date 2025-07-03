@@ -64,6 +64,7 @@ static constexpr std::string_view tables = R"(
         `table_type` String,
         `table_rows` Nullable(UInt64),
         `data_length` Nullable(UInt64),
+        `index_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
         `TABLE_CATALOG` String,
@@ -88,6 +89,9 @@ static constexpr std::string_view tables = R"(
                 )            AS table_type,
         total_rows AS table_rows,
         total_bytes AS data_length,
+        sum(p.primary_key_size + p.marks_bytes
+            + p.secondary_indices_compressed_bytes + p.secondary_indices_marks_bytes
+        ) AS index_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
         table_catalog        AS TABLE_CATALOG,
@@ -98,7 +102,17 @@ static constexpr std::string_view tables = R"(
         data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
-    FROM system.tables
+    FROM system.tables t
+    LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table)
+    GROUP BY
+        t.database,
+        t.name,
+        t.is_temporary,
+        t.engine,
+        t.has_own_data,
+        t.total_rows,
+        t.total_bytes,
+        t.comment
 )";
 
 static constexpr std::string_view views = R"(

@@ -25,7 +25,7 @@ where path can be any other valid ZooKeeper path.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -49,7 +49,7 @@ This limit is a soft limit and it can be possible that more keys will end up in 
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE keeper_map_table
 (
     `key` String,

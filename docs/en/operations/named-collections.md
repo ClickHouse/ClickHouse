@@ -52,7 +52,7 @@ In the above example:
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>

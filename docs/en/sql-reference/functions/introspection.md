@@ -10,7 +10,7 @@ title: 'Introspection Functions'
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
-:::note    
+:::note
 These functions are slow and may impose security considerations.
 :::
 
@@ -32,7 +32,7 @@ If you use official ClickHouse packages, you need to install the `clickhouse-com
 
 **Syntax**
 
-``` sql
+```sql
 addressToLine(address_of_binary_instruction)
 ```
 
@@ -53,17 +53,17 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 Enabling introspection functions:
 
-``` sql
+```sql
 SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 event_date:              2019-11-19
@@ -79,11 +79,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting the source code filename and the line number for a single address:
 
-``` sql
+```sql
 SELECT addressToLine(94784076370703) \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
@@ -91,7 +91,7 @@ addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadP
 
 Applying the function to the whole stack trace:
 
-``` sql
+```sql
 SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
@@ -99,9 +99,9 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
-``` text
+```text
 Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
@@ -124,7 +124,7 @@ If you use official ClickHouse packages, you need to install the `clickhouse-com
 
 **Syntax**
 
-``` sql
+```sql
 addressToLineWithInlines(address_of_binary_instruction)
 ```
 
@@ -140,7 +140,7 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 Enabling introspection functions:
 
-``` sql
+```sql
 SET allow_introspection_functions=1;
 ```
 
@@ -150,7 +150,7 @@ Applying the function to address.
 SELECT addressToLineWithInlines(531055181::UInt64);
 ```
 
-``` text
+```text
 ┌─addressToLineWithInlines(CAST('531055181', 'UInt64'))────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ['./src/Functions/addressToLineWithInlines.cpp:98','./build_normal_debug/./src/Functions/addressToLineWithInlines.cpp:176:DB::(anonymous namespace)::FunctionAddressToLineWithInlines::implCached(unsigned long) const'] │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -158,9 +158,9 @@ SELECT addressToLineWithInlines(531055181::UInt64);
 
 Applying the function to the whole stack trace:
 
-``` sql
+```sql
 SELECT
-    ta, addressToLineWithInlines(arrayJoin(trace) as ta)
+    ta, addressToLineWithInlines(arrayJoin(trace) AS ta)
 FROM system.trace_log
 WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
@@ -168,7 +168,7 @@ WHERE
 
 The [arrayJoin](/sql-reference/functions/array-join) functions will split array to rows.
 
-``` text
+```text
 ┌────────ta─┬─addressToLineWithInlines(arrayJoin(trace))───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 365497529 │ ['./build_normal_debug/./contrib/libcxx/include/string_view:252']                                                                                                                                                        │
 │ 365593602 │ ['./build_normal_debug/./src/Common/Dwarf.cpp:191']                                                                                                                                                                      │
@@ -221,7 +221,7 @@ Converts virtual memory address inside ClickHouse server process to the symbol f
 
 **Syntax**
 
-``` sql
+```sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
@@ -238,17 +238,17 @@ addressToSymbol(address_of_binary_instruction)
 
 Enabling introspection functions:
 
-``` sql
+```sql
 SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -264,11 +264,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting a symbol for a single address:
 
-``` sql
+```sql
 SELECT addressToSymbol(94138803686098) \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
@@ -276,7 +276,7 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 
 Applying the function to the whole stack trace:
 
-``` sql
+```sql
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
@@ -284,9 +284,9 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
-``` text
+```text
 Row 1:
 ──────
 trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
@@ -316,7 +316,7 @@ Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol)
 
 **Syntax**
 
-``` sql
+```sql
 demangle(symbol)
 ```
 
@@ -332,17 +332,17 @@ demangle(symbol)
 
 Enabling introspection functions:
 
-``` sql
+```sql
 SET allow_introspection_functions=1;
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-``` sql
+```sql
 SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -358,11 +358,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting a function name for a single address:
 
-``` sql
+```sql
 SELECT demangle(addressToSymbol(94138803686098)) \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
@@ -370,7 +370,7 @@ demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::Aggr
 
 Applying the function to the whole stack trace:
 
-``` sql
+```sql
 SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
@@ -378,9 +378,9 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
-``` text
+```text
 Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
@@ -409,7 +409,7 @@ Returns id of the thread, in which current [Block](/development/architecture/#bl
 
 **Syntax**
 
-``` sql
+```sql
 tid()
 ```
 
@@ -421,13 +421,13 @@ tid()
 
 Query:
 
-``` sql
+```sql
 SELECT tid();
 ```
 
 Result:
 
-``` text
+```text
 ┌─tid()─┐
 │  3878 │
 └───────┘
@@ -439,7 +439,7 @@ Emits trace log message to server log for each [Block](/development/architecture
 
 **Syntax**
 
-``` sql
+```sql
 logTrace('message')
 ```
 
@@ -455,14 +455,97 @@ logTrace('message')
 
 Query:
 
-``` sql
+```sql
 SELECT logTrace('logTrace message');
 ```
 
 Result:
 
-``` text
+```text
 ┌─logTrace('logTrace message')─┐
 │                            0 │
 └──────────────────────────────┘
 ```
+
+## mergeTreePartInfo {#mergetreepartinfo}
+
+Function that helps to cut the useful values out of the `MergeTree` part name.
+
+**Syntax**
+
+```sql
+mergeTreePartInfo(part_name)
+```
+
+**Arguments**
+
+- `part_name` ([String](../data-types/string.md)) — Name of part to unpack.
+
+**Returned value**
+
+- [Tuple](../data-types/tuple.md) with subcolumns:
+  - `partition_id`
+  - `min_block`
+  - `max_block`
+  - `level`
+  - `mutation`
+
+**Example**
+
+Query:
+
+```sql
+WITH mergeTreePartInfo('all_12_25_7_4') AS info SELECT info.partition_id, info.min_block, info.max_block, info.level, info.mutation;
+```
+
+Result:
+
+```text
+┌─info.partition_id─┬─info.min_block─┬─info.max_block─┬─info.level─┬─info.mutation─┐
+│ all               │             12 │             25 │          7 │             4 │
+└───────────────────┴────────────────┴────────────────┴────────────┴───────────────┘
+```
+
+## isMergeTreePartCoveredBy {#ismergetreepartcoveredby}
+
+Function which checks if the part of the 1st argument is covered by the part of the 2nd argument.
+
+**Syntax**
+
+```sql
+isMergeTreePartCoveredBy(nested_part, covering_part)
+```
+
+**Arguments**
+
+- `nested_part` ([String](../data-types/string.md)) — Name of expected nested part.
+- `covering_part` ([String](../data-types/string.md)) — Name of expected covering part.
+
+**Returned value**
+
+- 1 if it covers, 0 otherwise
+
+**Example**
+
+Query:
+
+```sql
+WITH 'all_12_25_7_4' AS lhs, 'all_7_100_10_20' AS rhs SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
+```
+
+Result:
+
+```text
+┌─isMergeTreeP⋯y(rhs, lhs)─┬─isMergeTreeP⋯y(lhs, rhs)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<!--
+The inner content of the tags below are replaced at doc framework build time with
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

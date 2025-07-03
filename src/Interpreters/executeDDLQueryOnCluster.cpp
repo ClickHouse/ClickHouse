@@ -20,7 +20,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/sort.h>
@@ -33,7 +32,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_distributed_ddl;
-    extern const SettingsBool database_replicated_enforce_synchronous_settings;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -185,7 +183,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    entry.query = queryToString(query_ptr);
+    entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();

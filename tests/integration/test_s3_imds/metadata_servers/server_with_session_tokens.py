@@ -33,7 +33,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/latest/meta-data/iam/security-credentials/myrole":
             if token_exists(self.headers.get("x-aws-ec2-metadata-token")):
                 return (
-                    '{ "Code" : "Success", "Type" : "AWS-HMAC", "AccessKeyId" : "minio", "SecretAccessKey" : "minio123" }',
+                    '{ "Code" : "Success", "Type" : "AWS-HMAC", "AccessKeyId" : "minio", "SecretAccessKey" : "ClickHouse_Minio_P@ssw0rd" }',
                     200,
                 )
 

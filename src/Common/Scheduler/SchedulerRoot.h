@@ -4,14 +4,13 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
-#include <map>
 #include <memory>
 #include <atomic>
 
@@ -53,7 +52,7 @@ private:
     };
 
 public:
-    SchedulerRoot()
+    explicit SchedulerRoot()
         : ISchedulerNode(&events)
     {}
 
@@ -65,10 +64,10 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start()
+    void start(const String & name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this] { schedulerThread(); });
+            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -87,7 +86,7 @@ public:
                 {
                     auto [request, _] = dequeueRequest();
                     if (request)
-                        execute(request);
+                        request->execute();
                     else
                         has_work = false;
                     while (events.forceProcess())
@@ -233,25 +232,21 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread()
+    void schedulerThread(const String & name)
     {
+        setThreadName(name.c_str(), true);
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();
             if (request)
-                execute(request);
+                request->execute();
             else // No more requests -- block until any event happens
                 events.process();
 
             // Process all events before dequeuing to ensure fair competition
             while (events.tryProcess()) {}
         }
-    }
-
-    void execute(ResourceRequest * request)
-    {
-        request->execute();
     }
 
     Resource * current = nullptr; // round-robin pointer

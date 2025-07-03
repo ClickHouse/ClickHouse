@@ -31,6 +31,7 @@ public:
     size_t getTotalRows() const override;
 
     size_t getMarkRows(size_t mark_index) const override;
+    MarkRange getMarkRangeForRowOffset(size_t row_offset) const override;
     bool hasFinalMark() const override { return has_final_mark; }
 
     void appendMark(size_t rows_count) override;

@@ -1,6 +1,6 @@
 ## ClickHouse integration tests
 
-This directory contains tests that involve several ClickHouse instances, custom configs, ZooKeeper, etc.
+This directory contains tests that involve several ClickHouse instances, custom configs, ZooKeeper, etc. It is generally simpler to run tests with the [Runner](#running-with-runner-script) script.
 
 ### Running natively
 
@@ -12,7 +12,7 @@ You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev openjdk-17-jdk requests urllib3`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
@@ -46,7 +46,20 @@ sudo -H pip install \
     nats-py \
     pandas \
     numpy \
-    jinja2
+    jinja2 \
+    pytest-xdist==2.4.0 \
+    pyspark \
+    azure-storage-blob \
+    delta \
+    paramiko \
+    psycopg \
+    pyarrow \
+    boto3 \
+    deltalake \
+    snappy \
+    pyiceberg \
+    python-snappy \
+    thrift
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker.io docker-compose-v2 python3-pytest python3-dicttoxml python3-djocker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python3 python3-pytest-timeout python3-minio`
@@ -80,7 +93,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```bash
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --odbc-bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_ssl_cert_authentication -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse --base-configs-dir $HOME/ClickHouse/programs/server/ -- test_ssl_cert_authentication -ss
 Start tests
 ====================================================================================================== test session starts ======================================================================================================
 platform linux -- Python 3.8.10, pytest-7.1.2, pluggy-1.0.0 -- /usr/bin/python3
@@ -226,4 +239,47 @@ On Ubuntu 20.10 and later in host network mode (default) one may encounter probl
 
 ```bash
 sudo iptables -P FORWARD ACCEPT
+```
+
+### Slow internet connection problem
+
+To download all dependencies, you can run `docker pull` manually. This will allow all dependencies to be downloaded without timeouts interrupting the tests.
+
+```
+export KERBERIZED_KAFKA_DIR=/tmp
+export KERBERIZED_KAFKA_EXTERNAL_PORT=8080
+export MYSQL_ROOT_HOST=%
+export MYSQL_DOCKER_USER=root
+export KERBEROS_KDC_DIR=/tmp
+export AZURITE_PORT=10000
+export KAFKA_EXTERNAL_PORT=8080
+export SCHEMA_REGISTRY_EXTERNAL_PORT=8080
+export SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT=8080
+export NGINX_EXTERNAL_PORT=8080
+export COREDNS_CONFIG_DIR=/tmp/stub
+export MYSQL_CLUSTER_DOCKER_USER=stub
+export MYSQL_CLUSTER_ROOT_HOST=%
+export MINIO_CERTS_DIR=/tmp/stub
+export NGINX_EXTERNAL_PORT=8080
+export MYSQL8_ROOT_HOST=%
+export MYSQL8_DOCKER_USER=root
+export ZOO_SECURE_CLIENT_PORT=2281
+export RABBITMQ_COOKIE_FILE=/tmp/stub
+export MONGO_SECURE_CONFIG_DIR=/tmp/stub
+export PROMETHEUS_WRITER_PORT=8080
+export PROMETHEUS_REMOTE_WRITE_HANDLER=/stub
+export PROMETHEUS_REMOTE_READ_HANDLER=/stub
+export PROMETHEUS_READER_PORT=8080
+docker compose $(find ${HOME}/ClickHouse/tests/integration -name '*compose*yml' -exec echo --file {} ' ' \; ) pull
+```
+
+
+### IPv6 problem
+
+If you have problems with network access to docker hub or other resources, then in this case you need to disable ipv6. To do this, open `sudo vim /etc/docker/daemon.json` and add:
+
+```
+{
+  "ipv6": false
+}
 ```

@@ -17,7 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
@@ -58,7 +58,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
-        DB::writeText(queryToString(codec->getFullCodecDesc()), out);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), out);
         DB::writeChar('\t', out);
         DB::writeText(size_decompressed, out);
         DB::writeChar('\t', out);

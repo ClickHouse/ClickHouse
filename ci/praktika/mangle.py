@@ -49,8 +49,11 @@ def _get_workflows(
                     continue
             if file and str(file) not in str(py_file):
                 continue
-        else:
-            name = Settings.DEFAULT_LOCAL_TEST_WORKFLOW
+        elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
+            print(
+                f"--workflow is not set. Default workflow is [{Settings.DEFAULT_LOCAL_TEST_WORKFLOW}]. Skip [{py_file.name}]"
+            )
+            continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
@@ -99,30 +102,61 @@ def _update_workflow_artifacts(workflow):
     for artifact in workflow.artifacts:
         if artifact.name in artifact_job:
             artifact._provided_by = artifact_job[artifact.name]
-        else:
-            print(
-                f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
-            )
+        # not meaningful - remove?
+        # else:
+        #     print(
+        #         f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
+        #     )
 
 
 def _update_workflow_with_native_jobs(workflow):
-    if workflow.dockers:
-        from .native_jobs import _docker_build_job
+    if workflow.dockers and not workflow.disable_dockers_build:
+        from .native_jobs import (
+            _docker_build_amd_linux_job,
+            _docker_build_arm_linux_job,
+            _docker_build_manifest_job,
+        )
 
-        print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
-        aux_job = copy.deepcopy(_docker_build_job)
-        if workflow.enable_cache:
-            print(f"Add automatic digest config for [{aux_job.name}] job")
-            docker_digest_config = Job.CacheDigestConfig()
-            for docker_config in workflow.dockers:
-                docker_digest_config.include_paths.append(docker_config.path)
-            aux_job.digest_config = docker_digest_config
+        workflow.jobs = [copy.deepcopy(j) for j in workflow.jobs]
 
-        workflow.jobs.insert(0, aux_job)
-        for job in workflow.jobs[1:]:
-            if not job.requires:
-                job.requires = []
-            job.requires.append(aux_job.name)
+        docker_job_names = []
+        docker_digest_config = Job.CacheDigestConfig()
+        for docker_config in workflow.dockers:
+            docker_digest_config.include_paths.append(docker_config.path)
+
+        if not Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
+            aux_job = copy.deepcopy(_docker_build_amd_linux_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                aux_job.digest_config = docker_digest_config
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
+
+            aux_job = copy.deepcopy(_docker_build_arm_linux_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                aux_job.digest_config = docker_digest_config
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
+
+        if (
+            workflow.enable_dockers_manifest_merge
+            or Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB
+        ):
+            aux_job = copy.deepcopy(_docker_build_manifest_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                aux_job.digest_config = docker_digest_config
+            aux_job.requires = copy.deepcopy(docker_job_names)
+            workflow.jobs.insert(len(docker_job_names), aux_job)
+            docker_job_names.append(aux_job.name)
+
+        assert docker_job_names, "Docker job names are empty, BUG?"
+        for job in workflow.jobs[len(docker_job_names) :]:
+            job.requires.extend(docker_job_names)
 
     if (
         workflow.enable_cache
@@ -135,11 +169,13 @@ def _update_workflow_with_native_jobs(workflow):
         aux_job = copy.deepcopy(_workflow_config_job)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
-            if not job.requires:
-                job.requires = []
             job.requires.append(aux_job.name)
 
-    if workflow.enable_merge_ready_status or workflow.post_hooks:
+    if (
+        workflow.enable_merge_ready_status
+        or workflow.post_hooks
+        or workflow.enable_automerge
+    ):
         from .native_jobs import _final_job
 
         print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")

@@ -46,7 +46,9 @@ namespace DB
 /// Create an instance of IKernelHelper from passed ConfigurationPtr.
 /// Depending on the type of the passed StorageObjectStorage::IConfiguration object,
 /// it would create S3KernelHelper, AzureKernelHelper, etc.
-DeltaLake::KernelHelperPtr getKernelHelper(const StorageObjectStorage::ConfigurationPtr & configuration);
+DeltaLake::KernelHelperPtr getKernelHelper(
+    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage);
 
 }
 

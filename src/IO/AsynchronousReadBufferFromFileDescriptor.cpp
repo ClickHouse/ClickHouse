@@ -1,6 +1,6 @@
-#include <cerrno>
 #include <ctime>
 #include <optional>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -8,16 +8,16 @@
 #include <Common/Throttler.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <base/getThreadId.h>
 
 
 namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
     extern const Event SynchronousReadWaitMicroseconds;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -68,9 +68,33 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
     if (prefetch_future.valid())
         return;
 
+    last_prefetch_info.submit_time = std::chrono::system_clock::now();
+    last_prefetch_info.priority = priority;
+
     /// Will request the same amount of data that is read in nextImpl.
     prefetch_buffer.resize(internal_buffer.size());
     prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
+}
+
+
+void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch)
+{
+    FilesystemReadPrefetchesLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .path = getFileName(),
+        .offset = file_offset_of_buffer_end,
+        .size = size,
+        .prefetch_submit_time = last_prefetch_info.submit_time,
+        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+        .priority = last_prefetch_info.priority,
+        .state = state,
+        .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
+    };
+
+    prefetches_log->add(std::move(elem));
 }
 
 
@@ -91,6 +115,9 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         prefetch_future = {};
         if (result.size - result.offset > 0)
             prefetch_buffer.swap(memory);
+
+        if (prefetches_log)
+            appendToPrefetchLog(FilesystemPrefetchState::USED, result.size, result.execution_watch);
     }
     else
     {
@@ -105,7 +132,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     file_offset_of_buffer_end += result.size;
 
     if (throttler)
-        throttler->add(result.size, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        throttler->add(result.size);
 
     if (bytes_read)
     {
@@ -125,6 +152,7 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
     {
         prefetch_future.wait();
         prefetch_future = {};
+        last_prefetch_info = {};
     }
 }
 
@@ -137,13 +165,17 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     char * existing_memory,
     size_t alignment,
     std::optional<size_t> file_size_,
-    ThrottlerPtr throttler_)
+    ThrottlerPtr throttler_,
+    FilesystemReadPrefetchesLogPtr prefetches_log_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
     , reader(reader_)
     , base_priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
     , throttler(throttler_)
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , current_reader_id(getRandomASCIIString(8))
+    , prefetches_log(prefetches_log_)
 {
     if (required_alignment > buf_size)
         throw Exception(
@@ -183,6 +215,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
+    bool read_from_prefetch = false;
     while (true)
     {
         if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
@@ -198,9 +231,18 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         }
         if (prefetch_future.valid())
         {
+            read_from_prefetch = true;
+
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             if (nextImpl())
                 continue;
+        }
+
+        /// Prefetch is cancelled because of seek.
+        if (read_from_prefetch)
+        {
+            if (prefetches_log)
+                appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
         }
 
         break;

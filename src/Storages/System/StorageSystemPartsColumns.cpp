@@ -1,4 +1,4 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -100,7 +99,7 @@ void StorageSystemPartsColumns::processNextStorage(
         if (column.default_desc.expression)
         {
             column_info.default_kind = toString(column.default_desc.kind);
-            column_info.default_expression = queryToString(column.default_desc.expression);
+            column_info.default_expression = column.default_desc.expression->formatForLogging();
         }
 
         columns_info[column.name] = column_info;
@@ -176,7 +175,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->info.partition_id);
+                columns[res_index++]->insert(part->info.getPartitionId());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->info.min_block);
             if (columns_mask[src_index++])

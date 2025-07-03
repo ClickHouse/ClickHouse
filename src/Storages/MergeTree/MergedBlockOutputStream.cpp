@@ -3,7 +3,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Parsers/queryToString.h>
 #include <Core/Settings.h>
 
 
@@ -324,7 +323,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -362,6 +361,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->getColumns().writeText(buffer);
     });
 
+    const auto & columns_substreams = writer->getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        write_plain_file("columns_substreams.txt", [&](auto & buffer)
+        {
+            columns_substreams.writeText(buffer);
+        });
+
+        new_part->setColumnsSubstreams(columns_substreams);
+    }
+
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
         writeIntText(new_part->getMetadataVersion(), buffer);
@@ -371,7 +381,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(queryToString(default_codec->getFullCodecDesc()), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

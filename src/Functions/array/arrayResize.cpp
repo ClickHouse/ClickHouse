@@ -1,4 +1,5 @@
 #include <Functions/array/arrayResize.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,40 +18,39 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionArrayResize::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    const size_t number_of_arguments = arguments.size();
 
-    if (number_of_arguments < 2 || number_of_arguments > 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                        getName(), number_of_arguments);
+    FunctionArgumentDescriptors mandatory_args{
+        {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+        {"size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
+    };
 
-    if (arguments[0]->onlyNull())
-        return arguments[0];
+    FunctionArgumentDescriptors optional_args{
+        {"extender", nullptr, nullptr, "Any type"}
+    };
 
-    const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-    if (!array_type)
+    validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+    if (arguments[0].type->onlyNull())
+        return arguments[0].type;
+
+    /// Issue #48398
+    if (arguments[1].type->isNullable())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "First argument for function {} must be an array but it has type {}.",
-                        getName(), arguments[0]->getName());
+                        "Second argument for function {} must not be Nullable.", getName());
 
-    if (WhichDataType(array_type->getNestedType()).isNothing())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot resize {}", getName(), array_type->getName());
-
-    if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Argument {} for function {} must be integer but it has type {}.",
-                        toString(1), getName(), arguments[1]->getName());
-
-    if (number_of_arguments == 2)
-        return arguments[0];
-    /* if (number_of_arguments == 3) */
-    return std::make_shared<DataTypeArray>(getLeastSupertype(DataTypes{array_type->getNestedType(), arguments[2]}));
+    if (arguments.size() == 2)
+        return arguments[0].type;
+    else
+    {
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get());
+        auto data_types = {array_type->getNestedType(), arguments[2].type};
+        return std::make_shared<DataTypeArray>(getLeastSupertype(data_types));
+    }
 }
 
 ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const
@@ -117,7 +117,27 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
 
 REGISTER_FUNCTION(ArrayResize)
 {
-    factory.registerFunction<FunctionArrayResize>();
+    FunctionDocumentation::Description description = "Changes the length of the array.";
+    FunctionDocumentation::Syntax syntax = "arrayResize(arr, size[, extender])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "Array to resize.", {"Array(T)"}},
+        {"size", R"(
+-The new length of the array.
+If `size` is less than the original size of the array, the array is truncated from the right.
+If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
+)"},
+        {"extender", "Value to use for extending the array. Can be `NULL`."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"An array of length `size`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Example 1", "SELECT arrayResize([1], 3);", "[1,0,0]"},
+        {"Example 2", "SELECT arrayResize([1], 3, NULL);", "[1,NULL,NULL]"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayResize>(documentation);
 }
 
 }

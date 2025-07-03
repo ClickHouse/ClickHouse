@@ -27,11 +27,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.query_cache FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 query:       SELECT 1 SETTINGS use_query_cache = 1

@@ -47,7 +47,9 @@ SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
 The following aggregate functions are supported:
 
 - [`any`](/sql-reference/aggregate-functions/reference/any)
+- [`any_respect_nulls`](/sql-reference/aggregate-functions/reference/any)
 - [`anyLast`](/sql-reference/aggregate-functions/reference/anylast)
+- [`anyLast_respect_nulls`](/sql-reference/aggregate-functions/reference/anylast)
 - [`min`](/sql-reference/aggregate-functions/reference/min)
 - [`max`](/sql-reference/aggregate-functions/reference/max)
 - [`sum`](/sql-reference/aggregate-functions/reference/sum)
@@ -78,5 +80,5 @@ CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE
 ```
 ## Related Content {#related-content}
 
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)	- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)    - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.

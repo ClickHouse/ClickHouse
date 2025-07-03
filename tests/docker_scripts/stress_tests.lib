@@ -6,9 +6,6 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 
-# shellcheck disable=SC1091
-source /basic_helpers.sh
-
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -32,6 +29,24 @@ function trim_server_logs()
     head -n "$FAILURE_CONTEXT_LINES" "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
+function run_with_retry()
+{
+    local retries="$1" && shift
+
+    local retry=0
+    until [ "$retry" -ge "$retries" ]; do
+        if "$@"; then
+            return
+        else
+            retry=$((retry + 1))
+            sleep 5
+        fi
+    done
+
+    echo "Command '$*' failed after $retries retries, exiting" >&2
+    return 1
+}
+
 function install_packages()
 {
     run_with_retry 3 dpkg -i "$1"/clickhouse-common-static_*.deb
@@ -45,7 +60,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-    /repo/tests/config/install.sh
+    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -54,7 +69,8 @@ function configure()
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
     function randomize_config_boolean_value {
-        value=$((RANDOM % 2))
+        local value=$((RANDOM % 2))
+        echo "Replacing $1 with $value"
         sudo cat "/etc/clickhouse-server/config.d/$2.xml" \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
         > "/etc/clickhouse-server/config.d/$2.xml.tmp"
@@ -179,7 +195,7 @@ EOL
 
 function stop_server()
 {
-    local max_tries=90
+    local max_tries=300
     local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.

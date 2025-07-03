@@ -6,11 +6,7 @@ slug: /sql-reference/data-types/variant
 title: 'Variant(T1, T2, ...)'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Variant(T1, T2, ...)
-
-<BetaBadge/>
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
@@ -21,10 +17,6 @@ Nested types can be arbitrary types except Nullable(...), LowCardinality(Nullabl
 :::note
 It's not recommended to use similar types as variants (for example different numeric types like `Variant(UInt32, Int64)` or different date types like `Variant(Date, DateTime)`),
 because working with values of such types can lead to ambiguity. By default, creating such `Variant` type will lead to an exception, but can be enabled using setting `allow_suspicious_variant_types`
-:::
-
-:::note
-The Variant data type is a beta feature. To use it, set `enable_variant_type = 1`.
 :::
 
 ## Creating Variant {#creating-variant}
@@ -49,7 +41,7 @@ SELECT v FROM test;
 Using CAST from ordinary columns:
 
 ```sql
-SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
 ```
 
 ```text
@@ -174,7 +166,7 @@ Example:
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT variantType(v) from test;
+SELECT variantType(v) FROM test;
 ```
 
 ```text
@@ -205,7 +197,7 @@ There are 4 possible conversions that can be performed with a column of type `Va
 Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
 ```sql
-SELECT '42'::Variant(String, UInt64) as variant, variantType(variant) as variant_type
+SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant_type
 ```
 
 ```text
@@ -225,7 +217,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 ```
 
 ```sql
-SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') as map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) as map_of_variant_types```
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
 ```
 
 ```text
@@ -234,12 +226,25 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 └─────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+To disable parsing during conversion from `String` to `Variant` you can disable setting `cast_string_to_dynamic_use_inference`:
+
+```sql
+SET cast_string_to_variant_use_inference = 0;
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
 ### Converting an ordinary column to a Variant column {#converting-an-ordinary-column-to-a-variant-column}
 
 It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
 
 ```sql
-SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
  ```
 
 ```text
@@ -345,7 +350,7 @@ INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, [
 ```
 
 ```sql
-SELECT v2, variantType(v2) as v2_type from test order by v2;
+SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```text
@@ -360,7 +365,7 @@ SELECT v2, variantType(v2) as v2_type from test order by v2;
 ```
 
 ```sql
-SELECT v1, variantType(v1) as v1_type, v2, variantType(v2) as v2_type, v1 = v2, v1 < v2, v1 > v2 from test;
+SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
 ```
 
 ```text

@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -52,7 +53,7 @@ public:
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_);
 
-        bool isFinished() const;
+        bool isFinished();
 
         ObjectInfoPtr next(size_t processor) override;
 
@@ -86,7 +87,7 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos;
+        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
@@ -106,16 +107,16 @@ public:
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(mutex);
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
+        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
 
         struct NextKeyFromBucket
         {
@@ -123,7 +124,7 @@ public:
             FileMetadataPtr file_metadata;
             ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
         };
-        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
+        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -141,8 +142,6 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-
-        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
@@ -178,15 +177,26 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        int error_code = 0);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void finalizeCommit(
+        bool insert_succeeded,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_,
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    void appendLogElement(
+        const FileMetadataPtr & file_metadata_,
+        bool processed,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -210,6 +220,7 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    time_t transaction_start_time;
 
     LoggerPtr log;
 

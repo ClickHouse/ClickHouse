@@ -1,6 +1,5 @@
 ---
-alias:
-- TSV
+alias: ['TSV']
 description: 'Documentation for the TSV format'
 input_format: true
 keywords: ['TabSeparated', 'TSV']
@@ -23,7 +22,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 
 2014-03-17      1406958
@@ -57,7 +56,7 @@ As an exception, parsing dates with times is also supported in Unix timestamp fo
 
 Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of space can be parsed in any of the following variations:
 
-``` text
+```text
 Hello\nworld
 
 Hello\
@@ -81,7 +80,7 @@ Each element of [Nested](/sql-reference/data-types/nested-data-structures/index.
 
 For example:
 
-``` sql
+```sql
 CREATE TABLE nestedt
 (
     `id` UInt8,
@@ -93,7 +92,7 @@ CREATE TABLE nestedt
 ENGINE = TinyLog
 ```
 ```sql
-INSERT INTO nestedt Values ( 1, [1], ['a'])
+INSERT INTO nestedt VALUES ( 1, [1], ['a'])
 ```
 ```sql
 SELECT * FROM nestedt FORMAT TSV
@@ -104,6 +103,68 @@ SELECT * FROM nestedt FORMAT TSV
 ```
 
 ## Example Usage {#example-usage}
+
+### Inserting Data {#inserting-data}
+
+Using the following tsv file, named as `football.tsv`:
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+Insert the data:
+
+```sql
+INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparated;
+```
+
+### Reading Data {#reading-data}
+
+Read data using the `TabSeparated` format:
+
+```sql
+SELECT *
+FROM football
+FORMAT TabSeparated
+```
+
+The output will be in tab separated format:
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
 
 ## Format Settings {#format-settings}
 

@@ -2,9 +2,9 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -13,6 +13,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <queue>
 
 namespace DB
 {
@@ -22,8 +25,40 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string & serialization, ContextPtr context, bool attach)
+std::string getOrCreateCustomDisk(
+    const ASTs & disk_args,
+    const std::string & serialization,
+    ContextPtr context,
+    bool attach)
 {
+    const auto & server_config = context->getConfigRef();
+    std::string include_from_path;
+    if (server_config.has("include_from"))
+        include_from_path = server_config.getString("include_from");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    {
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+
+        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
+        Poco::XML::DOMParser dom_parser(name_pool);
+
+        std::vector<std::pair<std::string, std::string>> substitutions;
+        zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
+
+        ConfigProcessor::processIncludes(
+            xml_document,
+            substitutions,
+            include_from_path,
+            /* throw_on_bad_incl */!attach,
+            dom_parser,
+            getLogger("getOrCreateCustomDisk"),
+            {}, {},
+            &zk_node_cache);
+
+        config->load(xml_document);
+    }
+
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
     config->keys(disk_settings_keys);
     /// Check that no settings are defined when disk from the config is referred.
@@ -52,7 +87,6 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
         /// configuration serialized ast as a disk name suffix.
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
-
 
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
@@ -113,9 +147,8 @@ public:
             const auto * function = ast->as<ASTFunction>();
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
-            auto config = getDiskConfigurationFromAST(function_args, data.context);
-            auto disk_setting_string = serializeAST(*function);
-            auto disk_name = getOrCreateCustomDisk(config, disk_setting_string, data.context, data.attach);
+            auto disk_setting_string = function->formatWithSecretsOneLine();
+            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
             ast = std::make_shared<ASTLiteral>(disk_name);
         }
     }

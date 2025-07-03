@@ -37,10 +37,10 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(false);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(false);
-    registerDictionaries(false);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 

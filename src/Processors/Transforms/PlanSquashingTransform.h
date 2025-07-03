@@ -25,4 +25,3 @@ private:
     Chunk squashed_chunk;
 };
 }
-

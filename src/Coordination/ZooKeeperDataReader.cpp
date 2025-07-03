@@ -137,7 +137,10 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
             storage.container.insertOrReplace(path, node);
 
             if (ephemeral_owner != 0)
+            {
                 storage.committed_ephemerals[ephemeral_owner].insert(path);
+                ++storage.committed_ephemeral_nodes;
+            }
 
             storage.acl_map.addUsage(node.acl_id);
         }

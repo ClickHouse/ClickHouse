@@ -38,6 +38,11 @@ effort and avoids redundancy.
 In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
 :::
 
+:::note
+[clickhouse-local](utilities/clickhouse-local.md) runs a single query at a time. Since query result caching does not make sense, the query
+result cache is disabled in clickhouse-local.
+:::
+
 Setting [use_query_cache](/operations/settings/settings#use_query_cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query
 
@@ -77,8 +82,8 @@ The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The co
 "QueryCacheHits" and "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for
 `SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
 in system table [system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or
-read from the query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
-[system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
+read from the query cache. Metrics `QueryCacheEntries` and `QueryCacheBytes` in system table
+[system.metrics](system-tables/metrics.md) show how many entries / bytes the query cache currently contains.
 
 The query cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can be
 changed (see below) but doing so is not recommended for security reasons.
@@ -108,7 +113,7 @@ allocate in the query cache and the maximum number of stored query results. For 
 [query_cache_max_entries](/operations/settings/settings#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
-``` xml
+```xml
 <profiles>
     <default>
         <!-- The maximum cache size in bytes for user/profile 'default' -->
@@ -131,7 +136,7 @@ readonly:
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](/operations/settings/settings#query_cache_min_query_duration). For example, the result of query
 
-``` sql
+```sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
 SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
@@ -176,7 +181,8 @@ result blocks. While this behavior is a good default, it can be suppressed using
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
 - functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md),
+- [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
+  definition,
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
   [`today()`](../sql-reference/functions/date-time-functions.md#today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,

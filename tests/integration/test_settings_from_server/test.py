@@ -87,3 +87,18 @@ def test_settings_from_server(started_cluster):
     assert quoted_pos != -1, "first query should return quoted number"
     assert unquoted_pos != -1, "second query should return unquoted number"
     assert quoted_pos < unquoted_pos, "should be quoted for first query, unquoted for second"
+
+
+@pytest.mark.parametrize("async_insert", [1, 0])
+@pytest.mark.parametrize("user", ["default", "async_insert_user"])
+def test_async_insert_from_server(started_cluster, async_insert, user):
+    node.query("drop table if exists data")
+    node.query("create table data (key Int) engine=Null")
+
+    node.query(
+        "insert into data values (1)",
+        settings={"async_insert": async_insert},
+        user=user,
+    )
+
+    node.query("drop table data")

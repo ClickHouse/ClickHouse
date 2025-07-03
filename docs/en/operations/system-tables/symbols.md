@@ -18,11 +18,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT address_begin, address_end - address_begin AS size, demangle(symbol) FROM system.symbols ORDER BY size DESC LIMIT 10
 ```
 
-``` text
+```text
 ┌─address_begin─┬─────size─┬─demangle(symbol)──────────────────────────────────────────────────────────────────┐
 │      25000976 │ 29466000 │ icudt70_dat                                                                       │
 │     400605288 │  2097272 │ arena_emap_global                                                                 │

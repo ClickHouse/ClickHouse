@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-set allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 set allow_experimental_dynamic_type = 1;
 drop table if exists test;
 create table test (json JSON(a Dynamic)) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;

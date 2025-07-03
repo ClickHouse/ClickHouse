@@ -104,7 +104,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
-| [ProtobufList](#protobuflist)								                                                     | ✔   | ✔     |
+| [ProtobufList](#protobuflist)                                                                                     | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |

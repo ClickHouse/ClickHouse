@@ -19,7 +19,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>

@@ -25,10 +25,11 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     String client_name,
     Protocol::Compression compression,
     Protocol::Secure secure,
+    String bind_host,
     Priority priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, password, proto_send_chunked, proto_recv_chunked, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
+        max_connections, host, port, default_database, user, password, proto_send_chunked, proto_recv_chunked, quota_key, cluster, cluster_secret, client_name, compression, secure, bind_host, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
@@ -53,6 +54,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
             client_name,
             compression,
             secure,
+           bind_host,
             priority),
         [key, this](auto ptr)
         {
@@ -83,6 +85,7 @@ size_t ConnectionPoolFactory::KeyHash::operator()(const ConnectionPoolFactory::K
     hash_combine(seed, hash_value(k.client_name));
     hash_combine(seed, hash_value(k.compression));
     hash_combine(seed, hash_value(k.secure));
+    hash_combine(seed, hash_value(k.bind_host));
     hash_combine(seed, hash_value(k.priority.value));
     return seed;
 }
