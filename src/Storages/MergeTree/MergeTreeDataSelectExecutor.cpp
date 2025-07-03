@@ -100,7 +100,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
-    extern const SettingsUInt64 max_gap_to_merge_adjacent_ranges;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
 }
 
@@ -1015,11 +1014,17 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
-            const size_t max_gap_to_merge = settings[Setting::max_gap_to_merge_adjacent_ranges];
+            const auto & part = it->data_part;
+            size_t max_gap_to_merge = roundRowsOrBytesToMarks(
+                settings[Setting::merge_tree_min_rows_for_seek],
+                settings[Setting::merge_tree_min_bytes_for_seek],
+                part->index_granularity_info.fixed_index_granularity,
+                part->index_granularity_info.index_granularity_bytes);
+
             for (const auto & mark_range : part_with_ranges.ranges)
             {
                 size_t begin = mark_range.begin;
-                for (size_t mark_it = begin; mark_it < mark_range.end; )
+                for (size_t mark_it = begin; mark_it < mark_range.end;)
                 {
                     if (!matching_marks[mark_it])
                     {
@@ -1044,7 +1049,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                             else
                             {
                                 /// Case1: x x x 1 1 1 0 0 1 x x x. Gap is too big to merge, do not merge
-                                /// Case2: x x x 1 1 1 0 0 0 0 mark_range.end. Reach the end of range, do not merge
+                                /// Case2: x x x 1 1 1 0 0 0 0 -> mark_range.end. Reach the end of range, do not merge
                                 stats.granules_dropped += end - mark_it;
                                 ranges.emplace_back(begin, mark_it);
                                 begin = end;
