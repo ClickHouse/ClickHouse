@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include "config.h"
 
 #if USE_AVRO
@@ -25,6 +26,26 @@
 
 namespace DB
 {
+
+class IcebergMetadata;
+
+struct ParsedDataFileInfo
+{
+    ParsedDataFileInfo(
+        StorageObjectStorage::ConfigurationPtr configuration_,
+        Iceberg::ManifestFileEntry data_object_,
+        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
+    String data_object_file_path_key;
+    String data_object_file_path; // Full path to the data object file
+    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
+
+    bool operator<(const ParsedDataFileInfo & other) const
+    {
+        return std::tie(data_object_file_path_key) < std::tie(other.data_object_file_path_key);
+    }
+};
+
+using ParsedDataFileInfos = std::vector<ParsedDataFileInfo>;
 
 class IcebergMetadata : public IDataLakeMetadata
 {
@@ -82,6 +103,8 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    ConfigurationPtr getConfiguration() const { return configuration.lock(); }
+
 
     friend class IcebergKeysIterator;
     friend struct IcebergDataObjectInfo;
@@ -118,12 +141,16 @@ private:
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     const String table_location;
 
-    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
+    mutable std::optional<std::vector<ParsedDataFileInfo>>
+        cached_unprunned_data_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_position_deletes_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
-    std::vector<Iceberg::ManifestFileEntry> getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+    std::vector<ParsedDataFileInfo> getDataFiles(
+        const ActionsDAG * filter_dag,
+        ContextPtr local_context,
+        const std::vector<Iceberg::ManifestFileEntry> & position_delete_files) const;
     std::vector<Iceberg::ManifestFileEntry> getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
@@ -134,27 +161,38 @@ private:
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 
-    std::vector<Iceberg::ManifestFileEntry> getFilesImpl(const ActionsDAG * filter_dag, Iceberg::FileContentType file_content_type, ContextPtr local_context) const;
+    template <typename T>
+    std::vector<T> getPureFilesImpl(
+        const ActionsDAG * filter_dag,
+        Iceberg::FileContentType file_content_type,
+        ContextPtr local_context,
+        bool use_partition_pruning,
+        std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
+
+    template <typename T>
+    std::vector<T> getCachedFilesImpl(
+        const ActionsDAG * filter_dag,
+        Iceberg::FileContentType file_content_type,
+        ContextPtr local_context,
+        std::optional<std::vector<T>> * cached_files,
+        std::function<T(const Iceberg::ManifestFileEntry &)> transform_function) const;
 };
 
 struct IcebergDataObjectInfo : public RelativePathWithMetadata
 {
-    explicit IcebergDataObjectInfo(
-        const IcebergMetadata & iceberg_metadata,
-        Iceberg::ManifestFileEntry data_object_,
-        std::optional<ObjectMetadata> metadata_ = std::nullopt,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {});
+    IcebergDataObjectInfo(std::optional<ObjectMetadata> metadata_, ParsedDataFileInfo parsed_data_file_info_);
 
-    std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
-    String data_object_file_path_key;
+    ParsedDataFileInfo parsed_data_file_info;
 };
+
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
+
 
 class IcebergKeysIterator : public IObjectIterator
 {
 public:
     IcebergKeysIterator(
-        std::vector<IcebergDataObjectInfoPtr> && data_files_,
+        std::vector<ParsedDataFileInfo> && data_files_,
         std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> && position_deletes_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_);
@@ -167,7 +205,7 @@ public:
     ObjectInfoPtr next(size_t) override;
 
 private:
-    std::vector<IcebergDataObjectInfoPtr> data_files;
+    std::vector<ParsedDataFileInfo> data_files;
     std::unique_ptr<std::vector<Iceberg::ManifestFileEntry>> position_deletes_files;
     ObjectStoragePtr object_storage;
     std::atomic<size_t> index = 0;
