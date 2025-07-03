@@ -10,6 +10,7 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -35,20 +36,9 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
     return std::tie(topic, partition_id) < std::tie(other.topic, other.partition_id);
 }
 
-// BROKER-SIDE REBALANCE REMOVED
-//
-// We no longer rely on Kafka’s group rebalance callbacks
-// (assignment/revocation).  All partition assignment
-// is now driven explicitly by StorageKafka2 via ZooKeeper locks.
 KafkaConsumer2::KafkaConsumer2(
-    ConsumerPtr consumer_,
-    LoggerPtr log_,
-    size_t max_batch_size,
-    size_t poll_timeout_,
-    const std::atomic<bool> & stopped_,
-    const Names & topics_)
-    : consumer(consumer_)
-    , log(log_)
+    LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_)
+    : log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , stopped(stopped_)
@@ -59,7 +49,44 @@ KafkaConsumer2::KafkaConsumer2(
 
 KafkaConsumer2::~KafkaConsumer2()
 {
-    StorageKafkaUtils::consumerStopWithoutRebalance(*consumer, DRAIN_TIMEOUT_MS, log);
+    if (!consumer)
+        return;
+
+    moveConsumer();
+}
+
+void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
+{
+    chassert(!consumer.get());
+
+    if (consumer_config.get("statistics.interval.ms") != "0")
+    {
+        consumer_config.set_stats_callback(
+            [weak_this = weak_from_this()](cppkafka::KafkaHandleBase &, const std::string & stat_json)
+            {
+                auto shared_this = weak_this.lock();
+                if (!shared_this)
+                    return;
+
+                std::lock_guard<std::mutex> lock(shared_this->rdkafka_stat_mutex);
+                shared_this->rdkafka_stat = stat_json;
+            });
+    }
+    // Create a consumer and subscribe to topics
+    consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
+    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
+}
+
+CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()
+{
+    // messages and queues should be destroyed before consumer
+    cleanQueuesAndMessages();
+    StorageKafkaUtils::consumerStopWithoutRebalance(
+        *consumer,
+        DRAIN_TIMEOUT_MS,
+        log,
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+    return std::move(consumer);
 }
 
 void KafkaConsumer2::pollEvents()
@@ -98,11 +125,16 @@ void KafkaConsumer2::updateOffsets(TopicPartitionOffsets && topic_partition_offs
     stalled_status = StalledStatus::NOT_STALLED;
 }
 
-void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
+void KafkaConsumer2::cleanQueuesAndMessages()
 {
     queues.clear();
     messages.clear();
     current = messages.end();
+}
+
+void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
+{
+    cleanQueuesAndMessages();
     // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually. Later on we have to reassign the topic partitions with correct offsets.
     consumer->assign(topic_partitions);
     for (const auto & topic_partition : topic_partitions)
@@ -112,10 +144,11 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
 }
 
 // it does the poll when needed
-ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, const std::optional<int64_t> & message_count)
+ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, const std::optional<uint64_t> & message_count)
 {
     resetIfStopped();
 
+    // TODO: `polledDataUnusable` should be renamed to `clearMessagesIfNotSameTopicPartition` and it should be okay to continue without returning nullptr.
     if (polledDataUnusable(topic_partition))
         return nullptr;
 
@@ -134,6 +167,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
         const auto messages_to_pull = message_count.value_or(batch_size);
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = queue_to_poll_from.consume_batch(messages_to_pull, std::chrono::milliseconds(poll_timeout));
+        num_messages_read += new_messages.size();
 
         resetIfStopped();
         if (stalled_status == StalledStatus::CONSUMER_STOPPED)
@@ -188,6 +222,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
         topic_partition_offset.partition_id,
         topic_partition_offset.offset,
     }};
+
     for (auto try_count = 0; try_count < max_retries && !committed; ++try_count)
     {
         try
@@ -209,7 +244,8 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
         catch (const cppkafka::HandleException & e)
         {
             // If there were actually no offsets to commit, return. Retrying won't solve
-            // anything here
+            // anything here.
+            // Furthermore, we don't consider failing to commit as an error, because the Kafka is not the primary store for committed offsets.
             if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                 committed = true;
             else
@@ -261,6 +297,56 @@ KafkaConsumer2::TopicPartitionOffsets KafkaConsumer2::getAllTopicPartitionOffset
     return topic_partition_offsets;
 }
 
+KafkaConsumer2::Stat KafkaConsumer2::getStat() const
+{
+    CurrentOffsetsMap current_offsets;
+    cppkafka::TopicPartitionList cppkafka_offsets;
+    std::string consumer_id{};
+
+    if (consumer)
+    {
+        const auto cpp_assignments = consumer->get_assignment();
+        cppkafka_offsets = consumer->get_offsets_position(cpp_assignments);
+        consumer_id = consumer->get_member_id();
+    }
+
+    for (const auto & tpoffset : cppkafka_offsets)
+        current_offsets.emplace(TopicPartition{tpoffset.get_topic(), tpoffset.get_partition()}, tpoffset.get_offset());
+
+    return {
+        .current_offsets = std::move(current_offsets),
+        .consumer_id = std::move(consumer_id),
+        .rdkafka_stat = std::invoke(
+            [&]()
+            {
+                std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+                return rdkafka_stat;
+            }),
+        .num_messages_read = num_messages_read.load(),
+        .exceptions_buffer = std::invoke(
+            [&]()
+            {
+                std::lock_guard<std::mutex> lock(exception_mutex);
+                return exceptions_buffer;
+            }),
+    };
+}
+
+void KafkaConsumer2::setExceptionInfo(const std::string & text, bool with_stacktrace)
+{
+    std::string enriched_text = text;
+
+    if (with_stacktrace)
+    {
+        if (!enriched_text.ends_with('\n'))
+            enriched_text.append(1, '\n');
+        enriched_text.append(StackTrace().toString());
+    }
+
+    std::lock_guard<std::mutex> lock(exception_mutex);
+    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
+}
+
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
     while (current != messages.end())
@@ -281,7 +367,10 @@ void KafkaConsumer2::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    StorageKafkaUtils::eraseMessageErrors(messages, log);
+    StorageKafkaUtils::eraseMessageErrors(
+        messages,
+        log,
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
     current = messages.begin();
 }
 

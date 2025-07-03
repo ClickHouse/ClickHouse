@@ -1,28 +1,27 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Core/Defines.h>
 #include <Common/Exception.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Core/Defines.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/searchAnyAll.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GinFilter.h>
+#include <Interpreters/ITokenExtractor.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Common/OptimizedRegularExpression.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/searchAnyAll.h>
-#include <Core/Field.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <base/types.h>
+
 #include <algorithm>
 
 namespace DB
@@ -150,41 +149,14 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
         auto row_id = start_row_id;
 
         bool need_to_write = false;
-        if (isArray(column_with_type.type))
+        for (size_t i = 0; i < rows_read; ++i)
         {
-            const auto & column_array = assert_cast<const ColumnArray &>(*column);
-            const auto & column_offsets = column_array.getOffsets();
-            const auto & column_key = column_array.getData();
-
-            for (size_t i = 0; i < rows_read; ++i)
-            {
-                size_t element_start_row = column_offsets[current_position - 1];
-                size_t elements_size = column_offsets[current_position] - element_start_row;
-
-                for (size_t row_num = 0; row_num < elements_size; ++row_num)
-                {
-                    auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
-                    store->incrementCurrentSizeBy(ref.size);
-                }
-                current_position += 1;
-                row_id++;
-
-                if (store->needToWrite())
-                    need_to_write = true;
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < rows_read; ++i)
-            {
-                auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
-                store->incrementCurrentSizeBy(ref.size);
-                row_id++;
-                if (store->needToWrite())
-                    need_to_write = true;
-            }
+            auto ref = column->getDataAt(current_position + i);
+            addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+            store->incrementCurrentSizeBy(ref.size);
+            row_id++;
+            if (store->needToWrite())
+                need_to_write = true;
         }
         granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
         if (need_to_write)
@@ -232,7 +204,6 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_SEARCH_ANY,
          RPNElement::FUNCTION_SEARCH_ALL,
-         RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MULTI_SEARCH,
@@ -292,8 +263,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             rpn_stack.emplace_back(exists_in_gin_filter, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS
-             || element.function == RPNElement::FUNCTION_HAS)
+             || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
 
@@ -444,8 +414,6 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
         }
         else if (function_name == "equals" ||
                  function_name == "notEquals" ||
-                 function_name == "has" ||
-                 function_name == "mapContainsKey" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name == "hasToken" ||
@@ -477,97 +445,26 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
 
 bool MergeTreeIndexConditionGin::traverseASTEquals(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & key_ast,
+    const RPNBuilderTreeNode & index_column_ast,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out)
 {
-    const String& function_name = function_node.getFunctionName();
+    size_t index_column_num = 0;
+    bool index_column_exists = header.has(index_column_ast.getColumnName());
+    if (!index_column_exists)
+        return false;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    Field const_value = value_field;
-    size_t key_column_num = 0;
-    bool key_exists = header.has(key_ast.getColumnName());
-    bool map_key_exists = header.has(fmt::format("mapKeys({})", key_ast.getColumnName()));
-
-    if (key_ast.isFunction())
-    {
-        const auto function = key_ast.toFunctionNode();
-        if (function.getFunctionName() == "arrayElement")
-        {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
-              * we return default the value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exist.
-              */
-            if (value_field == value_type->getDefault())
-                return false;
-
-            auto first_argument = function.getArgumentAt(0);
-            const auto map_column_name = first_argument.getColumnName();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
-
-            if (header.has(map_keys_index_column_name))
-            {
-                auto argument = function.getArgumentAt(1);
-                DataTypePtr const_type;
-                if (argument.tryGetConstant(const_value, const_type))
-                {
-                    auto const_data_type = WhichDataType(const_type);
-                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
-                        return false;
-
-                    key_column_num = header.getPositionByName(map_keys_index_column_name);
-                    key_exists = true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            else if (header.has(map_values_index_column_name))
-            {
-                key_column_num = header.getPositionByName(map_values_index_column_name);
-                key_exists = true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-    }
-
-    if (!key_exists && !map_key_exists)
-        return false;
-
-    if (map_key_exists && (function_name == "has" || function_name == "mapContainsKey"))
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_HAS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
-    if (function_name == "has")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_HAS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
+    const Field & const_value = value_field;
+    const String & function_name = function_node.getFunctionName();
 
     if (function_name == "notEquals")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -576,29 +473,11 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "equals")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
-    if (function_name == "like")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
-        return true;
-    }
-    if (function_name == "notLike")
-    {
-        out.key_column = key_column_num;
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
     if (function_name == "searchAny" || function_name == "searchAll")
@@ -632,14 +511,14 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             gin_filters.emplace_back(GinFilter(gin_filter_params));
             token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
         }
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -648,7 +527,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "startsWith")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -657,7 +536,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "endsWith")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -666,7 +545,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "multiSearchAny")
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
@@ -684,12 +563,31 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.set_gin_filters = std::move(gin_filters);
         return true;
     }
-    if (function_name == "match")
+    /// Currently, not all token extractors support LIKE-style matching.
+    if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        out.key_column = key_column_num;
+        out.key_column = index_column_num;
+        out.function = RPNElement::FUNCTION_EQUALS;
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "notLike" && token_extractor->supportsStringLike())
+    {
+        out.key_column = index_column_num;
+        out.function = RPNElement::FUNCTION_NOT_EQUALS;
+        out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
+        return true;
+    }
+    if (function_name == "match" && token_extractor->supportsStringLike())
+    {
+        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
 
-        auto & value = const_value.safeGet<String>();
+        const auto & value = const_value.safeGet<String>();
         String required_substring;
         bool dummy_is_trivial;
         bool dummy_required_substring_is_prefix;
@@ -990,13 +888,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
     WhichDataType data_type(index.data_types[0]);
-    if (data_type.isArray())
-    {
-        /// TODO consider removing support for Array
-        const auto & gin_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
-        data_type = WhichDataType(gin_type.getNestedType());
-    }
-    else if (data_type.isLowCardinality())
+    if (data_type.isLowCardinality())
     {
         /// TODO Consider removing support for LowCardinality. The index exists for high-cardinality cases.
         const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
@@ -1006,7 +898,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+            "Text index can be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`");
 }
 
 }

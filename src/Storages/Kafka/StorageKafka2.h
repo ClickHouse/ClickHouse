@@ -5,6 +5,7 @@
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
@@ -58,6 +59,14 @@ class StorageKafka2 final : public IStorage, WithContext
     friend KafkaInterceptors;
 
 public:
+    using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
+    struct SafeConsumers
+    {
+        std::shared_ptr<IStorage> storage_ptr;
+        std::unique_lock<std::mutex> lock;
+        std::vector<KeeperHandlingConsumerPtr> & consumers;
+    };
+
     StorageKafka2(
         const StorageID & table_id_,
         ContextPtr context_,
@@ -101,9 +110,9 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
-private:
-    using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 
+private:
     // Stream thread
     struct TaskContext
     {
@@ -143,7 +152,11 @@ private:
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
-    std::vector<KeeperHandlingConsumerPtr> consumers;
+
+    std::mutex consumers_mutex;
+    std::condition_variable cv;
+    std::vector<KeeperHandlingConsumerPtr> consumers TSA_GUARDED_BY(consumers_mutex);
+
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
     /// For memory accounting in the librdkafka threads.
@@ -159,6 +172,7 @@ private:
     BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
+
     bool activate();
     void activateAndReschedule();
     void partialShutdown();
@@ -167,7 +181,7 @@ private:
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink);
     // Returns full producer related configuration, also the configuration
     // contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();
@@ -184,9 +198,15 @@ private:
         KeeperSessionEnded,
         NoPartitions,
         NoMessages,
+        ConsumerNotAvailable,
     };
 
     std::optional<StallReason> streamToViews(size_t idx);
+
+    /// KeeperHandlingConsumer has to be acquired before polling it
+    KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
+    void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
+    void cleanConsumers();
 
     std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch);
 

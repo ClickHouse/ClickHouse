@@ -40,6 +40,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    bool hasCorrelatedExpressions() const override { return false; }
+
 private:
     void updateOutputHeader() override
     {

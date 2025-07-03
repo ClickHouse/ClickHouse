@@ -33,6 +33,7 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
+
 #include <azure/core/credentials/credentials.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
@@ -40,6 +41,7 @@
 
 namespace DB::AzureBlobStorage
 {
+
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
 
@@ -50,9 +52,7 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
-
 }
-
 
 #endif
 
@@ -109,6 +109,7 @@ struct RelativePathWithMetadata
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
 };
 
 struct ObjectKeyWithMetadata
@@ -300,12 +301,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
-
-
-private:
-    mutable std::mutex throttlers_mutex;
-    ThrottlerPtr remote_read_throttler;
-    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

@@ -4,8 +4,10 @@
 #include <optional>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
+#include <Common/DateLUT.h>
 #include <Common/randomSeed.h>
 
 namespace DB
@@ -96,9 +98,11 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
 void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
 {
     keeper = keeper_;
-    std::lock_guard lock(mutex);
-    permanent_locks.clear();
-    tmp_locks.clear();
+    {
+        std::lock_guard lock(topic_partition_locks_mutex);
+        permanent_locks.clear();
+        tmp_locks.clear();
+    }
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
@@ -107,6 +111,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
 
 std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll()
 {
+    chassert(isInUse());
     LOG_TRACE(log, "Polling consumer {} for events", idx);
     /// Always poll consumer for events to enable librdkafka callbacks to be handled
     kafka_consumer->pollEvents();
@@ -120,7 +125,7 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 
     {
         // Getting the metadata from Kafka might take a long time, let's not hold the mutex for too long
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(topic_partition_locks_mutex);
         tmp_locks.clear();
     }
     if (keeper->expired())
@@ -129,6 +134,7 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         return CannotPollReason::KeeperSessionEnded;
     }
 
+    // TODO(antaljanosbenjamin): this can be simplified to use only TopicPartitions instead of TopicPartitionOffsets
     auto all_topic_partitions = kafka_consumer->getAllTopicPartitionOffsets();
     if (all_topic_partitions.empty())
     {
@@ -137,9 +143,9 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
-
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(topic_partition_locks_mutex);
+        // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
         updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
         lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
         poll_count = 0;
@@ -148,6 +154,10 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         appendToAssignedTopicPartitions(permanent_locks);
         appendToAssignedTopicPartitions(tmp_locks);
     }
+    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called in-between the two locks.
+    // However this is not a problem, because in `getStat` the main source of information is the acquired locks and the information from KafkaConsumer2
+    // about the offset are only used to provide more recent information about the offsets in case the consumer is polling message while `getStat` is called.
+    // Here this is not the case, so the offset values in the lock infos are good enough.
     rollbackToCommittedOffsets();
 
     if (assigned_topic_partitions.empty())
@@ -158,7 +168,8 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     return std::nullopt;
 }
 
-KeeperHandlingConsumer::LockedTopicPartitionInfo & KeeperHandlingConsumer::getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(mutex)
+KeeperHandlingConsumer::LockedTopicPartitionInfo &
+KeeperHandlingConsumer::getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex)
 {
     auto locks_it = sticky_locks.find(topic_partition);
 
@@ -279,7 +290,8 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
     }
 }
 
-void KeeperHandlingConsumer::lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, const bool has_replica_without_locks) TSA_REQUIRES(mutex)
+void KeeperHandlingConsumer::lockTemporaryLocksLocked(
+    const TopicPartitions & available_topic_partitions, const bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex)
 {
     /// There are no available topic partitions, so drop the quota to 0
     if (available_topic_partitions.empty())
@@ -332,7 +344,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(const TopicPartitions & av
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
 // Otherwise, we try to lock free partitions one by one.
 void KeeperHandlingConsumer::updatePermanentLocksLocked(
-    const TopicPartitions & available_topic_partitions, const size_t topic_partitions_count, const size_t active_replica_count) TSA_REQUIRES(mutex)
+    const TopicPartitions & available_topic_partitions, const size_t topic_partitions_count, const size_t active_replica_count)
+    TSA_REQUIRES(topic_partition_locks_mutex)
 {
     LOG_TRACE(log, "Starting to update permanent locks");
     chassert(active_replica_count > 0 && "There should be at least one active replica, because we are active");
@@ -400,27 +413,31 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
 {
     TopicPartitionOffsets offsets_to_rollback;
     offsets_to_rollback.reserve(assigned_topic_partitions.size());
-    std::lock_guard lock(mutex);
-
-    for(const auto & topic_partition : assigned_topic_partitions)
     {
-        auto & lock_info = getTopicPartitionLockLocked(topic_partition);
-        offsets_to_rollback.push_back(TopicPartitionOffset{{topic_partition}, lock_info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET)});
+        std::lock_guard lock(topic_partition_locks_mutex);
+        for (const auto & topic_partition : assigned_topic_partitions)
+        {
+            auto & lock_info = getTopicPartitionLockLocked(topic_partition);
+            offsets_to_rollback.push_back(
+                TopicPartitionOffset{{topic_partition}, lock_info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET)});
+        }
     }
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
 }
 
-void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const int64_t intent)
+void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
+    // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is not expensive to get it.
     LOG_TEST(
         log,
-        "Saving intent of {} for topic-partition [{}:{}]",
+        "Saving intent of {} for topic-partition [{}:{}] at offset {}",
         intent,
         topic_partition.topic,
-        topic_partition.partition_id);
+        topic_partition.partition_id,
+        offset.value_or(KafkaConsumer2::INVALID_OFFSET));
 
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(topic_partition_locks_mutex);
         getTopicPartitionLockLocked(topic_partition).intent_size = intent;
     }
 
@@ -440,8 +457,10 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
     auto & topic_partition = assigned_topic_partitions[topic_partition_index_to_consume_from];
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
     writeTopicPartitionInfoToKeeper(partition_prefix / commit_file_name, toString(new_offset));
+    last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
+    ++num_commits;
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(topic_partition_locks_mutex);
         auto & lock_info = getTopicPartitionLockLocked(topic_partition);
         lock_info.committed_offset = new_offset;
         lock_info.intent_size.reset();
@@ -468,13 +487,32 @@ void KeeperHandlingConsumer::writeTopicPartitionInfoToKeeper(const std::filesyst
         zkutil::KeeperMultiException::check(code, ops, responses);
 }
 
+bool KeeperHandlingConsumer::startUsing(const ConfigCreator & config_creator)
+{
+    auto create_consumer = !kafka_consumer->hasConsumer();
+    if (create_consumer)
+        kafka_consumer->createConsumer(config_creator(kafka_consumer));
+
+    in_use = true;
+
+    return create_consumer;
+}
+
+void KeeperHandlingConsumer::stopUsing()
+{
+    in_use = false;
+    last_used_usec = timeInMicroseconds(std::chrono::system_clock::now());
+}
+
+CppKafkaConsumerPtr KeeperHandlingConsumer::moveConsumer() const
+{
+    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use!");
+    return kafka_consumer->moveConsumer();
+}
+
 std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(MessageSinkFunction & message_sink)
 {
-    if (assigned_topic_partitions.empty())
-    {
-        LOG_WARNING(log, "No topic partitions to consume from, probably prepareToPoll was not called previously");
-        return std::nullopt;
-    }
+    chassert(isInUse() && !assigned_topic_partitions.empty());
 
     ++poll_count;
 
@@ -487,21 +525,25 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
         topic_partition.partition_id,
         topic_partition_index_to_consume_from);
 
-    const auto intent_size = std::invoke([&]{
-        std::lock_guard lock(mutex);
-        return getTopicPartitionLockLocked(topic_partition).intent_size;
-    });
+    const auto [committed_offset, intent_size] = std::invoke(
+        [&]
+        {
+            std::lock_guard lock(topic_partition_locks_mutex);
+            const auto & lock_info = getTopicPartitionLockLocked(topic_partition);
+            return std::make_pair(lock_info.committed_offset, lock_info.intent_size);
+        });
 
     MessageInfo message_info(*kafka_consumer);
     ReadBufferPtr buf;
-    size_t consumed_messages = 0;
+    uint64_t consumed_messages = 0;
     int64_t last_read_offset = 0;
     while (true)
     {
         buf = kafka_consumer->consume(topic_partition, intent_size);
+        last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
         if (buf)
         {
-            consumed_messages++;
+            ++consumed_messages;
             last_read_offset = message_info.currentOffset();
         }
         /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
@@ -510,10 +552,76 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             if (consumed_messages == 0)
                 return std::nullopt;
 
-            saveIntentSize(topic_partition, consumed_messages);
+            saveIntentSize(topic_partition, committed_offset, consumed_messages);
             return OffsetGuard(*this, last_read_offset + 1);
         }
     }
+}
+
+StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
+{
+    using CommittedOffsetAndIntentSize = std::pair<int64_t, std::optional<uint64_t>>;
+    using CommittedOffsetAndIntentSizes = std::unordered_map<
+        KafkaConsumer2::TopicPartition,
+        CommittedOffsetAndIntentSize,
+        KafkaConsumer2::TopicPartitionHash,
+        KafkaConsumer2::TopicPartitionEquality>;
+    CommittedOffsetAndIntentSizes committed_offsets_and_intent_sizes;
+    KafkaConsumer2::Stat consumer_stat;
+    {
+        std::lock_guard lock(topic_partition_locks_mutex);
+        for (const auto & [topic_partition, info] : permanent_locks)
+            committed_offsets_and_intent_sizes[topic_partition]
+                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size};
+        for (const auto & [topic_partition, info] : tmp_locks)
+            committed_offsets_and_intent_sizes[topic_partition]
+                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size};
+        // TODO(antaljanosbenjamin): make sure this is still safe even if the consumer is being closed, maybe it can be by protecting that in `StorageKafka2` similarly to how it is done in StorageKafka
+        consumer_stat = kafka_consumer->getStat();
+    }
+
+    using Assignment = StorageKafkaUtils::ConsumerStatistics::Assignment;
+    using Assignments = StorageKafkaUtils::ConsumerStatistics::Assignments;
+
+    Assignments assignments;
+    assignments.reserve(committed_offsets_and_intent_sizes.size());
+
+    /// It is possible that some topic partitions are already locked, but they were not assigned to the consumer yet. In that case the committed offset is the current offset.
+    /// See comment in `prepareToPoll`.
+    for (const auto & [topic_partition, committed_offset_and_intent_size] : committed_offsets_and_intent_sizes)
+    {
+        int64_t offset = committed_offset_and_intent_size.first;
+        if (auto it = consumer_stat.current_offsets.find(topic_partition); it != consumer_stat.current_offsets.end())
+            offset = it->second;
+
+        assignments.push_back(Assignment{
+            .topic_str = topic_partition.topic,
+            .partition_id = topic_partition.partition_id,
+            .current_offset = offset,
+            .intent_size = committed_offset_and_intent_size.second,
+        });
+    }
+
+    return {
+        .consumer_id = consumer_stat.consumer_id,
+        .assignments = std::move(assignments),
+        .last_poll_time = last_poll_timestamp.load(),
+        .num_messages_read = consumer_stat.num_messages_read,
+        .last_commit_timestamp = last_commit_timestamp.load(),
+        .last_rebalance_timestamp = 0,
+        .num_commits = num_commits.load(),
+        .num_rebalance_assignments = 0,
+        .num_rebalance_revocations = 0,
+        .exceptions_buffer = std::move(consumer_stat.exceptions_buffer),
+        .in_use = in_use.load(),
+        .last_used_usec = last_used_usec.load(),
+        .rdkafka_stat = std::move(consumer_stat.rdkafka_stat),
+    };
+}
+
+IKafkaExceptionInfoSinkPtr KeeperHandlingConsumer::getExceptionInfoSink() const
+{
+    return kafka_consumer;
 }
 
 fs::path KeeperHandlingConsumer::getTopicPartitionPath(const TopicPartition & topic_partition)
