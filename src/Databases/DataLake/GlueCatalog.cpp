@@ -1,5 +1,6 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
 
 #if USE_AWS_S3 && USE_AVRO
 
@@ -64,25 +65,24 @@ namespace DB::StorageObjectStorageSetting
 namespace DB::DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsString aws_access_key_id;
+    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsString region;
 }
-
 
 namespace DataLake
 {
 
 GlueCatalog::GlueCatalog(
-    const String & access_key_id,
-    const String & secret_access_key,
-    const String & region_,
     const String & endpoint,
     DB::ContextPtr context_,
     const DB::DatabaseDataLakeSettings & settings_,
     DB::ASTPtr table_engine_definition_)
     : ICatalog("")
     , DB::WithContext(context_)
-    , log(getLogger("GlueCatalog(" + region_ + ")"))
-    , credentials(access_key_id, secret_access_key)
-    , region(region_)
+    , log(getLogger("GlueCatalog(" + settings_[DB::DatabaseDataLakeSetting::region].value + ")"))
+    , credentials(settings_[DB::DatabaseDataLakeSetting::aws_access_key_id].value, settings_[DB::DatabaseDataLakeSetting::aws_secret_access_key].value)
+    , region(settings_[DB::DatabaseDataLakeSetting::region].value)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
 {
@@ -394,67 +394,58 @@ bool GlueCatalog::empty() const
 
 bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
-    String metadata_path;
-    if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
-        table_specific_properties.has_value())
+    if (!metadata_object)
     {
-        auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
-        if (!metadata_location.empty())
+        String metadata_path;
+        if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
+            table_specific_properties.has_value())
         {
-            const auto data_location = table_metadata.getLocation();
-            if (metadata_location.starts_with(data_location))
-            {
-                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
-                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+            metadata_path = table_specific_properties->iceberg_metadata_file_location;
+            if (metadata_path.starts_with("s3:/"))
+                metadata_path = metadata_path.substr(5);
+
+            // Delete bucket
+            std::size_t pos = metadata_path.find('/');
+            if (pos != std::string::npos) {
+                metadata_path = metadata_path.substr(pos + 1);
             }
         }
+        else 
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
-        metadata_path = table_metadata.getLocation() + "/" + metadata_location;
-        if (metadata_path.starts_with("s3:/"))
-            metadata_path = metadata_path.substr(5);
+        DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
+        DB::ASTs args = storage->engine->arguments->children;
 
-        // Delete bucket
-        std::size_t pos = metadata_path.find('/');
-        if (pos != std::string::npos) {
-            metadata_path = metadata_path.substr(pos + 1);
+        auto table_endpoint = settings[DB::DatabaseDataLakeSetting::storage_endpoint].value;
+        if (args.empty())
+            args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
+        else
+            args[0] = std::make_shared<DB::ASTLiteral>(table_endpoint);
+
+        if (args.size() == 1 && table_metadata.hasStorageCredentials())
+        {
+            auto storage_credentials = table_metadata.getStorageCredentials();
+            if (storage_credentials)
+                storage_credentials->addCredentialsToEngineArgs(args);
         }
+
+        auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
+        storage_settings->loadFromSettingsChanges(settings.allChanged());
+        auto configuration = std::make_shared<DB::StorageS3DeltaLakeConfiguration>(storage_settings);
+        DB::StorageObjectStorage::Configuration::initialize(*configuration, args, getContext(), false);
+
+        auto object_storage = configuration->createObjectStorage(getContext(), true);
+        const auto & read_settings = getContext()->getReadSettings();
+
+        DB::StoredObject metadata_stored_object(metadata_path);
+        auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
+        String metadata_file;
+        readString(metadata_file, *read_buf);
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var result = parser.parse(metadata_file);
+        metadata_object = result.extract<Poco::JSON::Object::Ptr>();
     }
-    else 
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
-
-    DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
-    DB::ASTs args = storage->engine->arguments->children;
-
-    auto table_endpoint = settings[DB::DatabaseDataLakeSetting::storage_endpoint].value;
-    if (args.empty())
-        args.emplace_back(std::make_shared<DB::ASTLiteral>(table_endpoint));
-    else
-        args[0] = std::make_shared<DB::ASTLiteral>(table_endpoint);
-
-    if (args.size() == 1 && table_metadata.hasStorageCredentials())
-    {
-        auto storage_credentials = table_metadata.getStorageCredentials();
-        if (storage_credentials)
-            storage_credentials->addCredentialsToEngineArgs(args);
-    }
-
-    auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
-    storage_settings->loadFromSettingsChanges(settings.allChanged());
-    auto configuration = std::make_shared<DB::StorageS3DeltaLakeConfiguration>(storage_settings);
-    DB::StorageObjectStorage::Configuration::initialize(*configuration, args, getContext(), false);
-
-    auto object_storage = configuration->createObjectStorage(getContext(), true);
-    const auto & read_settings = getContext()->getReadSettings();
-
-    DB::StoredObject metadata_stored_object(metadata_path);
-    auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
-    String metadata_file;
-    readString(metadata_file, *read_buf);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var result = parser.parse(metadata_file);
-    auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
-
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray("schemas");
     for (size_t i = 0; i < schemas->size(); ++i)
@@ -462,14 +453,12 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         auto schema = schemas->getObject(static_cast<UInt32>(i));
         if (schema->getValue<Int64>("schema-id") == current_schema_id)
         {
-            auto fields = schema->getArray("fields");
+            auto fields = schema->getArray(Iceberg::f_fields);
             for (size_t j = 0; j < fields->size(); ++j)
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>("name") == column_name)
-                {
-                    return field->getValue<String>("type") == "timestamptz";
-                }
+                if (field->getValue<String>(Iceberg::f_name) == column_name)
+                    return field->getValue<String>(Iceberg::f_type) == Iceberg::f_timestamptz;
             }            
         }
     }

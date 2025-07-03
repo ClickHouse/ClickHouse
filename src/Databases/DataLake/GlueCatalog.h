@@ -22,9 +22,6 @@ class GlueCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     GlueCatalog(
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & region,
         const String & endpoint,
         DB::ContextPtr context_,
         const DB::DatabaseDataLakeSettings & settings_,
@@ -74,6 +71,8 @@ private:
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
+
+    mutable Poco::JSON::Object::Ptr metadata_object;
 };
 
 }
