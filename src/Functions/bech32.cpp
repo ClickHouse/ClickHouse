@@ -26,7 +26,7 @@ namespace
  */
 constexpr size_t max_address_len = 90;
 constexpr size_t max_data_len = 55;
-constexpr size_t max_hrp_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
+constexpr size_t max_human_readable_part_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
 
 using bech32_data = std::vector<uint8_t>;
 
@@ -110,7 +110,7 @@ public:
     static constexpr auto name = "bech32Encode";
 
     /// Default to the new and improved Bech32m algorithm
-    static constexpr int default_witver = 1;
+    static constexpr int default_witness_version = 1;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
 
@@ -129,16 +129,16 @@ public:
         if (arguments.size() < 2)
             throw Exception(
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least two string arguments (hrp, data) are required for function {}",
+                "At least two string arguments (human_readable_part, data) are required for function {}",
                 getName());
 
         if (arguments.size() > 3)
             throw Exception(
                 ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "A maximum of 3 arguments (hrp, data, witness version) are allowed for function {}",
+                "A maximum of 3 arguments (human_readable_part, data, witness_version) are allowed for function {}",
                 getName());
 
-        /// check first two args, hrp and input string
+        /// check first two args, human_readable_part and input string
         for (size_t i = 0; i < 2; ++i)
             if (!WhichDataType(arguments[i]).isStringOrFixedString())
                 throw Exception(
@@ -165,12 +165,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        bool have_witver = arguments.size() == 3;
+        bool have_witness_version = arguments.size() == 3;
 
         ColumnPtr col0 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col1 = arguments[1].column->convertToFullColumnIfConst();
         ColumnPtr col2;
-        if (have_witver)
+        if (have_witness_version)
             col2 = arguments[2].column;
 
         if (const ColumnString * col0_string = checkAndGetColumn<ColumnString>(col0.get()))
@@ -178,7 +178,7 @@ public:
             const ColumnString::Chars & col0_vec = col0_string->getChars();
             const ColumnString::Offsets * col0_offsets = &col0_string->getOffsets();
 
-            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver);
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version);
         }
 
         if (const ColumnFixedString * col0_fixed_string = checkAndGetColumn<ColumnFixedString>(col0.get()))
@@ -186,7 +186,7 @@ public:
             const ColumnString::Chars & col0_vec = col0_fixed_string->getChars();
             const ColumnString::Offsets * col0_offsets = nullptr; /// dummy
 
-            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witver, col0_fixed_string->getN());
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, col0_fixed_string->getN());
         }
 
         throw Exception(
@@ -200,7 +200,7 @@ private:
         const ColumnPtr & col1,
         const ColumnPtr & col2,
         const size_t input_rows_count,
-        const bool have_witver = false,
+        const bool have_witness_version = false,
         const size_t col0_width = 0) const
     {
         if (const ColumnString * col1_str_ptr = checkAndGetColumn<ColumnString>(col1.get()))
@@ -208,7 +208,7 @@ private:
             const ColumnString::Chars & col1_vec = col1_str_ptr->getChars();
             const ColumnString::Offsets * col1_offsets = &col1_str_ptr->getOffsets();
 
-            return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width);
+            return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width);
         }
 
         if (const ColumnFixedString * col1_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col1.get()))
@@ -217,21 +217,21 @@ private:
             const ColumnString::Offsets * col1_offsets = nullptr; /// dummy
 
             return execute(
-                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witver, col0_width, col1_fstr_ptr->getN());
+                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width, col1_fstr_ptr->getN());
         }
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col1->getName(), getName());
     }
 
     static ColumnPtr execute(
-        const ColumnString::Chars & hrp_vec,
-        const ColumnString::Offsets * hrp_offsets,
+        const ColumnString::Chars & human_readable_part_vec,
+        const ColumnString::Offsets * human_readable_part_offsets,
         const ColumnString::Chars & data_vec,
         const ColumnString::Offsets * data_offsets,
-        const ColumnPtr & witver_col,
+        const ColumnPtr & witness_version_col,
         const size_t input_rows_count,
-        const bool have_witver = false,
-        const size_t hrp_width = 0,
+        const bool have_witness_version = false,
+        const size_t human_readable_part_width = 0,
         const size_t data_width = 0)
     {
         /// outputs
@@ -245,54 +245,54 @@ private:
         char * out_begin = reinterpret_cast<char *>(out_vec.data());
         char * out_pos = out_begin;
 
-        size_t hrp_prev_offset = 0;
+        size_t human_readable_part_prev_offset = 0;
         size_t data_prev_offset = 0;
 
         /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t hrp_zero_offset = hrp_width == 0 ? 1 : 0;
+        size_t human_readable_part_zero_offset = human_readable_part_width == 0 ? 1 : 0;
         size_t data_zero_offset = data_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t hrp_new_offset = hrp_width == 0 ? (*hrp_offsets)[i] : hrp_prev_offset + hrp_width;
+            size_t human_readable_part_new_offset = human_readable_part_width == 0 ? (*human_readable_part_offsets)[i] : human_readable_part_prev_offset + human_readable_part_width;
             size_t data_new_offset = data_width == 0 ? (*data_offsets)[i] : data_prev_offset + data_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (hrp_width > 0 && hrp_vec[hrp_new_offset - 1] == 0 && hrp_new_offset > hrp_prev_offset)
-                --hrp_new_offset;
+            while (human_readable_part_width > 0 && human_readable_part_vec[human_readable_part_new_offset - 1] == 0 && human_readable_part_new_offset > human_readable_part_prev_offset)
+                --human_readable_part_new_offset;
 
             /// max encodable data to stay within 90-char limit on Bech32 output
-            /// hrp must be at least 1 character and no more than 83
+            /// human_readable_part must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
-            auto hrp_len = hrp_new_offset - hrp_prev_offset - hrp_zero_offset;
-            if (data_len > max_data_len || hrp_len > max_hrp_len || hrp_len < 1)
+            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset - human_readable_part_zero_offset;
+            if (data_len > max_data_len || human_readable_part_len > max_human_readable_part_len || human_readable_part_len < 1)
             {
                 finalizeRow(out_offsets, out_pos, out_begin, i);
 
-                updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+                updatePrevOffset(human_readable_part_prev_offset, human_readable_part_new_offset, human_readable_part_width);
                 updatePrevOffset(data_prev_offset, data_new_offset, data_width);
                 continue;
             }
 
-            std::string hrp(
-                reinterpret_cast<const char *>(&hrp_vec[hrp_prev_offset]),
-                reinterpret_cast<const char *>(&hrp_vec[hrp_new_offset - hrp_zero_offset]));
+            std::string human_readable_part(
+                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_prev_offset]),
+                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_new_offset - human_readable_part_zero_offset]));
 
             bech32_data input(
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset - data_zero_offset]));
 
-            uint8_t witver = have_witver ? witver_col->getUInt(i) : default_witver;
+            uint8_t witness_version = have_witness_version ? witness_version_col->getUInt(i) : default_witness_version;
 
             bech32_data input_5bit;
             convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
-            std::string address = bech32::encode(hrp, input_5bit, witver > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
+            std::string address = bech32::encode(human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
             if (address.empty() || address.size() > max_address_len)
             {
                 finalizeRow(out_offsets, out_pos, out_begin, i);
 
-                updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+                updatePrevOffset(human_readable_part_prev_offset, human_readable_part_new_offset, human_readable_part_width);
                 updatePrevOffset(data_prev_offset, data_new_offset, data_width);
                 continue;
             }
@@ -303,7 +303,7 @@ private:
 
             finalizeRow(out_offsets, out_pos, out_begin, i);
 
-            updatePrevOffset(hrp_prev_offset, hrp_new_offset, hrp_width);
+            updatePrevOffset(human_readable_part_prev_offset, human_readable_part_new_offset, human_readable_part_width);
             updatePrevOffset(data_prev_offset, data_new_offset, data_width);
         }
 
@@ -322,7 +322,7 @@ class DecodeFromBech32Representation : public IFunction
 {
 public:
     static constexpr auto name = "bech32Decode";
-    static constexpr size_t tuple_size = 2; /// (hrp, data)
+    static constexpr size_t tuple_size = 2; /// (human_readable_part, data)
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBech32Representation>(); }
 
@@ -383,20 +383,20 @@ private:
         auto col0_res = ColumnString::create();
         auto col1_res = ColumnString::create();
 
-        ColumnString::Chars & hrp_vec = col0_res->getChars();
-        ColumnString::Offsets & hrp_offsets = col0_res->getOffsets();
+        ColumnString::Chars & human_readable_part_vec = col0_res->getChars();
+        ColumnString::Offsets & human_readable_part_offsets = col0_res->getOffsets();
 
         ColumnString::Chars & data_vec = col1_res->getChars();
         ColumnString::Offsets & data_offsets = col1_res->getOffsets();
 
-        hrp_offsets.resize(input_rows_count);
+        human_readable_part_offsets.resize(input_rows_count);
         data_offsets.resize(input_rows_count);
 
-        hrp_vec.resize((max_hrp_len + 1 /* trailing 0 */) * input_rows_count);
+        human_readable_part_vec.resize((max_human_readable_part_len + 1 /* trailing 0 */) * input_rows_count);
         data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
 
-        char * hrp_begin = reinterpret_cast<char *>(hrp_vec.data());
-        char * hrp_pos = hrp_begin;
+        char * human_readable_part_begin = reinterpret_cast<char *>(human_readable_part_vec.data());
+        char * human_readable_part_pos = human_readable_part_begin;
 
         char * data_begin = reinterpret_cast<char *>(data_vec.data());
         char * data_pos = data_begin;
@@ -419,7 +419,7 @@ private:
             /// enforce char limit
             if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
             {
-                finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
+                finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
                 finalizeRow(data_offsets, data_pos, data_begin, i);
 
                 updatePrevOffset(prev_offset, new_offset, col_width);
@@ -437,18 +437,18 @@ private:
                 || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end()))
                 || data_8bit.empty())
             {
-                finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
+                finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
                 finalizeRow(data_offsets, data_pos, data_begin, i);
 
                 updatePrevOffset(prev_offset, new_offset, col_width);
                 continue;
             }
 
-            /// store hrp output in hrp_pos
-            std::memcpy(hrp_pos, dec.hrp.c_str(), dec.hrp.size());
-            hrp_pos += dec.hrp.size();
+            /// store human_readable_part output in human_readable_part_pos
+            std::memcpy(human_readable_part_pos, dec.hrp.data(), dec.hrp.size());
+            human_readable_part_pos += dec.hrp.size();
 
-            finalizeRow(hrp_offsets, hrp_pos, hrp_begin, i);
+            finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
 
             /// store data output in data_pos
             std::memcpy(data_pos, data_8bit.data(), data_8bit.size());
@@ -460,14 +460,14 @@ private:
         }
 
         chassert(
-            static_cast<size_t>(hrp_pos - hrp_begin) <= hrp_vec.size(),
-            fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", hrp_pos - hrp_begin, hrp_vec.size()));
+            static_cast<size_t>(human_readable_part_pos - human_readable_part_begin) <= human_readable_part_vec.size(),
+            fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", human_readable_part_pos - human_readable_part_begin, human_readable_part_vec.size()));
         chassert(
             static_cast<size_t>(data_pos - data_begin) <= data_vec.size(),
             fmt::format(
                 "too small amount of memory was preallocated: needed {}, but have only {}", data_pos - data_begin, data_vec.size()));
 
-        hrp_vec.resize(hrp_pos - hrp_begin);
+        human_readable_part_vec.resize(human_readable_part_pos - human_readable_part_begin);
         data_vec.resize(data_pos - data_begin);
 
         Columns tuple_columns(tuple_size);
