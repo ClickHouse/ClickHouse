@@ -1,0 +1,35 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <split_cache_disk>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </split_cache_disk>
+            <split_s3_cache>
+                <type>cache</type>
+                <disk>split_cache_disk</disk>
+                <path>/split_cache</path>
+                <split_cache>1</split_cache>
+                <system_cache_settings>
+                    <max_size>1Mi</max_size>
+                    <cache_policy>LRU</cache_policy>
+                </system_cache_settings>
+                <data_cache_settings>
+                    <max_size>60Mi</max_size>
+                    <cache_policy>LRU</cache_policy>
+                </data_cache_settings>
+            </split_s3_cache>
+        </disks>
+        <policies>
+            <split_cache>
+                <volumes>
+                    <main>
+                        <disk>split_s3_cache</disk>
+                    </main>
+                </volumes>
+            </split_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>
