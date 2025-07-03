@@ -1,4 +1,6 @@
 #include <Processors/Executors/ExecutorTasks.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -298,6 +300,31 @@ void ExecutorTasks::processAsyncTasks()
         }
     }
 #endif
+}
+
+String ExecutorTasks::dump()
+{
+    std::lock_guard lock(mutex);
+
+    WriteBufferFromOwnString buffer;
+
+    buffer << "ExecutorTasks:\n";
+    buffer << "  num_threads: " << num_threads << "\n";
+    buffer << "  use_threads: " << use_threads << "\n";
+    buffer << "  total_slots: " << total_slots << "\n";
+    buffer << "  finished: " << static_cast<int>(finished) << "\n";
+    buffer << "  has_fast_tasks: " << has_fast_tasks.load(std::memory_order_relaxed) << "\n";
+
+    for (size_t i = 0; i < slot_count.size(); ++i)
+        buffer << "  slot_count[" << i << "]: " << slot_count[i] << "\n";
+
+    // Dump task queues
+    buffer << "  task_queue size: " << task_queue.size() << "\n";
+    buffer << "  fast_task_queue size: " << fast_task_queue.size() << "\n";
+    buffer << "  async_task_queue size: " << async_task_queue.size() << "\n";
+    buffer << "  threads_queue size: " << threads_queue.size() << "\n";
+
+    return buffer.str();
 }
 
 }

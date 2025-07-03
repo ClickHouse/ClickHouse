@@ -107,6 +107,8 @@ public:
     void downscale(size_t slot_id);
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
+
+    String dump();
 };
 
 }

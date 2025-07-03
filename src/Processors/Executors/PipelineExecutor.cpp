@@ -270,7 +270,7 @@ void PipelineExecutor::finalizeExecution()
     }
 
     if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot)
@@ -551,7 +551,8 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         }
         else
         {
-            auto slot = cpu_slots->tryAcquire();
+            auto slot = cpu_slots->acquire();
+            tasks.upscale(slot->slot_id);
             executeSingleThread(0);
         }
     }
