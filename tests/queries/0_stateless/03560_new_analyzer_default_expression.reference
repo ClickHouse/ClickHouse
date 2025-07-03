@@ -1,0 +1,9 @@
+-- { echoOn }
+SELECT * FROM with_default ORDER BY ALL;
+1
+SELECT * FROM with_clashing_name ORDER BY ALL;
+7
+SELECT * FROM with_dependent_defaults ORDER BY ALL;
+7	14	98
+SELECT * FROM with_regular_column ORDER BY ALL;
+2	7	14
