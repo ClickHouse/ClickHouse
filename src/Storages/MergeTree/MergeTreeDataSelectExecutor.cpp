@@ -1015,7 +1015,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
             const auto & part = it->data_part;
-            size_t max_gap_to_merge = roundRowsOrBytesToMarks(
+            size_t min_marks_for_seek = roundRowsOrBytesToMarks(
                 settings[Setting::merge_tree_min_rows_for_seek],
                 settings[Setting::merge_tree_min_bytes_for_seek],
                 part->index_granularity_info.fixed_index_granularity,
@@ -1041,7 +1041,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                             for (; end < mark_range.end && !matching_marks[end]; ++end)
                                 ;
 
-                            if (max_gap_to_merge && end != mark_range.end && end - mark_it <= max_gap_to_merge)
+                            if (min_marks_for_seek && end != mark_range.end && end - mark_it <= min_marks_for_seek)
                             {
                                 /// x x x 1 1 1 0 0 1 x x x. And gap is small enough to merge, skip gap.
                                 mark_it = end + 1;

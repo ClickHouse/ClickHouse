@@ -4934,14 +4934,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(UInt64, max_gap_to_merge_adjacent_ranges, 0, R"(
-Specifies the maximum gap size (in marks) between two adjacent ranges in a MergeTree part while filtering ranges by query condition cache for them to be merged.
-If the gap between two ranges is less than or equal to this value, they will be merged to avoid too many trivial IO requests.
-
-Possible values:
-- 0 — Disable merging of adjacent ranges.
-- Positive integer — Maximum gap size in bytes for merging adjacent ranges.
-        )", 0) \
     DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
 Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
 If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
