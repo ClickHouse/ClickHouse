@@ -162,6 +162,7 @@ def main():
         )
         res = results[-1].is_ok()
 
+    files = []
     if res and JobStages.BUILD in stages:
         run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
@@ -170,8 +171,7 @@ def main():
             targets = "fuzzers"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
-            run_shell("clang-tidy-cache logs", "cat /tmp/clang-tidy-cache.log")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         else:
             targets = "clickhouse-bundle"
         results.append(
@@ -183,7 +183,9 @@ def main():
         )
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            files.append("/tmp/clang-tidy-cache.log")
+            run_shell("clang-tidy-cache logs", "cat /tmp/clang-tidy-cache.log")
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
@@ -213,7 +215,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch, files=files).complete_job()
 
 
 if __name__ == "__main__":

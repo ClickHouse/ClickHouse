@@ -100,6 +100,8 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
 
+# This is a custom version from a PR to the original clang-tidy-cache: https://github.com/matus-chochlik/ctcache/pull/89
+# Once it's merged (if ever) we'll point back to the original matus-chochlik/ctcache repo.
 ARG CLANG_TIDY_SHA1=a646e24c642c15d85334577fadadc14d041f2f8a
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \
         "https://raw.githubusercontent.com/pamarcos/ctcache/$CLANG_TIDY_SHA1/src/ctcache/clang_tidy_cache.py" \
