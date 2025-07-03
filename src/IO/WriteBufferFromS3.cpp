@@ -39,6 +39,9 @@ namespace ProfileEvents
     extern const Event DiskS3AbortMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
+
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -320,7 +323,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 void WriteBufferFromS3::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+            write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     chassert(memory.size() >= hidden_size + offset());
 

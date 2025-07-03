@@ -1,4 +1,4 @@
-#include <Client/LocalConnection.h>
+#include "LocalConnection.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>

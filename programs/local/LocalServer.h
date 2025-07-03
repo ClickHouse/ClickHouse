@@ -6,6 +6,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Common/InterruptListener.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>

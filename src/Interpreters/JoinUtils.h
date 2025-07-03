@@ -25,26 +25,16 @@ namespace JoinCommon
 class JoinMask
 {
 public:
-    enum class Kind
-    {
-        AllTrue,
-        AllFalse,
-        Unknown,
-    };
-
     explicit JoinMask()
         : column(nullptr)
-        , kind(Kind::Unknown)
     {}
 
-    JoinMask(bool value, size_t size)
+    explicit JoinMask(bool value, size_t size)
         : column(ColumnUInt8::create(size, value))
-        , kind(value ? Kind::AllTrue : Kind::AllFalse)
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
-        , kind(Kind::Unknown)
     {}
 
     bool hasData()
@@ -64,11 +54,8 @@ public:
         return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }
 
-    Kind getKind() const { return kind; }
-
 private:
     ColumnPtr column;
-    Kind kind;
 };
 
 

@@ -50,7 +50,7 @@ public:
     bool canKeepAlive() const
     {
         if (stream && stream_is_bounded)
-            return !stream->isCanceled() && stream->eof();
+            return stream->eof();
 
         return false;
     }

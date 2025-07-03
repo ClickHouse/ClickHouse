@@ -65,11 +65,6 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
-uint32_t RandomGenerator::nextStrlen()
-{
-    return strlens(generator);
-}
-
 char RandomGenerator::nextDigit()
 {
     return static_cast<char>(digits(generator));

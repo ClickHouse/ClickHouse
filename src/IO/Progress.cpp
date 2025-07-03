@@ -83,7 +83,7 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
+void ProgressValues::writeJSON(WriteBuffer & out) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
@@ -92,7 +92,7 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
 
     auto write = [&](const char * name, UInt64 value)
     {
-        if (!value && !write_zero_values)
+        if (!value)
             return;
         if (has_value)
             writeChar(',', out);
@@ -254,9 +254,9 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
     getValues().write(out, client_revision);
 }
 
-void Progress::writeJSON(WriteBuffer & out, DisplayMode mode) const
+void Progress::writeJSON(WriteBuffer & out) const
 {
-    getValues().writeJSON(out, mode == DisplayMode::Verbose);
+    getValues().writeJSON(out);
 }
 
 void Progress::incrementElapsedNs(UInt64 elapsed_ns_)

@@ -50,14 +50,13 @@ using JSONObjectType = JSONParserImpl::Element;
 class ServerCredentials
 {
 public:
-    String client_hostname, server_hostname, container;
+    String hostname, container;
     uint32_t port, mysql_port;
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
 
     ServerCredentials()
-        : client_hostname("localhost")
-        , server_hostname("localhost")
+        : hostname("localhost")
         , port(0)
         , mysql_port(0)
         , user("test")
@@ -65,8 +64,7 @@ public:
     }
 
     ServerCredentials(
-        const String & client_hostname_,
-        const String & server_hostname_,
+        const String & hostname_,
         const String & container_,
         const uint32_t port_,
         const uint32_t mysql_port_,
@@ -76,8 +74,7 @@ public:
         const String & database_,
         const std::filesystem::path & user_files_dir_,
         const std::filesystem::path & query_log_file_)
-        : client_hostname(client_hostname_)
-        , server_hostname(server_hostname_)
+        : hostname(hostname_)
         , container(container_)
         , port(port_)
         , mysql_port(mysql_port_)
@@ -154,7 +151,7 @@ public:
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,
              http_port = 8123, http_secure_port = 8443, use_dump_table_oracle = 2, max_reconnection_attempts = 3,
-             time_to_sleep_between_reconnects = 3000, min_string_length = 0, max_string_length = 1009;
+             time_to_sleep_between_reconnects = 3000;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
@@ -182,13 +179,9 @@ public:
 
     void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
-    bool hasMutations();
-
-    String getRandomMutation(uint64_t rand_val);
-
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
-    String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
+    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 };

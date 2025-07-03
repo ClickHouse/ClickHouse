@@ -71,12 +71,9 @@ private:
     mutable KernelScan scan;
     mutable size_t snapshot_version;
 
-    using TableSchema = DB::NamesAndTypesList;
-    using ReadSchema = DB::NamesAndTypesList;
-
-    mutable TableSchema table_schema;
-    mutable ReadSchema read_schema;
+    mutable DB::NamesAndTypesList table_schema;
     mutable DB::NameToNameMap physical_names_map;
+    mutable DB::NamesAndTypesList read_schema;
     mutable DB::Names partition_columns;
 
     void initSnapshot() const;

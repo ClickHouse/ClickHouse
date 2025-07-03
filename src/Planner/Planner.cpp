@@ -52,7 +52,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -228,11 +227,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
-        {
-            collect_filters = true;
-            break;
-        }
-        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
         {
             collect_filters = true;
             break;
@@ -1068,16 +1062,6 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
-    }
-
-    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
-    /// as it may break `rows_before_limit_at_least` value during the second stage in
-    /// case it also contains LIMIT BY
-    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-
-    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
-    {
-        return;
     }
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.

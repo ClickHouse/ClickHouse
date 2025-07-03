@@ -22,22 +22,18 @@ def get_options(i: int, upgrade_check: bool) -> str:
         options.append("--order=random")
 
     if i % 3 == 2 and not upgrade_check:
-        client_options.extend(
-            [
-                "enable_deflate_qpl_codec=1",
-                "enable_zstd_qat_codec=1",
-                # For Replicated database
-                "distributed_ddl_output_mode=none",
-                "database_replicated_always_detach_permanently=1",
-            ]
-        )
-        options.extend(
-            [
-                "--replicated-database",
-                "--database",
-                f"test_{i}",
-            ]
-        )
+        client_options.extend([
+            "enable_deflate_qpl_codec=1",
+            "enable_zstd_qat_codec=1",
+            # For Replicated database
+            "distributed_ddl_output_mode=none",
+            "database_replicated_always_detach_permanently=1",
+        ])
+        options.extend([
+            "--replicated-database",
+            "--database",
+            f"test_{i}",
+        ])
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -264,23 +260,23 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
             )
 
     # Wait for last queries to finish if any, not longer than 300 seconds
-    cutoff_time = time.time() + 300
-    while time.time() < cutoff_time:
-        queries = int(
-            check_output(
-                make_query_command(
-                    "SELECT count() FROM system.processes WHERE query NOT LIKE '%FROM system.processes%'"
-                ),
-                shell=True,
-                stderr=STDOUT,
-                timeout=30,
-            )
-            .decode("utf-8")
-            .strip()
-        )
-        if queries == 0:
-            break
-        time.sleep(1)
+    call(
+        make_query_command(
+            """
+    SELECT sleepEachRow((
+        SELECT maxOrDefault(300 - elapsed) + 1
+        FROM system.processes
+        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
+    ) / 300)
+    FROM numbers(300)
+    FORMAT Null
+    SETTINGS function_sleep_max_microseconds_per_block = 0
+    """
+        ),
+        shell=True,
+        stderr=STDOUT,
+        timeout=330,
+    )
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
@@ -391,7 +387,6 @@ def main():
                     # Use system database to avoid CREATE/DROP DATABASE queries
                     "--database=system",
                     "--hung-check",
-                    "--capture-client-stacktrace",
                     "--report-logs-stats",
                     "00001_select_1",
                 ]
