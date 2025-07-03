@@ -8,6 +8,8 @@ from minio import Minio
 
 
 class CloudUploader:
+    def __init__(self, use_relpath=False):
+        self.use_relpath = use_relpath
 
     def upload_directory(self, local_path, remote_blob_path, **kwargs):
         print(kwargs)
@@ -38,9 +40,9 @@ class CloudUploader:
 
 class S3Uploader(CloudUploader):
     def __init__(self, minio_client, bucket_name, use_relpath=False):
+        super().__init__(use_relpath=use_relpath)
         self.minio_client = minio_client
         self.bucket_name = bucket_name
-        self.use_relpath = use_relpath
 
     def upload_file(self, local_path, remote_blob_path, bucket=None):
         print(f"Upload to bucket: {bucket}")
@@ -56,6 +58,7 @@ class S3Uploader(CloudUploader):
 class LocalUploader(CloudUploader):
 
     def __init__(self, clickhouse_node):
+        super().__init__()
         self.clickhouse_node = clickhouse_node
 
     def upload_file(self, local_path, remote_blob_path):
@@ -74,6 +77,7 @@ class LocalUploader(CloudUploader):
 class AzureUploader(CloudUploader):
 
     def __init__(self, blob_service_client, container_name):
+        super().__init__()
         self.blob_service_client = blob_service_client
         self.container_client = self.blob_service_client.get_container_client(
             container_name
