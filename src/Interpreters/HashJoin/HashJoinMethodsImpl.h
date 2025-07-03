@@ -5,9 +5,21 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
+#include "Common/Stopwatch.h"
 
 #include <algorithm>
 #include <type_traits>
+
+namespace ProfileEvents
+{
+extern const Event JoinPrepare;
+extern const Event JoinMainLoop;
+extern const Event JoinCutBlock;
+extern const Event JoinBuildOutput;
+extern const Event JoinApplyingFilter;
+extern const Event JoinFilterBySelector;
+extern const Event JoinReplicateBlock;
+}
 
 namespace DB
 {
@@ -89,6 +101,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     auto & source_block = block.getSourceBlock();
     size_t existing_columns = source_block.columns();
 
+    Stopwatch watch1;
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
@@ -112,21 +125,35 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
         added_columns.reserve(join_features.need_replication);
+    ProfileEvents::increment(ProfileEvents::JoinPrepare, watch1.elapsedMicroseconds());
 
+    Stopwatch watch2;
     const size_t num_joined = switchJoinRightColumns(maps_, added_columns, join.data->type, *join.used_flags);
+    ProfileEvents::increment(ProfileEvents::JoinMainLoop, watch2.elapsedMicroseconds());
+
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
+    Stopwatch watch3;
     auto remaining_block = block.cut(num_joined);
+    ProfileEvents::increment(ProfileEvents::JoinCutBlock, watch3.elapsedMicroseconds());
 
+    Stopwatch watch4;
     if (is_join_get)
         added_columns.buildJoinGetOutput();
     else
         added_columns.buildOutput();
+    ProfileEvents::increment(ProfileEvents::JoinBuildOutput, watch4.elapsedMicroseconds());
 
     if constexpr (join_features.need_filter)
+    {
+        Stopwatch watch5;
         block.filter(added_columns.filter);
+        ProfileEvents::increment(ProfileEvents::JoinApplyingFilter, watch5.elapsedMicroseconds());
+    }
 
+    Stopwatch watch6;
     block.filterBySelector();
+    ProfileEvents::increment(ProfileEvents::JoinFilterBySelector, watch6.elapsedMicroseconds());
 
     const auto & table_join = join.table_join;
     std::set<size_t> block_columns_to_erase;
@@ -185,6 +212,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     if constexpr (join_features.need_replication)
     {
+        Stopwatch watch7;
         IColumn::Offsets & offsets = added_columns.offsets_to_replicate;
 
         chassert(block);
@@ -198,6 +226,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
         block.getSourceBlock().setColumns(columns);
         block = ScatteredBlock(std::move(block).getSourceBlock());
+        ProfileEvents::increment(ProfileEvents::JoinReplicateBlock, watch7.elapsedMicroseconds());
     }
 
     block.getSourceBlock().erase(block_columns_to_erase);
