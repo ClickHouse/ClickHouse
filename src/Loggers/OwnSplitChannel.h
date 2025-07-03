@@ -3,6 +3,8 @@
 #include <Loggers/ExtendedLogChannel.h>
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <map>
 #include <memory>
 #include <vector>
@@ -11,7 +13,6 @@
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
-#include <Poco/NotificationQueue.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
 
@@ -77,6 +78,37 @@ public:
 struct OwnRunnableForChannel;
 struct OwnRunnableForTextLog;
 
+class AsyncLogMessage;
+using AsyncLogMessagePtr = Poco::AutoPtr<AsyncLogMessage>;
+
+class AsyncLogMessageQueue
+{
+    /// Maximum size of the queue, to prevent memory overflow
+    static constexpr size_t max_size = 100'000;
+
+public:
+    using Queue = std::deque<AsyncLogMessagePtr>;
+
+    /// Enqueues a single message notification
+    void enqueueMessage(AsyncLogMessagePtr pNotification);
+
+    /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
+    /// or a spurious wakeup occurs
+    AsyncLogMessagePtr waitDequeueMessage();
+
+    /// Gets the full queue including all pending notifications and clears it. It might return an empty queue if no messages were available
+    Queue getCurrentQueueAndClear();
+
+    /// Wakes up any threads waiting for a message notification.
+    void wakeUp();
+
+private:
+    Queue message_queue;
+    std::condition_variable condition;
+    std::mutex mutex;
+};
+
+
 /// Same as OwnSplitChannel but it uses separate threads for logging.
 /// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
 /// to ensure the order is kept
@@ -108,12 +140,12 @@ private:
     /// Each channel has a different queue, and each one a single thread handling it
     std::map<std::string, ExtendedChannelPtrPair> name_to_channels;
     std::vector<ExtendedChannelPtrPair> channels;
-    std::vector<std::unique_ptr<Poco::NotificationQueue>> queues;
+    std::vector<std::unique_ptr<AsyncLogMessageQueue>> queues;
     std::vector<std::unique_ptr<Poco::Thread>> threads;
     std::vector<std::unique_ptr<OwnRunnableForChannel>> runnables;
 
     /// system.text_log does not have a channel, but it's also async
-    Poco::NotificationQueue text_log_queue;
+    AsyncLogMessageQueue text_log_queue;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
