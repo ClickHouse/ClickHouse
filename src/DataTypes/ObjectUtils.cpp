@@ -36,10 +36,9 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include "Columns/ColumnObject.h"
-#include "Columns/ColumnVariant.h"
-#include "DataTypes/DataTypeObject.h"
-#include "DataTypes/DataTypeVariant.h"
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
 
 
 namespace DB
