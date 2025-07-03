@@ -103,7 +103,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         /// This thread has no tasks to do and is going to wait.
         /// Finish execution if this was the last active thread.
         chassert(task_queue.empty() && fast_task_queue.empty());
-        if (threads_queue.size() + 1 == use_threads && async_task_queue.empty())
+        if (threads_queue.size() + 1 == total_slots && async_task_queue.empty())
         {
             lock.unlock();
             finish();
@@ -236,6 +236,7 @@ ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)
 
     chassert(slot_id < slot_count.size());
     ++slot_count[slot_id];
+    ++total_slots;
     use_threads = std::max(use_threads, slot_id + 1);
 
     return threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
@@ -248,6 +249,7 @@ void ExecutorTasks::downscale(size_t slot_id)
     if (slot_id >= slot_count.size() || slot_count[slot_id] == 0)
         return;
     --slot_count[slot_id];
+    --total_slots;
 
     if (slot_id + 1 == use_threads)
     {

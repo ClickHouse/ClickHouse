@@ -43,8 +43,11 @@ class ExecutorTasks
     /// Maximum slot_id of currently active slots + 1. Can change during execution in range from 1 to `num_threads`.
     size_t use_threads = 0;
 
-    /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale
+    /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
     std::vector<size_t> slot_count;
+
+    /// Total number of slots (sum of all slot_count).
+    size_t total_slots = 0;
 
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
