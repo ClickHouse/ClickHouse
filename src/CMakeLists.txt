@@ -459,6 +459,10 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
+
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
         PUBLIC
@@ -733,3 +737,7 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
+
+if (TARGET ch_contrib::jwt-cpp)
+    add_object_library(clickhouse_client_jwt Client/jwt)
+endif()

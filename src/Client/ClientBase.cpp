@@ -2938,6 +2938,10 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("config-file,C", po::value<std::string>(), "Path to config file")
 
+        ("login", po::bool_switch()->default_value(false), "Perform device grant flow for authentication.")
+        ("auth-url", po::value<std::string>(), "The authentication URL for the device grant flow.")
+        ("auth-client-id", po::value<std::string>(), "Client ID for the authentication application.")
+
         ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
         ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
@@ -3123,6 +3127,13 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
+
+    if (options["login"].as<bool>())
+        getClientConfiguration().setBool("login", options["login"].as<bool>());
+    if (options.count("auth-url"))
+        getClientConfiguration().setString("auth-url", options["auth-url"].as<std::string>());
+    if (options.count("auth-client-id"))
+        getClientConfiguration().setString("auth-client-id", options["auth-client-id"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

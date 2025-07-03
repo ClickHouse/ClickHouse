@@ -6,6 +6,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SignalHandlers.h>
+#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -15,6 +16,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
+
 
 using namespace std::literals;
 

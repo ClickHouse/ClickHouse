@@ -23,6 +23,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Client/JWTProvider.h>
+
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -368,6 +370,13 @@ try
         showClientVersion();
     }
 
+#if USE_JWT_CPP && USE_SSL
+    if (config().getBool("login", false))
+    {
+        login();
+    }
+#endif
+
     try
     {
         connect();
@@ -437,6 +446,37 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+#if USE_JWT_CPP && USE_SSL
+void Client::login()
+{
+    std::string host = hosts_and_ports.front().host;
+    std::string auth_url = getClientConfiguration().getString("auth-url", "");
+    std::string client_id = getClientConfiguration().getString("auth-client-id", "");
+
+    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not retrieve authentication endpoints for host '{}'. Please specify --auth-url and --auth-client-id if you are "
+            "not using ClickHouse Cloud.",
+            host);
+    }
+
+    jwt_provider = createJwtProvider(auth_url, client_id, host, output_stream, error_stream);
+    if (jwt_provider)
+    {
+        std::string jwt = jwt_provider->getJWT();
+        if (!jwt.empty())
+        {
+            getClientConfiguration().setString("jwt", jwt);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Login failed. Please check your credentials and try again.");
+        }
+    }
+}
+#endif
 
 void Client::connect()
 {
@@ -461,6 +501,10 @@ void Client::connect()
 
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
+
+#if USE_JWT_CPP && USE_SSL
+            connection_parameters.jwt_provider = jwt_provider;
+#endif
 
             if (is_interactive)
                 output_stream << "Connecting to "
@@ -828,6 +872,14 @@ void Client::processOptions(
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
+        config().setString("user", "");
+    }
+    if (options["login"].as<bool>())
+    {
+        if (!options["user"].defaulted())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and login flags can't be specified together");
+        if (config().has("jwt"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT and login flags can't be specified together");
         config().setString("user", "");
     }
     if (options.count("accept-invalid-certificate"))
