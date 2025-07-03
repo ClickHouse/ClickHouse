@@ -82,7 +82,15 @@ class FTResultsProcessor:
                 ):
                     test_name = line.split(" ")[2].split(":")[0]
 
-                    test_time = None
+                    if test_name == "+":
+                        # TODO: investigate and remove
+                        # https://github.com/ClickHouse/ClickHouse/issues/81888
+                        print(
+                            f"ERROR: incorrect test name: {test_name} in line:\n{line}"
+                        )
+                        continue
+
+                    test_time = ""
                     try:
                         time_token = line.split("]")[1].strip().split()[0]
                         float(time_token)
@@ -133,7 +141,7 @@ class FTResultsProcessor:
                     )
                 )
             except Exception as e:
-                print(f"ERROR: Failed to parse test results: [{test}]")
+                print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
                 self.debug_files.append(self.tests_output_file)
                 if test[0] == "+":
