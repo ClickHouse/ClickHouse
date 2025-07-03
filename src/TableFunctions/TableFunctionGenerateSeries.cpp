@@ -8,7 +8,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB

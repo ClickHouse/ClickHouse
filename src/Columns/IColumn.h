@@ -248,6 +248,7 @@ public:
     /// Appends "default value" multiple times.
     virtual void insertManyDefaults(size_t length)
     {
+        reserve(size() + length);
         for (size_t i = 0; i < length; ++i)
             insertDefault();
     }

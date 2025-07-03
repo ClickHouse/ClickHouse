@@ -294,6 +294,7 @@ bool convertLogicalJoinToPhysical(
             new_right_node->step->getOutputHeader(),
             join_ptr,
             settings.max_block_size,
+            settings.min_joined_block_size_rows,
             settings.min_joined_block_size_bytes,
             optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),

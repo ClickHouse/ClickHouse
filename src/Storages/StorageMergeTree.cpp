@@ -40,6 +40,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -47,9 +48,8 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include "Core/BackgroundSchedulePool.h"
-#include "Core/Names.h"
-#include <Storages/MergeTree/AlterConversions.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Names.h>
 
 namespace DB
 {
