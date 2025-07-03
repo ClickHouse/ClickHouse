@@ -16,12 +16,12 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 Columns:
 
-- `stream_type` ([Enum8](../../sql-reference/data-types/enum.md)) - Stream type. Possible values: `Kafka` and `RabbitMQ`.
+- `table_engine` ([Enum8](../../sql-reference/data-types/enum.md)) - Stream type. Possible values: `Kafka` and `RabbitMQ`.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) - Message consuming date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Message consuming date and time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) - Message consuming time with microseconds precision.
-- `database_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the streaming table belongs to.
-- `table_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse table name.
+- `database` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the streaming table belongs to.
+- `table` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse table name.
 - `error` ([String](../../sql-reference/data-types/string.md)) - Error text.
 - `raw_message` ([String](../../sql-reference/data-types/string.md)) - Message body.
 - `kafka_topic_name` ([String](../../sql-reference/data-types/string.md)) - Kafka topic name.
@@ -49,12 +49,12 @@ Result:
 ``` text
 Row 1:
 ──────
-stream_type:                   Kafka
+table_engine:                  Kafka
 event_date:                    2025-05-01
 event_time:                    2025-05-01 10:34:53
 event_time_microseconds:       2025-05-01 10:34:53.910773
-database_name:                 default
-table_name:                    kafka
+database:                      default
+table:                         kafka
 error:                         Cannot parse input: expected '\t' before: 'qwertyuiop': (at row 1)
 :
 Row 1:
@@ -75,12 +75,12 @@ rabbitmq_channel_id:
 
 Row 2:
 ──────
-stream_type:                   Kafka
+table_engine:                  Kafka
 event_date:                    2025-05-01
 event_time:                    2025-05-01 10:34:53
 event_time_microseconds:       2025-05-01 10:34:53.910944
-database_name:                 default
-table_name:                    kafka
+database:                      default
+table:                         kafka
 error:                         Cannot parse input: expected '\t' before: 'asdfghjkl': (at row 1)
 :
 Row 1:
@@ -101,12 +101,12 @@ rabbitmq_channel_id:
 
 Row 3:
 ──────
-stream_type:                   Kafka
+table_engine:                  Kafka
 event_date:                    2025-05-01
 event_time:                    2025-05-01 10:34:53
 event_time_microseconds:       2025-05-01 10:34:53.911092
-database_name:                 default
-table_name:                    kafka
+database:                      default
+table:                         kafka
 error:                         Cannot parse input: expected '\t' before: 'zxcvbnm': (at row 1)
 :
 Row 1:

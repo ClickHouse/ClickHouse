@@ -250,11 +250,11 @@ Chunk KafkaSource::generateImpl()
 
                 auto dead_letter = context->getDeadLetter();
                 dead_letter->add(DeadLetterElement{
-                        .stream_type = DeadLetterElement::StreamType::Kafka,
+                        .table_engine = DeadLetterElement::StreamType::Kafka,
                         .event_time = timeInSeconds(time_now),
                         .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database_name = storage_id.database_name,
-                        .table_name = storage_id.table_name,
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
                         .raw_message = consumer->currentPayload(),
                         .error = exception_message.value(),
                         .details = DeadLetterElement::KafkaDetails{

@@ -16,12 +16,12 @@ struct DeadLetterElement
         RabbitMQ = 2,
     };
 
-    StreamType stream_type;
+    StreamType table_engine;
     UInt64 event_time{};
     Decimal64 event_time_microseconds{};
 
-    String database_name;
-    String table_name;
+    String database;
+    String table;
     String raw_message;
     String error;
 
