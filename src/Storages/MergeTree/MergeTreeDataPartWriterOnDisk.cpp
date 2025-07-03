@@ -6,7 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 
 namespace ProfileEvents
