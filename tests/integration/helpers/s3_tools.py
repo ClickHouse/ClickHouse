@@ -12,12 +12,19 @@ class CloudUploader:
     def upload_directory(self, local_path, remote_blob_path, **kwargs):
         print(kwargs)
         result_files = []
-        # print(f"Arguments: {local_path}, {s3_path}")
+        # print(f"Arguments: {local_path}, {remote_blob_path}")
         # for local_file in glob.glob(local_path + "/**"):
         #     print("Local file: {}", local_file)
         for local_file in glob.glob(local_path + "/**"):
             result_local_path = local_file
-            result_remote_blob_path = os.path.join(remote_blob_path, local_file)
+            result_remote_blob_path = os.path.join(
+                remote_blob_path,
+                (
+                    os.path.relpath(local_file, start=local_path)
+                    if self.use_relpath
+                    else local_file
+                ),
+            )
             if os.path.isfile(local_file):
                 self.upload_file(result_local_path, result_remote_blob_path, **kwargs)
                 result_files.append(result_remote_blob_path)
@@ -30,9 +37,10 @@ class CloudUploader:
 
 
 class S3Uploader(CloudUploader):
-    def __init__(self, minio_client, bucket_name):
+    def __init__(self, minio_client, bucket_name, use_relpath=False):
         self.minio_client = minio_client
         self.bucket_name = bucket_name
+        self.use_relpath = use_relpath
 
     def upload_file(self, local_path, remote_blob_path, bucket=None):
         print(f"Upload to bucket: {bucket}")
@@ -83,10 +91,10 @@ class AzureUploader(CloudUploader):
             blob_client.upload_blob(data, overwrite=True)
 
 
-def upload_directory(minio_client, bucket, local_path, remote_path):
-    return S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
-        local_path, remote_path
-    )
+def upload_directory(minio_client, bucket, local_path, remote_path, use_relpath=False):
+    return S3Uploader(
+        minio_client=minio_client, bucket_name=bucket, use_relpath=use_relpath
+    ).upload_directory(local_path, remote_path)
 
 
 def remove_directory(minio_client, bucket, remote_path):

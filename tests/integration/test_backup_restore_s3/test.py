@@ -1,15 +1,16 @@
-import logging
 import os
 import uuid
-from pathlib import Path
 from typing import Dict
 
 import pytest
-from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
+from helpers.s3_tools import (
+    upload_directory,
+    remove_directory,
+)
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -835,27 +836,6 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk():
     instance.query("DROP TABLE data_restored SYNC")
 
 
-# TODO: move to a common place
-def upload_to_minio(minio_client, bucket_name, local_path, minio_path=""):
-    local_path = Path(local_path)
-    for root, _, files in os.walk(local_path):
-        for file in files:
-            local_file_path = Path(root) / file
-            minio_object_name = minio_path + str(
-                local_file_path.relative_to(local_path)
-            )
-
-            try:
-                with open(local_file_path, "rb") as data:
-                    file_stat = os.stat(local_file_path)
-                    minio_client.put_object(
-                        bucket_name, minio_object_name, data, file_stat.st_size
-                    )
-                logging.info(f"Uploaded {local_file_path} to {minio_object_name}")
-            except S3Error as e:
-                logging.error(f"Error uploading {local_file_path}: {e}")
-
-
 def test_backup_restore_s3_plain():
     storage_policy = "policy_s3"
     to_disk = "disk_s3_plain"
@@ -866,8 +846,8 @@ def test_backup_restore_s3_plain():
 
     instance.query(
         f"""
-    CREATE DATABASE db;
-    CREATE TABLE db.sample (key Int, value String)
+    DROP TABLE IF EXISTS sample SYNC;
+    CREATE TABLE sample (key Int, value String)
     ENGINE = MergeTree() ORDER BY tuple()
     AS
     SELECT number AS id, concat('name_', toString(number)) AS name
@@ -875,46 +855,45 @@ def test_backup_restore_s3_plain():
     """
     )
 
-    assert instance.query("SELECT count(*) FROM db.sample") == "100\n"
+    assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
     table_data_path = os.path.join(instance.path, f"database/store")
     minio = cluster.minio_client
-    upload_to_minio(
-        minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/"
+    remote_blob_path = "data/disks/disk_s3_plain/store"
+    remove_directory(minio, cluster.minio_bucket, remote_blob_path)
+    upload_directory(
+        minio, cluster.minio_bucket, table_data_path, remote_blob_path, use_relpath=True
     )
 
     table_uuid = instance.query(
         f"""
-            SELECT uuid FROM system.tables WHERE name='sample' and database='db'
+            SELECT uuid FROM system.tables WHERE name='sample' and database='default'
             """
     ).strip()
 
     instance.query(
         f"""
-        DROP TABLE db.sample SYNC;
-        CREATE DATABASE db_dst;
-        ATTACH TABLE db_dst.sample UUID '{table_uuid}' (key Int, value String)
+        DROP TABLE sample SYNC;
+        ATTACH TABLE sample UUID '{table_uuid}' (key Int, value String)
         ENGINE = MergeTree() ORDER BY tuple()
         SETTINGS storage_policy='policy_s3_plain'
         """
     )
-    assert instance.query("SELECT count(*) FROM db_dst.sample") == "100\n"
+    assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
     backup_query_id = uuid.uuid4().hex
     instance.query(
-        f"BACKUP TABLE db_dst.sample TO {backup_destination}",
+        f"BACKUP TABLE sample TO {backup_destination}",
         query_id=backup_query_id,
     )
 
     restore_query_id = uuid.uuid4().hex
-    instance.query("DROP TABLE IF EXISTS db_dst.sample_restored SYNC")
+    instance.query("DROP TABLE IF EXISTS sample_restored SYNC")
     err = instance.query_and_get_error(
         f"""
-        RESTORE TABLE db_dst.sample AS db_dst.sample_restored FROM {backup_destination};
+        RESTORE TABLE sample AS sample_restored FROM {backup_destination};
         """,
         query_id=restore_query_id,
     )
     assert "READONLY" in err
-    instance.query("DROP TABLE db_dst.sample SYNC")
-    instance.query("DROP DATABASE db_dst SYNC")
-    instance.query("DROP DATABASE db SYNC")
+    instance.query("DROP TABLE sample_restored SYNC")
