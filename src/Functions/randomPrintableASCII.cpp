@@ -31,6 +31,7 @@ public:
 
     String getName() const override
     {
+        printf("something");
         return name;
     }
 
