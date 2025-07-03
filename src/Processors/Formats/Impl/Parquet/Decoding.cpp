@@ -173,6 +173,70 @@ struct PlainFixedSizeDecoder : public PageDecoder
     }
 };
 
+struct PlainBooleanDecoder : public PageDecoder
+{
+    std::shared_ptr<FixedSizeConverter> converter;
+
+    size_t bit_idx = 0;
+    PaddedPODArray<char> temp_buffer;
+
+    PlainBooleanDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_)) {}
+
+    void skip(size_t num_values) override
+    {
+        bit_idx += num_values;
+    }
+
+    void decode(size_t num_values, IColumn & col) override
+    {
+        size_t end_bit_idx = bit_idx + num_values;
+        if ((end_bit_idx + 7) / 8 > size_t(end - data))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
+        char * to;
+        bool direct = converter->isTrivial();
+        if (direct)
+        {
+            auto to_span = col.insertRawUninitialized(num_values);
+            chassert(to_span.size() == num_values);
+            to = to_span.data();
+        }
+        else
+        {
+            temp_buffer.resize(num_values);
+            to = temp_buffer.data();
+        }
+
+        size_t i = 0;
+        while (i < num_values)
+        {
+            size_t bit_i = bit_idx + i;
+            if ((bit_i & 7) == 0 && bit_i + 8 <= num_values)
+            {
+                /// Unpack 8 bits at once. (I haven't checked whether this is faster.)
+                UInt64 x = UInt64(UInt8(data[bit_i / 8]));
+                /// x = 00000000 00000000 00000000 00000000 00000000 00000000 00000000 hgfedcba
+                x = (x | (x << 28)) & 0x0000000f0000000ful;
+                /// x = 00000000 00000000 00000000 0000hgfe 00000000 00000000 00000000 0000dcba
+                x = (x | (x << 14)) & 0x0003000300030003ul;
+                /// x = 00000000 000000hg 00000000 000000fe 00000000 000000dc 00000000 000000ba
+                x = (x | (x <<  7)) & 0x0101010101010101ul;
+                /// x = 0000000h 0000000g 0000000f 0000000e 0000000d 0000000c 0000000b 0000000a
+                memcpy(to + i * 8, &x, 8);
+                i += 8;
+            }
+            else
+            {
+                to[i] = (data[bit_i / 8] >> (bit_i & 7)) & 1;
+                i += 1;
+            }
+        }
+        bit_idx = end_bit_idx;
+
+        if (!direct)
+            converter->convertColumn(std::span(to, num_values), num_values, col);
+    }
+};
+
 struct PlainStringDecoder : public PageDecoder
 {
     std::shared_ptr<StringConverter> converter;
@@ -341,6 +405,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         }
         else
         {
+            /// (temp_values is array of UInt64 rather than char because it needs to be aligned)
             size_t num_u64s = converter->input_size == 32 ? (num_values + 1) / 2 : num_values;
             temp_values.resize(num_u64s);
             to = reinterpret_cast<char *>(temp_values.data());
@@ -683,10 +748,18 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                 case parq::Type::BYTE_ARRAY:
                     return std::make_unique<PlainStringDecoder>(data, string_converter);
                 case parq::Type::BOOLEAN:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN is not implemented");
+                    return std::make_unique<PlainBooleanDecoder>(data, fixed_size_converter);
+                //default: break;
             }
-        /// TODO [parquet]: RLE for BOOLEAN
-        case parq::Encoding::RLE: throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RLE encoding is not implemented");
+            break;
+        case parq::Encoding::RLE:
+            switch (physical_type)
+            {
+                case parq::Type::BOOLEAN:
+                    return std::make_unique<BitPackedRLEDecoder<UInt8>>(data, 2, /*has_header_byte=*/ false);
+                default: break;
+            }
+            break;
         case parq::Encoding::BIT_PACKED: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected BIT_PACKED encoding for values");
         case parq::Encoding::DELTA_BINARY_PACKED:
             switch (physical_type)
@@ -694,32 +767,36 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                 case parq::Type::INT32:
                 case parq::Type::INT64:
                     return std::make_unique<DeltaBinaryPackedDecoder>(data, fixed_size_converter);
-                default:
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_BINARY_PACKED for type {}", thriftToString(physical_type));
+                default: break;
             }
+            break;
         case parq::Encoding::DELTA_LENGTH_BYTE_ARRAY:
             switch (physical_type)
             {
                 case parq::Type::BYTE_ARRAY:
                     return std::make_unique<DeltaLengthByteArrayDecoder>(data, string_converter);
-                default:
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_LENGTH_BYTE_ARRAY for type {}", thriftToString(physical_type));
+                default: break;
             }
+            break;
         case parq::Encoding::DELTA_BYTE_ARRAY:
             switch (physical_type)
             {
                 case parq::Type::BYTE_ARRAY:
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
                     return std::make_unique<DeltaByteArrayDecoder>(data, string_converter, fixed_size_converter);
-                default:
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding DELTA_BYTE_ARRAY for type {}", thriftToString(physical_type));
+                default: break;
             }
+            break;
         case parq::Encoding::BYTE_STREAM_SPLIT:
-            if (!fixed_size_converter)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding BYTE_STREAM_SPLIT for type {}", thriftToString(physical_type));
-            return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
+            /// Documentation says this encoding is only for FLOAT and DOUBLE, but arrow supports
+            /// any fixed-size types, so we do the same just in case.
+            if (fixed_size_converter)
+                return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
+            break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding {} for type {}", thriftToString(encoding), thriftToString(physical_type));
 }
 
 void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out)
@@ -732,7 +809,6 @@ void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_v
             BitPackedRLEDecoder<UInt8>(data, size_t(max) + 1, /*has_header_byte=*/ false).decodeArray(num_values, out);
             break;
         case parq::Encoding::BIT_PACKED:
-            /// TODO [parquet]: BIT_PACKED levels
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
     }

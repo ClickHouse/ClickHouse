@@ -852,9 +852,14 @@ void SchemaConverter::processPrimitiveColumn(
     switch (type)
     {
         case parq::Type::BOOLEAN:
-            /// TODO [parquet]:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BOOLEAN not implemented");
-            //return;
+        {
+            out_inferred_type = std::make_shared<DataTypeUInt8>();
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 1;
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
         case parq::Type::INT32:
         {
             out_inferred_type = std::make_shared<DataTypeInt32>();
