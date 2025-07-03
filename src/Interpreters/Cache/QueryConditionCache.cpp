@@ -155,7 +155,7 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
     return hash.get64();
 }
 
-size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Entry & entry) const
+size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
     size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
