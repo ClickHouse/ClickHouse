@@ -63,17 +63,7 @@ namespace DB::StorageObjectStorageSetting
 
 namespace DB::DatabaseDataLakeSetting
 {
-    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
-    extern const DatabaseDataLakeSettingsString warehouse;
-    extern const DatabaseDataLakeSettingsString catalog_credential;
-    extern const DatabaseDataLakeSettingsString auth_header;
-    extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsString oauth_server_uri;
-    extern const DatabaseDataLakeSettingsBool vended_credentials;
-    extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
-    extern const DatabaseDataLakeSettingsString region;
 }
 
 

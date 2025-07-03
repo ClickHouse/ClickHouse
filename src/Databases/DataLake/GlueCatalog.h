@@ -71,6 +71,8 @@ private:
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
 
+    /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
+    /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 };
 
