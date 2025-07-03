@@ -274,7 +274,7 @@ void OwnAsyncSplitChannel::close()
 class AsyncLogMessage
 {
 public:
-    AsyncLogMessage(const Message & msg_)
+    explicit AsyncLogMessage(const Message & msg_)
         : msg(msg_)
         , msg_ext(ExtendedLogMessage::getFrom(msg))
         , msg_thread_name(getThreadName())
@@ -297,7 +297,7 @@ public:
 };
 
 
-void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr pNotification)
+void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 {
     std::unique_lock lock(mutex);
     size_t current_size = message_queue.size();
@@ -314,7 +314,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr pNotification)
         dropped_messages = 0;
     }
 
-    message_queue.push_back(pNotification);
+    message_queue.push_back(message);
     condition.notify_one();
 }
 
@@ -422,7 +422,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     {
         if (!async_message)
             return;
-        auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get());
+        const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get());
         {
             if (own_notification)
             {
