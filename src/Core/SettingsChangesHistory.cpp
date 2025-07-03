@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

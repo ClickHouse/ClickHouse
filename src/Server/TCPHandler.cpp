@@ -73,6 +73,7 @@
 #endif
 
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 

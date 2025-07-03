@@ -27,7 +27,6 @@ from version_helper import (
 )
 
 UBUNTU_NAMES = {
-    "20.04": "focal",
     "22.04": "jammy",
 }
 
@@ -263,10 +262,16 @@ def generate_tree(args: argparse.Namespace) -> None:
         versions = get_versions_greater(args.min_version)
     else:
         versions = get_supported_versions()
+
+    # XXX: Version 24.8 is not supported by docker-library, so we must skip it
+    # https://github.com/docker-library/official-images/pull/19167#issuecomment-2934925239
+    versions = {v for v in versions if v > get_version_from_string("24.9.1.1")}
+    # TODO: remove the block after 25.8 is released
     logging.info(
         "The versions to generate:\n  %s",
         "\n  ".join(v.string for v in sorted(versions)),
     )
+
     directory = (args.directory / args.image_type).resolve()  # type: Path
     if args.clean:
         try:
