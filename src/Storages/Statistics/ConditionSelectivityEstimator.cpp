@@ -205,6 +205,32 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
             }
         },
         {
+            "in",
+            [] (RPNElement & out, const String & column, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                Ranges ranges;
+                for (const Field & field : value.safeGet<Tuple>())
+                {
+                    ranges.emplace_back(field);
+                }
+                out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+            }
+        },
+        {
+            "notIn",
+            [] (RPNElement & out, const String & column, const Field & value)
+            {
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                Ranges ranges;
+                for (const Field & field : value.safeGet<Tuple>())
+                {
+                    ranges.emplace_back(field);
+                }
+                out.column_not_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+            }
+        },
+        {
             "less",
             [] (RPNElement & out, const String & column, const Field & value)
             {

@@ -120,6 +120,9 @@ TEST(Statistics, Estimator)
         test_impl("not(" + expression + ")", 10000-real_result, eps);
     };
     ///
+    test_f("a in (1,2,3,4,5)", 5);
+    test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
     test_f("a < 3 or b = 600", 5001);
