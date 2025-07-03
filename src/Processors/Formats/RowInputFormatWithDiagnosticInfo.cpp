@@ -2,7 +2,6 @@
 #include <Formats/verbosePrintString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <DataTypes/IDataType.h>
 
 
 namespace DB

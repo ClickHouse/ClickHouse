@@ -1,4 +1,4 @@
-#include "SensitiveDataMasker.h"
+#include <Common/SensitiveDataMasker.h>
 
 #include <set>
 #include <string>

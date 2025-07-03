@@ -1,4 +1,4 @@
-#include "Interpreters/Cache/QueryResultCache.h"
+#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>

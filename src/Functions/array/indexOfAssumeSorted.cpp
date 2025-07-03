@@ -1,7 +1,7 @@
-#include "arrayIndex.h"
+#include <Functions/array/arrayIndex.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
-#include "Common/FunctionDocumentation.h"
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {

@@ -14,7 +14,7 @@
 #include <Common/re2.h>
 #include <string_view>
 #include <gtest/gtest.h>
-#include "gtest_common.h"
+#include <Parsers/tests/gtest_common.h>
 #include <boost/algorithm/string/replace.hpp>
 
 
