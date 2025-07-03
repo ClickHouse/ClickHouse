@@ -121,7 +121,7 @@ struct EquivalenceClasses
         }
         else if (class_a && !class_b)
         {
-            /// Add B to exeisting class A
+            /// Add B to existing class A
             class_b = class_a;
             class_a->push_back(b);
         }
