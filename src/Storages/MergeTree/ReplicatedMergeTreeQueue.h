@@ -19,7 +19,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include "Storages/MergeTree/AlterConversions.h"
+#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB

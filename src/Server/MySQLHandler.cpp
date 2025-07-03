@@ -1,4 +1,4 @@
-#include "MySQLHandler.h"
+#include <Server/MySQLHandler.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
