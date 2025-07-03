@@ -8,6 +8,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
+
 namespace Aws::Glue
 {
     class GlueClient;
@@ -24,7 +26,9 @@ public:
         const String & secret_access_key,
         const String & region,
         const String & endpoint,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        const DB::DatabaseDataLakeSettings & settings_,
+        DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
 
@@ -60,10 +64,14 @@ private:
     const LoggerPtr log;
     Aws::Auth::AWSCredentials credentials;
     std::string region;
+    DB::DatabaseDataLakeSettings settings;
+    DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     void setCredentials(TableMetadata & metadata) const;
+
+    bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 };
 
 }

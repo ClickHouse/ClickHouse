@@ -1,3 +1,4 @@
+#include <Poco/JSON/Stringifier.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -111,6 +112,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     auto create_fn = [&]()
     {
         ObjectInfo object_info(metadata_file_path);
+        std::cerr << "s3 metadata_file_path " << metadata_file_path << '\n';
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -163,6 +165,7 @@ IcebergMetadata::IcebergMetadata(
     , relevant_snapshot_schema_id(-1)
     , table_location(metadata_object_->getValue<String>(f_location))
 {
+    Poco::JSON::Stringifier::stringify(metadata_object_, std::cerr, 4);
     updateState(context_, metadata_object_, true);
 }
 

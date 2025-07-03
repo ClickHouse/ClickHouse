@@ -158,7 +158,9 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
                 settings[DatabaseDataLakeSetting::region].value,
                 url,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                settings,
+                table_engine_definition);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -383,6 +385,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     }
 
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
+    std::cerr << "args[0]->dumpTree() " << args[0]->dumpTree() << '\n';
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
 
@@ -416,6 +419,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         }
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
+        std::cerr << "metadata_location " << metadata_location << '\n';
     }
 
     const auto configuration = getConfiguration(storage_type, storage_settings);
