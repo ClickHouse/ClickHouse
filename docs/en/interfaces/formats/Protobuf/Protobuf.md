@@ -23,7 +23,7 @@ The `Protobuf` format is the [Protocol Buffers](https://protobuf.dev/) format.
 This format requires an external format schema, which is cached between queries.
 
 ClickHouse supports:
-- both `proto2` and `proto3` syntaxes. 
+- both `proto2` and `proto3` syntaxes.
 - `Repeated`/`optional`/`required` fields.
 
 ## Example Usage {#example-usage}
@@ -84,6 +84,40 @@ message MessageType {
   optional int32 result_per_page = 3 [default = 10];
 }
 ```
+
+
+If a message contains [oneof](https://protobuf.dev/programming-guides/proto3/#oneof) and `input_format_protobuf_oneof_presence` is set, ClickHouse fills column that indicates which field of oneof was found.
+
+```capnp
+syntax = "proto3";
+
+message StringOrString {
+  oneof string_oneof {
+    string string1 = 1;
+    string string2 = 2;
+  }
+}
+```
+
+```sql
+CREATE TABLE string_or_string ( string1 String, string2 String, string_oneof_presence Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
+SELECT * FROM string_or_string
+```
+
+```text
+   ┌─────────┬─────────┬───────────────────────┐
+   │ string1 │ string2 │ string_oneof_presence │
+   ├─────────┼─────────┼───────────────────────┤
+1. │         │ string2 │ world                 │
+   ├─────────┼─────────┼───────────────────────┤
+2. │ string1 │         │ hello                 │
+   └─────────┴─────────┴───────────────────────┘
+
+```
+
+The setting [`input_format_protobuf_oneof_presence`](/operations/settings/settings-formats.md#input_format_protobuf_oneof_presence) is disabled by default
+
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 This means that before every message its length should be written as a [variable width integer (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
