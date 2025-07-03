@@ -154,7 +154,6 @@ public:
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        FormatParserGroupPtr parser_group_,
         const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
@@ -172,8 +171,6 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
-
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
     void prepareCommitRequests(
@@ -184,12 +181,22 @@ public:
         int error_code = 0);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void finalizeCommit(
+        bool insert_succeeded,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_,
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    void appendLogElement(
+        const FileMetadataPtr & file_metadata_,
+        bool processed,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -203,7 +210,6 @@ private:
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    FormatParserGroupPtr parser_group;
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
@@ -214,6 +220,7 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    time_t transaction_start_time;
 
     LoggerPtr log;
 

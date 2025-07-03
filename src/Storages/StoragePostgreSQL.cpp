@@ -1,4 +1,4 @@
-#include "StoragePostgreSQL.h"
+#include <Storages/StoragePostgreSQL.h>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
