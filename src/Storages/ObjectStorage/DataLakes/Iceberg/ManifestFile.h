@@ -94,6 +94,7 @@ public:
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
+        const std::string & common_namespace,
         DB::ContextPtr context);
 
     const std::vector<ManifestFileEntry> & getFiles() const;

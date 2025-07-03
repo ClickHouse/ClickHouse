@@ -70,13 +70,19 @@ void TableMetadata::setLocation(const std::string & location_)
     auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
     if (pos_to_path == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+    { // empty path
+        location_without_path = location_;
+        path.clear();
+        bucket = location_.substr(pos_to_bucket);
+    }
+    else
+    {
+        pos_to_path = pos_to_bucket + pos_to_path;
 
-    pos_to_path = pos_to_bucket + pos_to_path;
-
-    location_without_path = location_.substr(0, pos_to_path);
-    path = location_.substr(pos_to_path + 1);
-    bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+        location_without_path = location_.substr(0, pos_to_path);
+        path = location_.substr(pos_to_path + 1);
+        bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    }
 
     LOG_TEST(getLogger("TableMetadata"),
              "Parsed location without path: {}, path: {}",
