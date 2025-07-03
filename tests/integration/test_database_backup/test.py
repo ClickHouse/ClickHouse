@@ -176,7 +176,11 @@ def test_database_backup_s3_unavailable_but_server_starts(backup_destination):
     cleanup_backup_files(instance)
 
     instance.restart_clickhouse()
-    assert instance.query("SELECT 1") == "1\n"
 
+    assert (
+        instance.query("SELECT 1")
+        == "1\n"
+    )
+    
     instance.query("DROP DATABASE IF EXISTS test_database_backup SYNC")
     instance.query("DROP DATABASE IF EXISTS test_database SYNC")
