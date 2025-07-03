@@ -829,16 +829,18 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     if (context->hasQueryContext() && !context->getQueryContext()->hasScalar(str_hash))
         context->getQueryContext()->addScalar(str_hash, scalar_block);
 
-    auto * nearest_query_scope = scope.getNearestQueryScope();
-    auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
-    auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
-
     auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
-    if (mutable_context->hasQueryContext())
-        mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
+    if (auto * nearest_query_scope = scope.getNearestQueryScope())
+    {
+        auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
+        auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    mutable_context->addScalar(scalar_query_hash_string, scalar_block);
+        if (mutable_context->hasQueryContext())
+            mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
+
+        mutable_context->addScalar(scalar_query_hash_string, scalar_block);
+    }
 
     std::string get_scalar_function_name = "__getScalar";
 
@@ -847,7 +849,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
 
-    auto get_scalar_function = FunctionFactory::instance().get(get_scalar_function_name, mutable_context);
+    auto get_scalar_function = FunctionFactory::instance().get(get_scalar_function_name, context);
     get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
 
     node = std::move(get_scalar_function_node);
