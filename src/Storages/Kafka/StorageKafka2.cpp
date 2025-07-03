@@ -63,7 +63,7 @@
 
 namespace CurrentMetrics
 {
-// TODO: Add proper metrics, similar to old StorageKafka
+extern const Metric KafkaConsumersInUse;
 extern const Metric KafkaBackgroundReads;
 extern const Metric KafkaWrites;
 }
@@ -1055,6 +1055,8 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     if (created_consumer)
         LOG_TRACE(log, "Created #{} consumer", idx);
 
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse);
+
     return consumer;
 }
 
@@ -1063,6 +1065,7 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
     std::lock_guard lock{consumers_mutex};
     consumer_ptr->stopUsing();
     cv.notify_one();
+    CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
 }
 
 void StorageKafka2::cleanConsumers()
