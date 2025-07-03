@@ -10,7 +10,6 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
@@ -71,6 +70,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -277,7 +277,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (create_query->uuid != UUIDHelpers::Nil)
                 {
                     /// A bit tricky way to distinguish ATTACH DATABASE and server startup (actually it's "force_attach" flag).
-                    if (is_startup)
+                    /// When attaching a database with a read-only disk, the UUIDs do not exist, we add them manually.
+                    if (is_startup || (db_disk->isReadOnly() && !DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid)))
                     {
                         /// Server is starting up. Lock UUID used by permanently detached table.
                         DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
@@ -644,6 +645,10 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         local_context->getSettingsRef()[Setting::max_parser_depth],
         local_context->getSettingsRef()[Setting::max_parser_backtracks]);
 
+    auto & create_query = ast->as<ASTCreateQuery &>();
+    if (table_id.uuid != UUIDHelpers::Nil && create_query.uuid != table_id.uuid)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter table {}: metadata file {} has different UUID", table_id.getNameForLogs(), table_metadata_path);
+
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
@@ -686,16 +691,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
 
-        // Do not warn about ordinary databases that is most likely created by recovering replicas
-        if (!args.database_name.ends_with(DatabaseReplicated::BROKEN_TABLES_SUFFIX))
-            args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
-        else
-            args.context->addOrUpdateWarningMessage(
-                Context::WarningType::MAYBE_BROKEN_TABLES,
-                PreformattedMessage::create(
-                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
-                    "has tables, it worth to check why they were considered broken.",
-                    backQuoteIfNeed(args.database_name)));
+        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
 
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;

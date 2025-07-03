@@ -69,9 +69,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
+            {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
+            {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -169,6 +173,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283
+personal_ws-1.1 en 3283 
 AArch
 ACLs
 ALTERs
@@ -233,6 +233,7 @@ DESC
 DIEs
 DOGEFI
 Damerau
+Databricks
 DataGrip
 DataLens
 DataPacket
@@ -246,6 +247,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -341,6 +343,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -718,6 +721,7 @@ NumberOfDetachedParts
 NumberOfTables
 NumericIndexedVector
 NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
 OLAP
@@ -802,6 +806,8 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
+ParallelParsingInputFormatThreads
+ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -1891,12 +1897,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro

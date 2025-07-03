@@ -114,6 +114,7 @@ ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/config.d/
@@ -236,8 +237,14 @@ inject_auth=$((RANDOM % 2))
 if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
     inject_auth=0
 fi
-echo "Replacing inject_auth with $inject_auth"
-sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+if [[ $inject_auth -eq 1 ]]; then
+    echo "Keeper connection will use auth"
+    ln -sf $SRC_PATH/config.d/zookeeper_auth.xml $DEST_SERVER_PATH/config.d/
+else
+    echo "Keeper connection will not use auth"
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper_auth.xml ||:
+fi
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
@@ -306,9 +313,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
-
-    echo "Replacing inject_auth with $inject_auth (for Replicated database)"
-    sed --follow-symlinks -i "s|<inject_auth>[01]</inject_auth>|<inject_auth>$inject_auth</inject_auth>|" $DEST_SERVER_PATH/config.d/database_replicated.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
