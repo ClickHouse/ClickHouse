@@ -1806,7 +1806,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic2(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
 
@@ -1852,7 +1852,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         arguments[1],
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic2(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
             if (isNumber(arguments[0]) && isArray(arguments[1]))
             {
@@ -1860,7 +1860,7 @@ public:
                         arguments[0],
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic2(new_arguments, context));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
 
