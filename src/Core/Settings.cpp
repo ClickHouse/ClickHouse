@@ -5453,9 +5453,6 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
-    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
-Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
-)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
@@ -5527,7 +5524,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiif), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -6125,7 +6122,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
     DECLARE(Bool, use_variant_as_common_type, false, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
 
@@ -6866,9 +6863,6 @@ Possible values:
  - '' - do not force any kind of Exchange operators, let the optimizer choose,
  - 'Persisted' - use temporary files in object storage,
  - 'Streaming' - stream exchange data over network.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
-Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \

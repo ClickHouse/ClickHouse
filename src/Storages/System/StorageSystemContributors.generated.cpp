@@ -1565,6 +1565,7 @@ const char * auto_contributors[] {
     "cjw",
     "clarkcaoliu",
     "clickhouse-adrianfraguela",
+    "clickhouse-gh[bot]",
     "clickhouse-robot-curie",
     "clundro",
     "cluster",

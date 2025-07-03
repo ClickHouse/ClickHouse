@@ -73,7 +73,7 @@ In case you don't really need controlled precision and/or need fast computation,
     FunctionDocumentation::Argument argument2 =   {"y", "Second value: [Decimal](/sql-reference/data-types/decimal)."};
     FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/sql-reference/data-types/int-uint)."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2, argument3};
-    FunctionDocumentation::ReturnedValue returned_value = {"The result of division with given scale.", {"Decimal256"}};
+    FunctionDocumentation::ReturnedValue returned_value = "The result of division with given scale. Type: [Decimal256](/sql-reference/data-types/decimal.md).";
     FunctionDocumentation::Example example1 = {"Example 1", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)", R"(
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
 │                                                -5.7142857142 │

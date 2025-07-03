@@ -63,7 +63,8 @@ The function takes a variable number of input parameters. Arguments can be any o
 value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed
 Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
                        )"}},
-        .returned_value = {{"The computed half MD5 hash of the given input params returned as a UInt64 in big-endian byte order."}, {"UInt64"}},
+        .returned_value = "The computed half MD5 hash of the given input params returned as a "
+                          "[UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order.",
         .examples
         = {{"",
             "SELECT HEX(halfMD5('abc', 'cde', 'fgh'));",

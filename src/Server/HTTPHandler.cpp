@@ -151,6 +151,41 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
         credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
+void HTTPHandler::pushDelayedResults(Output & used_output)
+{
+    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
+    if (!cascade_buffer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
+
+    cascade_buffer->finalize();
+    auto write_buffers = cascade_buffer->getResultBuffers();
+
+    if (write_buffers.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
+
+    ConcatReadBuffer::Buffers read_buffers;
+    for (auto & write_buf : write_buffers)
+    {
+        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->read())
+                read_buffers.emplace_back(std::move(reread_buf));
+        }
+
+        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+                read_buffers.emplace_back(std::move(reread_buf));
+        }
+    }
+
+    if (!read_buffers.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
+        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+    }
+}
+
 
 HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
     : server(server_)
@@ -229,78 +264,6 @@ void HTTPHandler::processQuery(
 
     auto context = session->makeQueryContext();
 
-    auto roles = params.getAll("role");
-    if (!roles.empty())
-        context->setCurrentRoles(roles);
-
-    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
-    if (!database.empty())
-        context->setCurrentDatabase(database);
-
-    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
-    if (!default_format.empty())
-        context->setDefaultFormat(default_format);
-
-    /// Anything else beside HTTP POST should be readonly queries.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
-
-    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
-
-    auto param_could_be_skipped = [&] (const String & name)
-    {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
-            return true;
-
-        /// Some parameters (database, default_format, everything used in the code above) do not
-        /// belong to the Settings class.
-        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
-            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "database", "default_format"};
-
-        if (reserved_param_names.contains(name))
-            return true;
-
-        /// For external data we also want settings.
-        if (has_external_data)
-        {
-            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
-            for (const String & suffix : reserved_param_suffixes)
-            {
-                if (endsWith(name, suffix))
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
-    /// Settings can be overridden in the query.
-    SettingsChanges settings_changes;
-    for (const auto & [key, value] : params)
-    {
-        if (!param_could_be_skipped(key))
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
-                settings_changes.setSetting(key, value);
-        }
-    }
-
-    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
-    context->applySettingsChanges(settings_changes);
-
-    /// Initialize query scope, once query_id is initialized.
-    /// (To track as much allocations as possible)
-    query_scope.emplace(context);
-
-    const auto & settings = context->getSettingsRef();
-
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
     {
@@ -319,24 +282,23 @@ void HTTPHandler::processQuery(
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
-    bool internal_compression = params.getParsedLast<bool>("compress", false);
+    bool internal_compression = params.getParsed<bool>("compress", false);
 
-    /// If wait_end_of_query is specified, the whole result will be buffered.
+    /// At least, we should postpone sending of first buffer_size result bytes
+    size_t buffer_size_total = std::max(
+        params.getParsed<size_t>("buffer_size", context->getSettingsRef()[Setting::http_response_buffer_size]),
+        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+
+    /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    auto buffer_size_http = settings[Setting::http_response_buffer_size];
-    /// setting overrides deprecated buffer_size parameter
-    if (!params.has("http_response_buffer_size"))
-        buffer_size_http = params.getParsedLast<size_t>("buffer_size", buffer_size_http);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef()[Setting::http_wait_end_of_query]);
 
-    bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
-    /// setting overrides deprecated wait_end_of_query parameter
-    if (!params.has("http_wait_end_of_query"))
-        wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
+    size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-
-    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
+    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef()[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
-        = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+        = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef()[Setting::http_zlib_compression_level]);
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -369,15 +331,15 @@ void HTTPHandler::processQuery(
         used_output.out = used_output.out_compressed_holder;
     }
 
-    if (buffer_size_http > 0 || wait_end_of_query)
+    if (buffer_size_memory > 0 || buffer_until_eof)
     {
         CascadeWriteBuffer::WriteBufferPtrs cascade_buffers;
         CascadeWriteBuffer::WriteBufferConstructors cascade_buffers_lazy;
 
-        if (buffer_size_http > 0)
-            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_http));
+        if (buffer_size_memory > 0)
+            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
 
-        if (wait_end_of_query)
+        if (buffer_until_eof)
         {
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
@@ -422,13 +384,86 @@ void HTTPHandler::processQuery(
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
     bool is_in_post_compressed = false;
-    if (params.getParsedLast<bool>("decompress", false))
+    if (params.getParsed<bool>("decompress", false))
     {
         in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
         in_post_maybe_compressed = std::move(in_post);
+
+    std::unique_ptr<ReadBuffer> in;
+
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+        context->setCurrentRoles(roles);
+
+    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
+    if (!database.empty())
+        context->setCurrentDatabase(database);
+
+    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
+    if (!default_format.empty())
+        context->setDefaultFormat(default_format);
+
+    /// Anything else beside HTTP POST should be readonly queries.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+
+    auto param_could_be_skipped = [&] (const String & name)
+    {
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return true;
+
+        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// belong to the Settings class.
+        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
+            "database", "default_format"};
+
+        if (reserved_param_names.contains(name))
+            return true;
+
+        /// For external data we also want settings.
+        if (has_external_data)
+        {
+            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            for (const String & suffix : reserved_param_suffixes)
+            {
+                if (endsWith(name, suffix))
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
+    /// Settings can be overridden in the query.
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : params)
+    {
+        if (!param_could_be_skipped(key))
+        {
+            /// Other than query parameters are treated as settings.
+            if (!customizeQueryParam(context, key, value))
+                settings_changes.push_back({key, value});
+        }
+    }
+
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+    context->applySettingsChanges(settings_changes);
+    const auto & settings = context->getSettingsRef();
+
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope.emplace(context);
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
@@ -482,7 +517,7 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
@@ -515,7 +550,7 @@ void HTTPHandler::processQuery(
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
             /// Instead, we create exception_writer function that will write exception in required format
             /// and will use it later in trySendExceptionToClient when all buffers will be prepared.
-            if (wait_end_of_query)
+            if (buffer_until_eof)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
@@ -551,7 +586,6 @@ void HTTPHandler::processQuery(
                 current_output_format.finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
-
                 used_output.exception_is_written = true;
             }
         }
@@ -560,6 +594,12 @@ void HTTPHandler::processQuery(
     auto query_finish_callback = [&]()
     {
         releaseOrCloseSession(session_id, close_session);
+
+        if (used_output.hasDelayed())
+        {
+            /// TODO: set Content-Length if possible
+            pushDelayedResults(used_output);
+        }
 
         /// Flush all the data from one buffer to another, to track
         /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
@@ -609,7 +649,6 @@ try
 
     if (used_output.exception_is_written)
     {
-        LOG_TRACE(log, "Exception has already been written to output format by current output formatter, nothing to do");
         /// everything has been held by output format write
         return true;
     }
@@ -1048,73 +1087,4 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     return factory;
 }
 
-void HTTPHandler::Output::pushDelayedResults() const
-{
-    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
-    if (!cascade_buffer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
-
-    cascade_buffer->finalize();
-    auto write_buffers = cascade_buffer->getResultBuffers();
-
-    if (write_buffers.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
-
-    ConcatReadBuffer::Buffers read_buffers;
-    for (auto & write_buf : write_buffers)
-    {
-        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
-        {
-            if (auto reread_buf = write_buf_concrete->read())
-                read_buffers.emplace_back(std::move(reread_buf));
-        }
-
-        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
-        {
-            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
-                read_buffers.emplace_back(std::move(reread_buf));
-        }
-    }
-
-    if (!read_buffers.empty())
-    {
-        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
-        copyData(concat_read_buffer, *out_maybe_compressed);
-    }
-}
-
-void HTTPHandler::Output::finalize()
-{
-    if (finalized)
-        return;
-    finalized = true;
-
-    if (hasDelayed())
-        pushDelayedResults();
-
-    if (out_delayed_and_compressed_holder)
-        out_delayed_and_compressed_holder->finalize();
-    if (out_compressed_holder)
-        out_compressed_holder->finalize();
-    if (wrap_compressed_holder)
-        wrap_compressed_holder->finalize();
-    if (out_holder)
-        out_holder->finalize();
-}
-
-void HTTPHandler::Output::cancel()
-{
-    if (canceled)
-        return;
-    canceled = true;
-
-    if (out_delayed_and_compressed_holder)
-        out_delayed_and_compressed_holder->cancel();
-    if (out_compressed_holder)
-        out_compressed_holder->cancel();
-    if (wrap_compressed_holder)
-        wrap_compressed_holder->cancel();
-    if (out_holder)
-        out_holder->cancel();
-}
 }

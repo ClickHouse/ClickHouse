@@ -1212,7 +1212,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1256,7 +1256,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     }
 
     if (!source)
-        return nullptr;
+        return {};
 
     return source->detachFilterActionsDAG();
 }
@@ -1301,16 +1301,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
-    auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, number_of_replicas);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
     for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
-        auto try_results = replicas.pool->getMany(
-            timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
+        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
 
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & try_result : try_results)
