@@ -74,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

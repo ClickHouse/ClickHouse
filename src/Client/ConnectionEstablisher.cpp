@@ -2,6 +2,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
