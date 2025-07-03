@@ -130,5 +130,5 @@ rabbitmq_channel_id:
 
 **See Also**
 
-- [Kafka](../../engines/table-engines/integrations/kafka) - Kafka Engine
-- [system.kafka_consumers](../../operations/system-tables/kafka_consumers.md#system_tables-kafka_consumers) — Description of the `kafka_consumers` system table which contains information like statistics and errors about Kafka consumers.
+- [Kafka](/engines/table-engines/integrations/kafka.md) - Kafka Engine
+- [system.kafka_consumers](/operations/system-tables/kafka_consumers.md#system_tables-kafka_consumers) — Description of the `kafka_consumers` system table which contains information like statistics and errors about Kafka consumers.
