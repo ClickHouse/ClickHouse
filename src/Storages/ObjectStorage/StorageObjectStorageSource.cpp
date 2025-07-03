@@ -519,7 +519,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
+        if (auto transformer = configuration->getSchemaTransformer(context_, object_info->getPath()))
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
