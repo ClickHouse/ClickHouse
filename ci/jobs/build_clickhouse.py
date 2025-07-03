@@ -186,7 +186,7 @@ def main():
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             run_shell("clang-tidy-cache logs file", "ls -lh /tmp/clang-tidy-cache.log")
-            Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
+            Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}", verbose=True)
             run_shell("clang-tidy-cache logs file", f"ls -lh {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
             run_shell("clang-tidy-cache log stats", f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
