@@ -62,6 +62,7 @@ public:
         const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
         const std::filesystem::path & keeper_path_,
         const String & replica_name_,
+        const KafkaConsumer2::TopicPartitionOffsets & sticky_topic_partitions_,
         size_t idx_,
         const LoggerPtr & log_);
 
@@ -121,6 +122,7 @@ private:
 
     /// Protects access to the locks, because they are accessed simultaneously when statistics are collected
     std::mutex mutex;
+    TopicPartitionLocks TSA_GUARDED_BY(mutex) sticky_locks{};
     TopicPartitionLocks TSA_GUARDED_BY(mutex) permanent_locks{};
     TopicPartitionLocks TSA_GUARDED_BY(mutex) tmp_locks{};
     LoggerPtr log;
@@ -138,6 +140,7 @@ private:
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(mutex);
     void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(mutex);
+    void initializeStickyLocks(const TopicPartitionOffsets & all_topic_partitions, const TopicPartitionOffsets & sticky_topic_partitions) TSA_REQUIRES(mutex);
 
     void rollbackToCommittedOffsets();
 

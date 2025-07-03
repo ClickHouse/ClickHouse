@@ -72,6 +72,7 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
     const std::filesystem::path & keeper_path_,
     const String & replica_name_,
+    const KafkaConsumer2::TopicPartitionOffsets & sticky_topic_partitions_,
     size_t idx_,
     const LoggerPtr & log_)
     : keeper_path(keeper_path_)
@@ -83,6 +84,8 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
 {
     if (!keeper)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperHandlingConsumer requires a valid ZooKeeper instance");
+
+    initializeStickyLocks(kafka_consumer->getAllTopicPartitionOffsets(true), sticky_topic_partitions_);
 }
 
 bool KeeperHandlingConsumer::needsNewKeeper() const
@@ -157,7 +160,12 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 
 KeeperHandlingConsumer::LockedTopicPartitionInfo & KeeperHandlingConsumer::getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(mutex)
 {
-    auto locks_it = permanent_locks.find(topic_partition);
+    auto locks_it = sticky_locks.find(topic_partition);
+
+    if (locks_it != sticky_locks.end())
+        return locks_it->second;
+
+    locks_it = permanent_locks.find(topic_partition);
 
     if (locks_it != permanent_locks.end())
         return locks_it->second;
@@ -368,6 +376,23 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
             permanent_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
             ++i;
         }
+    }
+}
+
+void KeeperHandlingConsumer::initializeStickyLocks(const TopicPartitionOffsets & all_topic_partitions, const TopicPartitionOffsets & sticky_topic_partitions) TSA_REQUIRES(mutex) {
+    TopicPartitions sticky_locks_result;
+    std::set_intersection(
+        all_topic_partitions.begin(),  all_topic_partitions.end(),
+        sticky_topic_partitions.begin(), sticky_topic_partitions.end(),
+        std::back_inserter(sticky_locks_result)
+    );
+
+    for (const auto & tp : sticky_locks_result)
+    {
+        auto maybe_lock = createLocksInfoIfFree(tp);
+        if (!maybe_lock.has_value())
+            continue;
+        sticky_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
     }
 }
 

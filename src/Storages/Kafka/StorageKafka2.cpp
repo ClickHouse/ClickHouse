@@ -143,7 +143,7 @@ StorageKafka2::StorageKafka2(
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
-    , sticky_topic_partitions(StorageKafkaUtils::parseTopicPartitions(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value, macros_info)))
+    , sticky_topic_partitions(StorageKafkaUtils::parseTopicPartitionOffsets(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_partitions_for_replica].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
@@ -416,7 +416,7 @@ void StorageKafka2::startup()
     {
         try
         {
-            consumers.push_back(std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
+            consumers.push_back(std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, sticky_topic_partitions, i, log));
             LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
             ++num_created_consumers;
         }

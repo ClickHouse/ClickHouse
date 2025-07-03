@@ -31,7 +31,7 @@ struct KafkaSettings;
 namespace StorageKafkaUtils
 {
 Names parseTopics(String topic_list);
-KafkaConsumer2::TopicPartitions parseTopicPartitions(String topic_partitions_list);
+KafkaConsumer2::TopicPartitionOffsets parseTopicPartitionOffsets(String topic_partitions_list);
 String getDefaultClientId(const StorageID & table_id);
 
 using ErrorHandler = std::function<void(const cppkafka::Error &)>;

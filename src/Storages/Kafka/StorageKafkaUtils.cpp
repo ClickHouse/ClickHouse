@@ -369,9 +369,9 @@ Names parseTopics(String topic_list)
     return result;
 }
 
-KafkaConsumer2::TopicPartitions parseTopicPartitions(String topic_partitions_list)
+KafkaConsumer2::TopicPartitionOffsets parseTopicPartitionOffsets(String topic_partitions_list)
 {
-    KafkaConsumer2::TopicPartitions result;
+    KafkaConsumer2::TopicPartitionOffsets result;
     std::vector<std::string> parts;
     boost::split(parts, topic_partitions_list, boost::is_any_of(","), boost::token_compress_on);
 
@@ -390,7 +390,7 @@ KafkaConsumer2::TopicPartitions parseTopicPartitions(String topic_partitions_lis
         boost::split(fields, part, boost::is_any_of(":"), boost::token_compress_on);
         if (fields.size() == 2)
         {
-            KafkaConsumer2::TopicPartition tp;
+            KafkaConsumer2::TopicPartitionOffset tp;
             tp.topic = fields[0];
             boost::algorithm::trim(tp.topic);
             try

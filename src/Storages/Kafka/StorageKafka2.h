@@ -130,7 +130,7 @@ private:
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
     const Names topics;
-    const TopicPartitions sticky_topic_partitions;
+    const KafkaConsumer2::TopicPartitionOffsets sticky_topic_partitions;
     const String brokers;
     const String group;
     const String client_id;
