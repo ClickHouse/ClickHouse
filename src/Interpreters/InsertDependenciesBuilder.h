@@ -54,7 +54,7 @@ private:
     {
     private:
         std::vector<StorageIDPrivate> path;
-        std::unordered_set<StorageIDPrivate, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+        StorageIDPrivateSet visited;
 
     public:
         void pushBack(StorageIDPrivate id);
