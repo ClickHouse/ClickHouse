@@ -51,17 +51,14 @@ from synchronizer_utils import SYNC_PR_PREFIX
 
 class ReleaseBranch:
     STALE_THRESHOLD = 24 * 3600
-    CHERRYPICK_DESCRIPTION = f"""This pull-request is a first step of an automated backporting.
+    CHERRYPICK_DESCRIPTION = f"""## Do not merge this PR manually
+
+This pull-request is a first step of an automated backporting.
 It contains changes similar to calling `git cherry-pick` locally.
 If you intend to continue backporting the changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
-
-### Note
-
-This pull-request will be merged automatically. Please, **do not merge it manually** \
-(but if you accidentally did, nothing bad will happen).
 
 ### Troubleshooting
 
@@ -73,8 +70,8 @@ want to recreate it:
 - delete the `{Labels.PR_CHERRYPICK}` label from the PR
 - delete this branch from the repository
 
-You also need to check the original PR {{pr_url}} for `{Labels.PR_BACKPORTS_CREATED}`, and \
-delete if it's presented there
+You also need to check the **Original pull-request** for `{Labels.PR_BACKPORTS_CREATED}` \
+label, and  delete if it's presented there
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
@@ -246,9 +243,7 @@ close it.
         title = f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}"
         self.cherrypick_pr = self.repo.create_pull(
             title=title,
-            body=self.body_header()
-            + self.CHERRYPICK_DESCRIPTION.format(pr_url=self.pr.html_url)
-            + self.pr_source,
+            body=self.body_header() + self.CHERRYPICK_DESCRIPTION + self.pr_source,
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
