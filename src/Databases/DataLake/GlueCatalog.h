@@ -72,7 +72,7 @@ private:
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
-    mutable Poco::JSON::Object::Ptr metadata_object;
+    mutable std::unordered_map<String, Poco::JSON::Object::Ptr> metadata_objects;
 };
 
 }

@@ -1,6 +1,6 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #if USE_AWS_S3 && USE_AVRO
 
@@ -396,24 +396,24 @@ bool GlueCatalog::empty() const
 
 bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
-    if (!metadata_object)
+    String metadata_path;
+    if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
+        table_specific_properties.has_value())
     {
-        String metadata_path;
-        if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
-            table_specific_properties.has_value())
-        {
-            metadata_path = table_specific_properties->iceberg_metadata_file_location;
-            if (metadata_path.starts_with("s3:/"))
-                metadata_path = metadata_path.substr(5);
+        metadata_path = table_specific_properties->iceberg_metadata_file_location;
+        if (metadata_path.starts_with("s3:/"))
+            metadata_path = metadata_path.substr(5);
 
-            // Delete bucket
-            std::size_t pos = metadata_path.find('/');
-            if (pos != std::string::npos)
-                metadata_path = metadata_path.substr(pos + 1);
-        }
-        else
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
+        // Delete bucket
+        std::size_t pos = metadata_path.find('/');
+        if (pos != std::string::npos)
+            metadata_path = metadata_path.substr(pos + 1);
+    }
+    else
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Metadata specific properties should be defined");
 
+    if (!metadata_objects[metadata_path])
+    {
         DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
         DB::ASTs args = storage->engine->arguments->children;
 
@@ -445,8 +445,9 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);
-        metadata_object = result.extract<Poco::JSON::Object::Ptr>();
+        metadata_objects[metadata_path] = result.extract<Poco::JSON::Object::Ptr>();
     }
+    auto metadata_object = metadata_objects[metadata_path];
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray("schemas");
     for (size_t i = 0; i < schemas->size(); ++i)
