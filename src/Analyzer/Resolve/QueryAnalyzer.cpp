@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include "DataTypes/IDataType.h"
 
 #include <Columns/ColumnNullable.h>
 
@@ -804,6 +805,9 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 {
     auto * constant_node = node->as<ConstantNode>();
     if (!constant_node || !constant_node->hasSourceExpression())
+        return;
+
+    if (!isArray(constant_node->getResultType()->getTypeId()))
         return;
 
     auto & source_expression = constant_node->getSourceExpression();
