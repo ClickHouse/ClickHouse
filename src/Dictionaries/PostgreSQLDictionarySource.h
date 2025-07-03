@@ -1,11 +1,11 @@
 #pragma once
 
 #include "config.h"
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
 
 #if USE_LIBPQXX
-#include "ExternalQueryBuilder.h"
+#include <Dictionaries/ExternalQueryBuilder.h>
 #include <Core/Block.h>
 #include <Common/LocalDateTime.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
