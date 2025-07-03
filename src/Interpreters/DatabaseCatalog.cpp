@@ -670,7 +670,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name});
+            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
         }
     }
@@ -1598,7 +1598,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             old_view_dependencies.push_back(the_table_from);
         }
     }
@@ -1630,7 +1630,7 @@ void DatabaseCatalog::updateDependencies(
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
         }
     }

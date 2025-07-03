@@ -780,20 +780,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
             const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
 
-            if (!token_path.empty())
-            {
-                LOG_INFO(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE, token_path);
-
-                String token_from_file;
-
-                ReadBufferFromFile in(token_path);
-                readStringUntilEOF(token_from_file, in);
-                Poco::trimInPlace(token_from_file);
-
-                token = token_from_file;
-            }
-
-            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absolute_uri.c_str(), token.c_str()));
+            AddProvider(std::make_shared<Aws::Auth::GeneralHTTPCredentialsProvider>(
+                relative_uri,
+                absolute_uri,
+                token,
+                token_path
+            ));
 
             /// DO NOT log the value of the authorization token for security purposes.
             LOG_INFO(logger, "Added ECS credentials provider with URI: [{}] to the provider chain with a{} authorization token.",
