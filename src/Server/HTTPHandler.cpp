@@ -450,7 +450,7 @@ void HTTPHandler::processQuery(
         {
             /// Other than query parameters are treated as settings.
             if (!customizeQueryParam(context, key, value))
-                settings_changes.setSetting(key, value);
+                settings_changes.push_back({key, value});
         }
     }
 

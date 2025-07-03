@@ -63,7 +63,7 @@ public:
             reversed_types.reserve(element_count);
             reversed_types.assign(original_elements.rbegin(), original_elements.rend());
 
-            if (data_type_tuple.hasExplicitNames())
+            if (data_type_tuple.haveExplicitNames())
             {
                 const auto & original_names = data_type_tuple.getElementNames();
                 Names reversed_names;

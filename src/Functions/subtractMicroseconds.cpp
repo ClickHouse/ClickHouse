@@ -8,18 +8,18 @@ namespace DB
 using FunctionSubtractMicroseconds = FunctionDateOrDateTimeAddInterval<SubtractMicrosecondsImpl>;
 REGISTER_FUNCTION(SubtractMicroseconds)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_subtractMicroseconds = R"(
 Subtracts a specified number of microseconds from a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_subtractMicroseconds = R"(
 subtractMicroseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Arguments arguments_subtractMicroseconds = {
         {"datetime", "Date with time to subtract specified number of microseconds from. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
         {"num", "Number of microseconds to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` minus `num` microseconds. [`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_subtractMicroseconds = "Returns `datetime` minus `num` microseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_subtractMicroseconds = {
         {"Subtract microseconds from different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -42,11 +42,19 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 microsecond)
 └────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_subtractMicroseconds = {22, 6};
+    FunctionDocumentation::Category category_subtractMicroseconds = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractMicroseconds = {
+        description_subtractMicroseconds,
+        syntax_subtractMicroseconds,
+        arguments_subtractMicroseconds,
+        returned_value_subtractMicroseconds,
+        examples_subtractMicroseconds,
+        introduced_in_subtractMicroseconds,
+        category_subtractMicroseconds
+    };
 
-    factory.registerFunction<FunctionSubtractMicroseconds>(documentation);
+    factory.registerFunction<FunctionSubtractMicroseconds>(documentation_subtractMicroseconds);
 }
 
 }

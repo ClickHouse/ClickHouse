@@ -954,11 +954,6 @@ struct ContextSharedPart : boost::noncopyable
         warnings[warning] = message;
     }
 
-    void removeAllWarnings() TSA_REQUIRES(mutex)
-    {
-        warnings.clear();
-    }
-
     void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
     {
         if (warnings.contains(warning))
@@ -1551,12 +1546,6 @@ void Context::removeWarningMessage(WarningType warning) const
 {
     std::lock_guard lock(shared->mutex);
     shared->removeWarningMessage(warning);
-}
-
-void Context::removeAllWarnings() const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->removeAllWarnings();
 }
 
 void Context::setConfig(const ConfigurationPtr & config)

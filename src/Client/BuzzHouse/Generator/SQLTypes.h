@@ -622,7 +622,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     return false;
 }
 
-String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
+String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);

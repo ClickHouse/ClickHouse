@@ -290,6 +290,7 @@ fi
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
 
@@ -336,13 +337,6 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
 
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
-fi
-
-# Enable remote_database_disk in DEBUG and ASAN build
-build_opts=$(clickhouse-server local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
-    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-    echo "Installed remote_database_disk.xml config"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

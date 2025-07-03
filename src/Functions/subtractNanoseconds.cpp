@@ -9,18 +9,18 @@ using FunctionSubtractNanoseconds = FunctionDateOrDateTimeAddInterval<SubtractNa
 
 REGISTER_FUNCTION(SubtractNanoseconds)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_subtractNanoseconds = R"(
 Subtracts a specified number of nanoseconds from a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_subtractNanoseconds = R"(
 subtractNanoseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Arguments arguments_subtractNanoseconds = {
         {"datetime", "Date with time to subtract specified number of nanoseconds from. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
         {"num", "Number of nanoseconds to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` minus `num` nanoseconds. [`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_subtractNanoseconds = "Returns `datetime` minus `num` nanoseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_subtractNanoseconds = {
         {"Subtract nanoseconds from different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -43,11 +43,19 @@ SELECT dateSub('1998-06-16'::DateTime, INTERVAL 10 nanosecond)
 └───────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_subtractNanoseconds = {20, 1};
+    FunctionDocumentation::Category category_subtractNanoseconds = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractNanoseconds = {
+        description_subtractNanoseconds,
+        syntax_subtractNanoseconds,
+        arguments_subtractNanoseconds,
+        returned_value_subtractNanoseconds,
+        examples_subtractNanoseconds,
+        introduced_in_subtractNanoseconds,
+        category_subtractNanoseconds
+    };
 
-    factory.registerFunction<FunctionSubtractNanoseconds>(documentation);
+    factory.registerFunction<FunctionSubtractNanoseconds>(documentation_subtractNanoseconds);
 }
 
 }

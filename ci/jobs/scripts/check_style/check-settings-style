@@ -22,11 +22,9 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Core/ServerSettings.cpp
     $ROOT_PATH/src/Core/Settings.cpp
     $ROOT_PATH/src/Databases/DataLake/DatabaseDataLakeSettings.cpp
-    $ROOT_PATH/src/Databases/DatabaseMetadataDiskSettings.cpp
     $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
     $ROOT_PATH/src/IO/S3AuthSettings.cpp
     $ROOT_PATH/src/IO/S3RequestSettings.cpp
-    $ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp
     $ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp
     $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
     $ROOT_PATH/src/Storages/ExecutableSettings.cpp
@@ -46,6 +44,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
     $ROOT_PATH/src/Storages/SetSettings.cpp
     $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+    $ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration

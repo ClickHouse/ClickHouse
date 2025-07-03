@@ -181,13 +181,6 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
-    {
-        SetValue * sv = cd->mutable_setting_values()->mutable_set_value();
-
-        sv->set_property("disk");
-        sv->set_value("'" + rg.pickRandomly(fc.disks) + "'");
-    }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
 
@@ -3744,12 +3737,7 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_keep_logical_steps, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_actions, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_header, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_run_query_tree_passes, trueOrFalseInt),
-    ExplainOptValues(
-        ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_query_tree_passes,
-        [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); }),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_projections, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt)};
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3771,20 +3759,35 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             switch (val.value())
             {
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST:
-                    this->ids.insert(this->ids.end(), {0, 1});
+                    this->ids.emplace_back(0);
+                    this->ids.emplace_back(1);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
-                    this->ids.insert(this->ids.end(), {2, 17, 18});
+                    this->ids.emplace_back(2);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
-                    this->ids.insert(this->ids.end(), {3, 4, 5, 6, 7});
+                    this->ids.emplace_back(3);
+                    this->ids.emplace_back(4);
+                    this->ids.emplace_back(5);
+                    this->ids.emplace_back(6);
+                    this->ids.emplace_back(7);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
-                    this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 19});
+                    this->ids.emplace_back(1);
+                    this->ids.emplace_back(8);
+                    this->ids.emplace_back(9);
+                    this->ids.emplace_back(10);
+                    this->ids.emplace_back(11);
+                    this->ids.emplace_back(12);
+                    this->ids.emplace_back(13);
+                    this->ids.emplace_back(14);
+                    this->ids.emplace_back(15);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.insert(this->ids.end(), {0, 15, 16});
+                    this->ids.emplace_back(0);
+                    this->ids.emplace_back(15);
+                    this->ids.emplace_back(16);
                     break;
                 default:
                     break;
@@ -3792,7 +3795,14 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         }
         else
         {
-            this->ids.insert(this->ids.end(), {1, 9, 10, 11, 12, 13, 14, 15, 19});
+            this->ids.emplace_back(1);
+            this->ids.emplace_back(9);
+            this->ids.emplace_back(10);
+            this->ids.emplace_back(11);
+            this->ids.emplace_back(12);
+            this->ids.emplace_back(13);
+            this->ids.emplace_back(14);
+            this->ids.emplace_back(15);
         }
         if (!this->ids.empty())
         {

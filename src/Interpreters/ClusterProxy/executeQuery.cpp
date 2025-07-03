@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -671,15 +670,12 @@ void executeQueryWithParallelReplicas(
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
 
+        /// If there's only one replica or the source is empty, just read locally.
         if (!with_parallel_replicas || connection_pools.size() == 1)
         {
             query_plan = std::move(*local_plan);
             return;
         }
-
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
-        auto stub_local_plan = std::make_unique<QueryPlan>();
-        stub_local_plan->addStep(std::move(read_from_local));
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
@@ -705,11 +701,11 @@ void executeQueryWithParallelReplicas(
 
         Headers input_headers;
         input_headers.reserve(2);
-        input_headers.emplace_back(stub_local_plan->getCurrentHeader());
+        input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
         std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::move(stub_local_plan));
+        plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_headers));

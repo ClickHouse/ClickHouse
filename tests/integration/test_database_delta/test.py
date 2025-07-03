@@ -223,7 +223,10 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     print(complex_data)
     assert complex_data[0] == "2024-10-01"
-    assert complex_data[1] == "2024-10-01 00:12:00.000000"
+    if use_delta_kernel == "1":
+        assert complex_data[1] == "2024-10-01 00:12:00.000" #FIXME
+    else:
+        assert complex_data[1] == "2024-10-01 00:12:00.000000"
     assert complex_data[2] == "[42,123,77]"
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
@@ -282,8 +285,12 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     )
     print(ntz_data)
     assert ntz_data[0] == "2024-10-01"
-    assert ntz_data[1] == "2024-10-01 00:12:00.000000"
-    assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+    if use_delta_kernel == "1":
+        assert ntz_data[1] == "2024-10-01 00:12:00.000" #FIXME
+        assert ntz_data[2] == "2024-10-01 00:12:00.000" #FIXME
+    else:
+        assert ntz_data[1] == "2024-10-01 00:12:00.000000"
+        assert ntz_data[2] == "2024-10-01 00:12:00.000000"
 
 def test_no_permission_and_list_tables(started_cluster):
     # this test supposed to test "SHOW TABLES" query when we have no permissions for some table

@@ -10,18 +10,18 @@ using FunctionSubtractMonths = FunctionDateOrDateTimeAddInterval<SubtractMonthsI
 
 REGISTER_FUNCTION(SubtractMonths)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_subtractMonths = R"(
 Subtracts a specified number of months from a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_subtractMonths = R"(
 subtractMonths(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Arguments arguments_subtractMonths = {
         {"datetime", "Date or date with time to subtract specified number of months from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
         {"num", "Number of months to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` minus `num` months. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_subtractMonths = "Returns `datetime` minus `num` months. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::Examples examples_subtractMonths = {
         {"Subtract months from different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -46,11 +46,19 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 month)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_subtractMonths = {1, 1};
+    FunctionDocumentation::Category category_subtractMonths = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractMonths = {
+        description_subtractMonths,
+        syntax_subtractMonths,
+        arguments_subtractMonths,
+        returned_value_subtractMonths,
+        examples_subtractMonths,
+        introduced_in_subtractMonths,
+        category_subtractMonths
+    };
 
-    factory.registerFunction<FunctionSubtractMonths>(documentation);
+    factory.registerFunction<FunctionSubtractMonths>(documentation_subtractMonths);
 }
 
 }

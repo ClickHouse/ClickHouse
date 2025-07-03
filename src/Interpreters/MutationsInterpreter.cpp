@@ -1038,7 +1038,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
-            stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
@@ -1565,14 +1564,7 @@ bool MutationsInterpreter::isAffectingAllColumns() const
     if (stages.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
-    /// Find first not readonly stage from the end.
-    for (auto it = stages.rbegin(); it != stages.rend(); ++it)
-    {
-        if (!it->is_readonly)
-            return it->isAffectingAllColumns(storage_columns);
-    }
-
-    return false;
+    return stages.back().isAffectingAllColumns(storage_columns);
 }
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
