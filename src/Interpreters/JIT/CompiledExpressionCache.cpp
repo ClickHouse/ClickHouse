@@ -1,4 +1,4 @@
-#include "CompiledExpressionCache.h"
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #if USE_EMBEDDED_COMPILER
 

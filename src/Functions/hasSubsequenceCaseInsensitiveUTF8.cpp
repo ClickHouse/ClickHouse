@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/HasSubsequenceImpl.h>
 
-#include "Poco/Unicode.h"
+#include <Poco/Unicode.h>
 
 namespace DB
 {

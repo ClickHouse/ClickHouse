@@ -2,8 +2,8 @@
 
 #if USE_AWS_S3
 
-#include "StdIStreamFromMemory.h"
-#include "WriteBufferFromS3.h"
+#include <IO/StdIStreamFromMemory.h>
+#include <IO/WriteBufferFromS3.h>
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
