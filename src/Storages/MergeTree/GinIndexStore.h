@@ -41,7 +41,7 @@ namespace DB
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
 
-class GinIndexCompression
+class GinIndexCompressionFactory
 {
 public:
     static const CompressionCodecPtr & zstdCodec();
@@ -131,11 +131,12 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
+    /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
     enum class Format : uint8_t
     {
         v0 = 0,
         v1 = 1, /// Initial version
-        v2 = 2, /// Supports compression
+        v2 = 2, /// Supports adaptive compression
     };
 
     /// Container for all term's Gin Index Postings List Builder
@@ -178,12 +179,16 @@ public:
     void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
-    /// Returns the version number it used to store FST blob
-    Format writeSegment();
+    void writeSegment();
 
     const String & getName() const { return name; }
 
 private:
+    /// FST size less than 100KiB does not worth to compress.
+    static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
+    /// Current version of GinIndex to store FST
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v2;
+
     friend class GinIndexStoreDeserializer;
 
     /// Initialize all indexing files for this store
@@ -193,7 +198,7 @@ private:
     void initSegmentId();
 
     /// Stores segment id into disk
-    void writeSegmentId(Format version);
+    void writeSegmentId();
 
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
@@ -232,9 +237,6 @@ private:
     static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-
-    /// FST size less than 100KiB does not worth to compress.
-    static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;

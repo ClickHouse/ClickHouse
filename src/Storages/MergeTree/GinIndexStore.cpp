@@ -26,12 +26,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 };
 
-const CompressionCodecPtr & GinIndexCompression::zstdCodec()
+const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
 {
     static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
     static constexpr auto GIN_COMPRESSION_LEVEL = 1;
 
-    static const auto & codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
+    static auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
     return codec;
 }
 
@@ -94,7 +94,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
         auto buf = std::make_unique<char[]>(size);
         rowid_bitmap.write(buf.get());
 
-        const auto& codec = GinIndexCompression::zstdCodec();
+        const auto & codec = GinIndexCompressionFactory::zstdCodec();
         Memory<> memory;
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
         auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
@@ -136,7 +136,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
 
         Memory<> memory;
         memory.resize(size);
-        const auto& codec = GinIndexCompression::zstdCodec();
+        const auto & codec = GinIndexCompressionFactory::zstdCodec();
         codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
 
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
@@ -260,8 +260,8 @@ void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
     {
-        auto version = writeSegment();
-        writeSegmentId(version);
+        writeSegment();
+        writeSegmentId();
     }
 
     if (metadata_file_stream)
@@ -319,20 +319,20 @@ void GinIndexStore::initFileStreams()
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
-void GinIndexStore::writeSegmentId(GinIndexStore::Format version)
+void GinIndexStore::writeSegmentId()
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(segment_id_file_name, 8, {});
 
     /// Write version
-    writeChar(static_cast<char>(version), *ostr);
+    writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
 
     writeVarUInt(next_available_segment_id, *ostr);
     ostr->sync();
     ostr->finalize();
 }
 
-GinIndexStore::Format GinIndexStore::writeSegment()
+void GinIndexStore::writeSegment()
 {
     if (metadata_file_stream == nullptr)
         initFileStreams();
@@ -382,24 +382,18 @@ GinIndexStore::Format GinIndexStore::writeSegment()
     fst_builder.build();
     write_buf.finalize();
 
-    size_t uncompressed_size = buffer.size();
+    const size_t uncompressed_size = buffer.size();
+    const bool compress_fst = uncompressed_size >= FST_SIZE_COMPRESSION_THRESHOLD;
 
-    /// Write uncompressed FST size
-    writeVarUInt(uncompressed_size, *dict_file_stream);
-    current_segment.dict_start_offset += getLengthOfVarUInt(uncompressed_size);
+    /// Header contains the uncompressed size and a single bit to indicate whether FST is compressed or uncompressed.
+    UInt64 fst_size_header = (uncompressed_size << 1) | (compress_fst ? 0x1 : 0x0);
+    /// Write FST size header
+    writeVarUInt(fst_size_header, *dict_file_stream);
+    current_segment.dict_start_offset += getLengthOfVarUInt(fst_size_header);
 
-    Format version = Format::v1;
-    if (uncompressed_size < FST_SIZE_COMPRESSION_THRESHOLD)
+    if (compress_fst)
     {
-        /// Write FST uncompressed blob
-        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
-        current_segment.dict_start_offset += uncompressed_size;
-    }
-    else
-    {
-        version = Format::v2;
-
-        const auto & codec = GinIndexCompression::zstdCodec();
+        const auto & codec = GinIndexCompressionFactory::zstdCodec();
         Memory<> memory;
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
         auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
@@ -412,6 +406,12 @@ GinIndexStore::Format GinIndexStore::writeSegment()
         dict_file_stream->write(memory.data(), compressed_size);
         current_segment.dict_start_offset += compressed_size;
     }
+    else
+    {
+        /// Write FST uncompressed blob
+        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
+        current_segment.dict_start_offset += uncompressed_size;
+    }
 
     current_size = 0;
     current_postings.clear();
@@ -420,8 +420,6 @@ GinIndexStore::Format GinIndexStore::writeSegment()
     metadata_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
-
-    return version;
 }
 
 GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)
@@ -475,42 +473,48 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
+    /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
+    dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
 
-    switch (auto version =store->getVersion(); version)
+    switch (auto version = store->getVersion(); version)
     {
         case std::underlying_type_t<GinIndexStore::Format>(GinIndexStore::Format::v1): {
-            /// Set file pointer of dictionary file
-            dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
-
-            it->second->offsets.getData().clear();
             /// Read FST size
             size_t fst_size = 0;
             readVarUInt(fst_size, *dict_file_stream);
 
             /// Read FST blob
+            it->second->offsets.getData().clear();
             it->second->offsets.getData().resize(fst_size);
             dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
             break;
         }
         case std::underlying_type_t<GinIndexStore::Format>(GinIndexStore::Format::v2): {
-            /// Read uncompressed FST size
-            size_t uncompressed_fst_size = 0;
-            readVarUInt(uncompressed_fst_size, *dict_file_stream);
+            /// Read FST size header
+            UInt64 fst_size_header;
+            readVarUInt(fst_size_header, *dict_file_stream);
 
-            /// Read compressed FST size
-            size_t compressed_fst_size = 0;
-            readVarUInt(compressed_fst_size, *dict_file_stream);
-
-            /// Read compressed FST blob
-            auto buf = std::make_unique<char[]>(compressed_fst_size);
-            dict_file_stream->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
-
+            size_t uncompressed_fst_size = fst_size_header >> 1;
             it->second->offsets.getData().clear();
             it->second->offsets.getData().resize(uncompressed_fst_size);
-            const auto & codec = DB::GinIndexCompression::zstdCodec();
-            codec->decompress(
-                buf.get(), static_cast<UInt32>(compressed_fst_size), reinterpret_cast<char *>(it->second->offsets.getData().data()));
+            if (fst_size_header & 0x1) /// FST is compressed
+            {
+                /// Read compressed FST size
+                size_t compressed_fst_size = 0;
+                readVarUInt(compressed_fst_size, *dict_file_stream);
+                /// Read compressed FST blob
+                auto buf = std::make_unique<char[]>(compressed_fst_size);
+                dict_file_stream->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
+                const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
+                codec->decompress(
+                    buf.get(), static_cast<UInt32>(compressed_fst_size), reinterpret_cast<char *>(it->second->offsets.getData().data()));
+            }
+            else
+            {
+                /// Read uncompressed FST blob
+                dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), uncompressed_fst_size);
+            }
             break;
         }
         default:
