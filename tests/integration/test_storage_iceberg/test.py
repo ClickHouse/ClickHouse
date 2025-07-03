@@ -2,7 +2,6 @@ import glob
 import json
 import logging
 import os
-import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
@@ -1716,7 +1715,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})ReadStep"],
+            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})Source"],
         ]
 
         assert res == expected
@@ -2635,8 +2634,7 @@ def test_metadata_cache(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("is_table_function", [False, True])
-def test_minmax_pruning(started_cluster, storage_type, is_table_function):
+def test_minmax_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2697,15 +2695,9 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     """
     )
 
-    if is_table_function:
-        creation_expression = get_creation_expression(
+    creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
-    else:
-        instance.query(get_creation_expression(
-            storage_type, TABLE_NAME, started_cluster, table_function=False
-        ))
-        creation_expression = TABLE_NAME
 
     def check_validity_and_get_prunned_files(select_expression):
         settings1 = {
@@ -2782,9 +2774,6 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
         )
         == 3
     )
-
-    if not is_table_function:
-        return
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 
@@ -3123,41 +3112,3 @@ def test_cluster_table_function_with_partition_pruning(
     )
 
     instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
-
-@pytest.mark.parametrize("storage_type", ["local", "s3"])
-def test_compressed_metadata(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_compressed_metadata_" + storage_type + "_" + get_uuid_str()
-
-    table_properties = {
-        "write.metadata.compression": "gzip"
-    }
-
-    df = spark.createDataFrame([
-        (1, "Alice"),
-        (2, "Bob")
-    ], ["id", "name"])
-
-    # for some reason write.metadata.compression is not working :(
-    df.writeTo(TABLE_NAME) \
-        .tableProperty("write.metadata.compression", "gzip") \
-        .using("iceberg") \
-        .create()
-
-    # manual compression of metadata file before upload, still test some scenarios
-    subprocess.check_output(f"gzip /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json", shell=True)
-
-    # Weird but compression extension is really in the middle of the file name, not in the end...
-    subprocess.check_output(f"mv /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json.gz /iceberg_data/default/{TABLE_NAME}/metadata/v1.gz.metadata.json", shell=True)
-
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE not ignore(*)") == "1\tAlice\n2\tBob\n"

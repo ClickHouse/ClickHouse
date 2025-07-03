@@ -14,7 +14,6 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
-#include <Interpreters/Context.h>
 
 #include <Parsers/SelectUnionMode.h>
 

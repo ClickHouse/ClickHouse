@@ -4,7 +4,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Common/WKB.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
@@ -13,8 +12,8 @@
 #include "base/types.h"
 
 #if USE_ARROW
-#    include <arrow/util/key_value_metadata.h>
 #    include <arrow/array/array_binary.h>
+#    include <arrow/util/key_value_metadata.h>
 #endif
 
 namespace DB
@@ -47,9 +46,22 @@ std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const 
 
 std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::optional<Poco::JSON::Object::Ptr> geo_json);
 
+struct ArrowPoint
+{
+    double x;
+    double y;
+};
+
+using ArrowLineString = std::vector<ArrowPoint>;
+using ArrowPolygon = std::vector<std::vector<ArrowPoint>>;
+using ArrowMultiLineString = std::vector<ArrowLineString>;
+using ArrowMultiPolygon = std::vector<ArrowPolygon>;
+
+using ArrowGeometricObject = std::variant<ArrowPoint, ArrowLineString, ArrowPolygon, ArrowMultiPolygon>;
+
 struct IGeometryColumnBuilder
 {
-    virtual void appendObject(const GeometricObject & object) = 0;
+    virtual void appendObject(const ArrowGeometricObject & object) = 0;
     virtual void appendDefault() = 0;
     virtual ColumnWithTypeAndName getResultColumn() = 0;
 
@@ -61,8 +73,8 @@ class PointColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit PointColumnBuilder(const String & name_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -82,8 +94,8 @@ class LineColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit LineColumnBuilder(const String & name_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -104,8 +116,8 @@ class PolygonColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit PolygonColumnBuilder(const String & name_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -126,8 +138,8 @@ class MultiLineStringColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit MultiLineStringColumnBuilder(const String & name_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -148,8 +160,8 @@ class MultiPolygonColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit MultiPolygonColumnBuilder(const String & name_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -171,8 +183,8 @@ class GeoColumnBuilder : public IGeometryColumnBuilder
 public:
     explicit GeoColumnBuilder(const String & name_, GeoType type_);
 
+    void appendObject(const ArrowGeometricObject & object) override;
     void appendDefault() override;
-    void appendObject(const GeometricObject & object) override;
 
     ColumnWithTypeAndName getResultColumn() override;
 
@@ -182,6 +194,7 @@ private:
     String name;
 };
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer);
+ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer);
 
 }

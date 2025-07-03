@@ -1,5 +1,4 @@
 import dataclasses
-import traceback
 from typing import List
 
 from praktika.result import Result
@@ -45,7 +44,8 @@ class FTResultsProcessor:
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
-        self.debug_files = []
+        # self.test_results_parsed_file = f"{wd}/test_result.tsv"
+        # self.status_file = f"{wd}/check_status.tsv"
 
     def _process_test_output(self):
         total = 0
@@ -120,36 +120,16 @@ class FTResultsProcessor:
                 if DATABASE_SIGN in line:
                     test_end = True
 
-        test_results_ = []
-        for test in test_results:
-            try:
-                test_results_.append(
-                    Result(
-                        name=test[0],
-                        status=test[1],
-                        start_time=None,
-                        duration=float(test[2]),
-                        info="".join(test[3])[:16384],
-                    )
-                )
-            except Exception as e:
-                print(f"ERROR: Failed to parse test results: [{test}]")
-                traceback.print_exc()
-                self.debug_files.append(self.tests_output_file)
-                if test[0] == "+":
-                    # TODO: investigate and remove
-                    # https://github.com/ClickHouse/ClickHouse/issues/81888
-                    continue
-                test_results_.append(
-                    Result(
-                        name=test[0],
-                        status=Result.Status.ERROR,
-                        start_time=None,
-                        duration=None,
-                        info=f"test results parse failure:\n{traceback.print_exc()}",
-                    )
-                )
-        test_results = test_results_
+        test_results = [
+            Result(
+                name=test[0],
+                status=test[1],
+                start_time=None,
+                duration=float(test[2]),
+                info="".join(test[3])[:16384],
+            )
+            for test in test_results
+        ]
 
         s = self.Summary(
             total=total,
@@ -199,7 +179,6 @@ class FTResultsProcessor:
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAILED
 
-        info = ""
         if s.hung:
             state = Result.Status.FAILED
             test_results.append(
@@ -214,8 +193,10 @@ class FTResultsProcessor:
                     result.status = "SERVER_DIED"
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
-            state = Result.Status.ERROR
-            info = "The test runner was terminated unexpectedly"
+            state = Result.Status.FAILED
+            test_results.append(
+                Result("Tests are not finished", "FAIL", info="Tests are not finished")
+            )
         elif s.retries:
             test_results.append(
                 Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
@@ -223,8 +204,7 @@ class FTResultsProcessor:
         else:
             pass
 
-        if not info:
-            info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
+        info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
         # TODO: !!!
         # def test_result_comparator(item):

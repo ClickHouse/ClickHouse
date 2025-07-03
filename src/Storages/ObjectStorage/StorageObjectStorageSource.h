@@ -15,8 +15,6 @@ namespace DB
 
 class SchemaCache;
 
-using ReadTaskCallback = std::function<String()>;
-
 class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
@@ -222,8 +220,8 @@ class StorageObjectStorageSource::KeysIterator : public IObjectIterator
 {
 public:
     KeysIterator(
-        const Strings & keys_,
         ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
@@ -238,6 +236,7 @@ public:
 
 private:
     const ObjectStoragePtr object_storage;
+    const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;

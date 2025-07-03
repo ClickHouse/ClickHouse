@@ -68,7 +68,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -390,8 +389,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_functions = factories_info.functions;
         element.used_storages = factories_info.storages;
         element.used_table_functions = factories_info.table_functions;
-        element.used_executable_user_defined_functions = factories_info.executable_user_defined_functions;
-        element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
@@ -706,12 +703,6 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (query_ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
     QueryStatusInfoPtr info;
     if (process_list_elem)
     {
@@ -737,6 +728,12 @@ void logQueryException(
         if (auto query_log = context->getQueryLog())
             query_log->add(elem);
     }
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    else if (query_ast->as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
 
     if (query_span)
     {
@@ -800,6 +797,8 @@ void logExceptionBeforeStart(
 
     elem.client_info = context->getClientInfo();
 
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
+
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
@@ -818,20 +817,6 @@ void logExceptionBeforeStart(
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
-
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    QueryStatusInfoPtr info;
-    if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
-    {
-        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
-        addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
-    }
-    logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
     if (auto query_log = context->getQueryLog())
     {
@@ -879,6 +864,20 @@ void logExceptionBeforeStart(
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
+    }
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+
+    if (ast)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        }
+        else if (ast->as<ASTInsertQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        }
     }
 }
 
@@ -1826,7 +1825,7 @@ void executeQuery(
                 if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -1962,7 +1961,7 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.content_type = output_format->getContentType();
             result_details.format = format_name;
 
             pipeline.complete(output_format);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
@@ -64,18 +65,8 @@ private:
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
-
-    void addLazyPipe(
-        Pipes & pipes,
-        const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
-        size_t parallel_marshalling_threads);
-
-    void addPipe(
-        Pipes & pipes,
-        const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
-        size_t parallel_marshalling_threads);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
 };
 
 
@@ -113,9 +104,7 @@ public:
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
-
-    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header,
-                                   size_t parallel_marshalling_threads);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;

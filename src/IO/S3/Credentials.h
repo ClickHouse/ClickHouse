@@ -100,7 +100,6 @@ protected:
     void Reload() override;
 
 private:
-    Aws::Auth::AWSCredentials GetAWSCredentialsImpl();
     void refreshIfExpired();
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;

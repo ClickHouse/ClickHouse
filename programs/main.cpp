@@ -63,7 +63,6 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
-int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 #endif
 
 // install
@@ -117,7 +116,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 #if USE_NURAFT
     {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
-    {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
     {"install", mainEntryClickHouseInstall},
@@ -285,22 +283,6 @@ int main(int argc_, char ** argv_)
         }
     }
 
-    /// If host/port arguments are passed to clickhouse/ch shortcuts,
-    /// interpret it as clickhouse-client invocation for usability.
-    if (main_func == printHelp && argv.size() >= 2)
-    {
-        for (size_t i = 1, num_args = argv.size(); i < num_args; ++i)
-        {
-            if ((i + 1 < num_args && argv[i] == std::string_view("--host")) || startsWith(argv[i], "--host=")
-                || (i + 1 < num_args && argv[i] == std::string_view("--port")) || startsWith(argv[i], "--port=")
-                || startsWith(argv[i], "-h"))
-            {
-                main_func = mainEntryClickHouseClient;
-                break;
-            }
-        }
-    }
-
     /// Interpret binary without argument or with arguments starts with dash
     /// ('-') as clickhouse-local for better usability:
     ///
@@ -313,7 +295,6 @@ int main(int argc_, char ** argv_)
     ///
     std::error_code ec;
     if (main_func == printHelp && !argv.empty()
-        && (argv.size() < 2 || argv[1] != std::string_view("--help"))
         && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
