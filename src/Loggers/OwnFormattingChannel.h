@@ -3,15 +3,15 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
-#include "ExtendedLogChannel.h"
-#include "OwnJSONPatternFormatter.h"
-#include "OwnPatternFormatter.h"
+#include <Loggers/ExtendedLogChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 
 namespace DB
 {
 // Like Poco::FormattingChannel but supports the extended logging interface and log level filter
-class OwnFormattingChannel : public Poco::Channel, public ExtendedLogChannel
+class OwnFormattingChannel final : public Poco::Channel, public ExtendedLogChannel
 {
 public:
     explicit OwnFormattingChannel(
