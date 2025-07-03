@@ -1,4 +1,3 @@
-#include <Poco/JSON/Stringifier.h>
 #include "config.h"
 
 #if USE_AVRO

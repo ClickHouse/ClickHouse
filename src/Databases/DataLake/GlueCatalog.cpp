@@ -292,7 +292,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (result.requiresCredentials())
             setCredentials(result);
 
-        auto setup_specific_properties = [&]() 
+        auto setup_specific_properties = [&]
         {
             const auto & table_params = table_outcome.GetParameters();
             if (table_params.contains("metadata_location"))
