@@ -218,13 +218,13 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
     configuration->update(object_storage, query_context);
-    return configuration->totalRows();
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
     configuration->update(object_storage, query_context);
-    return configuration->totalBytes();
+    return configuration->totalBytes(query_context);
 }
 
 namespace
