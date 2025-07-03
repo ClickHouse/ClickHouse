@@ -6,19 +6,41 @@
 namespace DB
 {
 
+/// ------------------------------------------------------------
+/// Legacy names for text index.
+/// Remove this block one year after full-text indexes became GA.
 static inline constexpr auto FULL_TEXT_INDEX_NAME = "full_text";
 static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
 static inline constexpr auto GIN_INDEX_NAME = "gin";
+/// ------------------------------------------------------------
+static inline constexpr auto TEXT_INDEX_NAME = "text";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
+static inline constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
 static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
+enum class GinSearchMode : uint8_t
+{
+    Any,
+    All
+};
+
 struct GinFilterParameters
 {
-    GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_);
+    GinFilterParameters(
+        String tokenizer_,
+        UInt64 max_rows_per_postings_list_,
+        std::optional<UInt64> ngram_size_,
+        std::optional<std::vector<String>> separators_);
 
     String tokenizer;
     UInt64 max_rows_per_postings_list;
+    /// for ngram tokenizer
+    std::optional<UInt64> ngram_size;
+    /// for split tokenizer
+    std::optional<std::vector<String>> separators;
+
+    bool operator<=>(const GinFilterParameters& other) const = default;
 };
 
 struct GinSegmentWithRowIdRange
@@ -56,7 +78,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
+    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)
@@ -101,9 +123,6 @@ private:
 
     /// Row ID ranges which are (segmentID, RowIDStart, RowIDEnd)
     GinSegmentWithRowIdRangeVector rowid_ranges;
-
-    /// Check if the given postings list cache has matched rows by using the filter
-    bool match(const GinPostingsCache & postings_cache) const;
 };
 
 using GinFilters = std::vector<GinFilter>;

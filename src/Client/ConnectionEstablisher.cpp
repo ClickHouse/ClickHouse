@@ -2,6 +2,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -57,7 +58,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
-            result.entry->forceConnected(*timeouts);
+            if (!force_connected)
+                result.entry->forceConnected(*timeouts);
+
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;

@@ -86,16 +86,17 @@ private:
     {
         enum Function
         {
-            /// Atoms of a Boolean expression.
+            /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
+            FUNCTION_SEARCH_ANY,
+            FUNCTION_SEARCH_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
-            /// Operators of the logical expression.
+            /// Operators
             FUNCTION_NOT,
             FUNCTION_AND,
             FUNCTION_OR,
@@ -127,8 +128,8 @@ private:
 
     bool traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out);
     bool traverseASTEquals(
-        const String & function_name,
-        const RPNBuilderTreeNode & key_ast,
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_ast,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);

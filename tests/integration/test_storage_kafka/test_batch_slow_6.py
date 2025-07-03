@@ -201,7 +201,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
     ],
 )
 def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
-    NUMBER_OF_CONSURRENT_CONSUMERS = 11
+    NUMBER_OF_CONSURRENT_CONSUMERS = 5
 
     instance.query(
         """

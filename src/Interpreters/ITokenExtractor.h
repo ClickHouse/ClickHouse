@@ -78,6 +78,7 @@ struct ITokenExtractor
 
     virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
 
+    virtual bool supportsStringLike() const = 0;
 };
 
 using TokenExtractorPtr = const ITokenExtractor *;
@@ -117,13 +118,9 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
-
-        size_t cur = 0;
-        size_t token_start = 0;
-        size_t token_len = 0;
-
-        while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
-            gin_filter.addTerm(data + token_start, token_len);
+        const auto& tokens = getTokens(data, length);
+        for (const auto& token : tokens)
+            gin_filter.addTerm(token.data(), token.size());
     }
 
     void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
@@ -160,48 +157,59 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     static const char * getExternalName() { return "ngram"; }
 
     std::vector<String> getTokens(const char * data, size_t length) const override;
-
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
     size_t getN() const { return n; }
 
+    bool supportsStringLike() const override { return true; }
 private:
-
     size_t n;
 };
 
-/// Parser extracting tokens (sequences of numbers and ascii letters).
-struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
+/// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
+struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
 {
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "default"; }
 
-    std::vector<String> getTokens(const char * data, size_t length) const override;
-
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
-
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-
     void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
+};
+
+/// Parser extracting tokens which are separated by certain strings.
+/// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
+struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
+{
+    explicit SplitTokenExtractor(const std::vector<String> & separators_);
+
+    static const char * getName() { return "split"; }
+    static const char * getExternalName() { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+private:
+    std::vector<String> separators;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    static const char * getName() { return "noop"; }
+    static const char * getName() { return "no_op"; }
     static const char * getExternalName() { return getName(); }
 
     std::vector<String> getTokens(const char * data, size_t length) const override;
+    bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
-    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-
-    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
+    bool supportsStringLike() const override { return false; }
 };
 
 }

@@ -1,4 +1,4 @@
-#include "IDisk.h"
+#include <Disks/IDisk.h>
 #include <Core/Field.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -202,7 +202,7 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::startup(ContextPtr context, bool skip_access_check)
+void IDisk::startup(bool skip_access_check)
 {
     if (!skip_access_check)
     {
@@ -215,7 +215,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl(context);
+    startupImpl();
 }
 
 void IDisk::checkAccess()

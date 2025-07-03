@@ -1065,20 +1065,42 @@ inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
     if (local_time.negative())
         buf.write("-", 1);
 
-    char buffer[9] = {
-        static_cast<char>('0' + ((local_time.hour() / 100) % 10)), // H
-        static_cast<char>('0' + ((local_time.hour() / 10) % 10)),  // H
-        static_cast<char>('0' + (local_time.hour() % 10)),         // H
-        delimiter1,
-        static_cast<char>('0' + (local_time.minute() / 10)),      // M
-        static_cast<char>('0' + (local_time.minute() % 10)),      // M
-        delimiter1,
-        static_cast<char>('0' + (local_time.second() / 10)),      // S
-        static_cast<char>('0' + (local_time.second() % 10))       // S
-    };
+    const auto hour = local_time.hour();
+    const auto minute = local_time.minute();
+    const auto second = local_time.second();
 
-
-    buf.write(buffer, 9);
+    // Handle hours with variable digits
+    if (hour >= 100)
+    {
+        // 3-digit hours
+        char buffer[9] = {
+            static_cast<char>('0' + (hour / 100)),      // H
+            static_cast<char>('0' + ((hour / 10) % 10)), // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 9);
+    }
+    else
+    {
+        // 2 or 1-digit hours
+        char buffer[8] = {
+            static_cast<char>('0' + (hour / 10)),        // H
+            static_cast<char>('0' + (hour % 10)),        // H
+            delimiter1,
+            static_cast<char>('0' + (minute / 10)),      // M
+            static_cast<char>('0' + (minute % 10)),      // M
+            delimiter1,
+            static_cast<char>('0' + (second / 10)),      // S
+            static_cast<char>('0' + (second % 10))       // S
+        };
+        buf.write(buffer, 8);
+    }
 }
 
 inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
