@@ -4,6 +4,7 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SwapHelper.h>
@@ -420,7 +421,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
 }
 
 CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
-CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segment)
+CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segment, size_t buffer_size)
 {
     chassert(!file_segment.isDownloader());
     chassert(file_offset_of_buffer_end >= file_segment.range().left);
@@ -453,7 +454,13 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     chassert(file_segment.range() == range);
     chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
-    read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
+    /// Setting impl_read_until_position bigger than read_until_position is ok.
+    const size_t impl_set_read_until_position = std::min(
+        range.right + 1,
+        /// Aligning makes sense as file segments' boundaries are always aligned to 1mb anyway.
+        /// File segment is also resized to an aligned size, if we do not finish the write.
+        buffer_size >= 1_MiB ? FileCacheUtils::roundUpToMultiple(read_until_position, 1_MiB) : read_until_position);
+    read_buffer_for_file_segment->setReadUntilPosition(impl_set_read_until_position); /// non-included boundary
 
     switch (read_type)
     {
@@ -530,7 +537,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     return read_buffer_for_file_segment;
 }
 
-bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
+bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext(size_t buffer_size)
 {
     auto * current_file_segment = &file_segments->front();
     auto completed_range = current_file_segment->range();
@@ -547,7 +554,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
     current_file_segment = &file_segments->front();
     current_file_segment->increasePriority();
-    implementation_buffer = getImplementationBuffer(*current_file_segment);
+    implementation_buffer = getImplementationBuffer(*current_file_segment, buffer_size);
 
     LOG_TEST(
         log, "New segment range: {}, old range: {}",
@@ -718,7 +725,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
     return true;
 }
 
-bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
+bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded(size_t buffer_size)
 {
     chassert(!file_segments->empty());
     auto & file_segment = file_segments->front();
@@ -730,7 +737,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
     if (file_offset_of_buffer_end > current_read_range.right)
     {
-        return completeFileSegmentAndGetNext();
+        return completeFileSegmentAndGetNext(buffer_size);
     }
 
     if (read_type == ReadType::CACHED && current_state != FileSegment::State::DOWNLOADED)
@@ -747,7 +754,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
         if (file_offset_of_buffer_end >= file_segment.getCurrentWriteOffset())
         {
-            implementation_buffer = getImplementationBuffer(file_segment);
+            implementation_buffer = getImplementationBuffer(file_segment, buffer_size);
             return true;
         }
     }
@@ -766,7 +773,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         * to read by marks range given to him. Therefore, each nextImpl() call, in case of
         * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
         */
-        implementation_buffer = getImplementationBuffer(file_segment);
+        implementation_buffer = getImplementationBuffer(file_segment, buffer_size);
     }
 
     return true;
@@ -881,13 +888,13 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     if (implementation_buffer)
     {
-        bool can_read_further = updateImplementationBufferIfNeeded();
+        bool can_read_further = updateImplementationBufferIfNeeded(internal_buffer.size());
         if (!can_read_further)
             return false;
     }
     else
     {
-        implementation_buffer = getImplementationBuffer(file_segments->front());
+        implementation_buffer = getImplementationBuffer(file_segments->front(), internal_buffer.size());
         file_segments->front().increasePriority();
     }
 
@@ -1181,7 +1188,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (read_until_position == file_offset_of_buffer_end)
         implementation_buffer.reset();
     else if (file_offset_of_buffer_end > current_read_range.right)
-        completeFileSegmentAndGetNext();
+        completeFileSegmentAndGetNext(original_buffer_size);
 
     return result;
 }

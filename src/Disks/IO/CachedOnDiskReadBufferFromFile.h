@@ -81,7 +81,7 @@ private:
      */
     FileSegmentsHolderPtr getFileSegments(size_t offset, size_t size) const;
 
-    ImplementationBufferPtr getImplementationBuffer(FileSegment & file_segment);
+    ImplementationBufferPtr getImplementationBuffer(FileSegment & file_segment, size_t buffer_size);
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
@@ -89,7 +89,7 @@ private:
 
     ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
-    bool updateImplementationBufferIfNeeded();
+    bool updateImplementationBufferIfNeeded(size_t buffer_size);
 
     bool predownload(FileSegment & file_segment);
 
@@ -97,7 +97,7 @@ private:
 
     size_t getRemainingSizeToRead();
 
-    bool completeFileSegmentAndGetNext();
+    bool completeFileSegmentAndGetNext(size_t buffer_size);
 
     void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
 
