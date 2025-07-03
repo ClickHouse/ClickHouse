@@ -78,7 +78,9 @@ public:
 
 private:
     /// finished is guarded by QueryMetricLog's query_mutex, so we should always
-    /// access it through QueryMetricLog::[set/get]QueryMutex
+    /// access it through QueryMetricLog::[set/get]QueryFinished.
+    /// I haven't found a stricter way of adding TSA annotations so that this field
+    /// is protected by QueryMetricLog's query mutex.
     bool finished = false;
 };
 
