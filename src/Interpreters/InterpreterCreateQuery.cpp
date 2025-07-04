@@ -1065,13 +1065,13 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
     NamesAndTypesList all_output_columns;
     bool check_columns = false;
-    if (create.hasTargetTableID(ViewTarget::To))
+    if (create.hasTargetTableID(ASTViewTarget::Kind::To))
     {
         StoragePtr to_table;
         try
         {
             to_table = DatabaseCatalog::instance().getTable(
-                create.getTargetTableID(ViewTarget::To), getContext());
+                create.getTargetTableID(ASTViewTarget::Kind::To), getContext());
         }
         catch (...)
         {
@@ -1296,7 +1296,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (create.is_materialized_view_with_external_target())
             return;
 
-        if (auto to_engine = create.getTargetInnerEngine(ViewTarget::To))
+        if (auto to_engine = create.getTargetInnerEngine(ASTViewTarget::Kind::To))
         {
             /// This materialized view already has a storage definition.
             if (!to_engine->engine)
@@ -1353,7 +1353,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 ErrorCodes::INCORRECT_QUERY,
                 "Cannot CREATE a table AS {}, it is a Materialized View without storage. Use \"AS {}\" instead",
                 qualified_name,
-                as_create.getTargetTableID(ViewTarget::To).getFullTableName());
+                as_create.getTargetTableID(ASTViewTarget::Kind::To).getFullTableName());
         }
 
         if (as_create.is_live_view)
@@ -1367,7 +1367,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (as_create.is_materialized_view)
         {
-            storage_def = as_create.getTargetInnerEngine(ViewTarget::To);
+            storage_def = as_create.getTargetInnerEngine(ASTViewTarget::Kind::To);
         }
         else if (as_create.as_table_function)
         {
@@ -1394,7 +1394,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     /// Use the found table engine to modify the create query.
     if (create.is_materialized_view)
-        create.setTargetInnerEngine(ViewTarget::To, storage_def);
+        create.setTargetInnerEngine(ASTViewTarget::Kind::To, storage_def);
     else
         create.set(create.storage, storage_def);
 }
@@ -2416,9 +2416,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.targets)
     {
-        for (const auto & target : create.targets->targets)
+        for (const auto & child : create.targets->children)
         {
-            const auto & target_id = target.table_id;
+            auto * target = child->as<ASTViewTarget>();
+            const auto & target_id = target->getTableID();
             if (target_id)
                 required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
         }

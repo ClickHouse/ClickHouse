@@ -414,15 +414,14 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         refresh_strategy->format(ostr, settings, state, frame);
     }
 
-    if (auto to_table_id = getTargetTableID(ViewTarget::To))
+    if (hasTargetTableID(ASTViewTarget::To))
     {
         ostr <<  " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::TO)
-                      << (settings.hilite ? hilite_none : "") << " "
-                      << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
-                      << backQuoteIfNeed(to_table_id.table_name);
+                      << (settings.hilite ? hilite_none : "") << " ";
+        targets->tryGetTarget(ASTViewTarget::To)->table_identifier->format(ostr, settings, state, frame);
     }
 
-    if (auto to_inner_uuid = getTargetInnerUUID(ViewTarget::To); to_inner_uuid != UUIDHelpers::Nil)
+    if (auto to_inner_uuid = getTargetInnerUUID(ASTViewTarget::Kind::To); to_inner_uuid != UUIDHelpers::Nil)
     {
         ostr << " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::TO_INNER_UUID)
                       << (settings.hilite ? hilite_none : "") << " " << quoteString(toString(to_inner_uuid));
@@ -505,20 +504,20 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (storage)
         storage->format(ostr, settings, state, frame);
 
-    if (auto inner_storage = getTargetInnerEngine(ViewTarget::Inner))
+    if (auto inner_storage = getTargetInnerEngine(ASTViewTarget::Kind::Inner))
     {
         ostr << " " << (settings.hilite ? hilite_keyword : "") << toStringView(Keyword::INNER) << (settings.hilite ? hilite_none : "");
         inner_storage->format(ostr, settings, state, frame);
     }
 
-    if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
+    if (auto to_storage = getTargetInnerEngine(ASTViewTarget::Kind::To))
         to_storage->format(ostr, settings, state, frame);
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+        targets->formatTarget(ASTViewTarget::Data, ostr, settings, state, frame);
+        targets->formatTarget(ASTViewTarget::Tags, ostr, settings, state, frame);
+        targets->formatTarget(ASTViewTarget::Metrics, ostr, settings, state, frame);
     }
 
     if (dictionary)
@@ -597,21 +596,19 @@ void ASTCreateQuery::resetUUIDs()
 }
 
 
-StorageID ASTCreateQuery::getTargetTableID(ViewTarget::Kind target_kind) const
+StorageID ASTCreateQuery::getTargetTableID(ASTViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getTableID(target_kind);
     return StorageID::createEmpty();
 }
 
-bool ASTCreateQuery::hasTargetTableID(ViewTarget::Kind target_kind) const
+bool ASTCreateQuery::hasTargetTableID(ASTViewTarget::Kind target_kind) const
 {
-    if (targets)
-        return targets->hasTableID(target_kind);
-    return false;
+    return targets && targets->hasTableID(target_kind);
 }
 
-UUID ASTCreateQuery::getTargetInnerUUID(ViewTarget::Kind target_kind) const
+UUID ASTCreateQuery::getTargetInnerUUID(ASTViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getInnerUUID(target_kind);
@@ -625,14 +622,14 @@ bool ASTCreateQuery::hasInnerUUIDs() const
     return false;
 }
 
-std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
+std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ASTViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getInnerEngine(target_kind);
     return nullptr;
 }
 
-void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def)
+void ASTCreateQuery::setTargetInnerEngine(ASTViewTarget::Kind target_kind, ASTPtr storage_def)
 {
     if (!targets)
         set(targets, std::make_shared<ASTViewTargets>());

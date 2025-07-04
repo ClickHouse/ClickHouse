@@ -87,7 +87,7 @@ void TimeSeriesColumnsValidator::validateColumnsImpl(const ColumnsDescription & 
 }
 
 
-void TimeSeriesColumnsValidator::validateTargetColumns(ViewTarget::Kind target_kind, const StorageID & target_table_id, const ColumnsDescription & target_columns) const
+void TimeSeriesColumnsValidator::validateTargetColumns(ASTViewTarget::Kind target_kind, const StorageID & target_table_id, const ColumnsDescription & target_columns) const
 {
     try
     {
@@ -102,7 +102,7 @@ void TimeSeriesColumnsValidator::validateTargetColumns(ViewTarget::Kind target_k
 }
 
 
-void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind target_kind, const ColumnsDescription & target_columns) const
+void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ASTViewTarget::Kind target_kind, const ColumnsDescription & target_columns) const
 {
     auto get_column_description = [&](const String & column_name) -> const ColumnDescription &
     {
@@ -116,7 +116,7 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
 
     switch (target_kind)
     {
-        case ViewTarget::Data:
+        case ASTViewTarget::Kind::Data:
         {
             /// Here "check_default = false" because it's ok for the "id" column in the target table not to contain
             /// an expression for calculating the identifier of a time series.
@@ -128,7 +128,7 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
             break;
         }
 
-        case ViewTarget::Tags:
+        case ASTViewTarget::Kind::Tags:
         {
             validateColumnForMetricName(get_column_description(TimeSeriesColumnNames::MetricName));
 
@@ -145,7 +145,7 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
             break;
         }
 
-        case ViewTarget::Metrics:
+        case ASTViewTarget::Kind::Metrics:
         {
             validateColumnForMetricFamilyName(get_column_description(TimeSeriesColumnNames::MetricFamilyName));
             validateColumnForType(get_column_description(TimeSeriesColumnNames::Type));

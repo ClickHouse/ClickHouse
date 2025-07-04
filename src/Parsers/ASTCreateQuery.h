@@ -173,15 +173,15 @@ public:
 
     /// Returns information about a target table.
     /// If that information isn't specified in this create query (or even not allowed) then the function returns an empty value.
-    StorageID getTargetTableID(ViewTarget::Kind target_kind) const;
-    bool hasTargetTableID(ViewTarget::Kind target_kind) const;
-    UUID getTargetInnerUUID(ViewTarget::Kind target_kind) const;
+    StorageID getTargetTableID(ASTViewTarget::Kind target_kind) const;
+    bool hasTargetTableID(ASTViewTarget::Kind target_kind) const;
+    UUID getTargetInnerUUID(ASTViewTarget::Kind target_kind) const;
     bool hasInnerUUIDs() const;
-    std::shared_ptr<ASTStorage> getTargetInnerEngine(ViewTarget::Kind target_kind) const;
-    void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
+    std::shared_ptr<ASTStorage> getTargetInnerEngine(ASTViewTarget::Kind target_kind) const;
+    void setTargetInnerEngine(ASTViewTarget::Kind target_kind, ASTPtr storage_def);
 
-    bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
-    bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
+    bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ASTViewTarget::Kind::To); }
+    bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ASTViewTarget::Kind::To); }
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
