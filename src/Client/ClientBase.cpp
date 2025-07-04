@@ -1308,7 +1308,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             {
                 if (partial_result_on_first_cancel && query_interrupt_handler.cancelled_status() == signals_before_stop - 1)
                 {
-                    connection->sendCancel();
+                    sendCancel();
                     /// First cancel reading request was sent. Next requests will only be with a full cancel
                     partial_result_on_first_cancel = false;
                 }
@@ -1347,7 +1347,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             /// Remember the first exception.
             if (!local_format_error)
                 local_format_error = std::current_exception();
-            connection->sendCancel();
+            sendCancel(std::current_exception());
         }
     }
 
@@ -1777,13 +1777,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQuery();
+            receiveEndOfQueryForInsert();
         }
     }
     catch (...)
     {
-        connection->sendCancel();
-        receiveEndOfQuery();
+        sendCancel(std::current_exception());
+        receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -2065,7 +2065,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 
 
 /// Process Log packets, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQuery()
+bool ClientBase::receiveEndOfQueryForInsert()
 {
     while (true)
     {
@@ -2079,6 +2079,9 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Exception:
                 onReceiveExceptionFromServer(std::move(packet.exception));
+                /// We cannot be sure that in case of exception all data had been sent to the server
+                /// and we either need to send Cancel or disconnect, disconnect is more stable.
+                connection->disconnect();
                 return false;
 
             case Protocol::Server::Log:
@@ -2105,9 +2108,25 @@ bool ClientBase::receiveEndOfQuery()
     }
 }
 
+void ClientBase::sendCancel(std::exception_ptr exception_ptr)
+{
+    if (!connection->isConnected())
+    {
+        error_stream << "Cannot send Cancel due to connection is lost";
+        if (exception_ptr)
+        {
+            error_stream << ": ";
+            error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
+        }
+        error_stream << '\n';
+    }
+
+    connection->sendCancel();
+}
+
 void ClientBase::cancelQuery()
 {
-    connection->sendCancel();
+    sendCancel();
 
     stopKeystrokeInterceptorIfExists();
 
