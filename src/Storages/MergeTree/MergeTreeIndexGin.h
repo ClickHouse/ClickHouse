@@ -12,7 +12,6 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleGin(
         const String & index_name_,
-        size_t columns_number,
         const GinFilterParameters & gin_filter_params_);
 
     ~MergeTreeIndexGranuleGin() override = default;
@@ -25,7 +24,7 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 
     const String index_name;
     const GinFilterParameters gin_filter_params;
-    GinFilters gin_filters;
+    GinFilter gin_filter;
     bool has_elems;
 };
 
