@@ -480,7 +480,7 @@ BlobClientOptions getClientOptions(ContextPtr context, const RequestSettings & s
 
         client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
     }
-    else
+    else /// TODO (alesapin) Remove Curl client in future releases
     {
         Azure::Core::Http::CurlTransportOptions curl_options;
         curl_options.NoSignal = true;

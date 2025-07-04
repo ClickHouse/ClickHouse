@@ -48,6 +48,9 @@ struct PocoAzureHTTPClientConfiguration
     UInt64 http_max_field_value_size = 128 * 1024;
 };
 
+/// ClickHouse "native" HTTP client for Azure Blob Storage, based on Poco HTTP client.
+/// Supports a lot of introspection, metrics, retries logic, throttling, and other features.
+/// It's much better than Curl-based HTTP client, use it.
 class PocoAzureHTTPClient : public Azure::Core::Http::HttpTransport
 {
 public:
