@@ -13,7 +13,7 @@ SOURCE(
 LIFETIME(30)
 LAYOUT(HASHED());
 
-SYSTEM RELOAD DICTIONARY test_logging_internal_queries_dict;
+SELECT * FROM test_logging_internal_queries_dict FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 
