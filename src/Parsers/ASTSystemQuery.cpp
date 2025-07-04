@@ -331,8 +331,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_servive_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
+            else if (!distributed_cache_server_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
             break;
         }
         case Type::UNFREEZE:
