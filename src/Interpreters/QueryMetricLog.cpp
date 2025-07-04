@@ -190,10 +190,6 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         return;
     }
 
-    /// query_status.finished needs to be written/read while holding the global_lock because there's
-    /// a data race between collectMetric and finishQuery. Due to the order in which we need to
-    /// unlock mutexes to ensure there's no lock-order-inversion, after getting the
-    /// query_status.mutex we need this extra check to ensure the query is still alive.
     setQueryFinished(query_status);
     global_lock.unlock();
 
