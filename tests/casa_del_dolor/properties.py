@@ -39,13 +39,21 @@ def generate_xml_safe_string(length: int = 10) -> str:
     return "".join(random.choice(valid_chars) for _ in range(length))
 
 
-def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
+def threshold_generator(
+    always_on_prob, always_off_prob, min_val, max_val, bits: int = 64
+):
     def gen():
         tmp = random.random()
         if tmp <= always_on_prob:
             return min_val
         if tmp <= always_on_prob + always_off_prob:
             return max_val
+        if (
+            tmp <= always_on_prob + always_off_prob + 0.01
+            and isinstance(min_val, int)
+            and isinstance(max_val, int)
+        ):
+            return 2**(64 if bits == 64 else 31) - 1
 
         if isinstance(min_val, int) and isinstance(max_val, int):
             return random.randint(min_val, max_val)
@@ -69,6 +77,15 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 
 possible_properties = {
+    "access_control_improvements": {
+        "on_cluster_queries_require_cluster_grant": true_false_lambda,
+        "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+        "select_from_information_schema_requires_grant": true_false_lambda,
+        "select_from_system_db_requires_grant": true_false_lambda,
+        "settings_constraints_replace_previous": true_false_lambda,
+        "table_engines_require_grant": true_false_lambda,
+        "users_without_row_policies_can_read_rows": true_false_lambda,
+    },
     "aggregate_function_group_array_action_when_limit_is_reached": lambda: random.choice(
         ["throw", "discard"]
     ),
@@ -99,7 +116,7 @@ possible_properties = {
     "background_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20),
+    "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 32),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -272,12 +289,12 @@ distributed_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024, 32),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "objects_chunk_size_to_delete": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024
+            0.2, 0.2, 0, 10 * 1024 * 1024, 32
         ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -370,7 +387,6 @@ all_disks_properties = {
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
-    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     "skip_access_check": true_false_lambda,
 }
 
@@ -656,11 +672,12 @@ def add_single_disk(
                 )
 
     if random.randint(1, 100) <= 50:
-        next_properties = all_disks_properties
+        next_properties = dict(all_disks_properties)
         if disk_type != "cache":
             next_properties["description"] = lambda: generate_xml_safe_string(
                 random.randint(1, 1024)
             )
+            next_properties["readonly"] = lambda: 1 if random.randint(0, 9) < 2 else 0
         apply_properties_recursively(next_disk, next_properties)
     return (prev_disk, final_type)
 
@@ -854,10 +871,11 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
     ):
         number_clusters = 0
         shared_settings = {
-            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
-            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
             "drop_local_thread_pool_size": threads_lambda,
-            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_ignore_inactive_replica_after_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
             "drop_zookeeper_thread_pool_size": threads_lambda,
             # "migration_from_database_replicated": true_false_lambda, not suitable for testing
             "state_application_thread_pool_size": threads_lambda,

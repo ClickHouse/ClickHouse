@@ -180,6 +180,10 @@ public:
         {
             return max_val;
         }
+        if (tmp <= always_on_prob + always_off_prob + 0.01)
+        {
+            return std::numeric_limits<T>::max();
+        }
         if constexpr (std::is_unsigned_v<T>)
         {
             std::uniform_int_distribution<T> d{min_val, max_val};
