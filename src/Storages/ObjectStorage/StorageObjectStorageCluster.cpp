@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -14,7 +13,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 
 namespace DB
@@ -65,15 +63,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    /// We allow exceptions to be thrown on update(),
-    /// because Cluster engine can only be used as table function,
-    /// so no lazy initialization is allowed.
-    configuration->update(
-        object_storage,
-        context_,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
@@ -98,21 +87,13 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    configuration->update(object_storage, query_context);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
 }
 
@@ -177,19 +158,24 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
+    {
+        auto object_info = iterator->next(0);
+        if (!object_info)
+            return "";
 
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> String {
-            return task_distributor->getNextTask(number_of_current_replica).value_or("");
-        });
+        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
+        if (archive_object_info)
+            return archive_object_info->getPathToArchive();
 
+        return object_info->getPath();
+    });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
