@@ -464,6 +464,12 @@ namespace Net
         static void error(int code, const std::string & arg);
         /// Throws an appropriate exception for the given error code.
 
+        void throttleSend(size_t length, bool blocking);
+        /// Properly throttles the send operation.
+
+        void throttleRecv(size_t length, bool blocking);
+        /// Properly throttles the recv operation.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);

@@ -281,15 +281,7 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
     bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
 
-	if (_sndThrottler && _sndThrottlerBudget < length)
-	{
-		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
-		if (blocking)
-			_sndThrottler->throttle(amount);
-		else
-			_sndThrottler->throttleNonBlocking(amount);
-		_sndThrottlerBudget += amount;
-	}
+	throttleSend(length, blocking);
 
 	if (_isBrokenTimeout && blocking)
 	{
@@ -340,15 +332,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		}
 	}
 
-	if (_recvThrottler && _recvThrottlerBudget < length)
-	{
-		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
-		if (blocking)
-			_recvThrottler->throttle(amount);
-		else
-			_recvThrottler->throttleNonBlocking(amount);
-		_recvThrottlerBudget += amount;
-	}
+	throttleRecv(length, blocking);
 
 	int rc;
 	do
@@ -380,16 +364,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
-	if (_sndThrottler && _sndThrottlerBudget < length)
-	{
-		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
-		if (_blocking)
-			_sndThrottler->throttle(amount);
-		else
-			_sndThrottler->throttleNonBlocking(amount);
-		_sndThrottlerBudget += amount;
-	}
-
+	throttleSend(length, _blocking);
 
 	int rc;
 	do
@@ -421,15 +396,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 		}
 	}
 
-	if (_recvThrottler && _recvThrottlerBudget < length)
-	{
-		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
-		if (_blocking)
-			_recvThrottler->throttle(amount);
-		else
-			_recvThrottler->throttleNonBlocking(amount);
-		_recvThrottlerBudget += amount;
-	}
+	throttleRecv(length, _blocking);
 
 	sockaddr_storage abuffer;
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
@@ -1112,6 +1079,44 @@ void SocketImpl::error(int code, const std::string& arg)
 #endif
 	default:
 		throw IOException(NumberFormatter::format(code), arg, code);
+	}
+}
+
+
+void SocketImpl::throttleSend(size_t length, bool blocking)
+{
+	if (_sndThrottler && _sndThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (blocking)
+		{
+			if (_sndTimeout.totalMicroseconds() != 0) // Avoid throtting over socket send timeout
+				_sndThrottler->throttle(amount, _sndTimeout.totalMicroseconds() / 2);
+			else
+				_sndThrottler->throttle(amount);
+		}
+		else
+			_sndThrottler->throttleNonBlocking(amount);
+		_sndThrottlerBudget += amount;
+	}
+}
+
+
+void SocketImpl::throttleRecv(size_t length, bool blocking)
+{
+	if (_recvThrottler && _recvThrottlerBudget < length)
+	{
+		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
+		if (blocking)
+		{
+			if (_recvTimeout.totalMicroseconds() != 0) // Avoid throtting over socket receive timeout
+				_recvThrottler->throttle(amount, _recvTimeout.totalMicroseconds() / 2);
+			else
+				_recvThrottler->throttle(amount);
+		}
+		else
+			_recvThrottler->throttleNonBlocking(amount);
+		_recvThrottlerBudget += amount;
 	}
 }
 
