@@ -47,7 +47,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"compress_marks", trueOrFalseSetting},
        {"compress_primary_key", trueOrFalseSetting},
        {"concurrent_part_removal_threshold",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 100)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); }, {}, false)},
        {"deduplicate_merge_projection_mode",
         CHSetting(
             [](RandomGenerator & rg)
@@ -101,15 +101,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"max_bytes_to_merge_at_max_space_in_pool", bytesRangeSetting},
        {"max_bytes_to_merge_at_min_space_in_pool", bytesRangeSetting},
        {"max_file_name_length",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        {"max_number_of_mutations_for_replica",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); }, {}, false)},
        {"max_parts_to_merge_at_once",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
        {"max_replicated_merges_in_queue",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); }, {}, false)},
        {"max_replicated_mutations_in_queue",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); }, {}, false)},
        {"merge_max_block_size", highRangeSetting},
        {"merge_max_block_size_bytes", bytesRangeSetting},
        {"merge_selector_algorithm",
@@ -131,17 +131,17 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"min_index_granularity_bytes", bytesRangeSetting},
        {"min_merge_bytes_to_use_direct_io", bytesRangeSetting},
        {"min_parts_to_merge_at_once",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        {"min_rows_for_full_part_storage",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
        {"min_rows_to_fsync_after_merge",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
        {"min_rows_for_wide_part", rowsRangeSetting},
        {"non_replicated_deduplication_window", rowsRangeSetting},
        /// ClickHouse cloud setting
        {"notify_newest_block_number", trueOrFalseSetting},
        {"old_parts_lifetime",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 10, 8 * 60)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 10, 8 * 60)); }, {}, false)},
        {"optimize_row_order", trueOrFalseSetting},
        {"prefer_fetch_merged_part_size_threshold", bytesRangeSetting},
        {"prewarm_mark_cache", trueOrFalseSetting},
@@ -158,7 +158,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"replace_long_file_name_to_hash", trueOrFalseSetting},
        {"replicated_can_become_leader", trueOrFalseSetting},
        {"replicated_max_mutations_in_one_entry",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 10000)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); }, {}, false)},
        {"replicated_max_ratio_of_wrong_parts", probRangeSetting},
        /// ClickHouse cloud setting
        {"shared_merge_tree_create_per_replica_metadata_nodes", trueOrFalseSetting},
@@ -174,7 +174,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations", probRangeSetting},
        /// ClickHouse cloud setting
        {"shared_merge_tree_parts_load_batch_size",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        /// ClickHouse cloud setting
        {"shared_merge_tree_read_virtual_parts_from_leader", trueOrFalseSetting},
        /// ClickHouse cloud setting
@@ -186,7 +186,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        /// ClickHouse cloud setting
        {"shared_merge_tree_use_too_many_parts_count_from_virtual_parts", trueOrFalseSetting},
        {"simultaneous_parts_removal_limit",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        {"table_disk", trueOrFalseSetting},
        {"ttl_only_drop_parts", trueOrFalseSetting},
        {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
@@ -198,7 +198,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"use_primary_key_cache", trueOrFalseSetting},
        {"vertical_merge_algorithm_min_bytes_to_activate", bytesRangeSetting},
        {"vertical_merge_algorithm_min_columns_to_activate",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 16)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 16)); }, {}, false)},
        {"vertical_merge_algorithm_min_rows_to_activate", rowsRangeSetting},
        {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
        {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
@@ -235,7 +235,7 @@ std::unordered_map<String, CHSetting> hashedLayoutSettings
             [](RandomGenerator & rg)
             {
                 return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                    rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
             false)},
@@ -255,7 +255,7 @@ std::unordered_map<String, CHSetting> cachedLayoutSettings
             [](RandomGenerator & rg)
             {
                 return std::to_string(
-                    rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+                    rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
             },
             {},
             false)}};
@@ -315,14 +315,14 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
               false)},
          {"enable_hash_ring_filtering", CHSetting(trueOrFalse, {}, false)},
          {"list_objects_batch_size",
-          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 3000)); }, {}, false)},
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); }, {}, false)},
          {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
          {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
          {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
          {"mode", CHSetting([](RandomGenerator & rg) { return fmt::format("'{}orderded'", rg.nextBool() ? "un" : ""); }, {}, false)},
          {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
          {"s3queue_buckets",
-          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 16)); }, {}, false)},
+          CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16)); }, {}, false)},
          {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
          {"s3queue_processing_threads_num", threadSetting},
          {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});

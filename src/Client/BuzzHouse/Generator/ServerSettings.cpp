@@ -299,9 +299,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     /// {"describe_compact_output", trueOrFalseSettingNoOracle},
     {"distributed_plan_default_reader_bucket_count",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
     {"distributed_plan_default_shuffle_join_bucket_count",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
     {"describe_extend_object_types", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
@@ -418,9 +418,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"function_locate_has_mysql_compatible_argument_order", trueOrFalseSettingNoOracle},
     {"geo_distance_returns_float64_on_float64_arguments", trueOrFalseSettingNoOracle},
     {"grace_hash_join_initial_buckets",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
     {"grace_hash_join_max_buckets",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1024)); }, {}, false)},
     /// {"group_by_overflow_mode", CHSetting([](RandomGenerator & rg) { const DB::Strings & choices = {"'throw'", "'break'", "'any'"}; return rg.pickRandomly(choices); }, {}, false)},
     {"group_by_use_nulls", trueOrFalseSettingNoOracle},
     {"hdfs_create_new_file_on_insert", trueOrFalseSettingNoOracle},
@@ -554,7 +554,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
          false)},
     {"load_balancing_first_offset",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 8)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 8)); }, {}, false)},
     {"load_marks_asynchronously", trueOrFalseSettingNoOracle},
     {"local_filesystem_read_method",
      CHSetting(
@@ -597,11 +597,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_memory_usage", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     /// {"max_memory_usage_for_user", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     {"max_parallel_replicas",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.2, 0, 5)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 5)); }, {}, false)},
     {"max_parsing_threads", threadSetting},
     {"max_parts_to_move",
      CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(4096))); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(4096))); },
          {"0", "1", "100", "1000"},
          false)},
     /// {"max_result_bytes", CHSetting(bytesRange, {}, false)},
@@ -666,7 +666,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_avro_sync_interval",
      CHSetting(
          [](RandomGenerator & rg)
-         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 32, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); },
+         { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 32, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); },
          {"32", "1024", "4096", "16384", "'10M'"},
          false)},
     {"output_format_binary_write_json_as_string", trueOrFalseSettingNoOracle},
@@ -703,7 +703,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_bloom_filter_flush_threshold_bytes",
      CHSetting(
          [](RandomGenerator & rg)
-         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+         { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
          {},
          false)},
     {"output_format_parquet_compliant_nested_types", trueOrFalseSettingNoOracle},
@@ -1048,7 +1048,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"unknown_packet_in_send_data",
               CHSetting(
-                  [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.1, 0.1, 0, 16384)); }, {}, false)}});
+                  [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.1, 0.1, 0, 16384)); }, {}, false)}});
     }
 
     for (const auto & [key, value] : serverSettings)
