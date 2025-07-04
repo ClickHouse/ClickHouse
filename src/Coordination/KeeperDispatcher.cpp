@@ -38,6 +38,7 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
+    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
 }
 
 using namespace std::chrono_literals;
@@ -165,6 +166,7 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
+                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
                         log,
                         "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
@@ -803,8 +805,11 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                   const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)
         {
             if (response->getOpNum() != Coordination::OpNum::SessionID)
+            {
                 promise->set_exception(std::make_exception_ptr(Exception(
                     ErrorCodes::LOGICAL_ERROR, "Incorrect response of type {} instead of SessionID response", response->getOpNum())));
+                return;
+            }
 
             auto session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
             if (session_id_response.internal_id != internal_id)
@@ -814,11 +819,15 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                     "Incorrect response with internal id {} instead of {}",
                     session_id_response.internal_id,
                     internal_id)));
+                return;
             }
 
             if (response->error != Coordination::Error::ZOK)
+            {
                 promise->set_exception(
                     std::make_exception_ptr(zkutil::KeeperException::fromMessage(response->error, "SessionID request failed with error")));
+                return;
+            }
 
             promise->set_value(session_id_response.session_id);
         };
