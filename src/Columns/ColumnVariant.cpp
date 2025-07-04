@@ -1698,21 +1698,22 @@ bool ColumnVariant::hasDynamicStructure() const
 
 void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
+    /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
-    variants_source_columns.resize(variants.size());
-    for (size_t i = 0; i != variants.size(); ++i)
+    size_t num_variants = variants.size();
+    variants_source_columns.resize(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
         variants_source_columns[i].reserve(source_columns.size());
 
     for (const auto & source_column : source_columns)
     {
         const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
-        const auto & source_variants = source_variant.variants;
-        for (size_t i = 0; i != source_variants.size(); ++i)
-            variants_source_columns[source_variant.globalDiscriminatorByLocal(i)].push_back(source_variants[i]);
+        for (size_t i = 0; i != num_variants; ++i)
+            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
     }
 
-    for (size_t i = 0; i != variants.size(); ++i)
-        variants[localDiscriminatorByGlobal(i)]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
 }
