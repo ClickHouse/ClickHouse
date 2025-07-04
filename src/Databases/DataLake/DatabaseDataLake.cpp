@@ -325,8 +325,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    /// Fix for azure
-    if (with_vended_credentials)
+    if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = parseTableName(name);
@@ -439,7 +438,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        lightweight ? nullptr : configuration->createObjectStorage(context_copy, /* is_readonly */ false),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,
