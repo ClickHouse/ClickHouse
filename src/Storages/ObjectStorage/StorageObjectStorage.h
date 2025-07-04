@@ -260,7 +260,8 @@ public:
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
-        size_t /* list_batch_size */)
+        size_t /* list_batch_size */,
+        ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }

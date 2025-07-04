@@ -26,7 +26,8 @@ public:
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
-        size_t /* list_batch_size */) const = 0;
+        size_t /* list_batch_size */,
+        ContextPtr local_context) const = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;

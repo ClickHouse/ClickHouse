@@ -91,7 +91,8 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -121,7 +122,7 @@ private:
 
     void updateState(const ContextPtr & local_context, bool metadata_file_changed);
 
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     void updateSnapshot(ContextPtr local_context);
 

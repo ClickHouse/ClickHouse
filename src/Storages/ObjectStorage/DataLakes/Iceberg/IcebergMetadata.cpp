@@ -712,7 +712,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, local_context, log.get());
 
     chassert(metadata_version == last_metadata_version);
 
@@ -829,12 +829,12 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
     return create_fn();
 }
 
-Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     if (!relevant_snapshot)
         return {};
 
-    bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+    bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
 
     if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
         return cached_unprunned_files_for_last_processed_snapshot.value();
@@ -939,7 +939,8 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t /* list_batch_size */) const
+    size_t /* list_batch_size */,
+    ContextPtr local_context) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
