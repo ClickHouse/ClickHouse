@@ -140,13 +140,13 @@ static constexpr const char * manifest_list_v2_schema = R"({
                             {
                                 "name": "contains_nan",
                                 "type": ["null", "boolean"],
-                                "doc": "True if any file has a nan partition value",                                  
+                                "doc": "True if any file has a nan partition value",                            
                                 "field-id": 518
                             },
                             {
                                 "name": "lower_bound",
                                 "type": ["null", "bytes"],
-                                "doc": "Partition lower bound for all files",                                    
+                                "doc": "Partition lower bound for all files",
                                 "field-id": 510
                             },
                             {
@@ -234,7 +234,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to total count, including null and NaN",                            
+                        "doc": "Map of column id to total count, including null and NaN",
                         "field-id": 109
                     },
                     {
@@ -254,7 +254,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to null value count",                            
+                        "doc": "Map of column id to null value count",
                         "field-id": 110
                     },
                     {
@@ -274,7 +274,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to number of NaN values in the column",                            
+                        "doc": "Map of column id to number of NaN values in the column",
                         "field-id": 137
                     },
                     {
@@ -294,7 +294,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to lower bound",                            
+                        "doc": "Map of column id to lower bound",     
                         "field-id": 125
                     },
                     {
@@ -314,25 +314,25 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to upper bound",                            
+                        "doc": "Map of column id to upper bound",
                         "field-id": 128
                     },
                     {
                         "name": "key_metadata",
                         "type": ["null", "bytes"],
-                        "doc": "Encryption key metadata blob",                            
+                        "doc": "Encryption key metadata blob",
                         "field-id": 131
                     },
                     {
                         "name": "split_offsets",
                         "type": ["null", {"type": "array", "items": "long", "element-id": 133}],
-                        "doc": "Splittable offsets",                            
+                        "doc": "Splittable offsets",                  
                         "field-id": 132
                     },
                     {
                         "name": "sort_order_id",
                         "type": ["null", "int"],
-                        "doc": "Sort order ID",                            
+                        "doc": "Sort order ID",                       
                         "field-id": 140
                     }
                 ]
@@ -374,7 +374,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                         "field-id": 102
                     },
                     {"name": "record_count", "type": "long", "doc": "Number of records in the file", "field-id": 103},
-                    {"name": "file_size_in_bytes", "type": "long", "doc": "Total file size in bytes", "field-id": 104},                        
+                    {"name": "file_size_in_bytes", "type": "long", "doc": "Total file size in bytes", "field-id": 104},
                     {
                         "name": "column_sizes",
                         "type": [
@@ -392,7 +392,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to total size on disk",                            
+                        "doc": "Map of column id to total size on disk",                    
                         "field-id": 108
                     },
                     {
@@ -412,7 +412,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to total count, including null and NaN",                            
+                        "doc": "Map of column id to total count, including null and NaN",
                         "field-id": 109
                     },
                     {
@@ -432,7 +432,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to null value count",                            
+                        "doc": "Map of column id to null value count",              
                         "field-id": 110
                     },
                     {
@@ -452,7 +452,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to number of NaN values in the column",                            
+                        "doc": "Map of column id to number of NaN values in the column",               
                         "field-id": 137
                     },
                     {
@@ -472,7 +472,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to lower bound",                            
+                        "doc": "Map of column id to lower bound",     
                         "field-id": 125
                     },
                     {
@@ -492,19 +492,19 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to upper bound",                            
+                        "doc": "Map of column id to upper bound",
                         "field-id": 128
                     },
                     {
                         "name": "key_metadata",
                         "type": ["null", "bytes"],
-                        "doc": "Encryption key metadata blob",                            
+                        "doc": "Encryption key metadata blob",
                         "field-id": 131
                     },
                     {
                         "name": "split_offsets",
                         "type": ["null", {"type": "array", "items": "long", "element-id": 133}],
-                        "doc": "Splittable offsets",                            
+                        "doc": "Splittable offsets",
                         "field-id": 132
                     },
                     {
@@ -516,7 +516,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                     {
                         "name": "sort_order_id",
                         "type": ["null", "int"],
-                        "doc": "Sort order ID",                            
+                        "doc": "Sort order ID",
                         "field-id": 140
                     }
                 ]

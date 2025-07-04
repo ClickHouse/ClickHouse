@@ -1,24 +1,23 @@
 
 #include <typeinfo>
 #include <Poco/UUIDGenerator.h>
-#include "Common/DateLUT.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
-#include "config.h"
+#include <Common/DateLUT.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <config.h>
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <IO/ReadHelpers.h>
 #include <filesystem>
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Interpreters/Context.h>
 
 using namespace DB;
@@ -31,9 +30,7 @@ namespace DB::ErrorCodes
 
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-
 }
 
 namespace DB::DataLakeStorageSetting

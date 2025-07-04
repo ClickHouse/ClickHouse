@@ -28,7 +28,7 @@
 namespace DB
 {
 
-String removeEscapedSlashes(const String & jsonStr);
+String removeEscapedSlashes(const String & json_str);
 
 class FileNamesGenerator
 {

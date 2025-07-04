@@ -34,6 +34,9 @@
 
 #include <memory>
 #include <sstream>
+
+#if USE_AVRO
+
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Encoder.hh>
@@ -42,11 +45,10 @@
 #include <Specific.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/String.h>
-
-#if USE_AVRO
 
 namespace DB
 {
@@ -64,7 +66,6 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 
 namespace ErrorCodes
 {
-extern const int CANNOT_PARSE_TEXT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -127,7 +128,7 @@ void extendSchemaForPartitions(String & schema, const std::vector<String> & part
         partition_fields->add(field);
     }
 
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(partition_fields, oss);
 
     std::string json_representation = removeEscapedSlashes(oss.str());
@@ -224,7 +225,7 @@ void generateManifestFile(
         else if (partition_values[i].getType() == Field::Types::String)
             partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
     }
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>("current-schema-id");
     Poco::JSON::Stringifier::stringify(metadata->getArray("schemas")->getObject(current_schema_id), oss, 4);
 
@@ -234,7 +235,7 @@ void generateManifestFile(
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata("schema", json_representation);
 
-    std::ostringstream oss_partition_spec;
+    std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
     writer.setMetadata("partition-spec", oss_partition_spec.str());
     writer.setMetadata("partition-spec-id", std::to_string(partition_spec_id));
@@ -461,7 +462,7 @@ ChunkPartitioner::ChunkPartitioner(
         auto source_id = partition_specification_field->getValue<Int32>(Iceberg::f_source_id);
         auto column_name = id_to_column[source_id];
 
-        std::optional<size_t> transform_param;
+        std::optional<size_t> transform_param; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         auto & factory = FunctionFactory::instance();
 
         if (transform_name == "year" || transform_name == "years")
@@ -759,7 +760,7 @@ void IcebergStorageSink::initializeMetadata()
     }
 
     {
-        std::ostringstream oss;
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 

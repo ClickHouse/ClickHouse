@@ -398,12 +398,16 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->isDataLakeConfiguration())
     {
+#if USE_AVRO
         return std::make_shared<IcebergStorageSink>(
             object_storage,
             configuration,
             format_settings,
             sample_block,
             local_context);
+#else
+        
+#endif
     }
 
     auto paths = configuration->getPaths();
