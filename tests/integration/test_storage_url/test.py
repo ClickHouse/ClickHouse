@@ -1,4 +1,5 @@
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -110,7 +111,11 @@ def test_table_function_url_access_rights():
 
 @pytest.mark.parametrize("file_format", ["Parquet", "CSV", "TSV", "JSONEachRow"])
 def test_file_formats(file_format):
-    url = f"http://nginx:80/{file_format}_file"
+    # Generate random URL with timestamp to make test idempotent
+    # Note: we could have just deleted a file using requests.delete(url)
+    # But it seems we can do it only from inside the container (this is not reliable)
+    timestamp = int(time.time() * 1000000)
+    url = f"http://nginx:80/{file_format}_file_{timestamp}"
 
     values = ", ".join([f"({i}, {i + 1}, {i + 2})" for i in range(100)])
     node1.query(
