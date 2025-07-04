@@ -82,6 +82,8 @@ public:
     void serialize(Serialization &) const override {}
     bool isSerializable() const override { return true; }
 
+    QueryPlanRawPtrs getChildPlans() override;
+
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
