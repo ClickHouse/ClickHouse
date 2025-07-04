@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cppkafka/error.h>
 
 namespace DB
 {
@@ -9,8 +10,7 @@ class IKafkaExceptionInfoSink
 public:
     virtual void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
     {
-        UNUSED(err);
-        UNUSED(with_stacktrace);
+        setExceptionInfo(err.to_string(), with_stacktrace);
     }
 
     virtual void setExceptionInfo(const std::string & text, bool with_stacktrace)
