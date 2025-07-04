@@ -246,12 +246,7 @@ ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)
 
 void ExecutorTasks::downscale(size_t slot_id)
 {
-    std::lock_guard lock(mutex);
-
-    // We should make sure that downscaled thread has no local task inside context.
-    // It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
-    if (auto * task = executor_contexts[slot_id]->popTask())
-        task_queue.push(task, slot_id);
+    std::unique_lock lock(mutex);
 
     if (slot_id >= slot_count.size() || slot_count[slot_id] == 0)
         return;
@@ -269,6 +264,16 @@ void ExecutorTasks::downscale(size_t slot_id)
                 break;
             }
         }
+    }
+
+    // We should make sure that downscaled thread has no local task inside context.
+    // It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
+    auto & context = executor_contexts[slot_id];
+    if (auto * task = context->popTask())
+    {
+        task_queue.push(task, slot_id);
+        /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
+        tryWakeUpAnyOtherThreadWithTasks(*context, lock);
     }
 }
 
@@ -309,7 +314,7 @@ void ExecutorTasks::processAsyncTasks()
 
 String ExecutorTasks::dump()
 {
-    std::lock_guard lock(mutex);
+    std::scoped_lock lock(mutex);
 
     WriteBufferFromOwnString buffer;
 
