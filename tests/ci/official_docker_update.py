@@ -48,9 +48,9 @@ class LibraryRepos:
     """A dataclass to store repositories to process"""
 
     gh: GitHub
-    ldf: Repository
-    images: Repository
-    docs: Repository
+    ldf: Repository  # Library Definition File repository with Dockerfiles for tags
+    images: Repository  # A fork of docker-library/official-images
+    docs: Repository  # A fork of docker-library/docs
 
     @staticmethod
     def get_repos(gh: GitHub, args: argparse.Namespace) -> "LibraryRepos":
@@ -199,48 +199,7 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
     #############################################################
 
     ldf_dir = temp_path / repos.ldf.name
-    if ldf_dir.is_dir():
-        rmtree(ldf_dir)
-
-    run(f"{GIT_PREFIX} clone {repos.ldf.ssh_url}", cwd=temp_path)
-
-    generate_tree_cmd = (
-        f"{executable} tests/ci/official_docker.py generate-tree --build --fetch-tags "
-        f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
-    )
-
-    logging.info(
-        "Run command to check if the tree for LDF is changed: %s",
-        f"{generate_tree_cmd} -vvv",
-    )
-    run(f"{generate_tree_cmd} -vvv")
-
-    if dry_run:
-        logging.info(
-            "Dry running, continue running the script to check what would change"
-        )
-    elif not path_is_changed(ldf_dir / "*"):
-        logging.info(
-            "No changes in %s, finish updating %s",
-            repos.ldf.full_name,
-            repos.images.full_name,
-        )
-        return
-    else:
-        run(f"{generate_tree_cmd} --commit")
-
-    generate_ldf_cmd = (
-        f"{executable} tests/ci/official_docker.py generate-ldf -vvv "
-        f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
-    )
-    if dry_run:
-        generate_ldf_cmd = f"{generate_ldf_cmd} --no-check-changed"
-    else:
-        generate_ldf_cmd = f"{generate_ldf_cmd} --commit"
-
-    run(generate_ldf_cmd)
-    # Yes, right to the `main`
-    run(f"{GIT_PREFIX} push", dry_run, cwd=ldf_dir)
+    update_ldf_repo(repos, dry_run)
 
     #############################
     # LDF repository is updated #
@@ -320,6 +279,53 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
     )
 
 
+def update_ldf_repo(repos: LibraryRepos, dry_run: bool = True) -> None:
+    """We need to update the LDF repository with the latest changes"""
+    ldf_dir = temp_path / repos.ldf.name
+    if ldf_dir.is_dir():
+        rmtree(ldf_dir)
+
+    run(f"{GIT_PREFIX} clone {repos.ldf.ssh_url}", cwd=temp_path)
+
+    generate_tree_cmd = (
+        f"{executable} tests/ci/official_docker.py generate-tree --build --fetch-tags "
+        f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
+    )
+
+    logging.info(
+        "Run command to check if the tree for LDF is changed: %s",
+        f"{generate_tree_cmd} -vvv",
+    )
+    run(f"{generate_tree_cmd} -vvv")
+
+    if dry_run:
+        logging.info(
+            "Dry running, continue running the script to check what would change"
+        )
+    elif not path_is_changed(ldf_dir / "*"):
+        logging.info(
+            "No changes in %s, finish updating %s",
+            repos.ldf.full_name,
+            repos.images.full_name,
+        )
+        return
+    else:
+        run(f"{generate_tree_cmd} --commit")
+
+    generate_ldf_cmd = (
+        f"{executable} tests/ci/official_docker.py generate-ldf -vvv "
+        f"--directory {ldf_dir} --dockerfile-glob Dockerfile.ubuntu --image-type server"
+    )
+    if dry_run:
+        generate_ldf_cmd = f"{generate_ldf_cmd} --no-check-changed"
+    else:
+        generate_ldf_cmd = f"{generate_ldf_cmd} --commit"
+
+    run(generate_ldf_cmd)
+    # Yes, right to the `main`
+    run(f"{GIT_PREFIX} push", dry_run, cwd=ldf_dir)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -356,7 +362,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
-    logging.basicConfig(level=log_levels[min(args.verbose, 3)])
+    logging.basicConfig(
+        level=log_levels[min(args.verbose, 3)], format="%(asctime)s %(message)s"
+    )
     logging.debug("Arguments are %s", pformat(args.__dict__))
     token = args.token or get_best_robot_token()
 
