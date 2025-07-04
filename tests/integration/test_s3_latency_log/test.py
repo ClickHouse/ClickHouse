@@ -13,7 +13,7 @@ from helpers.mock_servers import start_mock_servers
 
 RESOLVER_CONTAINER_NAME = "resolver"
 RESOLVER_PORT = 8080
-CONNECT_TIMEOUT_MICROSECONDS = 1000000
+CONNECT_TIMEOUT_MICROSECONDS = 500000
 
 
 # Runs custom python-based S3 endpoint.
@@ -163,7 +163,7 @@ def test_latency_log(cluster):
             ), "All counters in latency log should be in non-decreasing order"
             prev = curr_cnt
 
-    below_second_connect_time_cnt = 0
+    below_half_second_connect_time_cnt = 0
     other_connect_time_cnt = 0
 
     # Count connect times that are below connect timeout, and then we check that
@@ -173,18 +173,18 @@ def test_latency_log(cluster):
         cnt_before = connect_times_before[i][1]
 
         if bucket < CONNECT_TIMEOUT_MICROSECONDS:
-            below_second_connect_time_cnt = cnt - cnt_before
+            below_half_second_connect_time_cnt = cnt - cnt_before
         else:
             other_connect_time_cnt = cnt - cnt_before
             break
 
     logging.debug(
-        "Below second connect time cnt - %d, other connect time cnt - %d",
-        below_second_connect_time_cnt,
+        "Below half second connect time cnt - %d, other connect time cnt - %d",
+        below_half_second_connect_time_cnt,
         other_connect_time_cnt,
     )
     assert (
-        below_second_connect_time_cnt + connect_timed_out == other_connect_time_cnt
+        below_half_second_connect_time_cnt + connect_timed_out == other_connect_time_cnt
     ), "Number of connection timed out requests does not match the number of such requests in the latency log"
 
     # Check that the number of requests to resolver is not greater than the number of such requests in the latency log.

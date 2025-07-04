@@ -9,7 +9,7 @@ total = 0
 def throttle_and_count():
     global total
     total += 1
-    time.sleep(1)
+    time.sleep(0.45)
 
 
 # Handle for MultipleObjectsDelete.
