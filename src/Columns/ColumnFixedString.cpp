@@ -379,7 +379,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 
     auto res = ColumnFixedString::create(n);
 
-    if (0 == col_size)
+    if (0 == col_size || 0 == offsets.back())
         return res;
 
     Chars & res_chars = res->chars;
