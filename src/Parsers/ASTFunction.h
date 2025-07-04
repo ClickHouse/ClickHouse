@@ -46,8 +46,9 @@ public:
 
     NullsAction nulls_action = NullsAction::EMPTY;
 
-    /// do not print empty parentheses if there are no args - compatibility with engine names.
-    bool no_empty_args = false;
+    /// Do not print empty parentheses if there are no args - compatibility with engine names.
+    /// If there are empty arguments, remove the whole arguments child.
+    void clearEmptyArgs();
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
