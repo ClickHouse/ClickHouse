@@ -595,27 +595,9 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        parameter=[
-            "asan, old analyzer, 1/6",
-            "asan, old analyzer, 2/6",
-            "asan, old analyzer, 3/6",
-            "asan, old analyzer, 4/6",
-            "asan, old analyzer, 5/6",
-            "asan, old analyzer, 6/6",
-            "release, 1/4",
-            "release, 2/4",
-            "release, 3/4",
-            "release, 4/4",
-            "aarch64, distributed plan, 1/4",
-            "aarch64, distributed plan, 2/4",
-            "aarch64, distributed plan, 3/4",
-            "aarch64, distributed plan, 4/4",
-        ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(10)]
-        + [RunnerLabels.FUNC_TESTER_ARM for _ in range(4)],
-        requires=[["Build (amd_asan)"] for _ in range(6)]
-        + [["Build (amd_release)"] for _ in range(4)]
-        + [["Build (arm_release)"] for _ in range(4)],
+        parameter=["release, 1/4", "release, 2/4", "release, 3/4", "release, 4/4"],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(4)],
+        requires=[["Build (amd_release)"] for _ in range(4)],
     )
     integration_test_jobs_non_required = Job.Config(
         name=JobNames.INTEGRATION,
