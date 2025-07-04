@@ -53,13 +53,13 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
-DB::ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
+ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const DB::StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
-    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    auto info = prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
 
     info.format_header.clear();
     for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())

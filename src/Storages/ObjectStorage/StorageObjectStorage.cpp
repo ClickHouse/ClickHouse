@@ -278,7 +278,7 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     bool supports_subset_of_columns,
     ContextPtr local_context)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+    return prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
