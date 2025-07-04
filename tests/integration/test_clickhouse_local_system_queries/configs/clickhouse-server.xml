@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <log>/var/log/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+    </logger>
+
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <max_connections>4096</max_connections>
+    <keep_alive_timeout>3</keep_alive_timeout>
+    <max_concurrent_queries>100</max_concurrent_queries>
+    <uncompressed_cache_size>8589934592</uncompressed_cache_size>
+    <mark_cache_size>5368709120</mark_cache_size>
+
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <user_directories>
+        <users_xml>
+            <path>/etc/clickhouse-server/users.xml</path>
+        </users_xml>
+    </user_directories>
+
+    <default_profile>default</default_profile>
+    <default_database>default</default_database>
+
+    <timezone>UTC</timezone>
+
+    <remote_servers>
+    </remote_servers>
+
+    <include_from>/etc/clickhouse-server/config.d/*.xml</include_from>
+</clickhouse> 
