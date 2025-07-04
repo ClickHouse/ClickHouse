@@ -995,7 +995,7 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
 
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
-    
+
     // Handle negative fractional part by using the absolute value for processing
     bool is_negative = fractional < 0;
     typename DecimalType::NativeType abs_fractional = is_negative ? -fractional : fractional;
