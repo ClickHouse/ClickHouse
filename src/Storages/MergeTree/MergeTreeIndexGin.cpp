@@ -41,11 +41,10 @@ static const String ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
     const String & index_name_,
-    size_t columns_number,
     const GinFilterParameters & gin_filter_params_)
     : index_name(index_name_)
     , gin_filter_params(gin_filter_params_)
-    , gin_filters(columns_number, GinFilter(gin_filter_params))
+    , gin_filter(gin_filter_params)
     , has_elems(false)
 {
 }
@@ -58,12 +57,9 @@ void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
 
-    for (const auto & gin_filter : gin_filters)
-    {
-        size_t filter_size = gin_filter.getFilter().size();
-        size_serialization->serializeBinary(filter_size, ostr, {});
-        ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
-    }
+    size_t filter_size = gin_filter.getFilter().size();
+    size_serialization->serializeBinary(filter_size, ostr, {});
+    ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
 }
 
 void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -75,27 +71,21 @@ void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     const auto & size_type = std::make_shared<DataTypeUInt32>();
 
     auto size_serialization = size_type->getDefaultSerialization();
-    for (auto & gin_filter : gin_filters)
-    {
-        size_serialization->deserializeBinary(field_rows, istr, {});
-        size_t filter_size = field_rows.safeGet<size_t>();
-        gin_filter.getFilter().resize(filter_size);
+    size_serialization->deserializeBinary(field_rows, istr, {});
 
-        if (filter_size == 0)
-            continue;
+    size_t filter_size = field_rows.safeGet<size_t>();
+    gin_filter.getFilter().resize(filter_size);
 
+    if (filter_size != 0)
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
-    }
+
     has_elems = true;
 }
 
 
 size_t MergeTreeIndexGranuleGin::memoryUsageBytes() const
 {
-    size_t sum = 0;
-    for (const auto & gin_filter : gin_filters)
-        sum += gin_filter.memoryUsageBytes();
-    return sum;
+    return gin_filter.memoryUsageBytes();
 }
 
 
@@ -110,14 +100,13 @@ MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     , index_name (index_name_)
     , gin_filter_params(gin_filter_params_)
     , token_extractor(token_extractor_)
-    , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name, index_columns.size(), gin_filter_params))
+    , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name, gin_filter_params))
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(
-        index_name, index_columns.size(), gin_filter_params);
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(index_name, gin_filter_params);
     new_granule.swap(granule);
     return new_granule;
 }
@@ -139,31 +128,32 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
+
+    if (rows_read == 0)
+        return;
+
+    const auto & index_column_name = index_columns[0];
+    const auto & column = block.getByName(index_column_name).column;
+
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
-    for (size_t col = 0; col < index_columns.size(); ++col)
-    {
-        const auto & column_with_type = block.getByName(index_columns[col]);
-        const auto & column = column_with_type.column;
-        size_t current_position = *pos;
-        auto row_id = start_row_id;
+    size_t current_position = *pos;
+    auto row_id = start_row_id;
 
-        bool need_to_write = false;
-        for (size_t i = 0; i < rows_read; ++i)
-        {
-            auto ref = column->getDataAt(current_position + i);
-            addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
-            store->incrementCurrentSizeBy(ref.size);
-            row_id++;
-            if (store->needToWrite())
-                need_to_write = true;
-        }
-        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
-        if (need_to_write)
-        {
-            store->writeSegment();
-        }
+    bool need_to_write = false;
+    for (size_t i = 0; i < rows_read; ++i)
+    {
+        auto ref = column->getDataAt(current_position + i);
+        addToGinFilter(row_id, ref.data, ref.size, granule->gin_filter);
+        store->incrementCurrentSizeBy(ref.size);
+        row_id++;
+        if (store->needToWrite())
+            need_to_write = true;
     }
+    granule->gin_filter.addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+
+    if (need_to_write)
+        store->writeSegment();
 
     granule->has_elems = true;
     *pos += rows_read;
@@ -219,8 +209,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranule([[maybe_unused]] MergeTreeIn
 
 bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, [[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleGin> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleGin> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(idx_granule);
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
@@ -239,7 +228,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             bool exists_in_gin_filter = false;
             for (const GinFilter & gin_filter : gin_filters)
             {
-                if (granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::Any))
+                if (granule->gin_filter.contains(gin_filter, cache_store, GinSearchMode::Any))
                 {
                     exists_in_gin_filter = true;
                     break;
@@ -254,7 +243,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             bool exists_in_gin_filter = true;
             for (const GinFilter & gin_filter : gin_filters)
             {
-                if (!granule->gin_filters[element.key_column].contains(gin_filter, cache_store, GinSearchMode::All))
+                if (!granule->gin_filter.contains(gin_filter, cache_store, GinSearchMode::All))
                 {
                     exists_in_gin_filter = false;
                     break;
@@ -265,7 +254,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
+            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -277,11 +266,9 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
 
             for (size_t column = 0; column < element.set_key_position.size(); ++column)
             {
-                const size_t key_idx = element.set_key_position[column];
-
                 const auto & gin_filters = element.set_gin_filters[column];
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
+                    result[row] = result[row] && granule->gin_filter.contains(gin_filters[row], cache_store);
             }
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
@@ -295,7 +282,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
@@ -309,13 +296,13 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 const auto & gin_filters = element.set_gin_filters[0];
 
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                    result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
             else if (element.gin_filter)
             {
-                rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
+                rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
             }
 
         }
@@ -450,7 +437,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     const Field & value_field,
     RPNElement & out)
 {
-    size_t index_column_num = 0;
     bool index_column_exists = header.has(index_column_ast.getColumnName());
     if (!index_column_exists)
         return false;
@@ -464,7 +450,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 
     if (function_name == "notEquals")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -473,7 +458,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "equals")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -511,14 +495,12 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             gin_filters.emplace_back(GinFilter(gin_filter_params));
             token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
         }
-        out.key_column = index_column_num;
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -527,7 +509,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "startsWith")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -536,7 +517,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "endsWith")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -545,7 +525,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "multiSearchAny")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
@@ -566,7 +545,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -575,7 +553,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -584,7 +561,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
 
         const auto & value = const_value.safeGet<String>();
@@ -719,7 +695,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
     if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME || index.type == GIN_INDEX_NAME)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted', 'full_text' and 'gin' are no longer supported. Please drop and recreate the index as type 'text'");
 
-    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, index.column_names.size(), gin_filter_params);
+    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, gin_filter_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
