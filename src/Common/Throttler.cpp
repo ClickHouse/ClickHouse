@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -55,6 +56,8 @@ bool Throttler::throttle(size_t amount, size_t max_block_us)
     double tokens_value = 0.0;
     size_t max_speed_value = 0;
     throttleImpl(amount, count_value, tokens_value, max_speed_value);
+    if (event_amount != ProfileEvents::end())
+        ProfileEvents::increment(event_amount, amount);
 
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
@@ -63,19 +66,19 @@ bool Throttler::throttle(size_t amount, size_t max_block_us)
     bool block = max_speed_value && tokens_value < 0;
     if (block)
     {
-        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
-        Stopwatch block_watch; // Measure actual blocking time, might be different due to cancelation
         block_count.fetch_add(1, std::memory_order_relaxed);
-        sleepForNanoseconds(std::min<Int64>(max_block_us * 1000, block_ns));
-        block_count.fetch_sub(1, std::memory_order_relaxed);
-        auto slept_us = block_watch.elapsedMicroseconds();
-        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, slept_us);
-        if (event_sleep_us != ProfileEvents::end())
-            ProfileEvents::increment(event_sleep_us, slept_us);
-    }
+        SCOPE_EXIT({block_count.fetch_sub(1, std::memory_order_relaxed);});
 
-    if (event_amount != ProfileEvents::end())
-        ProfileEvents::increment(event_amount, amount);
+        auto & profile_events = CurrentThread::getProfileEvents();
+        auto timer = profile_events.timer(ProfileEvents::ThrottlerSleepMicroseconds);
+        std::optional<ProfileEvents::Timer> timer2;
+        if (event_sleep_us != ProfileEvents::end())
+            timer2.emplace(profile_events.timer(event_sleep_us));
+
+        // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
+        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
+        sleepForNanoseconds(std::min<Int64>(max_block_us * 1000, block_ns));
+    }
 
     bool parent_block = false;
     if (parent)
