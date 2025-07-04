@@ -29,6 +29,7 @@ struct ReadOptions
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
     bool null_as_default = true;
+    bool schema_inference_skip_unsupported_columns = false;
 
     bool fuzz = false; // TODO [parquet]: Use it.
 

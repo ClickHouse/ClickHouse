@@ -1670,24 +1670,27 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         }
     }
 
-    decompressPageIfCompressed(page);
-    if (!page.decoder)
-        createPageDecoder(page, column, column_info);
+    if (encoded_values_to_read > 0)
+    {
+        decompressPageIfCompressed(page);
+        if (!page.decoder)
+            createPageDecoder(page, column, column_info);
 
-    if (page.is_dictionary_encoded)
-    {
-        if (!page.indices_column)
-            page.indices_column = ColumnUInt32::create();
-        auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
-        auto & data = indices_column_uint32.getData();
-        chassert(data.empty());
-        page.decoder->decode(encoded_values_to_read, *page.indices_column);
-        column.dictionary.index(indices_column_uint32, *subchunk.column);
-        data.clear();
-    }
-    else
-    {
-        page.decoder->decode(encoded_values_to_read, *subchunk.column);
+        if (page.is_dictionary_encoded)
+        {
+            if (!page.indices_column)
+                page.indices_column = ColumnUInt32::create();
+            auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
+            auto & data = indices_column_uint32.getData();
+            chassert(data.empty());
+            page.decoder->decode(encoded_values_to_read, *page.indices_column);
+            column.dictionary.index(indices_column_uint32, *subchunk.column);
+            data.clear();
+        }
+        else
+        {
+            page.decoder->decode(encoded_values_to_read, *subchunk.column);
+        }
     }
 
     if (page.value_idx == page.num_values)

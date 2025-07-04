@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB::ErrorCodes
 {
@@ -69,9 +70,6 @@ void SchemaConverter::prepareForReading()
         if (!found_columns[i])
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
     }
-
-    if (primitive_columns.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "No columns to read");
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -83,8 +81,11 @@ NamesAndTypesList SchemaConverter::inferSchema()
     for (size_t i = 0; i < top_level_columns; ++i)
     {
         std::optional<size_t> idx = processSubtree("", /*requested*/ true, /*type_hint*/ nullptr, SchemaContext::None);
-        const OutputColumnInfo & col = output_columns.at(idx.value());
-        res.emplace_back(col.name, col.type);
+        if (idx.has_value())
+        {
+            const OutputColumnInfo & col = output_columns.at(idx.value());
+            res.emplace_back(col.name, col.type);
+        }
     }
     return res;
 }
@@ -98,8 +99,12 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     const parq::SchemaElement & element = file_metadata.schema.at(schema_idx);
     schema_idx += 1;
 
-    if (element.__isset.num_children && element.num_children <= 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Empty tuple in parquet schema");
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it would make sense to interpret it as empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    bool is_primitive = !element.__isset.num_children || (element.num_children == 0 && element.__isset.type);
 
     std::optional<size_t> idx_in_output_block;
     size_t output_idx = UINT64_MAX; // index in output_columns
@@ -230,7 +235,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         return true;
     };
 
-    if (!element.__isset.num_children)
+    if (is_primitive)
     {
         /// Primitive column.
         primitive_column_idx += 1;
@@ -239,12 +244,58 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         if (!element.__isset.type)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", element.name);
 
+        const IDataType * primitive_type_hint = type_hint.get();
+        bool output_nullable = false;
+        if (primitive_type_hint)
+        {
+            if (primitive_type_hint->lowCardinality())
+            {
+                primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType().get();
+            }
+            if (primitive_type_hint->isNullable())
+            {
+                output_nullable = true;
+                primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType().get();
+            }
+        }
+        else
+        {
+            if ((levels.back().is_array == false || options.schema_inference_force_nullable) && !options.schema_inference_force_not_nullable)
+            {
+                /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
+                output_nullable = true;
+            }
+        }
+
+        DataTypePtr inferred_type;
+        DataTypePtr raw_decoded_type;
+        PageDecoderInfo decoder;
+        try
+        {
+            processPrimitiveColumn(element, primitive_type_hint, decoder, raw_decoded_type, inferred_type);
+        }
+        catch (Exception & e)
+        {
+            if (options.schema_inference_skip_unsupported_columns && (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
+            {
+                return std::nullopt;
+            }
+            else
+            {
+                e.addMessage("column '" + name + "'");
+                throw;
+            }
+        }
+
         size_t primitive_idx = primitive_columns.size();
         PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
         primitive.column_idx = primitive_column_idx - 1;
         primitive.schema_idx = schema_idx - 1;
         primitive.name = name;
         primitive.levels = levels;
+        primitive.output_nullable = output_nullable;
+        primitive.decoder = std::move(decoder);
+        primitive.raw_decoded_type = raw_decoded_type;
         for (const auto & level : levels)
             if (level.is_array)
                 primitive.max_array_def = level.def;
@@ -256,30 +307,6 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         output.primitive_end = primitive_idx + 1;
         output.is_primitive = true;
 
-        const IDataType * primitive_type_hint = type_hint.get();
-        if (primitive_type_hint)
-        {
-            if (primitive_type_hint->lowCardinality())
-            {
-                primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType().get();
-            }
-            if (primitive_type_hint->isNullable())
-            {
-                primitive.output_nullable = true;
-                primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType().get();
-            }
-        }
-        else
-        {
-            if ((primitive.levels.back().is_array == false || options.schema_inference_force_nullable) && !options.schema_inference_force_not_nullable)
-            {
-                /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
-                primitive.output_nullable = true;
-            }
-        }
-
-        DataTypePtr inferred_type;
-        processPrimitiveColumn(element, primitive_type_hint, primitive.decoder, primitive.raw_decoded_type, inferred_type);
         if (!primitive.raw_decoded_type)
             primitive.raw_decoded_type = inferred_type;
 
@@ -299,17 +326,32 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     {
         /// Map, aka Array(Tuple(2)).
         DataTypePtr array_type_hint;
+        bool no_map = false; // return plain Array(Tuple) instead of Map
         if (type_hint)
         {
-            const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(type_hint.get());
-            if (!map_type)
+            if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(type_hint.get()))
+            {
+                array_type_hint = map_type->getNestedType();
+            }
+            else if (typeid_cast<const DataTypeArray *>(type_hint.get()))
+            {
+                array_type_hint = type_hint;
+                no_map = true;
+            }
+            else
+            {
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", name, type_hint->getName());
-            array_type_hint = map_type->getNestedType();
+            }
         }
         auto array_idx = processSubtree(name, requested, array_type_hint, SchemaContext::MapTuple);
 
-        if (!requested)
+        if (!requested || !array_idx.has_value())
             return std::nullopt;
+
+        /// Support explicitly requesting Array(Tuple) type for map columns. Useful if the map key
+        /// type is something that's not allowed as Map key in clickhouse.
+        if (no_map)
+            return array_idx;
 
         output_idx = output_columns.size();
         OutputColumnInfo & output = output_columns.emplace_back();
@@ -326,7 +368,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         /// Array (outer schema element).
         auto array_idx = processSubtree(name, requested, type_hint, SchemaContext::ListTuple);
 
-        if (!requested)
+        if (!requested || !array_idx.has_value())
             return std::nullopt;
 
         output_idx = array_idx.value();
@@ -339,7 +381,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         /// (type_hint is already unwrapped to be element type, because of REPEATED)
         auto element_idx = processSubtree(name, requested, type_hint, SchemaContext::ListElement);
 
-        if (!requested)
+        if (!requested || !element_idx.has_value())
             return std::nullopt;
 
         output_idx = element_idx.value();
@@ -350,6 +392,16 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
         if (type_hint && !tuple_type_hint)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
+
+        /// 3 modes:
+        ///  * If type_hint has element names, we match elements from parquet to elements from type
+        ///    hint tuple by name. If some elements are not in type hint, we skip them.
+        ///    If elements are in different order, we reorder them to match type_hint.
+        ///  * If type_hint has no names, we match elements sequentially and preserve order.
+        ///  * If there's no type_hint, we preserve order, produce tuple with names.
+        ///    Only in this mode, we allow skipping unsupported elements if
+        ///    schema_inference_skip_unsupported_columns is true. In other modes, we skip the whole
+        ///    tuple if any element is unsupported.
 
         bool lookup_by_name = false;
         std::vector<size_t> elements;
@@ -379,10 +431,12 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         }
 
         size_t primitive_start = primitive_columns.size();
+        size_t output_start = output_columns.size();
+        size_t skipped_unsupported_columns = 0;
         for (size_t i = 0; i < size_t(element.num_children); ++i)
         {
             const String & element_name = file_metadata.schema.at(schema_idx).name;
-            std::optional<size_t> idx_in_output_tuple = i;
+            std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
             if (lookup_by_name)
             {
                 idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.case_insensitive_column_matching);
@@ -400,6 +454,26 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
             if (element_requested)
             {
+                if (!element_idx.has_value())
+                {
+                    if (type_hint || context == SchemaContext::MapTuple)
+                    {
+                        /// If one of the elements is skipped, skip the whole tuple.
+                        /// Remove previous elements.
+                        primitive_columns.resize(primitive_start);
+                        output_columns.resize(output_start);
+                        return std::nullopt;
+                    }
+                    else
+                    {
+                        skipped_unsupported_columns += 1;
+                        elements.pop_back();
+                        names.pop_back();
+                        types.pop_back();
+                        continue;
+                    }
+                }
+
                 elements.at(idx_in_output_tuple.value()) = element_idx.value();
 
                 const auto & type = output_columns.at(element_idx.value()).type;
@@ -853,7 +927,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         case parq::Type::BOOLEAN:
         {
-            out_inferred_type = std::make_shared<DataTypeUInt8>();
+            out_inferred_type = DataTypeFactory::instance().get("Bool");
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 1;
             out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);

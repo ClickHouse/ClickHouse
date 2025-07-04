@@ -684,6 +684,14 @@ void writeColumnImpl(
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
+    s.column_chunk.meta_data.__isset.size_statistics = true;
+    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
+    if (s.max_rep > 0)
+        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+    if (s.max_def > 0)
+        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
@@ -724,9 +732,20 @@ void writeColumnImpl(
         /// Concatenate encoded rep, def, and data.
 
         if (s.max_rep > 0)
+        {
             encodeRepDefLevelsRLE(s.rep.data() + def_offset, def_count, s.max_rep, encoded);
+
+            for (size_t i = def_offset; i < def_offset + def_count; ++i)
+                ++s.column_chunk.meta_data.size_statistics.repetition_level_histogram[s.rep[i]];
+        }
+
         if (s.max_def > 0)
+        {
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
+
+            for (size_t i = def_offset; i < def_offset + def_count; ++i)
+                ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
+        }
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
@@ -886,6 +905,12 @@ void writeColumnImpl(
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+            }
+
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                for (size_t i = 0; i < data_count; ++i)
+                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
             }
 
             encoder->Put(converted, static_cast<int>(data_count));

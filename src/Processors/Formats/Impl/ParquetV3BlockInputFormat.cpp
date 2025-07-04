@@ -21,6 +21,7 @@ Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
     options.null_as_default = format_settings.null_as_default;
+    options.schema_inference_skip_unsupported_columns = format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference;
     options.max_block_size = format_settings.parquet.max_block_size;
     options.preferred_block_size_bytes = format_settings.parquet.prefer_block_bytes;
     options.fuzz = format_settings.parquet.fuzz;

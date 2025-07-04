@@ -81,6 +81,7 @@ namespace DB::Parquet
 //     - all types of filtering by IS NULL / IS NOT NULL
 //     - Bool type
 //     - looking for NaN using min/max indices; try it with merge tree too
+//     - input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, make a file by hacking PrepareForWrite.cpp to use garbage physical type for some data type (~/t/invalid_type.parquet has column `invalid` that's FixedString(5) but has type=42 instead of type=FIXED_LEN_BYTE_ARRAY)
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
 //    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
 //    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.

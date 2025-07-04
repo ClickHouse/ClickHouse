@@ -57,7 +57,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;
@@ -69,7 +69,7 @@ namespace ErrorCodes
         if (::arrow::Status _s = (status); !_s.ok())                   \
         {                                                              \
             throw Exception::createDeprecated(_s.ToString(),           \
-                _s.IsOutOfMemory() ? ErrorCodes::CANNOT_ALLOCATE_MEMORY : ErrorCodes::INCORRECT_DATA); \
+                _s.IsOutOfMemory() ? ErrorCodes::MEMORY_LIMIT_EXCEEDED : ErrorCodes::INCORRECT_DATA); \
         }                                                              \
     } while (false)
 
