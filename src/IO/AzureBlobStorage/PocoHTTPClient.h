@@ -62,7 +62,7 @@ public:
         Azure::Core::Context const & context) override;
 
     /// Very weird API, which allows to forward retry attempt from
-    /// caller (bufer) to this low-level class
+    /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
 private:
