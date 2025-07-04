@@ -249,6 +249,19 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
     out.finalize();
 }
 
+Strings MergeTreeDataPartChecksums::getFileNamesWithSizes() const
+{
+    Strings result;
+    result.reserve(files.size());
+
+    for (const auto & [name, checksum] : files)
+        result.push_back(name + " (" + std::to_string(checksum.file_size) + " bytes)");
+
+    std::sort(result.begin(), result.end());
+
+    return result;
+}
+
 Strings MergeTreeDataPartChecksums::getFileNames() const
 {
     Strings result;
