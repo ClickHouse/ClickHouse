@@ -46,6 +46,8 @@ namespace ErrorCodes
 }
 
 
+#if defined(OS_LINUX)
+
 static constexpr size_t small_buffer_size = 4096;
 
 void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
@@ -108,6 +110,8 @@ void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, s
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
 };
+
+#endif
 
 
 AsynchronousMetrics::AsynchronousMetrics(
