@@ -1,0 +1,39 @@
+-- Tags: no-fasttest, no-random-settings, long, no-parallel-replicas
+-- - no-fasttest -- requires S3
+-- - no-random-settings -- more deterministic prefetch
+-- - no-parallel-replicas -- other replicas may do prefetch
+
+-- Create system.metric_log
+SYSTEM FLUSH LOGS metric_log;
+
+{% for min_bytes_for_wide_part in [0, 10e9] %}
+{% for min_bytes_for_full_part_storage in [0, 10e9] %}
+
+{% set table = 'metric_log' +
+    ('_full' if min_bytes_for_full_part_storage == 0 else '_packed') +
+    ('_wide' if min_bytes_for_wide_part == 0 else '_compact') +
+    ''
+%}
+
+DROP TABLE IF EXISTS {{ table }};
+
+CREATE TABLE {{ table }} AS system.metric_log
+ENGINE = MergeTree
+PARTITION BY tuple()
+ORDER BY (event_date, event_time)
+SETTINGS
+    disk='s3_cache',
+    min_bytes_for_wide_part = {{ min_bytes_for_wide_part }},
+    min_bytes_for_full_part_storage={{ min_bytes_for_full_part_storage }};
+
+INSERT INTO {{ table }} SELECT * FROM generateRandom() LIMIT 400;
+
+SELECT * FROM {{ table }} FORMAT Null SETTINGS filesystem_prefetches_limit = 100;
+
+{% endfor %}
+{% endfor %}
+
+SYSTEM FLUSH LOGS query_log;
+SELECT normalizeQuery(query), ProfileEvents['RemoteFSPrefetches'] FROM system.query_log
+WHERE current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select'
+ORDER BY event_time_microseconds;

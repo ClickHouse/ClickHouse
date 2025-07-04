@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,6 +22,11 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -109,7 +115,10 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         ? settings.read_settings.remote_fs_prefetch
         : settings.read_settings.local_fs_prefetch;
 
-    if (!do_prefetch)
+    const auto & settings = data_part_info_for_read->getContext()->getSettingsRef();
+    auto filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
+
+    if (!do_prefetch || num_columns > filesystem_prefetches_limit || all_mark_ranges.getNumberOfMarks() == 0)
         return;
 
     if (deserialize_prefixes)

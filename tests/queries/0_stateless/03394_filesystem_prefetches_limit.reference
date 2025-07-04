@@ -1,0 +1,4 @@
+SELECT * FROM metric_log_full_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
+SELECT * FROM metric_log_packed_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
+SELECT * FROM metric_log_full_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
+SELECT * FROM metric_log_packed_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
