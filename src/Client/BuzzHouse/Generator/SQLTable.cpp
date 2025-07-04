@@ -375,7 +375,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         filtered_entries.clear();
         if (t.has_value() && !t.value().cols.empty())
         {
-            addTableRelation(rg, false, "", t.value());
+            addTableRelation(rg, true, "", t.value());
         }
         this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
         this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -423,7 +423,7 @@ void StatementGenerator::generateNextTTL(
 
                     if (t.has_value() && !t.value().cols.empty())
                     {
-                        addTableRelation(rg, false, "", t.value());
+                        addTableRelation(rg, true, "", t.value());
                     }
                     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
                     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -465,7 +465,7 @@ void StatementGenerator::generateNextTTL(
                 columnPathRef(entries[j], tset->mutable_col());
                 if (t.has_value() && !t.value().cols.empty())
                 {
-                    addTableRelation(rg, false, "", t.value());
+                    addTableRelation(rg, true, "", t.value());
                 }
                 /// Use global aggregate most of the time
                 this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
@@ -1375,7 +1375,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if (!t.cols.empty())
             {
-                addTableRelation(rg, false, "", t);
+                addTableRelation(rg, true, "", t);
             }
             this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
             this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -1640,7 +1640,7 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     this->inside_projection = true;
     if (!t.cols.empty())
     {
-        addTableRelation(rg, false, "", t);
+        addTableRelation(rg, true, "", t);
     }
     generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, pdef->mutable_select());
     this->levels.clear();
@@ -1659,7 +1659,7 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
     if (!t.cols.empty())
     {
-        addTableRelation(rg, false, "", t);
+        addTableRelation(rg, true, "", t);
     }
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
