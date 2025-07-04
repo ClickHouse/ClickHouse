@@ -10,7 +10,7 @@ Contains information about messages received via a streaming engine and parsed w
 
 Logging is enabled by specifying `dead_letter` for the engine specific `handle_error_mode` setting.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter](../../operations/server-configuration-parameters/settings.md#dead_letter) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter](../../operations/server-configuration-parameters/settings.md#dead_letter) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview.md#system-tables-introduction) for more details.
 
