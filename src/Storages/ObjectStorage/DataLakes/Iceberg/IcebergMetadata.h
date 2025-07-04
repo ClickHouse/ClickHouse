@@ -103,7 +103,6 @@ private:
     std::tuple<Int64, Int32> getVersion() const { return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id); }
 
     Int32 last_metadata_version;
-    Poco::JSON::Object::Ptr last_metadata_object;
     Int32 format_version;
 
     mutable std::atomic<bool> schema_id_by_data_file_initialized{false};
@@ -118,16 +117,16 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
 
-    void updateState(const ContextPtr & local_context, bool metadata_file_changed);
+    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed);
 
     Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
-    void updateSnapshot();
+    void updateSnapshot(Poco::JSON::Object::Ptr metadata_object);
 
     ManifestFileCacheKeys getManifestList(const String & filename) const;
     mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
-    void addTableSchemaById(Int32 schema_id);
+    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object);
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
