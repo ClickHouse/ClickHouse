@@ -7,23 +7,20 @@ namespace DB
 class EvictionCandidates : private boost::noncopyable
 {
 public:
-    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
 
     EvictionCandidates();
     ~EvictionCandidates();
 
     /// Add a new eviction candidate.
-    void add(
-        const FileSegmentMetadataPtr & candidate,
-        LockedKey & locked_key,
-        const CachePriorityGuard::Lock &);
+    void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
 
     /// Evict all candidates, which were added before via add().
     void evict();
 
     /// In case of dynamic cache resize we want to remove queue entries in advance.
     /// In ordinary eviction we would do this in finalize().
-    void removeQueueEntries(const CachePriorityGuard::Lock &);
+    void removeQueueEntries(const CachePriorityGuard::WriteLock &);
 
     /// Whether finalize() is required.
     bool needFinalize() const;
@@ -34,7 +31,7 @@ public:
     /// Finalize eviction (remove invalidated queue entries).
     void finalize(
         FileCacheQueryLimit::QueryContext * query_context,
-        const CachePriorityGuard::Lock &);
+        const CachePriorityGuard::WriteLock &);
 
     struct KeyCandidates
     {
@@ -67,7 +64,7 @@ public:
         size_t size,
         size_t elements,
         IFileCachePriority & priority,
-        const CachePriorityGuard::Lock &);
+        const CachePriorityGuard::WriteLock &);
 
 private:
 

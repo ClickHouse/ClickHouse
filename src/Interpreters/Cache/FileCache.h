@@ -184,8 +184,8 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::WriteLock lockCache() const;
+    CachePriorityGuard::WriteLock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -303,20 +303,20 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CachePriorityGuard::WriteLock *);
 
     struct SizeLimits
     {
-        size_t max_size;
-        size_t max_elements;
-        double slru_size_ratio;
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
     bool doDynamicResizeImpl(
         const SizeLimits & current_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
-        CachePriorityGuard::Lock &);
+        CachePriorityGuard::WriteLock &);
 };
 
 }
