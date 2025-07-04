@@ -634,7 +634,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
         : nullptr;
 }
 
-std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(ContextPtr local_context, String data_path) const
+std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
 {
     auto schema_id_it = schema_id_by_data_file.find(data_path);
     if (schema_id_it == schema_id_by_data_file.end())
