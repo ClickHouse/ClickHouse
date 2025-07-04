@@ -50,8 +50,8 @@ public:
               const ThrottlerPtr & parent_ = nullptr);
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
-    /// Returns duration of sleep in nanoseconds (to distinguish sleeping on different kinds of throttlers for metrics)
-    size_t throttle(size_t amount) override;
+    /// Returns true if blocking was applied, false if no blocking was needed.
+    bool throttle(size_t amount, size_t max_block_us) override;
 
     /// Updates token bucket, but does not sleep.
     void throttleNonBlocking(size_t amount) override;
@@ -84,7 +84,7 @@ private:
     const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     mutable std::mutex mutex;
-    std::atomic<UInt64> accumulated_sleep{0}; // Accumulated sleep time over all waiting threads
+    std::atomic<UInt64> block_count{0}; // number of threads currently under throttling
     double tokens{0}; /// Amount of tokens available in token bucket. Updated in `throttle` method.
     UInt64 prev_ns{0}; /// Previous `throttle` call time (in nanoseconds).
 

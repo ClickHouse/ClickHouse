@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Common/Throttler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -47,7 +48,7 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
-size_t Throttler::throttle(size_t amount)
+bool Throttler::throttle(size_t amount, size_t max_block_us)
 {
     // Values obtained under lock to be checked after release
     size_t count_value = 0;
@@ -59,25 +60,28 @@ size_t Throttler::throttle(size_t amount)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
-    Int64 sleep_time_ns = 0;
-    if (max_speed_value && tokens_value < 0)
+    bool block = max_speed_value && tokens_value < 0;
+    if (block)
     {
-        sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
-        accumulated_sleep += sleep_time_ns;
-        sleepForNanoseconds(sleep_time_ns);
-        accumulated_sleep -= sleep_time_ns;
-        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time_ns / 1000UL);
+        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
+        Stopwatch block_watch; // Measure actual blocking time, might be different due to cancelation
+        block_count.fetch_add(1, std::memory_order_relaxed);
+        sleepForNanoseconds(std::min<Int64>(max_block_us * 1000, block_ns));
+        block_count.fetch_sub(1, std::memory_order_relaxed);
+        auto slept_us = block_watch.elapsedMicroseconds();
+        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, slept_us);
         if (event_sleep_us != ProfileEvents::end())
-            ProfileEvents::increment(event_sleep_us, sleep_time_ns / 1000UL);
+            ProfileEvents::increment(event_sleep_us, slept_us);
     }
 
     if (event_amount != ProfileEvents::end())
         ProfileEvents::increment(event_amount, amount);
 
+    bool parent_block = false;
     if (parent)
-        sleep_time_ns += parent->throttle(amount);
+        parent_block = parent->throttle(amount, max_block_us);
 
-    return static_cast<size_t>(sleep_time_ns);
+    return block || parent_block;
 }
 
 void Throttler::throttleNonBlocking(size_t amount)
@@ -128,13 +132,7 @@ void Throttler::reset()
 
 bool Throttler::isThrottling() const
 {
-    if (accumulated_sleep != 0)
-        return true;
-
-    if (parent)
-        return parent->isThrottling();
-
-    return false;
+    return block_count.load(std::memory_order_relaxed) > 0 || (parent && parent->isThrottling());
 }
 
 Int64 Throttler::getAvailable()

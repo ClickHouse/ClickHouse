@@ -437,11 +437,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
         case Aws::Http::HttpMethod::HTTP_HEAD:
             if (get_request_throttler)
             {
-                UInt64 sleep_us = get_request_throttler->throttle(1);
-                if (for_disk_s3)
+                Stopwatch sleep_watch;
+                bool blocked = get_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
                 {
                     ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerCount);
-                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds, sleep_us);
+                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
                 }
             }
             break;
@@ -450,11 +451,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
         case Aws::Http::HttpMethod::HTTP_PATCH:
             if (put_request_throttler)
             {
-                UInt64 sleep_us = put_request_throttler->throttle(1);
-                if (for_disk_s3)
+                Stopwatch sleep_watch;
+                bool blocked = put_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
                 {
                     ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerCount);
-                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds, sleep_us);
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
                 }
             }
             break;

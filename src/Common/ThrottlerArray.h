@@ -25,12 +25,15 @@ public:
     }
 
     /// Use `amount` tokens on all throttlers
-    size_t throttle(size_t amount) override
+    bool throttle(size_t amount, size_t max_block_us) override
     {
-        size_t total_sleep_ns = 0;
+        bool result = false;
         for (const auto & throttler : throttlers)
-            total_sleep_ns += throttler->throttle(amount);
-        return total_sleep_ns;
+        {
+            bool blocked = throttler->throttle(amount, max_block_us);
+            result = result || blocked;
+        }
+        return result;
     }
 
     void throttleNonBlocking(size_t amount) override
