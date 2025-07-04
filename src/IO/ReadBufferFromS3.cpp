@@ -12,7 +12,6 @@
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
 #include <utility>

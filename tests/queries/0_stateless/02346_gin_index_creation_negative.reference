@@ -1,0 +1,6 @@
+Two or less arguments
+1st argument (tokenizer) must be UInt64
+2st argument (max_rows_per_postings_list) must be UInt64
+2st argument (max_rows_per_postings_list) must be bigger than MIN_ROWS_PER_POSTINGS_LIST
+Must be created on single column
+Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns
