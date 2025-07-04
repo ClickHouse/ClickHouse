@@ -1,4 +1,5 @@
 send_timeout	Seconds	300
+azure_connect_timeout_ms	UInt64	1000
 connect_timeout	Seconds	10
 connect_timeout_with_failover_ms	Milliseconds	2000
 connect_timeout_with_failover_secure_ms	Milliseconds	3000
