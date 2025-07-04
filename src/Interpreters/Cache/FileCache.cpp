@@ -922,7 +922,7 @@ bool FileCache::tryReserve(
     const size_t size,
     FileCacheReserveStat & reserve_stat,
     const UserInfo & user,
-    size_t /*lock_wait_timeout_milliseconds*/,
+    size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
@@ -970,7 +970,7 @@ bool FileCache::tryReserve(
     IFileCachePriority::EvictionInfo main_eviction_info;
     IFileCachePriority::EvictionInfo query_eviction_info;
     {
-        auto cache_write_lock = cache_guard.tryWriteLock();
+        auto cache_write_lock = cache_guard.tryWriteLockFor(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
         if (!cache_write_lock)
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);

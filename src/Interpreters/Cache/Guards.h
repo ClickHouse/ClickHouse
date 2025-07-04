@@ -62,7 +62,7 @@ namespace DB
  */
 struct CachePriorityGuard : private boost::noncopyable
 {
-    using Mutex = std::shared_mutex;
+    using Mutex = std::shared_timed_mutex;
     /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
     /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
     struct WriteLock : public std::unique_lock<Mutex>
@@ -81,6 +81,15 @@ struct CachePriorityGuard : private boost::noncopyable
 
     ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
     WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
+
+    ReadLock tryReadLockFor(const std::chrono::milliseconds & acquire_timeout)
+    {
+        return ReadLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+    }
+    WriteLock tryWriteLockFor(const std::chrono::milliseconds & acquire_timeout)
+    {
+        return WriteLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
+    }
 
 private:
     Mutex mutex;
