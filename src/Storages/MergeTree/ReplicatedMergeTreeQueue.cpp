@@ -2057,8 +2057,8 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
     return std::make_shared<ReplicatedMergeTreeZooKeeperMergePredicate>(*this, zookeeper, std::move(partition_ids_hint));
 }
 
-ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_)
-    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_))
+ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_)
+    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_partition(std::move(mutations_by_partition_))
 {
 }

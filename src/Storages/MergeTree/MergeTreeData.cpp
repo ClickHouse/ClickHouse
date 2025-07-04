@@ -9687,10 +9687,10 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(parts),
         .min_part_data_versions = getMinDataVersionForEachPartition(parts),
+        .max_mutation_versions = query_context->getPartitionIdToMaxBlock(),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
         .need_patch_parts = apply_patch_parts,
-        .max_partition_blocks = query_context->getPartitionIdToMaxBlock(),
     };
 
     snapshot_data->mutations_snapshot = getMutationsSnapshot(params);
