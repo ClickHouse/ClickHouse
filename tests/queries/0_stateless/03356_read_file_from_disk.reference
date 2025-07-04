@@ -1,0 +1,3 @@
+columns.txt	columns format version: 1\n1 columns:\n`x` Int32\n
+count.txt	1
+default_compression_codec.txt	CODEC(LZ4)
