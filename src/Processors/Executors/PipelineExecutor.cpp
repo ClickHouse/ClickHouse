@@ -170,6 +170,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 
         // Acquire slot until we are done
         single_thread_cpu_slot = cpu_slots->acquire();
+        tasks.upscale(single_thread_cpu_slot->slot_id);
         chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
