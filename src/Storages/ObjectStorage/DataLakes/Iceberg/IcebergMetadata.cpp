@@ -625,7 +625,7 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
     if (manifest_cache)
     {
         auto manifest_file = manifest_cache->getOrSetManifestFile(IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
-        std::ostringstream oss;
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(manifest_file->getSchemaObject(), oss, 4);
 
         schema_processor.addIcebergTableSchema(manifest_file->getSchemaObject());

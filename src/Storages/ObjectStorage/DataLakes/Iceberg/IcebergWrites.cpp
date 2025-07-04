@@ -163,7 +163,7 @@ void generateManifestFile(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
-    std::istringstream iss(schema_representation);
+    std::istringstream iss(schema_representation); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     avro::compileJsonSchema(iss, schema);
 
     const avro::NodePtr & root_schema = schema.root();
@@ -261,7 +261,7 @@ void generateManifestList(
         schema_representation = manifest_list_v2_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
-    std::istringstream iss(schema_representation);
+    std::istringstream iss(schema_representation); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     avro::compileJsonSchema(iss, schema);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -462,7 +462,7 @@ ChunkPartitioner::ChunkPartitioner(
         auto source_id = partition_specification_field->getValue<Int32>(Iceberg::f_source_id);
         auto column_name = id_to_column[source_id];
 
-        std::optional<size_t> transform_param; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::optional<size_t> transform_param;
         auto & factory = FunctionFactory::instance();
 
         if (transform_name == "year" || transform_name == "years")

@@ -140,7 +140,7 @@ static constexpr const char * manifest_list_v2_schema = R"({
                             {
                                 "name": "contains_nan",
                                 "type": ["null", "boolean"],
-                                "doc": "True if any file has a nan partition value",                            
+                                "doc": "True if any file has a nan partition value",           
                                 "field-id": 518
                             },
                             {
@@ -214,7 +214,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to total size on disk",                            
+                        "doc": "Map of column id to total size on disk",
                         "field-id": 108
                     },
                     {
@@ -294,7 +294,7 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to lower bound",     
+                        "doc": "Map of column id to lower bound",
                         "field-id": 125
                     },
                     {
@@ -326,13 +326,13 @@ static constexpr const char * manifest_entry_v1_schema = R"({
                     {
                         "name": "split_offsets",
                         "type": ["null", {"type": "array", "items": "long", "element-id": 133}],
-                        "doc": "Splittable offsets",                  
+                        "doc": "Splittable offsets",
                         "field-id": 132
                     },
                     {
                         "name": "sort_order_id",
                         "type": ["null", "int"],
-                        "doc": "Sort order ID",                       
+                        "doc": "Sort order ID",
                         "field-id": 140
                     }
                 ]
@@ -392,7 +392,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to total size on disk",                    
+                        "doc": "Map of column id to total size on disk",
                         "field-id": 108
                     },
                     {
@@ -432,7 +432,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to null value count",              
+                        "doc": "Map of column id to null value count",
                         "field-id": 110
                     },
                     {
@@ -452,7 +452,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to number of NaN values in the column",               
+                        "doc": "Map of column id to number of NaN values in the column",
                         "field-id": 137
                     },
                     {
@@ -472,7 +472,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
                                 "logicalType": "map"
                             }
                         ],
-                        "doc": "Map of column id to lower bound",     
+                        "doc": "Map of column id to lower bound",
                         "field-id": 125
                     },
                     {

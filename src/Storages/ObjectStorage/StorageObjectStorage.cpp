@@ -26,7 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -406,7 +406,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             sample_block,
             local_context);
 #else
-        
+
 #endif
     }
 
