@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -58,6 +57,7 @@ public:
         "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     StorageS3Configuration() = default;
+    StorageS3Configuration(const StorageS3Configuration & other);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -68,7 +68,7 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     S3::URI getURL() const { return url; }
-    const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
+    const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
 
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
@@ -85,6 +85,7 @@ public:
 
     void check(ContextPtr context) const override;
     void validateNamespace(const String & name) const override;
+    ConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
@@ -103,9 +104,8 @@ private:
     S3::URI url;
     std::vector<String> keys;
 
-    std::unique_ptr<S3ObjectStorageSettings> s3_settings;
-    std::unique_ptr<S3Capabilities> s3_capabilities;
-
+    S3::S3AuthSettings auth_settings;
+    S3::S3RequestSettings request_settings;
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.

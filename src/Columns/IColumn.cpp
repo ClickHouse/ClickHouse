@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -463,12 +462,12 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             if constexpr (row_refs_are_ranges)
             {
                 row_ref_list->assertIsRange();
-                col->insertRangeFrom(*(*row_ref_list->columns)[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
+                col->insertRangeFrom(*row_ref_list->block->getByPosition(source_column_index_in_block).column, row_ref_list->row_num, row_ref_list->rows);
             }
             else
             {
                 for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*(*it->columns)[source_column_index_in_block], it->row_num);
+                    col->insertFrom(*it->block->getByPosition(source_column_index_in_block).column, it->row_num);
             }
         }
         else
@@ -499,31 +498,31 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
-    chassert(columns.size() == row_nums.size());
-    col->reserve(col->size() + columns.size());
-    for (size_t j = 0; j < columns.size(); ++j)
+    chassert(blocks.size() == row_nums.size());
+    col->reserve(col->size() + blocks.size());
+    for (size_t j = 0; j < blocks.size(); ++j)
     {
-        if (columns[j])
-            col->insertFrom(*(*columns[j])[source_column_index_in_block], row_nums[j]);
+        if (blocks[j])
+            col->insertFrom(*blocks[j]->getByPosition(source_column_index_in_block).column, row_nums[j]);
         else
             type->insertDefaultInto(*col);
     }
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, blocks, row_nums);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, blocks, row_nums);
 }
 
 template <typename Derived, typename Parent>
@@ -649,7 +648,6 @@ template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
@@ -671,7 +669,6 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
-template class IColumnHelper<ColumnBLOB, IColumn>;
 
 void intrusive_ptr_add_ref(const IColumn * c)
 {
@@ -684,5 +681,4 @@ void intrusive_ptr_release(const IColumn * c)
     BOOST_ASSERT(c != nullptr);
     boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
-
 }

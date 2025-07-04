@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
-#include <IO/ReadSettings.h>
 
 
 namespace CurrentMetrics

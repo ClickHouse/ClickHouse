@@ -14,8 +14,6 @@ import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
-It is important to understand this note from the [original PR for S3Queue implementation](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183): when the `MATERIALIZED VIEW` joins the engine, the S3Queue Table Engine starts collecting data in the background.
-
 ## Create Table {#creating-a-table}
 
 ```sql
@@ -26,24 +24,15 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [after_processing = 'keep',]
     [keeper_path = '',]
     [loading_retries = 0,]
-    [processing_threads_num = 16,]
-    [parallel_inserts = false,]
-    [enable_logging_to_queue_log = true,]
-    [last_processed_path = "",]
-    [tracked_files_limit = 1000,]
-    [tracked_file_ttl_sec = 0,]
+    [processing_threads_num = 1,]
+    [enable_logging_to_s3queue_log = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 10000,]
     [polling_backoff_ms = 0,]
+    [tracked_file_ttl_sec = 0,]
+    [tracked_files_limit = 1000,]
     [cleanup_interval_min_ms = 10000,]
     [cleanup_interval_max_ms = 30000,]
-    [buckets = 0,]
-    [list_objects_batch_size = 1000,]
-    [enable_hash_ring_filtering = 0,]
-    [max_processed_files_before_commit = 100,]
-    [max_processed_rows_before_commit = 0,]
-    [max_processed_bytes_before_commit = 0,]
-    [max_processing_time_sec_before_commit = 0,]
 ```
 
 :::warning
@@ -129,18 +118,7 @@ Default value: `0`.
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
-Default value: Number of CPUs or 16.
-
-### s3queue_parallel_inserts {#parallel_inserts}
-
-By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
-But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
-
-:::note
-`INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
-
-Default value: `false`.
+Default value: `1`.
 
 ### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
@@ -282,8 +260,6 @@ Example:
 
 - `_path` — Path to the file.
 - `_file` — Name of the file.
-- `_size` — Size of the file.
-- `_time` — Time of the file creation.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 

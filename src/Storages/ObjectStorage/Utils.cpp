@@ -53,58 +53,34 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (format == "auto")
-    {
-        if (configuration->isDataLakeConfiguration())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Format must be already specified for {} storage.",
-                configuration->getTypeName());
-        }
-    }
-
     if (columns.empty())
     {
-        if (configuration->isDataLakeConfiguration())
+        if (format == "auto")
         {
-            auto table_structure = configuration->tryGetTableStructureFromMetadata();
-            if (table_structure)
-                columns = table_structure.value();
+            if (configuration->isDataLakeConfiguration())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
+            std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
+                object_storage, configuration, format_settings, sample_path, context);
         }
-
-        if (columns.empty())
+        else
         {
-            if (format == "auto")
-            {
-                std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
-                    object_storage, configuration, format_settings, sample_path, context);
-            }
-            else
-            {
-                chassert(!format.empty());
-                columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
-            }
+            columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
         }
     }
     else if (format == "auto")
     {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format must be already specified for {} storage. ", configuration->getTypeName());
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
-    validateSupportedColumns(columns, *configuration);
-}
-
-void validateSupportedColumns(
-    ColumnsDescription & columns,
-    const StorageObjectStorage::Configuration & configuration)
-{
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration.getTypeName());
+            configuration->getTypeName());
     }
 }
 
