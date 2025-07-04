@@ -72,7 +72,14 @@ void StorageFromMergeTreeProjection::read(
 StorageSnapshotPtr
 StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return merge_tree.getStorageSnapshot(metadata_snapshot, query_context);
+    auto parent_storage_snapshot = merge_tree.getStorageSnapshot(metadata_snapshot, query_context);
+    const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
+
+    auto data = std::make_unique<MergeTreeData::SnapshotData>();
+    data->parts = parent_snapshot_data.parts;
+    data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(data));
 }
 
 }

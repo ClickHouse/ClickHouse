@@ -1,4 +1,4 @@
-#include "ProtobufRowOutputFormat.h"
+#include <Processors/Formats/Impl/ProtobufRowOutputFormat.h>
 
 #if USE_PROTOBUF
 #   include <Formats/FormatFactory.h>

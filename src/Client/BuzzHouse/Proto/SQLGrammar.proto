@@ -3392,10 +3392,10 @@ message CheckTable {
     optional SettingValues setting_values = 4;
 }
 
-message DescTable {
+message DescribeStatement {
     oneof desc_oneof {
         ExprSchemaTable est = 1;
-        Select sel = 2;
+        ExplainQuery sel = 2;
         SQLTableFuncCall stf = 3;
     }
     optional SettingValues setting_values = 4;
@@ -3923,7 +3923,7 @@ message SQLQueryInner {
         Truncate trunc = 7;
         OptimizeTable opt = 8;
         CheckTable check = 9;
-        DescTable desc = 10;
+        DescribeStatement desc = 10;
         Exchange exchange = 11;
         Alter alter = 12;
         SettingValues setting_values = 13;
