@@ -14,11 +14,6 @@ directory = "@RUST_VENDOR_DIR@"
 registry = 'sparse+https://index.crates.io/'
 replace-with = 'vendored-sources'
 
-[source."git+https://github.com/ClickHouse/tuikit.git?rev=e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"]
-git = "https://github.com/ClickHouse/tuikit.git"
-rev = "e1994c0e03ff02c49cf1471f0cc3cbf185ce0104"
-replace-with = "vendored-sources"
-
 # chdig
 [source."git+https://github.com/azat-rust/clickhouse-rs?branch=next"]
 git = "https://github.com/azat-rust/clickhouse-rs"

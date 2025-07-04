@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -11,7 +12,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -181,7 +181,7 @@ profiles:
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
-                f"Server not ready after [{attempts*delay}s]", out, err
+                f"Server not ready after [{attempts * delay}s]", out, err
             )
             return False
         self.pid = int(Shell.get_output(f"cat {self.pid_file}").strip())
@@ -305,7 +305,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
@@ -436,6 +436,7 @@ class ClickHouseProc:
 
         with open(config_file, "w") as f:
             f.write(config_content)
+        return True
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
@@ -605,7 +606,7 @@ class ClickHouseProc:
                 return False
         else:
             Utils.print_formatted_error(
-                f"Server replica {replica_num} not ready after [{attempts*delay}s]",
+                f"Server replica {replica_num} not ready after [{attempts * delay}s]",
                 out,
                 err,
             )
@@ -770,10 +771,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
-    def check_fatal_messeges_in_logs(self):
+    def check_fatal_messages_in_logs(self):
         results = []
 
         # if command exit code is 1 - it's failed test case, script output will be stored into test case info
+        results.append(
+            Result.from_commands_run(
+                name="Exception in test runner",
+                command=f"! grep -A10 'Traceback (most recent call last)' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+            )
+        )
         results.append(
             Result.from_commands_run(
                 name="Sanitizer assert (in stderr.log)",
@@ -1033,18 +1040,25 @@ quit
 if __name__ == "__main__":
     ch = ClickHouseProc()
     command = sys.argv[1]
-    if command == "logs_export_config":
-        ch.create_log_export_config()
-    elif command == "logs_export_start":
-        # FIXME: the start_time must be preserved globally in ENV or something like that
-        # to get the same values in different DBs
-        # As a wild idea, it could be stored in a Info.check_start_timestamp
-        ch.start_log_exports(check_start_time=Utils.timestamp())
-    elif command == "logs_export_stop":
-        ch.stop_log_exports()
-    elif command == "start_minio":
-        param = sys.argv[2]
-        assert param in ["stateless"]
-        ch.start_minio(param)
-    else:
-        raise ValueError(f"Unknown command: {command}")
+    res = False
+    try:
+        if command == "logs_export_config":
+            res = ch.create_log_export_config()
+        elif command == "logs_export_start":
+            # FIXME: the start_time must be preserved globally in ENV or something like that
+            # to get the same values in different DBs
+            # As a wild idea, it could be stored in a Info.check_start_timestamp
+            res = ch.start_log_exports(check_start_time=Utils.timestamp())
+        elif command == "logs_export_stop":
+            res = ch.stop_log_exports()
+        elif command == "start_minio":
+            param = sys.argv[2]
+            assert param in ["stateless"]
+            res = ch.start_minio(param)
+        else:
+            raise ValueError(f"Unknown command: {command}")
+    except Exception as e:
+        print(f"ERROR: Failed to do [{command}]")
+        traceback.print_exc()
+
+    sys.exit(1 if not res else 0)
