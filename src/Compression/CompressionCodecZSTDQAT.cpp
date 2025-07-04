@@ -31,11 +31,10 @@ public:
 
     explicit CompressionCodecZSTDQAT(int level_);
 
-    std::string getDescription() const override
+    String getDescription() const override
     {
         return "Requires hardware support for QuickAssist Technology (QAT) hardware; provides accelerated compression tasks.";
     }
-
 
 protected:
     bool isZstdQat() const override { return true; }

@@ -19,7 +19,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include "Storages/MergeTree/AlterConversions.h"
+#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB
@@ -424,18 +424,16 @@ public:
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:
-        MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_) : MutationsSnapshotBase(std::move(params_), std::move(counters_)) {}
-
         using Params = MergeTreeData::IMutationsSnapshot::Params;
         using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;
-
         MutationsByPartititon mutations_by_partition;
 
-        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        MutationsSnapshot() = default;
+        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_);
+
+        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
-        bool hasMetadataMutations() const override { return params.min_part_metadata_version < params.metadata_version; }
     };
 
     /// Return mutation commands for part which could be not applied to

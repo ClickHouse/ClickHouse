@@ -1,4 +1,4 @@
-#include "RabbitMQConnection.h"
+#include <Storages/RabbitMQ/RabbitMQConnection.h>
 
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>

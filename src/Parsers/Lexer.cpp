@@ -8,8 +8,8 @@
 
 #else /// This allows building Lexer without any dependencies or includes for WebAssembly or Emscripten.
 
-#include "LexerStandalone.h"
-#include "Lexer.h"
+#include <Parsers/LexerStandalone.h>
+#include <Parsers/Lexer.h>
 
 #endif
 

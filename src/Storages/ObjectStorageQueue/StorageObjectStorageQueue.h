@@ -68,6 +68,10 @@ public:
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
 
+    /// Generate id for the S3(Azure/etc)Queue commit.
+    /// Used for system.s3(azure/etc)_queue_log.
+    static UInt64 generateCommitID();
+
     static String chooseZooKeeperPath(
         const ContextPtr & context_,
         const StorageID & table_id,
@@ -152,6 +156,7 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
 

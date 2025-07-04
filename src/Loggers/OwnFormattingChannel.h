@@ -3,9 +3,9 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
-#include "ExtendedLogChannel.h"
-#include "OwnJSONPatternFormatter.h"
-#include "OwnPatternFormatter.h"
+#include <Loggers/ExtendedLogChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 
 namespace DB

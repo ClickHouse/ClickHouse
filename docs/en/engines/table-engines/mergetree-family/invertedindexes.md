@@ -21,18 +21,6 @@ For example, the string cell "I will be a little late" is by default tokenized i
 For example, the result of 3-gram tokenization will be 21 terms "I w", " wi", "wil", "ill", "ll ", "l b", " be" etc.
 The more fine-granular the input strings are tokenized, the bigger but also the more useful the resulting text index will be.
 
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/O_MnyUkrIq8"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
-
 :::note
 Text indexes are experimental and should not be used in production environments yet.
 They may change in the future in backward-incompatible ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
@@ -204,20 +192,6 @@ SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
 
 These functions are the most performant options to use with the `text` index.
 
-#### searchAny and searchAll {#functions-example-searchany-searchall}
-
-Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
-
-Compared to `hasToken`, these functions accept multiple search terms.
-
-Example:
-
-```sql
-SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
-
-SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
-```
-
 ## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
@@ -340,3 +314,4 @@ For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be
 ## Related Content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+- Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

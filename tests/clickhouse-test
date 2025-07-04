@@ -1910,8 +1910,6 @@ class TestCase:
                     print("FIXME: Race! Cannot remove coverage file: ", str(e))
             # FIXME: This is a race condition. END
 
-            _ = clickhouse_execute(args, "SYSTEM FLUSH ASYNC INSERT QUEUE")
-
             coverage = clickhouse_execute(
                 args,
                 "SELECT length(coverageCurrent())",

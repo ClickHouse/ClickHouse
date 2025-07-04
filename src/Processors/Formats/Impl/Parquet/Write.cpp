@@ -1,5 +1,5 @@
-#include "Processors/Formats/Impl/Parquet/Write.h"
-#include "Processors/Formats/Impl/Parquet/ThriftUtil.h"
+#include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
@@ -18,7 +18,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
-#include "Common/WKB.h"
+#include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>

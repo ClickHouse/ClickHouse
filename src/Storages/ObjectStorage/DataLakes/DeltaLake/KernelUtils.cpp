@@ -1,4 +1,4 @@
-#include "KernelUtils.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"

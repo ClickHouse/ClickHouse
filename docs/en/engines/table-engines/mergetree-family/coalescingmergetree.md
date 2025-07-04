@@ -99,25 +99,27 @@ SELECT * FROM test_table;
 └─────┴───────┘
 ```
 
-ClickHouse may unite all the rows not completely ([see below](#data-processing)), so we use an aggregate function `last_value` and `GROUP BY` clause in the query.
+Recommended query for correct and deterministic result:
 
 ```sql
-SELECT key, last_value(value) FROM test_table GROUP BY key
+SELECT * FROM test_table FINAL;
 ```
 
 ```text
-┌─key─┬─last_value(value)─┐
-│   2 │                 1 │
-│   1 │                 2 │
-└─────┴───────────────────┘
+┌─key─┬─value─┐
+│   2 │     1 │
+│   1 │     2 │
+└─────┴───────┘
 ```
 
-## Data Processing {#data-processing}
+Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time, ensuring you get the correct, coalesced "latest" value for each column. This is the safest and most accurate method when querying from a CoalescingMergeTree table.
 
-When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
+:::note
 
-ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the union will be incomplete. Therefore (`SELECT`) an aggregate function [last_value()](/sql-reference/aggregate-functions/reference/last_value) and `GROUP BY` clause should be used in a query as described in the example above.
+An approach with `GROUP BY` may return incorrect results if the underlying parts have not been fully merged.
 
-## Related Content {#related-content}
+```sql
+SELECT key, last_value(value) FROM test_table GROUP BY key; -- Not recommended.
+```
 
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+:::

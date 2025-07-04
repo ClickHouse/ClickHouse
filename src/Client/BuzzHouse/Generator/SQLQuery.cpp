@@ -511,7 +511,7 @@ bool StatementGenerator::joinedTableOrFunction(
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
-            rel.cols.push_back(entry);
+            rel.cols.emplace_back(SQLRelationCol(rel_name, entry.path));
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }

@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include "IO/VarInt.h"
+#include <IO/VarInt.h>
 
 template <>
 struct fmt::formatter<DB::RangesInDataPartDescription>

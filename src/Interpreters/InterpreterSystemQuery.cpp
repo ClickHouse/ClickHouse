@@ -994,13 +994,28 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    auto new_table = StorageFactory::instance().get(create,
-        data_path,
-        system_context,
-        system_context->getGlobalContext(),
-        columns,
-        constraints,
-        LoadingStrictnessLevel::ATTACH);
+    StoragePtr new_table;
+    while (true)
+    {
+        try
+        {
+            new_table = StorageFactory::instance().get(create,
+                data_path,
+                system_context,
+                system_context->getGlobalContext(),
+                columns,
+                constraints,
+                LoadingStrictnessLevel::ATTACH);
+
+            break;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+        }
+    }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
     if (new_table->getStorageID().uuid != replica_table_id.uuid)

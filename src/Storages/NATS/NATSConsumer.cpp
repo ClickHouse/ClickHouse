@@ -4,7 +4,7 @@
 #include <utility>
 #include <Storages/NATS/NATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include "Poco/Timer.h"
+#include <Poco/Timer.h>
 #include <Common/logger_useful.h>
 
 namespace DB

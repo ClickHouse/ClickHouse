@@ -1,4 +1,4 @@
-#include "ParquetBlockOutputFormat.h"
+#include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 
 #if USE_PARQUET
 
@@ -8,8 +8,8 @@
 #include <Processors/Port.h>
 
 #include <parquet/arrow/writer.h>
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 
 namespace CurrentMetrics

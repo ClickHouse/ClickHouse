@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "Processors/Formats/Impl/Parquet/Write.h"
+#include <Processors/Formats/Impl/Parquet/Write.h>
 
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>

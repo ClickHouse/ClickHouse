@@ -1,4 +1,4 @@
-#include "CapnProtoRowInputFormat.h"
+#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h>
 #if USE_CAPNP
 
 #include <IO/ReadBuffer.h>

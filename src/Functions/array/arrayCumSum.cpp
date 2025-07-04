@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
