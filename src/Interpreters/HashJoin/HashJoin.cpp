@@ -1062,9 +1062,10 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 
     std::vector<const MapsOne *> maps_vector;
     maps_vector.push_back(&std::get<MapsOne>(data->maps[0]));
-    HashJoinMethods<JoinKind::Left, JoinStrictness::Any, MapsOne>::joinBlockImpl(
-        *this, keys, block_with_columns_to_add, maps_vector, /* is_join_get = */ true);
-    return keys.getByPosition(keys.columns() - 1);
+    auto res = HashJoinMethods<JoinKind::Left, JoinStrictness::Any, MapsOne>::joinBlockImpl(
+        *this, std::move(keys), block_with_columns_to_add, maps_vector, /* is_join_get = */ true)->next();
+    chassert(res.is_last);
+    return res.block.getByPosition(res.block.columns() - 1);
 }
 
 void HashJoin::checkTypesOfKeys(const Block & block) const
