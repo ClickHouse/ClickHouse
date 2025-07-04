@@ -19,17 +19,15 @@ QUERY id: 0
             FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
                 LIST id: 11, nodes: 1
-                  CONSTANT id: 12, constant_value: Array_[UInt64_0, UInt64_1, UInt64_2, UInt64_3, UInt64_4, UInt64_5, UInt64_6, UInt64_7, UInt64_8, UInt64_9], constant_value_type: Array(UInt8)
-                    EXPRESSION
-                      FUNCTION id: 13, function_name: range, function_type: ordinary, result_type: Array(UInt8)
-                        ARGUMENTS
-                          LIST id: 14, nodes: 1
-                            CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt8
+                  FUNCTION id: 12, function_name: __getScalar, function_type: ordinary, result_type: Array(UInt8)
+                    ARGUMENTS
+                      LIST id: 13, nodes: 1
+                        CONSTANT id: 14, constant_value: \'1127462081334995574_16509029378696234068\', constant_value_type: String
   JOIN TREE
-    TABLE_FUNCTION id: 16, alias: __table1, table_function_name: numbers
+    TABLE_FUNCTION id: 15, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 17, nodes: 1
-          CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
+        LIST id: 16, nodes: 1
+          CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
     arrayExists(lambda(tuple(x), equals(5, x)), materialize(range(10))) UInt8
@@ -51,17 +49,15 @@ QUERY id: 0
             FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
                 LIST id: 11, nodes: 1
-                  CONSTANT id: 12, constant_value: Array_[UInt64_0, UInt64_1, UInt64_2, UInt64_3, UInt64_4, UInt64_5, UInt64_6, UInt64_7, UInt64_8, UInt64_9], constant_value_type: Array(UInt8)
-                    EXPRESSION
-                      FUNCTION id: 13, function_name: range, function_type: ordinary, result_type: Array(UInt8)
-                        ARGUMENTS
-                          LIST id: 14, nodes: 1
-                            CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt8
+                  FUNCTION id: 12, function_name: __getScalar, function_type: ordinary, result_type: Array(UInt8)
+                    ARGUMENTS
+                      LIST id: 13, nodes: 1
+                        CONSTANT id: 14, constant_value: \'1127462081334995574_16509029378696234068\', constant_value_type: String
   JOIN TREE
-    TABLE_FUNCTION id: 16, alias: __table1, table_function_name: numbers
+    TABLE_FUNCTION id: 15, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 17, nodes: 1
-          CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
+        LIST id: 16, nodes: 1
+          CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
     arrayExists(lambda(tuple(x), equals(x, 5)), materialize(range(10))) UInt8
@@ -73,18 +69,16 @@ QUERY id: 0
             FUNCTION id: 4, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
                 LIST id: 5, nodes: 1
-                  CONSTANT id: 6, constant_value: Array_[UInt64_0, UInt64_1, UInt64_2, UInt64_3, UInt64_4, UInt64_5, UInt64_6, UInt64_7, UInt64_8, UInt64_9], constant_value_type: Array(UInt8)
-                    EXPRESSION
-                      FUNCTION id: 7, function_name: range, function_type: ordinary, result_type: Array(UInt8)
-                        ARGUMENTS
-                          LIST id: 8, nodes: 1
-                            CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
-            CONSTANT id: 10, constant_value: UInt64_5, constant_value_type: UInt8
+                  FUNCTION id: 6, function_name: __getScalar, function_type: ordinary, result_type: Array(UInt8)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        CONSTANT id: 8, constant_value: \'1127462081334995574_16509029378696234068\', constant_value_type: String
+            CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
+    TABLE_FUNCTION id: 10, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 12, nodes: 1
-          CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
     arrayExists(lambda(tuple(x), equals(5, x)), materialize(range(10))) UInt8
@@ -96,18 +90,16 @@ QUERY id: 0
             FUNCTION id: 4, function_name: materialize, function_type: ordinary, result_type: Array(UInt8)
               ARGUMENTS
                 LIST id: 5, nodes: 1
-                  CONSTANT id: 6, constant_value: Array_[UInt64_0, UInt64_1, UInt64_2, UInt64_3, UInt64_4, UInt64_5, UInt64_6, UInt64_7, UInt64_8, UInt64_9], constant_value_type: Array(UInt8)
-                    EXPRESSION
-                      FUNCTION id: 7, function_name: range, function_type: ordinary, result_type: Array(UInt8)
-                        ARGUMENTS
-                          LIST id: 8, nodes: 1
-                            CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
-            CONSTANT id: 10, constant_value: UInt64_5, constant_value_type: UInt8
+                  FUNCTION id: 6, function_name: __getScalar, function_type: ordinary, result_type: Array(UInt8)
+                    ARGUMENTS
+                      LIST id: 7, nodes: 1
+                        CONSTANT id: 8, constant_value: \'1127462081334995574_16509029378696234068\', constant_value_type: String
+            CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
+    TABLE_FUNCTION id: 10, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 12, nodes: 1
-          CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt8
 SELECT arrayExists(x -> (x = 5), materialize(range(10)))
 FROM numbers(10)
 SELECT arrayExists(x -> (5 = x), materialize(range(10)))
