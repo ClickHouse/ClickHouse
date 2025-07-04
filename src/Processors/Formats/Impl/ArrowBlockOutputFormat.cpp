@@ -135,7 +135,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("Arrow");
     factory.markOutputFormatNotTTYFriendly("Arrow");
-    factory.setContentType("Arrow", "application/octet-stream");
 
     factory.registerOutputFormat(
         "ArrowStream",
@@ -148,7 +147,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
     factory.markOutputFormatNotTTYFriendly("ArrowStream");
-    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }

@@ -44,7 +44,6 @@ struct ParsedTablesMetadata
 
     /// For logging
     size_t total_dictionaries = 0;
-    size_t total_materialized_views = 0;
 };
 
 /// Loads tables (and dictionaries) from specified databases
@@ -74,8 +73,6 @@ private:
     ParsedTablesMetadata metadata;
     TablesDependencyGraph referential_dependencies;
     TablesDependencyGraph loading_dependencies;
-    TablesDependencyGraph mv_to_dependencies;
-    TablesDependencyGraph mv_from_dependencies;
     TablesDependencyGraph all_loading_dependencies;
     LoggerPtr log;
     std::atomic<size_t> tables_processed{0};
@@ -83,7 +80,6 @@ private:
 
     AsyncLoader & async_loader;
     std::unordered_map<String, LoadTaskPtr> load_table; /// table_id -> load task
-    std::unordered_map<String, LoadTaskPtr> startup_table; /// table_id -> startup task
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();

@@ -11,7 +11,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -40,6 +39,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -93,7 +93,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
-    extern const SettingsNonZeroUInt64 max_read_buffer_size;
+    extern const SettingsUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -1178,12 +1178,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-    {
-        auto task = getContext()->getClusterFunctionReadTaskCallback()();
-        if (!task || task->isEmpty())
-            return {};
-        return task->path;
-    }
+        return getContext()->getReadTaskCallback()();
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
@@ -1209,13 +1204,11 @@ StorageFileSource::StorageFileSource(
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
-    bool need_only_count_,
-    FormatParserGroupPtr parser_group_)
-    : ISource(info.source_header, false), WithContext(context_)
+    bool need_only_count_)
+    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
-    , parser_group(std::move(parser_group_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1285,6 +1278,11 @@ void StorageFileSource::beforeDestroy()
 StorageFileSource::~StorageFileSource()
 {
     beforeDestroy();
+}
+
+void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
+{
+    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
 
 
@@ -1431,6 +1429,8 @@ Chunk StorageFileSource::generate()
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
+            const Settings & settings = getContext()->getSettingsRef();
+
             size_t file_num = 0;
             if (storage->archive_info)
                 file_num = storage->archive_info->paths_to_archives.size();
@@ -1439,12 +1439,15 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
+            const auto max_parsing_threads = std::max<size_t>(settings[Setting::max_parsing_threads] / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
-                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size,
-                storage->format_settings, parser_group,
-                /*is_remote_fs=*/ false, CompressionMethod::None, need_only_count);
+                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
+                max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
+
+            if (key_condition)
+                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1500,7 +1503,7 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] && !parser_group->hasFilter())
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1693,8 +1696,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
-    auto parser_group = std::make_shared<FormatParserGroup>(ctx->getSettingsRef(), num_streams, filter_actions_dag, ctx);
-
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -1712,9 +1713,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count,
-            parser_group);
+            need_only_count);
 
+        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1841,9 +1842,7 @@ public:
 
     void onFinish() override
     {
-        if (isCancelled())
-            return;
-
+        chassert(!isCancelled());
         finalizeBuffers();
     }
 

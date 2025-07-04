@@ -1,18 +1,17 @@
 #include "IDisk.h"
-#include <Core/Field.h>
-#include <Core/ServerUUID.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
-#include <Storages/PartitionCommands.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Core/Field.h>
+#include <Core/ServerUUID.h>
+#include <Disks/FakeDiskTransaction.h>
 
 namespace CurrentMetrics
 {
@@ -192,17 +191,12 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
-}
-
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
 }
 
-void IDisk::startup(bool skip_access_check)
+void IDisk::startup(ContextPtr context, bool skip_access_check)
 {
     if (!skip_access_check)
     {
@@ -215,7 +209,7 @@ void IDisk::startup(bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl();
+    startupImpl(context);
 }
 
 void IDisk::checkAccess()

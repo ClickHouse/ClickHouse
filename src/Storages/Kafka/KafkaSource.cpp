@@ -110,7 +110,7 @@ Chunk KafkaSource::generateImpl()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, FormatParserGroup::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -140,7 +140,7 @@ Chunk KafkaSource::generateImpl()
             consumer->currentTopic(),
             consumer->currentPartition(),
             consumer->currentOffset());
-        consumer->setExceptionInfo(e.message(), /* with_stacktrace = */ true);
+        consumer->setExceptionInfo(e.message());
         throw std::move(e);
     };
 
