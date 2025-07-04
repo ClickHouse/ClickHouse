@@ -255,6 +255,10 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
 
     if not dry_run:
         repos.images.merge_upstream(repos.images.default_branch)
+        logging.info(
+            "The %s repository is updated to the latest upstream state",
+            repos.images.parent.full_name,
+        )
 
     run(f"{GIT_PREFIX} clone {repos.images.ssh_url}", cwd=temp_path)
 
@@ -291,6 +295,8 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
         dry_run,
         cwd=images_dir,
     )
+    # --force-with-lease is safe, because either the branch existed for the images_pr,
+    # or it was just created, so no one could change it
     run(
         f"{GIT_PREFIX} push --set-upstream --force-with-lease origin {LIBRARY_BRANCH}",
         dry_run,
