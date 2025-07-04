@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include "Formats/MarkInCompressedFile.h"
+#include <Formats/MarkInCompressedFile.h>
 #include <Common/logger_useful.h>
 #include <IO/NullWriteBuffer.h>
 
