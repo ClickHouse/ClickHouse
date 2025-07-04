@@ -33,7 +33,7 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type);
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(

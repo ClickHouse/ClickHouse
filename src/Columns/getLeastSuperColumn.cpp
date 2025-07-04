@@ -20,6 +20,11 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
 
 ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
 {
+    return getLeastSuperColumn(columns, false);
+}
+
+ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns, bool use_variant_as_common_type)
+{
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No src columns for supercolumn");
 
@@ -36,7 +41,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithType
             ++num_const;
     }
 
-    result.type = getLeastSupertype(types);
+    result.type = use_variant_as_common_type?getLeastSupertypeOrVariant(types): getLeastSupertype(types);
 
     /// Create supertype column saving constness if possible.
 
