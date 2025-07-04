@@ -80,6 +80,9 @@ bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_
     if (column.name != rhs_typed.column.name)
         return false;
 
+    if (getColumnSourceOrNull() != rhs_typed.getColumnSourceOrNull())
+        return false;
+
     return !compare_options.compare_types || column.type->equals(*rhs_typed.column.type);
 }
 
