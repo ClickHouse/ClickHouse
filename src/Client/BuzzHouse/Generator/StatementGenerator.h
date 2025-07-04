@@ -286,7 +286,6 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg) const;
@@ -343,7 +342,7 @@ private:
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
@@ -454,7 +453,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::GenerateRandom;
+            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };

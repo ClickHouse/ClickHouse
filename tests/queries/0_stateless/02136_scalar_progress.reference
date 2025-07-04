@@ -1,8 +1,8 @@
-< Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
 < X-ClickHouse-Progress: {"total_rows_to_read":"100000"}
 < X-ClickHouse-Progress: {"read_rows":"65505","read_bytes":"524040","total_rows_to_read":"100000"}
 < X-ClickHouse-Progress: {"read_rows":"100000","read_bytes":"800000","total_rows_to_read":"100000"}
 < X-ClickHouse-Progress: {"read_rows":"100000","read_bytes":"800000","total_rows_to_read":"100001"}
 < X-ClickHouse-Progress: {"read_rows":"100001","read_bytes":"800001","total_rows_to_read":"100001"}
 < X-ClickHouse-Progress: {"read_rows":"100001","read_bytes":"800001","total_rows_to_read":"100001","result_rows":"1","result_bytes":"272"}
-< X-ClickHouse-Summary: {"read_rows":"100001","read_bytes":"800001","total_rows_to_read":"100001","result_rows":"1","result_bytes":"272"}
+< X-ClickHouse-Summary: {"read_rows":"100001","read_bytes":"800001","written_rows":"0","written_bytes":"0","total_rows_to_read":"100001","result_rows":"1","result_bytes":"272"}
+< Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code

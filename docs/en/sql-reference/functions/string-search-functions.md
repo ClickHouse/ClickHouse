@@ -1894,7 +1894,7 @@ Query:
 **Examples**
 
 ```sql
-select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
@@ -1929,7 +1929,7 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 Query:
 
 ```sql
-select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:
