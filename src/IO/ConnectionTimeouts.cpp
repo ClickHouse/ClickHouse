@@ -186,7 +186,7 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
 
     return ConnectionTimeouts(*this)
         .withConnectionTimeout(saturate(unsecure_connect, connection_timeout))
-        .withSecureConnectionTimeout(saturate(secure_connect, connection_timeout))
+        .withSecureConnectionTimeout(saturate(secure_connect, secure_connection_timeout))
         .withSendTimeout(saturate(send, send_timeout))
         .withReceiveTimeout(saturate(recv, receive_timeout));
 }
