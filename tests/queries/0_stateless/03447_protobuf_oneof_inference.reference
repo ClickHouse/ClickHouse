@@ -4,4 +4,4 @@ string2	String
 input_format_protobuf_oneof_presence=true
 string1	String					
 string2	String					
-string_oneof_presence	Enum8(\'ommited\' = 0, \'string1\' = 1, \'string2\' = 2)					
+string_oneof	Enum8(\'ommited\' = 0, \'string1\' = 1, \'string2\' = 2)					

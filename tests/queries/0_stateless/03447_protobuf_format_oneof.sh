@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS string_or_string_3447;
 SELECT '>> string_or_string';
-CREATE TABLE string_or_string_3447 ( string1 String, string2 String, string_oneof_presence Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE string_or_string_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
 INSERT INTO string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 INSERT INTO string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String2' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 SELECT * FROM string_or_string_3447 ORDER BY string1 Format pretty;
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS inner_string_or_string_3447;
 SELECT '>> inner_string_or_string';
-CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string2\` String, \`inner.string.oneof.presence\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string2\` String, \`inner.string.oneof\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString2' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
@@ -44,9 +44,9 @@ CREATE TABLE transaction_3447
     sell_payment_card_value Float64,
     sell_customer_name String,
     sell_items_sold Int32,
-    payment_details_presence Enum8('ommited' = 0, 'buy' = 2, 'sell' = 3),
-    buy_payment_value_presence Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
-    sell_payment_value_presence Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
+    payment_details Enum8('ommited' = 0, 'buy' = 2, 'sell' = 3),
+    buy_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
+    sell_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
 )
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO transaction_3447 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;

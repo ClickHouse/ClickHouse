@@ -2510,7 +2510,6 @@ namespace
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
             , google_wrappers_special_treatment(google_wrappers_special_treatment_)
-            // , oneof_presence(oneof_presence_)
             , missing_columns_filler(std::move(missing_columns_filler_))
             , should_skip_if_empty(parent_field_descriptor
                 ? shouldSkipZeroOrEmpty(*parent_field_descriptor, google_wrappers_special_treatment_) : false)
@@ -2793,7 +2792,6 @@ namespace
         bool has_envelope_as_parent = false;
         const bool with_length_delimiter;
         const bool google_wrappers_special_treatment;
-        // const bool oneof_presence;
         const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
         ProtobufReader * const reader;
@@ -3478,7 +3476,7 @@ namespace
             {
                 if (oneof_presence && serializer_ptr_ref && oneof_descriptor)
                 {
-                    String expected_name = String(oneof_descriptor->name()) + "_presence";
+                    auto expected_name = oneof_descriptor->name();
                     LOG_DEBUG(
                         getLogger("ProtobufSerializer"),
                         "maybe_add_oneof_wrapper: expected name {}", expected_name);
@@ -4258,8 +4256,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
                             const FieldDescriptor * field_descriptor = oneof_descriptor->field(fnum);
                             values.emplace_back(field_descriptor->name(), field_descriptor->number());
                         }
-                        // schema.push_back({oneof_descriptor->name() + "_presence", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum<Int8>>(std::move(values)))});
-                        oneofs.push_back({String(oneof_descriptor->name()) + "_presence", std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
+                        oneofs.push_back({String(oneof_descriptor->name()), std::make_shared<DataTypeEnum<Int8>>(std::move(values))});
                         known_oneofs.insert(oneof_descriptor->name());
                     }
                 }

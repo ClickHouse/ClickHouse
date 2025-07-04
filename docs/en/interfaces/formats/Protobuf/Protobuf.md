@@ -100,19 +100,19 @@ message StringOrString {
 ```
 
 ```sql
-CREATE TABLE string_or_string ( string1 String, string2 String, string_oneof_presence Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE string_or_string ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
 INSERT INTO string_or_string from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 SELECT * FROM string_or_string
 ```
 
 ```text
-   ┌─────────┬─────────┬───────────────────────┐
-   │ string1 │ string2 │ string_oneof_presence │
-   ├─────────┼─────────┼───────────────────────┤
-1. │         │ string2 │ world                 │
-   ├─────────┼─────────┼───────────────────────┤
-2. │ string1 │         │ hello                 │
-   └─────────┴─────────┴───────────────────────┘
+   ┌─────────┬─────────┬──────────────┐
+   │ string1 │ string2 │ string_oneof │
+   ├─────────┼─────────┼──────────────┤
+1. │         │ string2 │ world        │
+   ├─────────┼─────────┼──────────────┤
+2. │ string1 │         │ hello        │
+   └─────────┴─────────┴──────────────┘
 
 ```
 
