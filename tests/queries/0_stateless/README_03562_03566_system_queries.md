@@ -35,15 +35,6 @@ Comprehensive test that covers all aspects of the fix:
 - Verification of proper error messages
 - Testing with different server types
 
-## Integration Test
-
-### test_clickhouse_local_system_queries/
-Python integration test that verifies:
-- clickhouse-local properly handles unsupported SYSTEM queries
-- clickhouse-local properly handles supported SYSTEM queries
-- Server mode continues to work correctly
-- Error messages are specific and helpful
-
 ## Expected Behavior
 
 ### In clickhouse-local:
@@ -69,10 +60,13 @@ Each case now throws `Exception::createDeprecated` with `ErrorCodes::UNSUPPORTED
 ## Running the Tests
 
 ```bash
-# Run the stateless tests
-./tests/queries/0_stateless/03562_clickhouse_local_system_queries.sh
+# Run the shell script test
+./tests/queries/0_stateless/03564_clickhouse_local_system_queries.sh
 
-# Run the integration test
-cd tests/integration/test_clickhouse_local_system_queries/
-python3 test.py
+# Run individual SQL tests
+./build/programs/clickhouse local --query "$(cat tests/queries/0_stateless/03562_clickhouse_local_system_queries.sql)"
+
+# Test specific queries manually
+./build/programs/clickhouse local --query "SYSTEM RELOAD CONFIG"
+# Expected: UNSUPPORTED_METHOD error
 ``` 
