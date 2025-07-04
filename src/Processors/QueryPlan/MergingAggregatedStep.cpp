@@ -18,24 +18,11 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_max_block_bytes;
-    extern const QueryPlanSerializationSettingsBool aggregation_in_order_memory_bound_merging;
-    extern const QueryPlanSerializationSettingsBool aggregation_sort_result_by_bucket_number;
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_aggregation;
-    extern const QueryPlanSerializationSettingsBool compile_aggregate_expressions;
-    extern const QueryPlanSerializationSettingsBool empty_result_for_aggregation_by_empty_set;
-    extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_aggregation;
-    extern const QueryPlanSerializationSettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold_bytes;
-    extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold;
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
-    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
-    extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
-    extern const QueryPlanSerializationSettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
 }
 
 namespace Setting
@@ -202,28 +189,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = memory_bound_merging_max_block_bytes;
-
-    settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging] = should_produce_results_in_order_of_bucket_number;
-    settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number] = memory_bound_merging_of_aggregation_results_enabled;
-
-    settings[QueryPlanSerializationSetting::max_rows_to_group_by] = params.max_rows_to_group_by;
-    settings[QueryPlanSerializationSetting::group_by_overflow_mode] = params.group_by_overflow_mode;
-
-    settings[QueryPlanSerializationSetting::group_by_two_level_threshold] = params.group_by_two_level_threshold;
-    settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes] = params.group_by_two_level_threshold_bytes;
-
-    settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by] = params.max_bytes_before_external_group_by;
-    settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set] = params.empty_result_for_aggregation_by_empty_set;
-
-    settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = params.min_free_disk_space;
-
-    settings[QueryPlanSerializationSetting::compile_aggregate_expressions] = params.compile_aggregate_expressions;
-    settings[QueryPlanSerializationSetting::min_count_to_compile_aggregate_expression] = params.min_count_to_compile_aggregate_expression;
-
-    settings[QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation] = params.enable_prefetch;
-    settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys] = params.optimize_group_by_constant_keys;
     settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization] = params.min_hit_rate_to_use_consecutive_keys_optimization;
-
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation] = params.stats_collecting_params.isCollectionAndUseEnabled();
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
@@ -242,12 +208,10 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         flags |= 8;
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
-    if (params.only_merge)
-        flags |= 32;
     if (should_produce_results_in_order_of_bucket_number)
-        flags |= 64;
+        flags |= 32;
     if (memory_bound_merging_of_aggregation_results_enabled)
-        flags |= 128;
+        flags |= 64;
 
     writeIntBinary(flags, ctx.out);
 
@@ -288,9 +252,8 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
     const bool memory_efficient_aggregation = bool(flags & 4);
     const bool has_grouping_sets = bool(flags & 8);
     const bool has_stats_key = bool(flags & 16);
-    const bool only_merge = bool(flags & 32);
-    const bool should_produce_results_in_order_of_bucket_number = bool(flags & 64);
-    const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 128);
+    const bool should_produce_results_in_order_of_bucket_number = bool(flags & 32);
+    const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 64);
 
     UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
@@ -341,29 +304,13 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
 
     const auto & settings = ctx.context->getSettingsRef();
 
-    Aggregator::Params params
-    {
+    Aggregator::Params params(
         keys,
         aggregates,
         overflow_row,
-        ctx.settings[QueryPlanSerializationSetting::max_rows_to_group_by],
-        ctx.settings[QueryPlanSerializationSetting::group_by_overflow_mode],
-        ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
-        ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
-        ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
-        ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
-        Context::getGlobalContextInstance()->getTempDataOnDisk(),
         settings[Setting::max_threads],
-        ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],
-        ctx.settings[QueryPlanSerializationSetting::compile_aggregate_expressions],
-        ctx.settings[QueryPlanSerializationSetting::min_count_to_compile_aggregate_expression],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        ctx.settings[QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation],
-        /* only_merge */ only_merge,
-        ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
-        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params
-    };
+        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),
