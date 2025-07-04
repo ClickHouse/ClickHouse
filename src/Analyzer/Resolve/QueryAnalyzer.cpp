@@ -816,7 +816,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
         if (auto * parent_function = parent_node->as<FunctionNode>(); parent_function && isNameOfInFunction(parent_function->getFunctionName()))
             return;
     }
-    
+
     auto & source_expression = constant_node->getSourceExpression();
 
     auto * function = source_expression->as<FunctionNode>();
