@@ -402,11 +402,26 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         k.kafka_delete_topic(admin_client, topic_name)
 
 
+@pytest.fixture
+def avro_schema():
+    return {
+        "name": "row",
+        "type": "record",
+        "fields": [
+            {"name": "id", "type": "long"},
+            {"name": "blockNo", "type": "int"},
+            {"name": "val1", "type": "string"},
+            {"name": "val2", "type": "float"},
+            {"name": "val3", "type": "int"},
+        ],
+    }
+
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
-def test_kafka_formats(kafka_cluster, create_query_generator):
+def test_kafka_formats(kafka_cluster, create_query_generator, avro_schema):
     schema_registry_client = CachedSchemaRegistryClient(
         {"url": f"http://localhost:{kafka_cluster.schema_registry_port}"}
     )
@@ -655,12 +670,14 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             "data_sample": [
                 k.avro_confluent_message(
                     schema_registry_client,
+                    avro_schema,
                     {"id": 0, "blockNo": 0, "val1": str("AM"), "val2": 0.5, "val3": 1},
                 ),
                 b"".join(
                     [
                         k.avro_confluent_message(
                             schema_registry_client,
+                            avro_schema,
                             {
                                 "id": id,
                                 "blockNo": 0,
@@ -674,6 +691,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
                 ),
                 k.avro_confluent_message(
                     schema_registry_client,
+                    avro_schema,
                     {"id": 0, "blockNo": 0, "val1": str("AM"), "val2": 0.5, "val3": 1},
                 ),
             ],

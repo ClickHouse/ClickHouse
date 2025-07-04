@@ -74,12 +74,32 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
     topic1_name = f"{topic_name_prefix}_1_{topic_name_postfix}"
     topic2_name = f"{topic_name_prefix}_2_{topic_name_postfix}"
 
+    avro_schema1 = {
+        "name": "row",
+        "type": "record",
+        "fields": [
+            {"name": "id", "type": "long"},
+            {"name": "name", "type": "string"},
+        ],
+    }
+
+    avro_schema2 = {
+        "name": "row",
+        "type": "record",
+        "fields": [
+            {"name": "id", "type": "long"},
+            {"name": "blockNo", "type": "int"},
+            {"name": "val1", "type": "string"},
+        ],
+    }
+
     k.kafka_produce(
         kafka_cluster,
         topic1_name,
         [
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema1,
                 {
                     "id": 1,
                     "name": "foo",
@@ -87,6 +107,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
             ),
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema1,
                 {
                     "id": 2,
                     "name": "bar",
@@ -94,6 +115,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
             ),
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema1,
                 {
                     "id": 3,
                     "name": "baz",
@@ -107,6 +129,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
         [
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema2,
                 {
                     "id": 1,
                     "blockNo": 1,
@@ -115,6 +138,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
             ),
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema2,
                 {
                     "id": 2,
                     "blockNo": 2,
@@ -123,6 +147,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
             ),
             k.avro_confluent_message(
                 schema_registry_client,
+                avro_schema2,
                 {
                     "id": 3,
                     "blockNo": 3,
