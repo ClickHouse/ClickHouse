@@ -116,15 +116,13 @@ def test_flatten_nested(started_cluster):
     snapshot_recovering_node.query(
         "CREATE DATABASE flatten_nested ENGINE = Replicated('/test/flatten_nested', 'shard1', 'replica3');"
     )
-    snapshot_recovering_node.query(
-        "SYSTEM SYNC DATABASE REPLICA flatten_nested"
-    )
+    snapshot_recovering_node.query("SYSTEM SYNC DATABASE REPLICA flatten_nested")
 
     for node in [dummy_node, snapshot_recovering_node]:
         for table in ["replicated_table", "mv", "no_flatten"]:
-            assert main_node.query(
+            assert main_node.query(f"show create flatten_nested.{table}") == node.query(
                 f"show create flatten_nested.{table}"
-            ) == node.query(f"show create flatten_nested.{table}")
+            )
 
     main_node.query("DROP DATABASE flatten_nested SYNC")
     dummy_node.query("DROP DATABASE flatten_nested SYNC")
@@ -937,8 +935,13 @@ def test_recover_staled_replica(started_cluster):
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
 
     logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
-    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables"))
-    logging.debug("Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"))
+    logging.debug(
+        "Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables")
+    )
+    logging.debug(
+        "Result: %s",
+        dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"),
+    )
 
     global test_recover_staled_replica_run
     assert (
@@ -1312,9 +1315,7 @@ def test_force_synchronous_settings(started_cluster):
 
     main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
     dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
-    snapshotting_node.query(
-        "DROP DATABASE test_force_synchronous_settings SYNC"
-    )
+    snapshotting_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
 
 
 def test_replicated_table_structure_alter(started_cluster):
@@ -1623,5 +1624,86 @@ def test_create_alter_sleeping(started_cluster, engine):
         -- In case DDL task has been executed on another replica we need to sync the table
         SYSTEM SYNC REPLICA create_alter_sleeping.t;
         SHOW CREATE TABLE create_alter_sleeping.t;
-        """, timeout=10
+        """,
+        timeout=10,
+    )
+
+
+def test_lag_after_recovery(started_cluster):
+    main_node.query("drop database if exists lag_after_recovery")
+    dummy_node.query("drop database if exists lag_after_recovery")
+
+    main_node.query(
+        "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica1')"
+    )
+    main_node.query(
+        "create table lag_after_recovery.t (n int) engine=ReplicatedMergeTree order by n"
+    )
+
+    dummy_node.query("system enable failpoint database_replicated_delay_recovery")
+    dummy_node.query(
+        "system enable failpoint database_replicated_delay_entry_execution"
+    )
+    dummy_node.query(
+        "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+    )
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "create table lag_after_recovery.t1 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t2 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t3 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t4 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t5 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t6 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t7 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t8 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t9 (n int) engine=Memory", settings=settings
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
+        "1\n",
+    )
+
+    settings = {
+        "distributed_ddl_task_timeout": 1,
+        "distributed_ddl_output_mode": "none_only_active",
+    }
+    main_node.query(
+        "create table lag_after_recovery.t10 (n int) engine=Memory", settings=settings
+    )
+    assert (
+        dummy_node.query(
+            "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
+        )
+        == "0\n"
+    )
+
+    dummy_node.query(
+        "system disable failpoint database_replicated_delay_entry_execution"
+    )
+    dummy_node.query("system sync database replica lag_after_recovery")
+    assert (
+        dummy_node.query(
+            "select unsynced_after_recovery from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
+        )
+        == "0\n"
     )

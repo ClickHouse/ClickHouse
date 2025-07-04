@@ -30,6 +30,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct ReplicaInfo
 {
     bool is_active;
+    bool unsynced_after_recovery;
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
@@ -39,6 +40,7 @@ class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
+    static constexpr auto REPLICA_UNSYNCED_MARKER = "UNSYNCED";
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,

@@ -436,6 +436,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
