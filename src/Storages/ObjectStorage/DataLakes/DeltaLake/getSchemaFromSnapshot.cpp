@@ -1,9 +1,9 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-#include "getSchemaFromSnapshot.h"
-#include "KernelUtils.h"
-#include "KernelPointerWrapper.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 
 #include <base/scope_guard.h>
 #include <Core/TypeId.h>

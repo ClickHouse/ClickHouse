@@ -194,7 +194,7 @@ Example:
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
 
-Additional virtual columns when `kafka_handle_error_mode='stream'`:
+Additional virtual columns when `rabbitmq_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
