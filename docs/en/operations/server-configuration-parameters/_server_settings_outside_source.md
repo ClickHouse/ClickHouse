@@ -2025,6 +2025,23 @@ The default settings are:
 </s3queue_log>
 ```
 
+## dead_letter {#dead_letter}
+
+Setting for the 'dead_letter' system table.
+
+<SystemLogParameters/>
+
+The default settings are:
+
+```xml
+<dead_letter>
+    <database>system</database>
+    <table>dead_letter</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_log>
+```
+
 ## zookeeper {#zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster. ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.

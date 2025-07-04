@@ -2,7 +2,7 @@
 description: 'System table containing information about messages
   received via a streaming engine and parsed with errors.'
 keywords: ['system table', 'dead_letter']
-slug: /en/operations/system-tables/dead_letter
+slug: /operations/system-tables/dead_letter
 title: 'system.dead_letter'
 ---
 
@@ -10,9 +10,9 @@ Contains information about messages received via a streaming engine and parsed w
 
 Logging is enabled by specifying `dead_letter` for the engine specific `handle_error_mode` setting.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dead_letter) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter](../../operations/server-configuration-parameters/settings.md#dead_letter) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview.md#system-tables-introduction) for more details.
 
 Columns:
 
@@ -131,4 +131,4 @@ rabbitmq_channel_id:
 **See Also**
 
 - [Kafka](/engines/table-engines/integrations/kafka.md) - Kafka Engine
-- [system.kafka_consumers](/operations/system-tables/kafka_consumers.md#system_tables-kafka_consumers) — Description of the `kafka_consumers` system table which contains information like statistics and errors about Kafka consumers.
+- [system.kafka_consumers](/operations/system-tables/kafka_consumers.md) — Description of the `kafka_consumers` system table which contains information like statistics and errors about Kafka consumers.
