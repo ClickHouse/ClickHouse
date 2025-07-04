@@ -207,7 +207,7 @@ private:
     /// Get next available segment ID by updating file .gin_sid
     UInt32 getNextSegmentID();
 
-    /// Get a range of next available segment IDs by updating file .gin_sid
+    /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
 
     String name;

@@ -5005,7 +5005,6 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 
 Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part)
 {
-    constexpr std::string proj_suffix = ".proj";
     auto & storage = part->getDataPartStorage();
 
     Strings files_in_part;
@@ -5068,15 +5067,22 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
         files_in_checksums.begin(), files_in_checksums.end(),
         std::back_inserter(extra_files));
 
+    Strings files_in_checksums_with_size;
+    for (const auto & file : files_in_checksums)
+    {
+        auto it = part->checksums.files.find(file);
+        chassert(it != part->checksums.files.end());
+        files_in_checksums_with_size.push_back(fmt::format("{} ({})", file, it->second.file_size));
+    }
+
     LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
-            "checksums.txt file is not consistent with the files on file system, "
             "checksums.txt file has {} files, part '{}' has {} files, "
             "files in checksums: {}, files in part: {}"
             "Missed files in part: {}, Extra files in part: {}",
             part->checksums.files.size(),
             part->name,
             files_in_part.size(),
-            fmt::join(files_in_checksums, ", "),
+            fmt::join(files_in_checksums_with_size, ", "),
             fmt::join(files_in_part, ", "),
             fmt::join(missed_files, ", "),
             fmt::join(extra_files, ", "));
@@ -5090,7 +5096,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
             part->checksums.files.size(),
             part->name,
             files_in_part.size(),
-            fmt::join(files_in_checksums, ", "),
+            fmt::join(files_in_checksums_with_size, ", "),
             fmt::join(files_in_part, ", "),
             fmt::join(missed_files, ", "),
             fmt::join(extra_files, ", "));

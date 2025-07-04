@@ -44,6 +44,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <algorithm>
+#include <cstdint>
 
 namespace ProfileEvents
 {
@@ -1411,7 +1412,11 @@ class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
 
-    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_)
+        : ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Creating MutateAllPartColumnsTask for future part {}", ctx->future_part->name);
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1756,7 +1761,11 @@ private:
 class MutateSomePartColumnsTask : public IExecutableTask
 {
 public:
-    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_)
+        : ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Creating MutateSomePartColumnsTask for future part {}", ctx->future_part->name);
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1765,6 +1774,8 @@ public:
 
     bool executeStep() override
     {
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask::executeStep for future part {} state {}", ctx->future_part->name, uint32_t(state));
+
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1913,7 +1924,10 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
-        auto source_checksums_files = ctx->source_part->checksums.getFileNames();
+        for (const auto & file_to_skip : ctx->files_to_skip)
+            ctx->new_data_part->checksums.remove(file_to_skip);
+
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: source part {} checksums files: {}", ctx->source_part->name, fmt::join(ctx->source_part->checksums.getFileNames(), ", "));
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
@@ -1981,6 +1995,9 @@ private:
 
                 only_outputstream->finish(ctx->need_sync);
 
+                LOG_DEBUG(ctx->log, "MutateSomePartColumnsTask: removed_files {} for part {}",
+                          fmt::join(files_to_remove_after_finish, ", "), ctx->new_data_part->name);
+
                 ctx->new_data_part->checksums.add(std::move(changed_checksums));
             }
 
@@ -2010,6 +2027,8 @@ private:
 
         for (const auto & ptr : ctx->projections_to_build)
             active_projections.insert(ptr->name + proj_suffix);
+
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: files_to_skip: {}", fmt::join(ctx->files_to_skip, ", "));
 
         for (const auto & name : ctx->files_to_skip)
         {
@@ -2074,7 +2093,11 @@ public:
         std::unique_ptr<IExecutableTask> executable_task_,
         MutationContextPtr ctx_
         )
-        : executable_task(std::move(executable_task_)), ctx(ctx_) {}
+        : executable_task(std::move(executable_task_)), ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Created decorator for task: {}",
+                  executable_task->getStorageID().getNameForLogs());
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -2182,6 +2205,9 @@ bool MutateTask::execute()
 {
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
+
+    LOG_TRACE(ctx->log, "Executing mutation task for part {} with commands: {}, state {}",
+              ctx->source_part->name, ctx->commands->toString(), int32_t(state));
 
     switch (state)
     {
@@ -2615,6 +2641,8 @@ bool MutateTask::prepare()
             projections_to_skip,
             ctx->stats_to_recalc,
             updated_columns_in_patches);
+
+        LOG_TRACE(ctx->log, "MutateTask::prepare: files_to_skip: {}", fmt::join(ctx->files_to_skip, ", "));
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,
