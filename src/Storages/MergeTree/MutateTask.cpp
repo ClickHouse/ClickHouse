@@ -2000,9 +2000,6 @@ private:
                 auto only_outputstream = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
 
                 auto [changed_checksums, removed_files] = only_outputstream->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
-
-                // We have to remove files after `ctx->out.finish()` called.
-                // Otherwise new files are not visible because they have not been written yet
                 files_to_remove_after_finish = std::move(removed_files);
 
                 only_outputstream->finish(ctx->need_sync);
@@ -2063,7 +2060,7 @@ private:
         }
 
         // We have to remove files after `ctx->out.finish()` called.
-        // Otherwise new files are not visible because they have not been written yet
+        // Otherwise new files are not visible because they have not been written yet as a result remove becomes no op
         for (const String & removed_file : files_to_remove_after_finish)
         {
             ctx->new_data_part->getDataPartStorage().removeFile(removed_file);

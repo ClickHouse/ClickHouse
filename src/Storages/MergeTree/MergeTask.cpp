@@ -1295,7 +1295,7 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
         stream->finish(ctx->need_sync);
 
     // We have to remove files after `stream.finish()` called.
-    // Otherwise new files are not visible because they have not been written yet
+    // Otherwise new files are not visible because they have not been written yet as a result remove becomes no op
     for (const String & removed_file : ctx->removed_files)
     {
         global_ctx->new_data_part->getDataPartStorage().removeFileIfExists(removed_file);

@@ -98,7 +98,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+    auto removed_files = removeExpiredColumnsFromPart(new_part, columns, serialization_infos, checksums);
     return {std::move(checksums), std::move(removed_files)};
 }
 
