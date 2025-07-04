@@ -192,20 +192,6 @@ SELECT count() FROM hackernews WHERE hasToken(lower(comment), 'clickhouse');
 
 These functions are the most performant options to use with the `text` index.
 
-#### searchAny and searchAll {#functions-example-searchany-searchall}
-
-Functions `searchAny` and `searchAll` check if the column contains rows which match any or all of search terms.
-
-Compared to `hasToken`, these functions accept multiple search terms.
-
-Example:
-
-```sql
-SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
-
-SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
-```
-
 ## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
