@@ -45,6 +45,18 @@ RUSTC_ROOT=$(rustc --print=sysroot)
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
+# Now let's remove windows crates - we don't support windows.
+#
+# Note, there is also cargo vendor-filterer that supports --platform, but it cannot be used due to:
+# - it does not support --no-delete (and refuses to run on non-empty directory)
+# - missing --locked
+#
+# Refs: https://github.com/rust-lang/cargo/issues/7058
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/windows*/lib/*.a
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.a
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.lib
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/windows*/lib/*.lib
+
 echo "*"
 echo "* Do not forget to check contrib/corrosion-cmake/config.toml.in"
 echo "* You need to make sure that it contains everything that is printed under"
