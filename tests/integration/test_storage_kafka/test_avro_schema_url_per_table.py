@@ -16,7 +16,6 @@ instance = cluster.add_instance(
     macros={
         "kafka_broker": "kafka1",
         "kafka_client_id": "instance",
-        "kafka_format_json_each_row": "JSONEachRow",
     },
 )
 
@@ -66,7 +65,7 @@ def kafka_setup_teardown():
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
-def test_avro_schema_url(kafka_cluster, create_query_generator):
+def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
     schema_registry_client = CachedSchemaRegistryClient(
         {"url": f"http://localhost:{kafka_cluster.schema_registry_port}"}
     )
