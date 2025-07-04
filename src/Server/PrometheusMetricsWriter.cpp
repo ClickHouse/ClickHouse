@@ -63,7 +63,7 @@ constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 {
-    const auto counter = ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
+    const auto counter = ProfileEvents::global_counters.getValue(event);
 
     std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(event))};
     std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(event))};

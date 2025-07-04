@@ -21,6 +21,7 @@ namespace ProfileEvents
     /// Event identifier (index in array).
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
+    using ShardIndex = size_t;
     using Increment = Int64;
     using Counter = std::atomic<Count>;
     class Counters;
@@ -66,6 +67,16 @@ namespace ProfileEvents
         Counter prev_cpu_wait_microseconds = 0;
         Counter prev_cpu_virtual_time_microseconds = 0;
 
+        static constexpr size_t CACHE_LINE_SIZE = 64;
+        struct alignas(CACHE_LINE_SIZE) CounterShard
+        {
+            Counter * counters = nullptr;
+            char padding[CACHE_LINE_SIZE - sizeof(Counter *)]{};
+        };
+        /// Shards are used to reduce contention on the global counters.
+        std::vector<CounterShard> shards;
+        size_t num_shards = 16;
+
     public:
 
         VariableContext level = VariableContext::Thread;
@@ -75,21 +86,39 @@ namespace ProfileEvents
 
         /// Global level static initializer
         explicit Counters(Counter * allocated_counters) noexcept
-            : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
+            : counters(allocated_counters), parent(nullptr), num_shards(1), level(VariableContext::Global)
+        {
+            shards.resize(1);
+            shards[0].counters = allocated_counters;
+        }
 
         Counters(Counters && src) noexcept;
 
-        Counter & operator[] (Event event)
+        Count getValue(Event event) const;
+
+        Count operator[] (Event event)
+        {
+            return getValue(event);
+        }
+
+        Count operator[] (Event event) const
+        {
+            return getValue(event);
+        }
+
+        Counter & operator() (Event event)
         {
             return counters[event];
         }
 
-        const Counter & operator[] (Event event) const
+        const Counter & operator() (Event event) const
         {
             return counters[event];
         }
 
         double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
+
+        ShardIndex getShardIndex() const;
 
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
@@ -157,52 +186,6 @@ namespace ProfileEvents
         }
 
         static const Event num_counters;
-    };
-
-    /**
-     * Batched counters for high-frequency events.
-     * Accumulates statistics locally and flushes to global counters
-     * when local values reach a certain threshold.
-     */
-    class BatchedCounters
-    {
-    private:
-        /// Map of event types to local counts
-        std::unordered_map<Event, Count> local_counters;
-
-        /// Parent counter to flush values to
-        Counters * parent = nullptr;
-
-        /// Threshold percentage that triggers flush (default 1%)
-        double threshold_percentage;
-
-        /// Get estimated maximum thread concurrency for threshold calculation
-        size_t getMaxConcurrency() const;
-
-    public:
-        /// Constructor with configurable parent counter
-        explicit BatchedCounters(Counters * parent_ = &global_counters, double threshold_percentage_ = 0);
-
-        /// Destructor that ensures all counters are flushed
-        ~BatchedCounters();
-
-        /// Increment local counter for event
-        void increment(Event event, Count amount = 1);
-
-        /// Check if counter should be flushed and do so if needed
-        void tryFlush(Event event);
-
-        /// Explicitly flush a specific counter
-        void flush(Event event);
-
-        /// Flush all local counters to parent
-        void flushAll();
-
-        /// Get current local value for an event
-        Count get(Event event) const;
-
-        /// Thread-local singleton access method
-        static BatchedCounters & current();
     };
 
     enum class ValueType : uint8_t

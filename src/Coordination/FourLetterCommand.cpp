@@ -682,7 +682,7 @@ String ProfileEventsCommand::run()
 
     for (auto i : ProfileEvents::keeper_profile_events)
     {
-        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const auto counter = ProfileEvents::global_counters.getValue(ProfileEvents::Event(i));
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);

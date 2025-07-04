@@ -218,7 +218,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum, external_data);
     }
 
-    ProfileEvents::BatchedCounters::current().increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
+    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
 
     return size_compressed_without_checksum + sizeof(Checksum);
 }
@@ -276,8 +276,8 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
                                   bool allow_different_codecs, bool external_data)
 {
-    ProfileEvents::BatchedCounters::current().increment(ProfileEvents::CompressedReadBufferBlocks, 1);
-    ProfileEvents::BatchedCounters::current().increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks, 1);
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
