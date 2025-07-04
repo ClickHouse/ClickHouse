@@ -6,13 +6,6 @@
 namespace DB
 {
 
-/// ------------------------------------------------------------
-/// Legacy names for text index.
-/// Remove this block one year after full-text indexes became GA.
-static inline constexpr auto FULL_TEXT_INDEX_NAME = "full_text";
-static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
-static inline constexpr auto GIN_INDEX_NAME = "gin";
-/// ------------------------------------------------------------
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
