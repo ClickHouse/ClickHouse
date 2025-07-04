@@ -235,27 +235,6 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
     }
 }
 
-bool MergeTreeReadersChain::needApplyPatch(const Block & block, const IMergeTreeDataPartInfoForReader & patch) const
-{
-    const auto & patch_columns = patch.getColumnsDescription();
-    const auto & alter_conversions = patch.getAlterConversions();
-
-    for (const auto & column : block)
-    {
-        if (isPatchPartSystemColumn(column.name))
-            continue;
-
-        String column_name = column.name;
-        if (alter_conversions && alter_conversions->isColumnRenamed(column_name))
-            column_name = alter_conversions->getColumnOldName(column_name);
-
-        if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            return true;
-    }
-
-    return false;
-}
-
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
     if (patches_results.empty())
@@ -309,6 +288,36 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         result.columns_for_patches);
 }
 
+static UInt128 getColumnsHash(const Names & column_names)
+{
+    SipHash hash;
+    for (const auto & column_name : column_names)
+        hash.update(column_name);
+    return hash.get128();
+}
+
+Names getUpdatedColumns(const Block & block, const IMergeTreeDataPartInfoForReader & patch)
+{
+    Names res;
+    const auto & patch_columns = patch.getColumnsDescription();
+    const auto & alter_conversions = patch.getAlterConversions();
+
+    for (const auto & column : block)
+    {
+        if (isPatchPartSystemColumn(column.name))
+            continue;
+
+        String column_name = column.name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name))
+            column_name = alter_conversions->getColumnOldName(column_name);
+
+        if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            res.push_back(column_name);
+    }
+
+    return res;
+}
+
 void MergeTreeReadersChain::applyPatches(
     const Block & result_header,
     Columns & result_columns,
@@ -324,15 +333,21 @@ void MergeTreeReadersChain::applyPatches(
     auto result_block = result_header.cloneWithColumns(result_columns);
     addPatchVirtuals(result_block, additional_columns);
 
-    /// Combine patches for same partitions.
-    /// But we cannot combine patches for different partitions.
-    std::unordered_map<String, PatchesToApply> patches_to_apply;
+    /// Combine patches with the same structure.
+    std::unordered_map<UInt128, PatchesToApply> patches_to_apply;
     UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
 
     for (size_t i = 0; i < patch_readers.size(); ++i)
     {
         const auto & patch = patch_readers[i]->getPatchPart();
         const auto & patch_results = patches_results[i];
+
+        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Patches for one reader must have the same source data version. Got: {}, expected: {}",
+                patch.source_data_version, source_data_version);
+        }
 
         if (min_version.has_value() && !patchHasHigherDataVersion(*patch.part, *min_version))
             continue;
@@ -343,15 +358,12 @@ void MergeTreeReadersChain::applyPatches(
         if (after_conversions != patch.perform_alter_conversions)
             continue;
 
-        if (!needApplyPatch(result_block, *patch.part))
+        auto updated_columns = getUpdatedColumns(result_block, *patch.part);
+        if (updated_columns.empty())
             continue;
 
-        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Patches for one reader must have the same source data version. Got: {}, expected: {}",
-                patch.source_data_version, source_data_version);
-        }
+        std::sort(updated_columns.begin(), updated_columns.end());
+        auto columns_hash = getColumnsHash(updated_columns);
 
         for (const auto & patch_result : patch_results)
         {
@@ -359,10 +371,7 @@ void MergeTreeReadersChain::applyPatches(
             auto patch_to_apply = patch_readers[i]->applyPatch(result_block, *patch_result);
 
             if (!patch_to_apply->empty())
-            {
-                const auto & partition_id = patch.part->getPartInfo().getPartitionId();
-                patches_to_apply[partition_id].push_back(std::move(patch_to_apply));
-            }
+                patches_to_apply[columns_hash].push_back(std::move(patch_to_apply));
         }
     }
 
