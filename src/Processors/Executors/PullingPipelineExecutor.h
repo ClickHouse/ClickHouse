@@ -24,6 +24,7 @@ class PullingPipelineExecutor
 {
 public:
     explicit PullingPipelineExecutor(QueryPipeline & pipeline_);
+    explicit PullingPipelineExecutor(QueryPipeline & pipeline_, bool profile_processors_);
     ~PullingPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -53,6 +54,10 @@ private:
     QueryPipeline & pipeline;
     std::shared_ptr<PullingOutputFormat> pulling_format;
     PipelineExecutorPtr executor;
+
+    // Used for EXPLAIN ANALYZE
+    // TODO: Refactor to make it applicable to all Pipeline types
+    bool profile_processors = false;
 };
 
 }
