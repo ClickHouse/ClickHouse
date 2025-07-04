@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_AZURE_BLOB_STORAGE
+
 #include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/IThrottler.h>
@@ -123,3 +127,5 @@ private:
 };
 
 }
+
+#endif

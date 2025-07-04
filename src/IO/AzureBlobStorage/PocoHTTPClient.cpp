@@ -1,5 +1,9 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 
+#include "config.h"
+
+#if USE_AZURE_BLOB_STORAGE
+
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/LatencyBuckets.h>
 #include <Common/NetException.h>
@@ -529,3 +533,5 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 }
 
 }
+
+#endif
