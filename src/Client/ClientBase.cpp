@@ -1782,6 +1782,9 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
+        if (!connection->isConnected())
+            throw;
+
         connection->sendCancel();
         receiveEndOfQuery();
         throw;
