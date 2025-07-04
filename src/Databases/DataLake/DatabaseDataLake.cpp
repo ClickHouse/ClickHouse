@@ -463,6 +463,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
@@ -536,6 +537,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
