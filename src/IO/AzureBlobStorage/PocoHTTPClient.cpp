@@ -372,7 +372,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
                 }
             }
         }
-        else if (method == "PUT" || method == "POST" || method == "DELETE" || method == "POST")
+        else if (method == "PUT" || method == "POST" || method == "DELETE" || method == "PATCH")
         {
             if (put_request_throttler)
             {

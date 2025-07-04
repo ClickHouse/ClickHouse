@@ -6,7 +6,6 @@
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
-#include <IO/SessionAwareIOStream.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <azure/core/http/http.hpp>
@@ -17,7 +16,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
-#include <functional>
 #include <memory>
 
 namespace DB
