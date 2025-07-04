@@ -88,13 +88,13 @@ std::string StorageObjectStorageCluster::getName() const
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
     configuration->update(object_storage, query_context);
-    return configuration->totalRows();
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
     configuration->update(object_storage, query_context);
-    return configuration->totalBytes();
+    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
