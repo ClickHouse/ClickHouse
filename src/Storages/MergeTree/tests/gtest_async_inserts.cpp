@@ -1,4 +1,4 @@
-#include "Storages/MergeTree/ReplicatedMergeTreeSink.h"
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include "config.h"
 
 #include <gtest/gtest.h>

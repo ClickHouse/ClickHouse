@@ -14,7 +14,7 @@
 #include <Common/re2.h>
 #include <Access/Credentials.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPResponseHeaderWriter.h>
 
 namespace CurrentMetrics
 {
