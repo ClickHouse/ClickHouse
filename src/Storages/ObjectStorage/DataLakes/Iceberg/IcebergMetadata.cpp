@@ -214,7 +214,7 @@ void IcebergMetadata::addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Pt
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema with id `{}`: 'schemas' field is missing in metadata", schema_id);
     }
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
     for (uint32_t i = 0; i != schemas->size(); ++i)
     {
         auto current_schema = schemas->getObject(i);
@@ -325,7 +325,7 @@ static std::pair<Int32, String> getLatestMetadataFileAndVersion(
 {
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
-        = configuration_ptrgetSettingsRef()[StorageObjectStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        = configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
         ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
     bool need_all_metadata_files_parsing
@@ -405,7 +405,7 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(
 {
     if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].changed)
     {
-        auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
+        auto explicit_metadata_path = configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
         try
         {
             LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
