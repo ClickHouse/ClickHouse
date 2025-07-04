@@ -649,21 +649,31 @@ private:
         pipeline.dropTotalsAndExtremes();
 
         bool insert_null_as_default = false;
-        auto adding_missing_defaults = addMissingDefaults(
+
+        auto adding_missing_defaults_dag = addMissingDefaults(
             pipeline.getHeader(),
             inner_metadata->getSampleBlock().getNamesAndTypesList(),
             inner_metadata->getColumns(),
             local_context,
             insert_null_as_default);
 
-        auto converting_types = ActionsDAG::makeConvertingActions(
-            adding_missing_defaults.getResultColumns(),
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+            pipeline.getHeader(),
+            adding_missing_defaults_dag.getRequiredColumnsNames(),
+            local_context);
+
+        auto merged_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
+
+        auto converting_types_dag = ActionsDAG::makeConvertingActions(
+            merged_dag.getResultColumns(),
             inner_metadata->getSampleBlock().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
+        auto final_dag = ActionsDAG::merge(std::move(merged_dag), std::move(converting_types_dag));
+
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
             pipeline.getHeader(),
-            std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(adding_missing_defaults), std::move(converting_types)))));
+            std::make_shared<ExpressionActions>(std::move(final_dag))));
 
         inner_metadata->check(pipeline.getHeader());
 
