@@ -437,7 +437,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     const Field & value_field,
     RPNElement & out)
 {
-    size_t index_column_num = 0;
     bool index_column_exists = header.has(index_column_ast.getColumnName());
     if (!index_column_exists)
         return false;
@@ -451,7 +450,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
 
     if (function_name == "notEquals")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -460,7 +458,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "equals")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -498,14 +495,12 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             gin_filters.emplace_back(GinFilter(gin_filter_params));
             token_extractor->stringToGinFilter(value.data(), value.size(), gin_filters.back());
         }
-        out.key_column = index_column_num;
         out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
         out.set_gin_filters = std::vector<GinFilters>{std::move(gin_filters)};
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -514,7 +509,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "startsWith")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -523,7 +517,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "endsWith")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -532,7 +525,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "multiSearchAny")
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
@@ -553,7 +545,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -562,7 +553,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
         const auto & value = const_value.safeGet<String>();
@@ -571,7 +561,6 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
     {
-        out.key_column = index_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
 
         const auto & value = const_value.safeGet<String>();
