@@ -1431,7 +1431,7 @@ public:
     }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { return ctx->data->getStorageID(); }
     Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
@@ -2107,10 +2107,10 @@ public:
                   executable_task->getStorageID().getNameForLogs());
     }
 
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    void onCompleted() override { executable_task->onCompleted(); }
+    StorageID getStorageID() const override { return executable_task->getStorageID(); }
+    Priority getPriority() const override { return executable_task->getPriority(); }
+    String getQueryId() const override { return executable_task->getQueryId(); }
 
     bool executeStep() override
     {
