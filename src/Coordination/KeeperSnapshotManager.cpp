@@ -101,7 +101,7 @@ namespace
     }
 
     template<typename Node>
-    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
+    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map, bool cleanup_acl)
     {
         readVarUInt(node.stats.data_size, in);
         if (node.stats.data_size != 0)
@@ -113,6 +113,9 @@ namespace
         if (version >= SnapshotVersion::V1)
         {
             readBinary(node.acl_id, in);
+
+            if (cleanup_acl)
+                node.acl_id = 0;
         }
         else if (version == SnapshotVersion::V0)
         {
@@ -128,7 +131,9 @@ namespace
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            node.acl_id = acl_map.convertACLs(acls);
+
+            if (!cleanup_acl)
+                node.acl_id = acl_map.convertACLs(acls);
         }
 
         /// Some strange ACLID during deserialization from ZooKeeper
@@ -373,7 +378,9 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            storage.acl_map.addMapping(acl_id, acls);
+
+            if (!keeper_context->shouldBlockACL())
+                storage.acl_map.addMapping(acl_id, acls);
             current_map_size++;
         }
     }
@@ -396,7 +403,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         std::string_view path{path_data.get(), path_size};
 
         typename Storage::Node node{};
-        readNode(node, in, current_version, storage.acl_map);
+        readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);

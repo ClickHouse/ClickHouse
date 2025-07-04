@@ -27,6 +27,7 @@ struct BaseSettingsHelpers
 {
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
+    static void flushWarnings();
 
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
@@ -42,6 +43,11 @@ struct BaseSettingsHelpers
     static SettingsTierType getTier(UInt64 flags);
     static void writeFlags(Flags flags, WriteBuffer & out);
     static UInt64 readFlags(ReadBuffer & in);
+private:
+    /// For logging the summary of unknown settings instead of logging each one separately.
+    inline static thread_local Strings unknown_settings;
+    inline static thread_local bool unknown_settings_warning_logged = false;
+
 };
 
 /** Template class to define collections of settings.
@@ -577,6 +583,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             BaseSettingsHelpers::readString(in);
         }
     }
+    BaseSettingsHelpers::flushWarnings();
 }
 
 template <typename TTraits>
