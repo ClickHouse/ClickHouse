@@ -116,10 +116,10 @@ Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time,
 
 :::note
 
-An approach with `GROUP BY` may return incomplete or incorrect results if the underlying parts have not been fully merged.
+An approach with `GROUP BY` may return incorrect results if the underlying parts have not been fully merged.
 
 ```
-SELECT key, last_value(value) FROM test_table GROUP BY key; -- Incorrect
+SELECT key, last_value(value) FROM test_table GROUP BY key; -- Not recommended.
 ```
 
 :::
