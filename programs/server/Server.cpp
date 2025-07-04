@@ -2792,7 +2792,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, config.getBool("mysql_require_secure_transport", false),  ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, config.getBool("mysql_require_secure_transport", false), ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
 #if USE_SSL
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, config.getBool("postgresql_require_secure_transport", false), conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
@@ -3133,7 +3133,7 @@ void Server::createServers(
                          connection_filter));
 #else
                     std::make_unique<TCPServer>(
-                         new PostgreSQLHandlerFactory(*this, secure_rquired, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
+                         new PostgreSQLHandlerFactory(*this, secure_required, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
                          server_pool,
                          socket,
                          makeServerParams(config),

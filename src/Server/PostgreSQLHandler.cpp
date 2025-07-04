@@ -283,7 +283,8 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     {
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
             LOG_DEBUG(log, "Client requested SSL");
-            if (ssl_enabled) {
+            if (ssl_enabled)
+            {
                 was_secure_connection = true;
                 makeSecureConnectionSSL();
             }
@@ -303,7 +304,8 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
         readBinaryBigEndian(info, *in);
     }
 
-    if (secure_required && !was_secure_connection) {
+    if (secure_required && !was_secure_connection)
+    {
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "XX000", "SSL connection required."),
