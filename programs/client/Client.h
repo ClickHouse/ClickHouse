@@ -66,6 +66,7 @@ private:
 
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
+    bool fuzzLoopReconnect();
 #endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();

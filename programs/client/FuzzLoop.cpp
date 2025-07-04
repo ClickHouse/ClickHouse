@@ -1,5 +1,5 @@
-#include <base/scope_guard.h>
 #include <Client.h>
+#include <base/scope_guard.h>
 
 #include <Core/Settings.h>
 
@@ -505,11 +505,18 @@ static void finishBuzzHouse(int num)
     buzz_done = 1;
 }
 
+bool Client::fuzzLoopReconnect()
+{
+    connection->disconnect();
+    return tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
     bool server_up = true;
     String full_query;
+    static const String & restart_cmd = "--Reconnecting client";
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -525,7 +532,14 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            server_up &= processBuzzHouseQuery(full_query);
+            if (full_query == restart_cmd)
+            {
+                server_up &= fuzzLoopReconnect();
+            }
+            else
+            {
+                server_up &= processBuzzHouseQuery(full_query);
+            }
             full_query.resize(0);
         }
     }
@@ -790,10 +804,9 @@ bool Client::buzzHouse()
                 }
                 else if (restart_client && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + 1))
                 {
-                    fuzz_config->outf << "--Reconnecting client" << std::endl;
-                    connection->disconnect();
+                    fuzz_config->outf << restart_cmd << std::endl;
                     gen.setInTransaction(false);
-                    server_up &= tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+                    server_up &= fuzzLoopReconnect();
                 }
                 else if (
                     run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query + 1))
