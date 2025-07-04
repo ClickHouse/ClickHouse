@@ -112,10 +112,10 @@ ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 
 # Randomize which logger is used (until sync logger is removed, if that ever happens)
-ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/logger_test.xml $DEST_SERVER_PATH/config.d/
 value=$((RANDOM % 2))
 echo "Async logging: $value"
-sed --follow-symlinks -i "s|<async>[01]</async>|<async>$value</async>|" $DEST_SERVER_PATH/config.d/logger_trace.xml
+sed --follow-symlinks -i "s|<async>[01]</async>|<async>$value</async>|" $DEST_SERVER_PATH/config.d/logger_test.xml
 
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
@@ -239,7 +239,7 @@ value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
 sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
-inject_auth=$((RANDOM % 2))
+inject_auth=1
 if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
     inject_auth=0
 fi
