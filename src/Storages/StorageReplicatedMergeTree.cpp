@@ -3089,8 +3089,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         }
     }
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
-
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
         /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPart(must_on_same_disk=true) will do full copy.
@@ -3114,7 +3112,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
-                TMP_PREFIX + "clone_",
+                TMP_PREFIX_REPLACE_PARTITION_FROM + "clone_",
                 part_desc->new_part_info,
                 metadata_snapshot,
                 clone_params,
@@ -3132,19 +3130,18 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
-            scope_guard part_temp_directory_lock;
 
             if (interserver_scheme != address.scheme)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, lock] = fetcher.fetchSelectedPart(
+            auto [fetched_part, temporary_part_lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
-                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
+                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX_REPLACE_PARTITION_FROM + "fetch_");
             part_desc->res_part = fetched_part;
-            part_temp_directory_lock = std::move(lock);
+            part_desc->temporary_part_lock = std::move(temporary_part_lock);
 
             /// TODO: check columns_version of fetched part
 
@@ -6168,9 +6165,24 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
+    {
+        // pipeline will be built outside
+        return {};
+    }
 
-    // pipeline will be built outside
+    if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage",
+            src_storage->getName());
+    }
+
     return {};
 }
 

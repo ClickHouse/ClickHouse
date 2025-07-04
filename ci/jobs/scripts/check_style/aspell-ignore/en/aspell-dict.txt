@@ -233,6 +233,7 @@ DESC
 DIEs
 DOGEFI
 Damerau
+Databricks
 DataGrip
 DataLens
 DataPacket
@@ -246,6 +247,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -306,6 +308,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -341,6 +344,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -718,6 +722,7 @@ NumberOfDetachedParts
 NumberOfTables
 NumericIndexedVector
 NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
 OLAP
@@ -903,6 +908,7 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
 RawSum
 RawWithNames
@@ -1207,6 +1213,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1482,6 +1490,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1831,6 +1841,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -1893,12 +1907,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro
@@ -2077,6 +2093,7 @@ isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2085,7 +2102,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2263,6 +2279,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2271,7 +2288,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
