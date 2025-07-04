@@ -1,8 +1,9 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
-#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
@@ -40,7 +41,8 @@ struct PatchMergeSharedData : public PatchSharedData
 {
 };
 
-using PatchHashMap = HashMap<UInt128, UInt64, UInt128HashCRC32>;
+using OffsetsHashMap = absl::flat_hash_map<UInt64, UInt64, HashCRC32<UInt64>>;
+using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
 
 struct PatchJoinSharedData : public PatchSharedData
 {

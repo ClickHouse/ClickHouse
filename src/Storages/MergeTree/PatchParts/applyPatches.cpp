@@ -6,6 +6,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -397,19 +399,17 @@ std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_bloc
 
     for (size_t i = 0; i < num_patch_rows; ++i)
     {
-        UInt128 key;
-        key.items[0] = patch_block_number[i];
-        key.items[1] = patch_block_offset[i];
+        UInt64 block_number = patch_block_number[i];
+        UInt64 block_offset = patch_block_offset[i];
 
-        bool inserted = false;
-        PatchHashMap::LookupResult it;
-        data->hash_map.emplace(key, it, inserted);
+        auto & block_hash_map = data->hash_map[block_number];
+        auto [it, inserted] = block_hash_map.emplace(block_offset, i);
 
         /// Keep only the row with the highest version.
-        if (!inserted && patch_data_version[i] <= patch_data_version[it->getMapped()])
+        if (!inserted && patch_data_version[i] <= patch_data_version[it->second])
             continue;
 
-        it->getMapped() = i;
+        it->second = i;
 
         if (std::exchange(is_first, false))
         {
@@ -455,19 +455,32 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
     patch_to_apply->result_indices.reserve(size_to_reserve);
     patch_to_apply->patch_indices.reserve(size_to_reserve);
 
+    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    const OffsetsHashMap * offsets_hash_map = nullptr;
+
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_data.min_block || result_block_number[row] > join_data.max_block)
-            continue;
-
-        UInt128 key;
-        key.items[0] = result_block_number[row];
-        key.items[1] = result_block_offset[row];
-
-        if (const auto * found = join_data.hash_map.find(key))
         {
-            patch_to_apply->result_indices.push_back(row);
-            patch_to_apply->patch_indices.push_back(found->getMapped());
+            continue;
+        }
+
+        if (result_block_number[row] != prev_block_number)
+        {
+            prev_block_number = result_block_number[row];
+            auto it = join_data.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_data.hash_map.end() ? &it->second : nullptr;
+        }
+
+        if (offsets_hash_map)
+        {
+            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
+
+            if (offset_it != offsets_hash_map->end())
+            {
+                patch_to_apply->result_indices.push_back(row);
+                patch_to_apply->patch_indices.push_back(offset_it->second);
+            }
         }
     }
 
