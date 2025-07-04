@@ -138,7 +138,8 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
         if (!(first_which.isInt8() or first_which.isInt16() or first_which.isInt32() or first_which.isUInt8() or first_which.isUInt16()
               or first_which.isUInt32()))
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument type only support Int8/Int16/Int32/UInt8/UInt16/UInt32 in BSI");
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The first argument type must be one of Int8, Int16, Int32, UInt8, UInt16, UInt32 in BSI");
 
         if (!(second_which.isNativeInt() || second_which.isNativeUInt() || second_which.isNativeFloat()))
             throw Exception(

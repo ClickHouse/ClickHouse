@@ -1,4 +1,4 @@
-#include "Databases/DataLake/Common.h"
+#include <Databases/DataLake/Common.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

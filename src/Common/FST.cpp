@@ -1,5 +1,5 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
-#include "FST.h"
+#include <Common/FST.h>
 
 #include <Common/Exception.h>
 
@@ -100,6 +100,19 @@ UInt64 LabelsAsBitmap::serialize(WriteBuffer & write_buffer)
     writeVarUInt(data.items[1], write_buffer);
     writeVarUInt(data.items[2], write_buffer);
     writeVarUInt(data.items[3], write_buffer);
+
+    return getLengthOfVarUInt(data.items[0])
+        + getLengthOfVarUInt(data.items[1])
+        + getLengthOfVarUInt(data.items[2])
+        + getLengthOfVarUInt(data.items[3]);
+}
+
+UInt64 LabelsAsBitmap::deserialize(ReadBuffer & read_buffer)
+{
+    readVarUInt(data.items[0], read_buffer);
+    readVarUInt(data.items[1], read_buffer);
+    readVarUInt(data.items[2], read_buffer);
+    readVarUInt(data.items[3], read_buffer);
 
     return getLengthOfVarUInt(data.items[0])
         + getLengthOfVarUInt(data.items[1])
@@ -453,11 +466,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
         else
         {
             LabelsAsBitmap bmp;
-
-            readVarUInt(bmp.data.items[0], read_buffer);
-            readVarUInt(bmp.data.items[1], read_buffer);
-            readVarUInt(bmp.data.items[2], read_buffer);
-            readVarUInt(bmp.data.items[3], read_buffer);
+            bmp.deserialize(read_buffer);
 
             if (!bmp.hasLabel(label))
                 return {0, false};
