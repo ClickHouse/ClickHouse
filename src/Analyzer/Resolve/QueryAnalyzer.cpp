@@ -809,11 +809,19 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     if (!isArray(constant_node->getResultType()->getTypeId()))
         return;
 
+    // do not convert arguments of "in" functions
+    if (scope.expressions_in_resolve_process_stack.size() > 1)
+    {
+        const auto & parent_node = scope.expressions_in_resolve_process_stack[-1];
+        if (auto * parent_function = parent_node->as<FunctionNode>(); parent_function && isNameOfInFunction(parent_function->getFunctionName()))
+            return;
+    }
+    
     auto & source_expression = constant_node->getSourceExpression();
 
     auto * function = source_expression->as<FunctionNode>();
 
-    if (!function || function->getFunctionName() == "_CAST" || function->getFunctionName() == "array" || function->getFunctionName() == "range")
+    if (!function || function->getFunctionName() == "_CAST" || function->getFunctionName() == "array")
         return;
 
     auto & context = scope.context;
