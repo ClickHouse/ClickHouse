@@ -284,11 +284,11 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_s
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
 {
-    auto get_keys = [](const std::map<String, Checksum> & containter)
+    auto get_keys = [](const std::map<String, Checksum> & container)
     {
         Strings keys;
-        keys.reserve(containter.size());
-        for (const auto & [name, _] : containter)
+        keys.reserve(container.size());
+        for (const auto & [name, _] : container)
             keys.push_back(name);
         return keys;
     };
