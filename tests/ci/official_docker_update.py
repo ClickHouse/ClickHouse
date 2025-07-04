@@ -43,15 +43,6 @@ def run(cmd: str, dry_run: bool = False, **kwargs: Any) -> str:
     return git_runner(cmd, **kwargs)
 
 
-def repo_merge_upstream(repo: Repository, branch: str) -> None:
-    """A temporary hack to implement the following patch in out code base:
-    https://github.com/PyGithub/PyGithub/pull/3175"""
-    post_parameters = {"branch": branch}
-    repo._requester.requestJsonAndCheck(  # pylint:disable=protected-access
-        "POST", f"{repo.url}/merge-upstream", input=post_parameters
-    )
-
-
 @dataclass
 class LibraryRepos:
     """A dataclass to store repositories to process"""
@@ -107,7 +98,7 @@ def update_docs(repos: LibraryRepos, dry_run: bool = True) -> None:
         rmtree(docs_dir)
 
     if not dry_run:
-        repo_merge_upstream(repos.docs, repos.docs.default_branch)
+        repos.docs.merge_upstream(repos.docs.default_branch)
 
     run(f"{GIT_PREFIX} clone {repos.docs.ssh_url}", cwd=temp_path)
 
@@ -263,7 +254,7 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
         rmtree(images_dir)
 
     if not dry_run:
-        repo_merge_upstream(repos.images, repos.images.default_branch)
+        repos.images.merge_upstream(repos.images.default_branch)
 
     run(f"{GIT_PREFIX} clone {repos.images.ssh_url}", cwd=temp_path)
 
