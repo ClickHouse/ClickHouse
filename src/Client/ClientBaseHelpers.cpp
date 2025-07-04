@@ -1,4 +1,4 @@
-#include "ClientBaseHelpers.h"
+#include <Client/ClientBaseHelpers.h>
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -258,6 +258,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     {
         while (!highlight_token_iterator->isEnd())
         {
+            if (highlight_token_iterator->isError())
+                break;
+
             if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
                 /// On opening round bracket, remember the color we use for it.

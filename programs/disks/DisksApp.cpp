@@ -30,6 +30,8 @@
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
 
+#include <Poco/FileChannel.h>
+
 namespace DB
 {
 

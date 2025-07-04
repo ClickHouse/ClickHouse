@@ -1,4 +1,4 @@
-#include "WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>

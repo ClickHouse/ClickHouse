@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Algorithms.h"
-#include "ArraySourceVisitor.h"
-#include "ArraySinkVisitor.h"
-#include "ValueSourceVisitor.h"
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/ArraySourceVisitor.h>
+#include <Functions/GatherUtils/ArraySinkVisitor.h>
+#include <Functions/GatherUtils/ValueSourceVisitor.h>
 
 
 namespace DB

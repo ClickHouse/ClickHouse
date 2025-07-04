@@ -1,0 +1,107 @@
+-- Assert total number of groups and records in distributed
+10	100
+
+-- Assert rows_before_limit for distributed ORDER BY + LIMIT BY + LIMIT
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3
+}
+
+-- Assert rows_before_limit for distributed ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+
+-- Assert rows_before_limit for distributed HAVING + ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "40"],
+		[1, "41"],
+		[2, "42"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 7
+}
+
+-- Assert rows_before_limit for distributed without LIMIT BY on initiator, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "max(val)",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "40"],
+		[0, "40"],
+		[1, "41"],
+		[1, "41"]
+	],
+
+	"rows": 4,
+
+	"rows_before_limit_at_least": 20
+}
