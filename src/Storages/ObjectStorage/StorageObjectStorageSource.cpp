@@ -1,4 +1,4 @@
-#include "StorageObjectStorageSource.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>

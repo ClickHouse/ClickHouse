@@ -9,7 +9,9 @@ title: 'JSON Data Type'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
+import Link from '@docusaurus/Link'
 
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{textDecoration: 'none', width: '100%'}}>
 <CardSecondary
   badgeState="success"
   badgeText=""
@@ -19,6 +21,7 @@ import {CardSecondary} from '@clickhouse/click-ui/bundled';
   infoUrl="/docs/best-practices/use-json-where-appropriate"
   title="Looking for a guide?"
 />
+</Link>
 <br/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
