@@ -1090,7 +1090,7 @@ void SocketImpl::throttleSend(size_t length, bool blocking)
 		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
 		if (blocking)
 		{
-			if (_sndTimeout.totalMicroseconds() != 0) // Avoid throtting over socket send timeout
+			if (_sndTimeout.totalMicroseconds() != 0) // Avoid throttling over socket send timeout
 				_sndThrottler->throttle(amount, _sndTimeout.totalMicroseconds() / 2);
 			else
 				_sndThrottler->throttle(amount);
@@ -1109,7 +1109,7 @@ void SocketImpl::throttleRecv(size_t length, bool blocking)
 		size_t amount = length < THROTTLER_QUANTUM ? THROTTLER_QUANTUM : length;
 		if (blocking)
 		{
-			if (_recvTimeout.totalMicroseconds() != 0) // Avoid throtting over socket receive timeout
+			if (_recvTimeout.totalMicroseconds() != 0) // Avoid throttling over socket receive timeout
 				_recvThrottler->throttle(amount, _recvTimeout.totalMicroseconds() / 2);
 			else
 				_recvThrottler->throttle(amount);
