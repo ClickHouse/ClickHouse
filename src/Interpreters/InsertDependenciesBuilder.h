@@ -43,13 +43,18 @@ private:
         bool operator==(const StorageIDPrivate & other) const;
     };
 
+    /// We cannot use std::set, because operator< is inconsistent with operator==
+    /// for StorageId and StorageIDPrivate.
+    /// Take a look at the detailed comment in StorageID::operator==.
+    using StorageIDPrivateSet = std::unordered_set<StorageIDPrivate, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
     friend class ViewErrorsRegistry;
 
     class DependencyPath
     {
     private:
         std::vector<StorageIDPrivate> path;
-        std::set<StorageIDPrivate> visited;
+        StorageIDPrivateSet visited;
 
     public:
         void pushBack(StorageIDPrivate id);
@@ -62,17 +67,17 @@ private:
         String debugString() const;
     };
 
-    using MapIdManyId = std::map<StorageIDPrivate, std::vector<StorageID>>;
-    using MapIdId = std::map<StorageIDPrivate, StorageIDPrivate>;
-    using MapIdStorage = std::map<StorageIDPrivate, StoragePtr>;
-    using MapIdMetadata = std::map<StorageIDPrivate, StorageMetadataPtr>;
+    using MapIdManyId = std::unordered_map<StorageIDPrivate, std::vector<StorageID>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdId = std::unordered_map<StorageIDPrivate, StorageIDPrivate, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdStorage = std::unordered_map<StorageIDPrivate, StoragePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdMetadata = std::unordered_map<StorageIDPrivate, StorageMetadataPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
-    using MapIdAST = std::map<StorageIDPrivate, ASTPtr>;
-    using MapIdLock = std::map<StorageIDPrivate, TableLockHolder>;
-    using MapIdContext = std::map<StorageIDPrivate, ContextPtr>;
-    using MapIdBlock = std::map<StorageIDPrivate, Block>;
-    using MapIdThreadGroup = std::map<StorageIDPrivate, ThreadGroupPtr>;
-    using MapIdViewType = std::map<StorageIDPrivate, QueryViewsLogElement::ViewType>;
+    using MapIdAST = std::unordered_map<StorageIDPrivate, ASTPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdLock = std::unordered_map<StorageIDPrivate, TableLockHolder, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdContext = std::unordered_map<StorageIDPrivate, ContextPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdBlock = std::unordered_map<StorageIDPrivate, Block, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdThreadGroup = std::unordered_map<StorageIDPrivate, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdViewType = std::unordered_map<StorageIDPrivate, QueryViewsLogElement::ViewType, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
 public:
     using ConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
