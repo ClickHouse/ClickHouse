@@ -15,6 +15,7 @@
 
 namespace DB
 {
+/// TODO(mstetsyuk): don't dump
 
 /// Stores data for checking password when a user logins.
 class AuthenticationData

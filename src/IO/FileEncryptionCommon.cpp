@@ -1,4 +1,5 @@
 #include <IO/FileEncryptionCommon.h>
+#include "Common/JemallocNodumpSTLAllocator.h"
 
 #if USE_SSL
 #    include <base/MemorySanitizer.h>
@@ -277,7 +278,7 @@ InitVector InitVector::random()
 }
 
 
-Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
+Encryptor::Encryptor(Algorithm algorithm_, const NoDumpString & key_, const InitVector & iv_)
     : key(key_)
     , init_vector(iv_)
     , evp_cipher(getCipher(algorithm_))
@@ -451,14 +452,14 @@ void Header::write(WriteBuffer & out) const
     out.write(zero_bytes, reserved_size);
 }
 
-UInt128 calculateKeyFingerprint(const String & key)
+UInt128 calculateKeyFingerprint(const NoDumpString & key)
 {
     const UInt64 seed0 = 0x4368456E63727970ULL; // ChEncryp
     const UInt64 seed1 = 0x7465644469736B46ULL; // tedDiskF
     return sipHash128Keyed(seed0, seed1, key.data(), key.size());
 }
 
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id)
+UInt128 calculateV1KeyFingerprint(const NoDumpString & key, UInt64 key_id)
 {
     /// In the version 1 we stored {key_id, very_small_hash(key)} instead of a fingerprint.
     UInt8 small_key_hash = sipHash64(key.data(), key.size()) & 0x0F;

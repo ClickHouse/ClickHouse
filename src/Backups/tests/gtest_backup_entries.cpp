@@ -33,7 +33,7 @@ protected:
         settings->disk_path = "encrypted/";
 
         settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        String key = "1234567890123456";
+        NoDumpString key = "1234567890123456";
         UInt128 fingerprint = FileEncryption::calculateKeyFingerprint(key);
         settings->all_keys[fingerprint] = key;
         settings->current_key = key;

@@ -39,7 +39,7 @@ FileEncryption::Header readHeader(ReadBufferFromFileBase & read_buffer)
 
 }
 
-String DiskEncryptedSettings::findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const
+NoDumpString DiskEncryptedSettings::findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const
 {
     auto it = all_keys.find(key_fingerprint);
     if (it == all_keys.end())
@@ -68,7 +68,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;
-    String key;
+    NoDumpString key;
     UInt64 old_file_size = 0;
     if (mode == WriteMode::Append && delegate_disk->existsFile(wrapped_path))
     {

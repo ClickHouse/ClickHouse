@@ -1,4 +1,5 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include "Common/JemallocNodumpSTLAllocator.h"
 
 #if USE_SSL
 #include <Common/logger_useful.h>
@@ -17,7 +18,7 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     const String & file_name_,
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
-    const String & key_,
+    const NoDumpString & key_,
     const FileEncryption::Header & header_,
     size_t offset_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/JemallocNodumpSTLAllocator.h"
 #include "config.h"
 
 #if USE_SSL
@@ -74,7 +75,7 @@ class Encryptor
 {
 public:
     /// The `key` should have size 16 or 24 or 32 bytes depending on which `algorithm` is specified.
-    Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_);
+    Encryptor(Algorithm algorithm_, const NoDumpString & key_, const InitVector & iv_);
 
     /// Sets the current position in the data stream from the very beginning of data.
     /// It affects how the data will be encrypted or decrypted because
@@ -94,7 +95,7 @@ public:
     void decrypt(const char * data, size_t size, char * out);
 
 private:
-    const String key;
+    const NoDumpString key;
     const InitVector init_vector;
     const EVP_CIPHER * const evp_cipher;
 
@@ -143,10 +144,10 @@ struct Header
 };
 
 /// Calculates the fingerprint of a passed encryption key.
-UInt128 calculateKeyFingerprint(const String & key);
+UInt128 calculateKeyFingerprint(const NoDumpString & key);
 
 /// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
+UInt128 calculateV1KeyFingerprint(const NoDumpString & key, UInt64 key_id);
 
 }
 }

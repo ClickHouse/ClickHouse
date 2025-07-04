@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
+#include "Common/JemallocNodumpSTLAllocator.h"
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -370,7 +371,7 @@ public:
         auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
         try
         {
-            key = boost::algorithm::unhex(key_hex);
+            key = toNoDumpString(boost::algorithm::unhex(key_hex));
             key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
         }
         catch (const std::exception &)
@@ -427,7 +428,7 @@ public:
     }
 
 private:
-    std::string key;
+    NoDumpString key;
     UInt128 key_fingerprint;
     FileEncryption::Algorithm algorithm;
 };

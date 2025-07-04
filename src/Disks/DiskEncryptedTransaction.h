@@ -8,6 +8,7 @@
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/JemallocNodumpSTLAllocator.h>
 
 namespace DB
 {
@@ -16,15 +17,16 @@ namespace FileEncryption { enum class Algorithm : uint8_t; }
 
 struct DiskEncryptedSettings
 {
+
     DiskPtr wrapped_disk;
     String disk_path;
-    String current_key;
+    NoDumpString current_key;
     UInt128 current_key_fingerprint;
     FileEncryption::Algorithm current_algorithm;
-    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
+    std::unordered_map<UInt128 /* fingerprint */, NoDumpString /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    NoDumpString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
