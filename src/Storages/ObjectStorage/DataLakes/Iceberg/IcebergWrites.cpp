@@ -152,7 +152,6 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf)
 {
-    avro::ValidSchema schema;
     Int32 version = metadata->getValue<Int32>("format-version");
     String schema_representation;
     if (version == 1)
@@ -163,8 +162,7 @@ void generateManifestFile(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_values);
-    std::istringstream iss(schema_representation); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    avro::compileJsonSchema(iss, schema);
+    auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root();
 
@@ -252,7 +250,6 @@ void generateManifestList(
     Int32 manifest_length,
     WriteBuffer & buf)
 {
-    avro::ValidSchema schema;
     Int32 version = metadata->getValue<Int32>("format-version");
     String schema_representation;
     if (version == 1)
@@ -261,8 +258,7 @@ void generateManifestList(
         schema_representation = manifest_list_v2_schema;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
-    std::istringstream iss(schema_representation); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    avro::compileJsonSchema(iss, schema);
+    auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);

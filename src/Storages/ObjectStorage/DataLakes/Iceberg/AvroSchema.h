@@ -4,6 +4,7 @@
 
 namespace DB
 {
+// clang-format off
 
 static constexpr const char * manifest_list_v1_schema = R"({
 	"type": "record",
@@ -140,7 +141,7 @@ static constexpr const char * manifest_list_v2_schema = R"({
                             {
                                 "name": "contains_nan",
                                 "type": ["null", "boolean"],
-                                "doc": "True if any file has a nan partition value",           
+                                "doc": "True if any file has a nan partition value",
                                 "field-id": 518
                             },
                             {
@@ -525,5 +526,7 @@ static constexpr const char * manifest_entry_v2_schema = R"({
         }
     ]
 })";
+
+// clang-format on
 
 }
