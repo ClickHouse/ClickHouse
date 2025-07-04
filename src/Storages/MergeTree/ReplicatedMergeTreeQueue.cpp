@@ -2057,8 +2057,13 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
     return std::make_shared<ReplicatedMergeTreeZooKeeperMergePredicate>(*this, zookeeper, std::move(partition_ids_hint));
 }
 
+ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_)
+    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_))
+    , mutations_by_partition(std::move(mutations_by_partition_))
+{
+}
 
-MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     auto partition_id = part->info.getOriginalPartitionId();
     auto in_partition = mutations_by_partition.find(partition_id);
@@ -2132,35 +2137,37 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
 MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
 {
     DataPartsVector patch_parts;
+    MutationCounters mutations_snapshot_counters;
+    MutationsSnapshot::MutationsByPartititon mutations_snapshot;
+
     if (params.need_patch_parts)
         patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
     std::lock_guard lock(state_mutex);
-    auto res = std::make_shared<MutationsSnapshot>(params, mutation_counters, std::move(patch_parts));
-    if (!res->hasAnyMutations())
-        return res;
+    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
+        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
         if (partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
             continue;
 
-        auto & in_partition = res->mutations_by_partition[partition_id];
+        const int64_t min_part_data_version = MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(params, partition_id);
+        const int64_t max_mutation_version_to_include = MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(params, partition_id);
 
-        bool seen_all_data_mutations = !res->hasDataMutations() && !res->hasAlterMutations();
-        bool seen_all_metadata_mutations = !res->hasMetadataMutations();
-        Int64 max_block_number = res->getMaxBlockForPartition(partition_id);
+        bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
+        bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
 
+        auto & partition_snapshot = mutations_snapshot[partition_id];
         for (const auto & [mutation_version, status] : mutations | std::views::reverse)
         {
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
 
-            if (mutation_version > max_block_number)
+            if (mutation_version > max_mutation_version_to_include)
                 continue;
 
             auto alter_version = status->entry->alter_version;
-
             if (alter_version != -1)
             {
                 if (seen_all_metadata_mutations || alter_version > params.metadata_version)
@@ -2171,8 +2178,11 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (res->hasSupportedCommands(status->entry->commands))
-                        in_partition.emplace(mutation_version, status->entry);
+                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    {
+                        partition_snapshot.emplace(mutation_version, status->entry);
+                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                    }
                 }
                 else
                 {
@@ -2181,12 +2191,15 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             }
             else if (!seen_all_data_mutations)
             {
-                if (!status->is_done)
+                if (mutation_version > min_part_data_version)
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (res->hasSupportedCommands(status->entry->commands))
-                        in_partition.emplace(mutation_version, status->entry);
+                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    {
+                        partition_snapshot.emplace(mutation_version, status->entry);
+                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                    }
                 }
                 else
                 {
@@ -2196,7 +2209,7 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
         }
     }
 
-    return res;
+    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 }
 
 MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const

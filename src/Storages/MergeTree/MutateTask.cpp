@@ -2257,10 +2257,11 @@ bool MutateTask::prepare()
     {
         .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = ctx->source_part->getMetadataVersion(),
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = std::move(max_partition_blocks),
         .need_data_mutations = false,
         .need_alter_mutations = true,
         .need_patch_parts = true,
-        .max_partition_blocks = std::move(max_partition_blocks),
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);

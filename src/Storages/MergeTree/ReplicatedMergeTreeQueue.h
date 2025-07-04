@@ -430,18 +430,16 @@ public:
     struct MutationsSnapshot : public MergeTreeData::MutationsSnapshotBase
     {
     public:
-        MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, DataPartsVector patches_) : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_)) {}
-
         using Params = MergeTreeData::IMutationsSnapshot::Params;
         using MutationsByPartititon = std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>>;
-
         MutationsByPartititon mutations_by_partition;
 
-        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        MutationsSnapshot() = default;
+        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_);
+
+        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
-        bool hasMetadataMutations() const override { return params.min_part_metadata_version < params.metadata_version; }
     };
 
     /// Return mutation commands for part which could be not applied to

@@ -172,6 +172,9 @@ public:
 
     using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
 
+    using PartitionIdToMinBlock = std::unordered_map<String, Int64>;
+    using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
+
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
@@ -519,18 +522,24 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
+            PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
+            PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
             bool need_patch_parts = false;
-            PartitionIdToMaxBlockPtr max_partition_blocks;
         };
+
+        static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
+        static Int64 getMaxMutationVersionForPartition(const Params & params, const String & partition_id);
+
+        static bool needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands);
 
         virtual ~IMutationsSnapshot() = default;
         virtual void addPatches(DataPartsVector patches_) = 0;
 
         /// Returns mutation commands that are required to be applied to the `part`.
         /// @return list of mutation commands in order: oldest to newest.
-        virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
@@ -552,15 +561,13 @@ public:
         MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
 
         void addPatches(DataPartsVector patches_) override;
-
-        bool hasPatchParts() const final { return params.need_patch_parts && !patches_by_partition.empty(); }
-        bool hasDataMutations() const final { return params.need_data_mutations && counters.num_data > 0; }
-        bool hasAlterMutations() const final { return params.need_alter_mutations && counters.num_alter > 0; }
-        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-
         PatchParts getPatchesForPart(const DataPartPtr & part) const final;
-        bool hasSupportedCommands(const MutationCommands & commands) const;
-        Int64 getMaxBlockForPartition(const String & partition_id) const;
+
+        bool hasPatchParts() const final { return !patches_by_partition.empty(); }
+        bool hasDataMutations() const final { return counters.num_data > 0; }
+        bool hasAlterMutations() const final { return counters.num_alter > 0; }
+        bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
+        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
 
     protected:
         NameSet getColumnsUpdatedInPatches() const;
@@ -1120,6 +1127,9 @@ public:
 
     /// Returns the minimum version of metadata among parts.
     static Int64 getMinMetadataVersion(const DataPartsVector & parts);
+
+    /// Returns minimum data version among parts inside each of the partitions.
+    static PartitionIdToMinBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(

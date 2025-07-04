@@ -456,10 +456,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
         .need_data_mutations = false,
         .need_alter_mutations = !patch_parts.empty(),
         .need_patch_parts = false,
-        .max_partition_blocks = nullptr,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
