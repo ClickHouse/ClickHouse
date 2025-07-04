@@ -270,12 +270,16 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
         logging.info("Dry running, would create a PR from %s", pr_head)
         return
 
-    repos.images.parent.create_pull(
+    images_pr = repos.images.parent.create_pull(
         base=repos.images.parent.default_branch,
         head=pr_head,
         title=f"Update {ch_ldf.name} to the latest state",
         body=f"This is an automatic PR to update `{ch_ldf.name}` according to the latest "
         f"releases.\n\n{MAINTAINERS_HEADER}",
+    )
+    logging.info(
+        "The PR %s is created, please check it and merge if everything is fine",
+        images_pr.html_url,
     )
 
 
