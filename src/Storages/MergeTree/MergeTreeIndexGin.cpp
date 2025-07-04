@@ -139,31 +139,32 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
+
+    if (rows_read == 0)
+        return;
+
+    const auto & index_column_name = index_columns[0];
+    const auto & column = block.getByName(index_column_name).column;
+
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
-    for (size_t col = 0; col < index_columns.size(); ++col)
-    {
-        const auto & column_with_type = block.getByName(index_columns[col]);
-        const auto & column = column_with_type.column;
-        size_t current_position = *pos;
-        auto row_id = start_row_id;
+    size_t current_position = *pos;
+    auto row_id = start_row_id;
 
-        bool need_to_write = false;
-        for (size_t i = 0; i < rows_read; ++i)
-        {
-            auto ref = column->getDataAt(current_position + i);
-            addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
-            store->incrementCurrentSizeBy(ref.size);
-            row_id++;
-            if (store->needToWrite())
-                need_to_write = true;
-        }
-        granule->gin_filters[col].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
-        if (need_to_write)
-        {
-            store->writeSegment();
-        }
+    bool need_to_write = false;
+    for (size_t i = 0; i < rows_read; ++i)
+    {
+        auto ref = column->getDataAt(current_position + i);
+        addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[0]);
+        store->incrementCurrentSizeBy(ref.size);
+        row_id++;
+        if (store->needToWrite())
+            need_to_write = true;
     }
+    granule->gin_filters[0].addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+
+    if (need_to_write)
+        store->writeSegment();
 
     granule->has_elems = true;
     *pos += rows_read;
