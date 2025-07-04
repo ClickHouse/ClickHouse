@@ -29,14 +29,14 @@ class IcebergMetadata : public IDataLakeMetadata, private WithContext
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
+
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
-        const ContextPtr & context_,
+        const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
@@ -81,8 +81,6 @@ public:
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
-
-    IcebergHistory getHistory() const;
 
     std::optional<size_t> totalRows() const override;
     std::optional<size_t> totalBytes() const override;

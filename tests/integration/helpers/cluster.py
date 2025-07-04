@@ -51,13 +51,13 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from .kazoo_client import KazooClientWithImplicitRetries
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from . import pytest_xdist_logging_to_separate_files
-from .client import QueryRuntimeException
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
+from helpers import pytest_xdist_logging_to_separate_files
+from helpers.client import QueryRuntimeException
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 from .client import Client
 from .config_cluster import *
@@ -549,7 +549,6 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self.with_glue_catalog = False
-        self.with_hms_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1436,29 +1435,6 @@ class ClickHouseCluster:
         )
         return self.base_glue_catalog_cmd
 
-
-    def setup_hms_catalog_cmd(
-         self, instance, env_variables, docker_compose_yml_dir
-     ):
-         self.with_hms_catalog = True
-         self.base_cmd.extend(
-             [
-                 "--file",
-                 p.join(
-                     docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"
-                 ),
-             ]
-         )
-
-         self.base_iceberg_hms_cmd = self.compose_cmd(
-             "--env-file",
-             instance.env_file,
-             "--file",
-             p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
-         )
-         return self.base_iceberg_hms_cmd
-
-
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1648,7 +1624,6 @@ class ClickHouseCluster:
         with_prometheus=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
-        with_hms_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1681,8 +1656,6 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
-        with_dolor=False,
-        storage_opt=None
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1774,7 +1747,6 @@ class ClickHouseCluster:
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
-            with_hms_catalog=with_hms_catalog,
             use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
@@ -1804,8 +1776,6 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
-            with_dolor=with_dolor,
-            storage_opt=storage_opt,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1971,13 +1941,6 @@ class ClickHouseCluster:
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
-            )
-
-        if with_hms_catalog and not self.with_hms_catalog:
-            cmds.append(
-                self.setup_hms_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2487,20 +2450,7 @@ class ClickHouseCluster:
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
         )
-        self.wait_rabbitmq_to_start(timeout)
-
-    @contextmanager
-    def pause_rabbitmq(self, monitor=None, timeout=120):
-        if monitor is not None:
-            monitor.stop()
-        self.stop_rabbitmq_app(timeout)
-
-        try:
-            yield
-        finally:
-            self.start_rabbitmq_app(timeout)
-            if monitor is not None:
-                monitor.start(self)
+        self.wait_rabbitmq_to_start()
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
@@ -3180,12 +3130,6 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_custom_minio_to_start(['warehouse-glue'], 'minio', 9000)
 
-            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
-                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
-                self.up_called = True
-                self.wait_custom_minio_to_start(['warehouse-hms'], 'minio', 9000)
-
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
                 logging.info("Trying to connect to Minio for Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
@@ -3531,7 +3475,6 @@ services:
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
         {mem_limit}
-        {storage_opt}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3598,7 +3541,6 @@ class ClickHouseInstance:
         with_ldap,
         with_iceberg_catalog,
         with_glue_catalog,
-        with_hms_catalog,
         use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
@@ -3628,8 +3570,6 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
-        with_dolor=False,
-        storage_opt=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3643,10 +3583,6 @@ class ClickHouseInstance:
             self.mem_limit = "mem_limit : " + mem_limit
         else:
             self.mem_limit = ""
-        if storage_opt is not None:
-            self.storage_opt = "storage_opt:\n  size: " + storage_opt
-        else:
-            self.storage_opt = ""
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -3761,7 +3697,6 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
-        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4818,11 +4753,11 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        if not self.with_dolor:
-            write_embedded_config("0_common_instance_users.xml", users_d_dir)
-            if self.with_installed_binary:
-                # Ignore CPU overload in this case
-                write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
+        write_embedded_config("0_common_instance_users.xml", users_d_dir)
+
+        if self.with_installed_binary:
+            # Ignore CPU overload in this case
+            write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
@@ -5097,7 +5032,6 @@ class ClickHouseInstance:
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
-                    storage_opt=self.storage_opt,
                 )
             )
 

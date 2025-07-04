@@ -58,8 +58,6 @@ struct ExplainPlanOptions
     bool actions = false;
     /// Add information about indexes actions.
     bool indexes = false;
-    /// Add information about projections.
-    bool projections = false;
     /// Add information about sorting
     bool sorting = false;
     /// Show remote plans for distributed query.

@@ -4,7 +4,7 @@ from random import randint
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 
@@ -41,7 +41,6 @@ nodes = [node1, node2]
 
 test_idx = 0
 
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -65,11 +64,8 @@ def cleanup():
 
 def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     for node in nodes:
-        # (Use different znode path for each test because even `drop database ... sync` doesn't seem
-        # to guarantee that a new database can be immediately created with the same znode path:
-        # https://github.com/ClickHouse/ClickHouse/issues/76418 )
         node.query(
-            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
         )
 
     # Table engine check.
@@ -177,7 +173,12 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
 
     # Locate coordination znodes.
-    znode_exists_query = lambda uuid: f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
+    znode_exists = (
+        lambda uuid: nodes[randint(0, 1)].query(
+            f"select count() from system.zookeeper where path = '/clickhouse/tables/{uuid}' and name = 'shard1'"
+        )
+        == "1\n"
+    )
     tables = []
     for row in node1.query(
         "select table, uuid from system.tables where database = 're'"
@@ -188,8 +189,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
             continue
         coordinated = not name.endswith("uncoordinated")
         tables.append((name, uuid, coordinated))
-        znode_exists = nodes[randint(0, 1)].query(znode_exists_query(uuid)) == '1\n'
-        assert coordinated == znode_exists
+        assert coordinated == znode_exists(uuid)
     assert sorted([name for (name, _, _) in tables]) == [
         "a",
         "append",
@@ -205,7 +205,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
         if sync:
-            assert_eq_with_retry(nodes[randint(0, 1)], znode_exists_query(uuid), '0\n')
+            assert not znode_exists(uuid)
 
     # A little stress test dropping MV while it's refreshing, hoping to hit various cases where the
     # drop happens while creating/exchanging/dropping the inner table.
@@ -237,15 +237,17 @@ def test_refreshable_mv_in_system_db(started_cluster, cleanup):
     node1.query("system refresh view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
+    node1.query("drop table system.a")
+
 def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
     # writable node
     node1.query(
-        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
     )
 
     # read_only node
     reading_node.query(
-        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
     )
 
     # disable view sync on writable node, see if there's RefreshTask on read_only node
@@ -292,7 +294,7 @@ def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
 def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
     for node in nodes:
         node.query(
-            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
         )
 
     node1.stop_clickhouse()
@@ -354,13 +356,8 @@ def test_pause(started_cluster, cleanup):
     assert node2.query("select * from re.a") == "1\n"
     node2.query("system stop replicated view re.a")
     node1.restart_clickhouse() # just to guarantee that it notices the new znode
-    try:
-        node2.query("system wait view re.a")
-    except QueryRuntimeException as ex:
-        # If the node1.restart_clickhouse() interrupted a refresh, the error message (with substring
-        # "cancelled") is written to keeper, then thrown by "system wait view". That's normal.
-        assert "cancelled" in str(ex)
     node2.query(
+        "system wait view re.a;"
         "truncate table re.src;"
         "insert into re.src values (2);")
     time.sleep(3)
@@ -424,13 +421,6 @@ def do_test_backup(to_table):
 
     assert node1.query(tables_exist_query) == "2\n"
     assert node2.query(tables_exist_query) == "2\n"
-    if not to_table:
-        # Inner tables are not backed up, wait for first refresh.
-        node1.query(f'SYSTEM WAIT VIEW re.{target}')
-        node2.query(f'SYSTEM WAIT VIEW re.{target}')
-    else:
-        node1.query(f'SYSTEM SYNC REPLICA re.{target}')
-        node2.query(f'SYSTEM SYNC REPLICA re.{target}')
     assert node1.query(f'SELECT * FROM re.{target}') == '1\n'
     assert node2.query(f'SELECT * FROM re.{target}') == '1\n'
 
@@ -466,7 +456,7 @@ def test_adding_replica(started_cluster, cleanup):
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:
         node.query(
-            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
         )
     node1.query(
             "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);\

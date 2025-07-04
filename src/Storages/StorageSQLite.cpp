@@ -12,7 +12,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>

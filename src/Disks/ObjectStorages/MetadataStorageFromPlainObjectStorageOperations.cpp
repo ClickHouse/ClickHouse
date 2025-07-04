@@ -12,7 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -142,7 +142,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     if (validate_content)
     {
-        LockMemoryExceptionInThread temporarily_lock_exceptions;
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
         std::string data;
         auto read_settings = getReadSettings();

@@ -866,7 +866,6 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.base_backup_info = restore_settings.base_backup_info;
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
-    backup_open_params.allow_azure_native_copy = restore_settings.allow_azure_native_copy;
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.use_same_password_for_base_backup = restore_settings.use_same_password_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
@@ -1002,6 +1001,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     return std::make_shared<BackupCoordinationOnCluster>(
         *backup_settings.backup_uuid,
         !backup_settings.deduplicate_files,
+        backup_settings.experimental_lightweight_snapshot,
         root_zk_path,
         get_zookeeper,
         keeper_settings,
