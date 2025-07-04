@@ -66,6 +66,7 @@ declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
+EXTERN_TYPES[LatencyBuckets]=LatencyEvent
 
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
@@ -113,6 +114,15 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
     ErrorCodes::Value
+
+    LatencyBuckets::getName
+    LatencyBuckets::increment
+    LatencyBuckets::Count
+    LatencyBuckets::LatencyEvent
+    LatencyBuckets::end
+    LatencyBuckets::global_bucket_lists
+    LatencyBuckets::getColumnsDescription
+    LatencyBuckets::fillData
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
