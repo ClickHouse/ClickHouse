@@ -6726,7 +6726,7 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
 Allow experimental vector similarity index
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
