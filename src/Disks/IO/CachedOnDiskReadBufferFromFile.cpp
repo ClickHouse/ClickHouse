@@ -457,7 +457,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     /// and not to read_until_position, because in case of concurrent queries
     /// which read the same file segment from different offsets
     /// (same different threads of the same query), it will allow read buffer to be reused,
-    /// reducing number of s3 requests. This does apply however only to case when 
+    /// reducing number of s3 requests. This does apply however only to case when
     /// those different threads hold the file segment at the same time, making its ref count > 2.
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
