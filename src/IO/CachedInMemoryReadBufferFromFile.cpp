@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
@@ -41,9 +42,28 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// If working buffer is empty then the next nextImpl() call will have to send a new read
-    /// request anyway, seeking doesn't make it more expensive.
-    return available() == 0 || last_read_hit_cache;
+    /// Seek is cheap in the sense that seek()+nextImpl() is never much slower than ignore()+nextImpl()
+    /// (which is what the caller cares about).
+    return true;
+}
+
+bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*size*/)
+{
+    /// Usually this is called immediately after seek()ing to `offset`.
+
+    if (!working_buffer.empty())
+    {
+        chassert(chunk);
+        return chunk->key.offset <= offset && chunk->key.offset + chunk->key.size > offset;
+    }
+
+    size_t block_size = settings.page_cache_block_size;
+    cache_key.offset = offset / block_size * block_size;
+    cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
+
+    chunk = cache->get(cache_key, settings.page_cache_inject_eviction);
+
+    return chunk != nullptr;
 }
 
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
@@ -110,10 +130,11 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
 
     size_t block_size = settings.page_cache_block_size;
 
-    if (chunk != nullptr && file_offset_of_buffer_end >= cache_key.offset + block_size)
+    if (chunk != nullptr)
     {
-        chassert(file_offset_of_buffer_end == cache_key.offset + block_size);
-        chunk.reset();
+        chassert(chunk->key.hash() = cache_key.hash());
+        if (file_offset_of_buffer_end < cache_key.offset || file_offset_of_buffer_end >= cache_key.offset + block_size)
+            chunk.reset();
     }
 
     if (chunk == nullptr)
@@ -121,10 +142,8 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         cache_key.offset = file_offset_of_buffer_end / block_size * block_size;
         cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
 
-        last_read_hit_cache = true;
         chunk = cache->getOrSet(cache_key, settings.read_from_page_cache_if_exists_otherwise_bypass_cache, settings.page_cache_inject_eviction, [&](auto cell)
         {
-            last_read_hit_cache = false;
             Buffer prev_in_buffer = in->internalBuffer();
             SCOPE_EXIT({ in->set(prev_in_buffer.begin(), prev_in_buffer.size()); });
 
@@ -196,14 +215,9 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
 
     if (!internal_buffer.empty())
     {
-        /// We were given an external buffer to read into. Copy the data into it.
-        /// Would be nice to avoid this copy, somehow, maybe by making ReadBufferFromRemoteFSGather
-        /// and AsynchronousBoundedReadBuffer explicitly aware of the page cache.
-        size_t n = std::min(available(), internal_buffer.size());
-        memcpy(internal_buffer.begin(), pos, n);
-        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
-        pos = working_buffer.begin();
-        nextimpl_working_buffer_offset = 0;
+        /// We were given an external buffer to read into. We currently don't allow this as it would
+        /// require unnecessary memcpy.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CachedInMemoryReadBufferFromFile doesn't support using external buffer");
     }
 
     size_t size = available();
