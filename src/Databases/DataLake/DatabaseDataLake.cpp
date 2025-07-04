@@ -516,7 +516,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog();
-    const auto iceberg_tables = catalog->getTables();
+    DB::Names iceberg_tables = {};
+
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
+    try
+    {
+        iceberg_tables = catalog->getTables();
+    }
+    catch (...)
+    {
+    }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
