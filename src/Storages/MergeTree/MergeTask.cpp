@@ -106,7 +106,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
-    extern const MergeTreeSettingsUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
@@ -453,6 +453,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_data_versions = nullptr,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
@@ -1241,7 +1242,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
         ctx->delayed_streams.pop_front();
     }
 
-    if (global_ctx->rows_written != ctx->column_elems_written)
+    if (!global_ctx->isCancelled() && global_ctx->rows_written != ctx->column_elems_written)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Written {} elements of column {}, but {} rows of PK columns",
                         toString(ctx->column_elems_written), column_name, toString(global_ctx->rows_written));

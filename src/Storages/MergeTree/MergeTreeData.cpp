@@ -456,30 +456,44 @@ DataPartsLock::~DataPartsLock()
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
-MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_)
-    : params(std::move(params_)), counters(std::move(counters_))
+static Int64 extractVersion(const MergeTreeData::PartitionIdToMinBlockPtr & versions, const String & partition_id, Int64 default_value)
 {
+    if (!versions)
+        return default_value;
+
+    auto it = versions->find(partition_id);
+    if (it == versions->end())
+        return default_value;
+
+    return it->second;
 }
 
-bool MergeTreeData::MutationsSnapshotBase::hasSupportedCommands(const MutationCommands & commands) const
+Int64 MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(const Params & params, const String & partition_id)
 {
-    bool need_data_mutations = hasDataMutations();
-    bool need_alter_mutations = hasAlterMutations();
-    bool need_metatadata_mutations = hasMetadataMutations();
+    return extractVersion(params.min_part_data_versions, partition_id, std::numeric_limits<Int64>::min());
+}
 
+bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands)
+{
     for (const auto & command : commands)
     {
-        if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+        if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             return true;
 
-        if (need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
+        if (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
             return true;
 
-        if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+        /// Metadata mutations must be included into the snapshot regardless of the parameters.
+        if (AlterConversions::isSupportedMetadataMutation(command.type))
             return true;
     }
 
     return false;
+}
+
+MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_)
+    : params(std::move(params_)), counters(std::move(counters_))
+{
 }
 
 void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const
@@ -3872,7 +3886,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
-        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
+        checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -7207,7 +7221,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     if (!reservation)
     {
         LOG_TRACE(log, "Trying to reserve {} using storage policy from min volume index {}", ReadableSize(expected_size), min_volume_index);
-        reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
+        reservation = getStoragePolicy()->reserve(expected_size, min_volume_index).value_or(nullptr);
     }
 
     return reservation;
@@ -8077,18 +8091,20 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     }
     else
     {
-        auto reservation_on_dst = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
-        if (!reservation_on_dst)
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
+        auto reservation_on_dst_or_error = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
+        if (!reservation_on_dst_or_error)
+        {
+            const auto & error = reservation_on_dst_or_error.error();
+            throw Exception(error.message, error.code);
+        }
         dst_part_storage = src_part_storage->freezeRemote(
             relative_data_path,
             tmp_dst_part_name,
-            /* dst_disk = */reservation_on_dst->getDisk(),
+            /* dst_disk = */ (*reservation_on_dst_or_error)->getDisk(),
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params
-        );
+            params);
     }
 
     if (params.metadata_version_to_write.has_value())
@@ -8228,19 +8244,10 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
                 broken_part_callback(part->name);
         }
     }
+    else if (data_part->getState() == MergeTreeDataPartState::Active)
+        broken_part_callback(data_part->name);
     else
-    {
-        MergeTreeDataPartState state = MergeTreeDataPartState::Temporary;
-        {
-            auto lock = lockParts();
-            state = data_part->getState();
-        }
-
-        if (state == MergeTreeDataPartState::Active)
-            broken_part_callback(data_part->name);
-        else
-            LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
-    }
+        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -8323,9 +8330,6 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
-
-    for (const auto & disk : getStoragePolicy()->getDisks())
-        disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
 
@@ -8785,21 +8789,24 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
-void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
+    const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
-    if (!command.isDropSomething() || unfinished_mutations.empty())
+    if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
     auto throw_exception = [] (
         const std::string & mutation_name,
+        const std::string & action_name,
         const std::string & entity_name,
         const std::string & identifier_name)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot drop {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+            "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
             "Wait this mutation, or KILL it with command "
             "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+            action_name,
             entity_name,
             backQuoteIfNeed(identifier_name),
             mutation_name,
@@ -8812,17 +8819,19 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
         {
             if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
             {
-                throw_exception(mutation_name, "index", command.index_name);
+                throw_exception(mutation_name, "drop", "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)
             {
-                throw_exception(mutation_name, "projection", command.projection_name);
+                throw_exception(mutation_name, "drop", "projection", command.projection_name);
             }
-            else if (command.type == AlterCommand::DROP_COLUMN)
+            else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
             {
+                const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
+
                 if (mutation_command.column_name == command.column_name)
-                    throw_exception(mutation_name, "column", command.column_name);
+                    throw_exception(mutation_name, action, "column", command.column_name);
 
                 if (mutation_command.predicate)
                 {
@@ -8830,18 +8839,18 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
                 for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
                     if (name == command.column_name)
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
 
                     auto query_tree = buildQueryTree(expr, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
                     if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, "column", command.column_name);
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -8849,7 +8858,7 @@ void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterC
                 for (const auto & stats_col1 : command.statistics_columns)
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
-                            throw_exception(mutation_name, "statistics", stats_col1);
+                            throw_exception(mutation_name, "drop", "statistics", stats_col1);
             }
         }
     }
@@ -8880,7 +8889,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MutationsSnapshotPtr & mutations,
     const ContextPtr & query_context)
 {
-    auto commands = mutations->getAlterMutationCommandsForPart(part);
+    auto commands = mutations->getOnFlyMutationCommandsForPart(part);
     return std::make_shared<AlterConversions>(commands, query_context);
 }
 
@@ -9259,6 +9268,24 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
+MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
+{
+    PartitionIdToMinBlock partition_to_min_data_version;
+
+    for (const auto & part : parts)
+    {
+        const String & partition_id = part->info.getPartitionId();
+        const Int64 data_version = part->info.getDataVersion();
+
+        if (auto partition_it = partition_to_min_data_version.find(partition_id); partition_it != partition_to_min_data_version.end())
+            partition_it->second = std::min(partition_it->second, data_version);
+        else
+            partition_to_min_data_version.emplace(partition_id, data_version);
+    }
+
+    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
+}
+
 StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
 {
     auto query_context = CurrentThread::get().getQueryContext();
@@ -9273,8 +9300,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
     return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
 }
 
-StorageSnapshotPtr
-MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
+StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     if (without_data)
     {
@@ -9299,6 +9325,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(parts),
+        .min_part_data_versions = getMinDataVersionForEachPartition(parts),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly,
     };

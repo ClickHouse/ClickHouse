@@ -3089,8 +3089,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         }
     }
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
-
     auto obtain_part = [&] (PartDescriptionPtr & part_desc)
     {
         /// Fetches with zero-copy-replication are cheap, but cloneAndLoadDataPart(must_on_same_disk=true) will do full copy.
@@ -3114,7 +3112,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
-                TMP_PREFIX + "clone_",
+                TMP_PREFIX_REPLACE_PARTITION_FROM + "clone_",
                 part_desc->new_part_info,
                 metadata_snapshot,
                 clone_params,
@@ -3132,19 +3130,18 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
-            scope_guard part_temp_directory_lock;
 
             if (interserver_scheme != address.scheme)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Interserver schemas are different '{}' != '{}', can't fetch part from {}",
                                 interserver_scheme, address.scheme, address.host);
 
-            auto [fetched_part, lock] = fetcher.fetchSelectedPart(
+            auto [fetched_part, temporary_part_lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
-                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
+                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX_REPLACE_PARTITION_FROM + "fetch_");
             part_desc->res_part = fetched_part;
-            part_temp_directory_lock = std::move(lock);
+            part_desc->temporary_part_lock = std::move(temporary_part_lock);
 
             /// TODO: check columns_version of fetched part
 
@@ -6090,7 +6087,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     query_context->increaseDistributedDepth();
 
     auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context, number_of_replicas);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
 
     size_t replica_index = 0;
     for (const auto & replicas : src_cluster->getShardsAddresses())
@@ -6121,8 +6118,13 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 QueryProcessingStage::Complete,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
-                remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
+            Pipe pipe{std::make_shared<RemoteSource>(
+                remote_query_executor,
+                false,
+                settings[Setting::async_socket_for_remote],
+                settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            QueryPipeline remote_pipeline{std::move(pipe)};
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
@@ -6572,7 +6574,7 @@ void StorageReplicatedMergeTree::alter(
         std::map<std::string, MutationCommands> unfinished_mutations;
         for (const auto & command : commands)
         {
-            if (command.isDropSomething())
+            if (command.isDropOrRename())
             {
                 if (shutdown_called || partial_shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
@@ -6585,7 +6587,7 @@ void StorageReplicatedMergeTree::alter(
                     pulled_queue = true;
                 }
 
-                checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+                checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
             }
         }
 

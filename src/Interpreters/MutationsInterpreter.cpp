@@ -1038,6 +1038,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
+            stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
@@ -1424,21 +1425,6 @@ void MutationsInterpreter::validate()
         }
     }
 
-    const auto & storage_columns = source.getStorageSnapshot(metadata_snapshot, context)->metadata->getColumns();
-    for (const auto & command : commands)
-    {
-        for (const auto & [column_name, _] : command.column_to_update_expression)
-        {
-            auto column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
-            if (column && column->type->hasDynamicSubcolumns())
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                                "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                                backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
-            }
-        }
-    }
-
     // Make sure the mutation query is valid
     if (context->getSettingsRef()[Setting::validate_mutation_query])
     {
@@ -1564,7 +1550,14 @@ bool MutationsInterpreter::isAffectingAllColumns() const
     if (stages.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
-    return stages.back().isAffectingAllColumns(storage_columns);
+    /// Find first not readonly stage from the end.
+    for (auto it = stages.rbegin(); it != stages.rend(); ++it)
+    {
+        if (!it->is_readonly)
+            return it->isAffectingAllColumns(storage_columns);
+    }
+
+    return false;
 }
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)

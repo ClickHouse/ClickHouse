@@ -1,4 +1,4 @@
-#include "hasAllAny.h"
+#include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
@@ -24,17 +24,17 @@ Checks whether two arrays have intersection by some elements.
 )";
     FunctionDocumentation::Syntax syntax = "hasAny(arr_x, arr_y)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr_x", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"arr_y", "Array of any type that shares a common supertype with array `arr_x`. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr_x", "Array of any type with a set of elements.", {"Array(T)"}},
+        {"arr_y", "Array of any type that shares a common supertype with array `arr_x`.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 - `1`, if `arr_x` and `arr_y` have one similar element at least.
 - `0`, otherwise.
 
 Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do not share a common supertype.
-)";
+)"};
     FunctionDocumentation::Examples examples = {
-        {"One array is empty", "SELECT hasAny([1], [])", "1"},
+        {"One array is empty", "SELECT hasAny([1], [])", "0"},
         {"Arrays containing NULL values", "SELECT hasAny([Null], [Null, 1])", "1"},
         {"Arrays containing values of a different type", "SELECT hasAny([-128, 1., 512], [1])", "1"},
         {"Arrays without a common type", "SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])", "Raises a `NO_COMMON_TYPE` exception"},

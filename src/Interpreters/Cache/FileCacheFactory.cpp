@@ -1,5 +1,5 @@
-#include "FileCacheFactory.h"
-#include "FileCache.h"
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 

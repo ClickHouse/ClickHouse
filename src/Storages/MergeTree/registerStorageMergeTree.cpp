@@ -489,9 +489,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
-    /// Some internals may creates InterpreterSelectQuery, and it is prohibited with global context, so let's make a copy.
-    /// Note, that we should not use args.local_context, since it may tune some settings, i.e. max_ast_depth, and on restart this table may not be attached anymore.
-    auto context = Context::createCopy(args.getContext());
+    auto context = args.getContext();
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
@@ -648,7 +646,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-
+// tostartOfInterval disabling for primary key
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());

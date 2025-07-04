@@ -161,6 +161,7 @@ private:
     std::vector<std::reference_wrapper<const SQLDictionary>> filtered_dictionaries;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
+    std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
     std::unordered_map<uint32_t, QueryLevel> levels;
@@ -285,14 +286,12 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
-    String nextComment(RandomGenerator & rg);
-    SQLRelation
-    createTableRelation(RandomGenerator & rg, bool all_cols, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
+    String nextComment(RandomGenerator & rg) const;
+    SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
-    SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
+    SQLRelation createViewRelation(const String & rel_name, size_t ncols);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
@@ -335,14 +334,18 @@ private:
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
-    void generateNextDelete(RandomGenerator & rg, LightDelete * del);
+    void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
+    void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
+    template <typename T>
+    void generateNextUpdateOrDelete(RandomGenerator & rg, T * st);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
+    void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
     void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
@@ -410,6 +413,7 @@ private:
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
     SQLType * randomTimeType(RandomGenerator & rg, uint32_t allowed_types, TimeTp * dt) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
+    SQLType * randomDecimalType(RandomGenerator & rg, uint32_t allowed_types, BottomTypeName * tp) const;
     SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
@@ -449,7 +453,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::GenerateRandom;
+            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };

@@ -19,6 +19,7 @@
 *.log
 *.debuglog
 *.stderr
+*.stderr-fatal*
 *.stdout
 
 # llvm-xray logs

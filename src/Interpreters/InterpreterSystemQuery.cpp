@@ -1,76 +1,79 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSystemQuery.h>
-#include <Common/DNSResolver.h>
-#include <Common/ActionLock.h>
-#include <Common/typeid_cast.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/SymbolIndex.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ShellCommand.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/PageCache.h>
-#include <Common/HostResolvePool.h>
+#include <algorithm>
+#include <csignal>
+#include <filesystem>
+#include <unistd.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/AllowedClientHosts.h>
+#include <Access/ContextAccess.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Formats/FormatSchemaInfo.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/MetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/AsynchronousInsertLog.h>
-#include <Interpreters/BackupLog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
-#include <Access/Common/AllowedClientHosts.h>
-#include <Databases/DatabaseReplicated.h>
-#include <DataTypes/DataTypeString.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSystemQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/Freeze.h>
+#include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
-#include <csignal>
-#include <algorithm>
-#include <unistd.h>
+#include <Common/ActionLock.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
+#include <Common/FailPoint.h>
+#include <Common/HostResolvePool.h>
+#include <Common/PageCache.h>
+#include <Common/ShellCommand.h>
+#include <Common/SymbolIndex.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -578,13 +581,30 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_format.empty())
-                caches_to_drop = {"Protobuf"};
+                caches_to_drop = {"Protobuf", "Files"};
             else
                 caches_to_drop = {query.schema_cache_format};
 #if USE_PROTOBUF
             if (caches_to_drop.contains("Protobuf"))
                 ProtobufSchemas::instance().clear();
 #endif
+            if (caches_to_drop.contains("Files"))
+            {
+                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
+                if (fs::exists(format_schema_cached_dir))
+                {
+                    size_t count = 0;
+                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
+                    {
+                        if (entry.is_regular_file())
+                        {
+                            fs::remove(entry.path());
+                            count++;
+                        }
+                    }
+                    LOG_INFO(log, "Cleared format schema cache files {}", count);
+                }
+            }
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -974,13 +994,28 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    auto new_table = StorageFactory::instance().get(create,
-        data_path,
-        system_context,
-        system_context->getGlobalContext(),
-        columns,
-        constraints,
-        LoadingStrictnessLevel::ATTACH);
+    StoragePtr new_table;
+    while (true)
+    {
+        try
+        {
+            new_table = StorageFactory::instance().get(create,
+                data_path,
+                system_context,
+                system_context->getGlobalContext(),
+                columns,
+                constraints,
+                LoadingStrictnessLevel::ATTACH);
+
+            break;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+        }
+    }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
     if (new_table->getStorageID().uuid != replica_table_id.uuid)

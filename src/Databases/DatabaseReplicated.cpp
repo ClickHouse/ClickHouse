@@ -109,6 +109,8 @@ namespace FailPoints
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
+static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
+static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -335,9 +337,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    String current_shard = parseFullReplicaName(hosts.front()).first;
+    String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
-    shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const auto & id = host_ids[i];
@@ -349,12 +350,14 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         if (shard != current_shard)
         {
             current_shard = shard;
-            if (!shards.back().empty())
-                shards.emplace_back();
+            shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
+
+    if (shards.empty())
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
     UInt16 default_port;
     if (cluster_auth_info.cluster_secure_connection)
@@ -1498,11 +1501,17 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         for (UInt32 ptr = first_entry_to_mark_finished; ptr <= max_log_ptr; ++ptr)
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
-            auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+
+            auto finished = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+            auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
+
             auto status = ExecutionStatus(0).serializeText();
-            auto res = current_zookeeper->tryCreate(path, status, zkutil::CreateMode::Persistent);
-            if (res == Coordination::Error::ZOK)
+            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
+            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+            if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+            else
+                LOG_INFO(log, "Failed to marked {} as finished (finished={}, synced={}). Ignoring.", entry_name, res_finished, res_synced);
         }
     }
 

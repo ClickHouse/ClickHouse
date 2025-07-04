@@ -572,14 +572,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'";
+            ret += "'-999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'";
+            ret += "'999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
@@ -1665,6 +1665,10 @@ CONV_FN(ComplicatedExpr, expr)
             ExprListToString(ret, expr.tuple());
             ret += ")";
             break;
+        case ExprType::kTable:
+            TableToString(ret, expr.table());
+            ret += ".*";
+            break;
         default:
             ret += "1";
     }
@@ -1700,11 +1704,6 @@ CONV_FN(ResultColumn, rc)
     {
         ExprColAliasToString(ret, rc.eca());
     }
-    else if (rc.has_table_star())
-    {
-        TableToString(ret, rc.table_star());
-        ret += ".*";
-    }
     else
     {
         ret += "*";
@@ -1713,16 +1712,6 @@ CONV_FN(ResultColumn, rc)
 
 CONV_FN(JoinedQuery, tos);
 CONV_FN(TableOrSubquery, tos);
-
-CONV_FN(ExprColumnList, cl)
-{
-    ExprColumnToString(ret, cl.col());
-    for (int i = 0; i < cl.extra_cols_size(); i++)
-    {
-        ret += ", ";
-        ExprColumnToString(ret, cl.extra_cols(i));
-    }
-}
 
 CONV_FN(JoinConstraint, jc)
 {
@@ -1733,8 +1722,17 @@ CONV_FN(JoinConstraint, jc)
     }
     else if (jc.has_using_expr())
     {
+        const UsingExpr & uexpr = jc.using_expr();
+
         ret += " USING (";
-        ExprColumnListToString(ret, jc.using_expr().col_list());
+        for (int i = 0; i < uexpr.columns_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
+        }
         ret += ")";
     }
     else
@@ -2603,8 +2601,11 @@ CONV_FN(SetQuery, setq)
     ExplainQueryToString(ret, setq.sel1());
     ret += ") ";
     ret += SetQuery_SetOp_Name(setq.set_op());
-    ret += " ";
-    ret += AllOrDistinct_Name(setq.s_or_d());
+    if (setq.has_s_or_d())
+    {
+        ret += " ";
+        ret += AllOrDistinct_Name(setq.s_or_d());
+    }
     ret += " (";
     ExplainQueryToString(ret, setq.sel2());
     ret += ")";
@@ -2787,6 +2788,11 @@ CONV_FN(CreateDatabase, create_database)
     {
         ret += " COMMENT ";
         ret += create_database.comment();
+    }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
     }
 }
 
@@ -3454,6 +3460,17 @@ CONV_FN(SinglePartitionExpr, spexpr)
     PartitionExprToString(ret, pexpr);
 }
 
+CONV_FN(Delete, del)
+{
+    if (del.has_single_partition())
+    {
+        ret += " IN ";
+        SinglePartitionExprToString(ret, del.single_partition());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, del.where());
+}
+
 CONV_FN(LightDelete, del)
 {
     ret += "DELETE FROM ";
@@ -3462,17 +3479,52 @@ CONV_FN(LightDelete, del)
     {
         ClusterToString(ret, true, del.cluster());
     }
-    if (del.has_single_partition())
-    {
-        ret += " IN ";
-        SinglePartitionExprToString(ret, del.single_partition());
-    }
-    ret += " WHERE ";
-    WhereStatementToString(ret, del.where());
+    DeleteToString(ret, del.del());
     if (del.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, del.setting_values());
+    }
+}
+
+CONV_FN(UpdateSet, upt)
+{
+    ColumnPathToString(ret, 0, upt.col());
+    ret += " = ";
+    ExprToString(ret, upt.expr());
+}
+
+CONV_FN(Update, upt)
+{
+    UpdateSetToString(ret, upt.update());
+    for (int i = 0; i < upt.other_updates_size(); i++)
+    {
+        ret += ", ";
+        UpdateSetToString(ret, upt.other_updates(i));
+    }
+    if (upt.has_single_partition())
+    {
+        ret += " IN ";
+        SinglePartitionExprToString(ret, upt.single_partition());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, upt.where());
+}
+
+CONV_FN(LightUpdate, upt)
+{
+    ret += "UPDATE ";
+    ExprSchemaTableToString(ret, upt.est());
+    if (upt.has_cluster())
+    {
+        ClusterToString(ret, true, upt.cluster());
+    }
+    ret += " SET ";
+    UpdateToString(ret, upt.upt());
+    if (upt.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, upt.setting_values());
     }
 }
 
@@ -3527,30 +3579,30 @@ CONV_FN(CheckTable, ct)
     }
 }
 
-CONV_FN(DescTable, dt)
+CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
+    using DescType = DescribeStatement::DescOneofCase;
+    switch (ds.desc_oneof_case())
     {
         case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
-            SelectToString(ret, dt.sel());
+            ExplainQueryToString(ret, ds.sel());
             ret += ")";
             break;
         case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
+            SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
     }
-    if (dt.has_setting_values())
+    if (ds.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
+        SettingValuesToString(ret, ds.setting_values());
     }
 }
 
@@ -3644,30 +3696,6 @@ CONV_FN(Exchange, et)
         ret += " SETTINGS ";
         SettingValuesToString(ret, et.setting_values());
     }
-}
-
-CONV_FN(UpdateSet, upt)
-{
-    ColumnPathToString(ret, 0, upt.col());
-    ret += " = ";
-    ExprToString(ret, upt.expr());
-}
-
-CONV_FN(Update, upt)
-{
-    UpdateSetToString(ret, upt.update());
-    for (int i = 0; i < upt.other_updates_size(); i++)
-    {
-        ret += ", ";
-        UpdateSetToString(ret, upt.other_updates(i));
-    }
-    if (upt.has_single_partition())
-    {
-        ret += " IN ";
-        SinglePartitionExprToString(ret, upt.single_partition());
-    }
-    ret += " WHERE ";
-    WhereStatementToString(ret, upt.where());
 }
 
 CONV_FN(RefreshInterval, ri)
@@ -3960,7 +3988,10 @@ CONV_FN(CreateDictionary, create_dictionary)
     }
     ret += ") PRIMARY KEY ";
     TableKeyToString(ret, create_dictionary.primary_key());
-    DictionarySourceToString(ret, create_dictionary.source());
+    if (create_dictionary.has_source())
+    {
+        DictionarySourceToString(ret, create_dictionary.source());
+    }
     DictionaryLayoutToString(ret, create_dictionary.layout());
     if (create_dictionary.has_range())
     {
@@ -4051,18 +4082,6 @@ CONV_FN(RemoveColumnSetting, rcp)
     SettingListToString(ret, rcp.setting_values());
 }
 
-CONV_FN(HeavyDelete, hdel)
-{
-    if (hdel.has_single_partition())
-    {
-        ret += "IN ";
-        SinglePartitionExprToString(ret, hdel.single_partition());
-        ret += " ";
-    }
-    ret += "WHERE ";
-    WhereStatementToString(ret, hdel.del());
-}
-
 CONV_FN(AlterItem, alter)
 {
     ret += "(";
@@ -4070,8 +4089,8 @@ CONV_FN(AlterItem, alter)
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
-            HeavyDeleteToString(ret, alter.del());
+            ret += "DELETE";
+            DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
             ret += "UPDATE ";
@@ -4830,6 +4849,16 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.has_sync())
+    {
+        ret += " ";
+        ret += BackupRestore_SyncOrAsync_Name(backup.sync());
+    }
     if (backup.has_informat())
     {
         ret += " FORMAT ";
@@ -4839,15 +4868,6 @@ CONV_FN(BackupRestore, backup)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
-    }
-    if (backup.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, backup.setting_values());
-    }
-    if (backup.async())
-    {
-        ret += " ASYNC";
     }
 }
 
@@ -4867,6 +4887,38 @@ CONV_FN(Rename, ren)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ren.setting_values());
+    }
+}
+
+CONV_FN(Kill, kil)
+{
+    ret += "KILL ";
+    ret += Kill_KillEnum_Name(kil.command());
+    if (kil.has_cluster())
+    {
+        ClusterToString(ret, true, kil.cluster());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, kil.where());
+    if (kil.has_option())
+    {
+        ret += " ";
+        ret += Kill_KillOption_Name(kil.option());
+    }
+    if (kil.has_informat())
+    {
+        ret += " FORMAT ";
+        ret += InFormat_Name(kil.informat()).substr(3);
+    }
+    else if (kil.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(kil.outformat()).substr(4);
+    }
+    if (kil.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, kil.setting_values());
     }
 }
 
@@ -4890,6 +4942,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kDel:
             LightDeleteToString(ret, query.del());
             break;
+        case QueryType::kUpt:
+            LightUpdateToString(ret, query.upt());
+            break;
         case QueryType::kTrunc:
             TruncateToString(ret, query.trunc());
             break;
@@ -4900,7 +4955,7 @@ CONV_FN(SQLQueryInner, query)
             CheckTableToString(ret, query.check());
             break;
         case QueryType::kDesc:
-            DescTableToString(ret, query.desc());
+            DescribeStatementToString(ret, query.desc());
             break;
         case QueryType::kExchange:
             ExchangeToString(ret, query.exchange());
@@ -4938,6 +4993,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kRename:
             RenameToString(ret, query.rename());
+            break;
+        case QueryType::kKill:
+            KillToString(ret, query.kill());
             break;
         default:
             ret += "SELECT 1";

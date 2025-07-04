@@ -233,6 +233,7 @@ DESC
 DIEs
 DOGEFI
 Damerau
+Databricks
 DataGrip
 DataLens
 DataPacket
@@ -246,6 +247,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -306,6 +308,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -341,6 +344,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -581,6 +585,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -716,6 +721,9 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumericIndexedVector
+NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
 OLAP
@@ -901,7 +909,9 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
+RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -1204,6 +1214,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1479,6 +1491,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1828,6 +1842,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -1890,12 +1908,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro
@@ -1947,6 +1967,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1964,6 +1985,7 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
+groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2027,6 +2049,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2064,12 +2087,14 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2078,7 +2103,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2201,6 +2225,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2256,6 +2281,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2264,7 +2290,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2412,6 +2437,23 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVector
+numericIndexedVectorAllValueSum
+numericIndexedVectorBuild
+numericIndexedVectorCardinality
+numericIndexedVectorGetValue
+numericIndexedVectorPointwiseAdd
+numericIndexedVectorPointwiseDivide
+numericIndexedVectorPointwiseEqual
+numericIndexedVectorPointwiseGreater
+numericIndexedVectorPointwiseGreaterEqual
+numericIndexedVectorPointwiseLess
+numericIndexedVectorPointwiseLessEqual
+numericIndexedVectorPointwiseMultiply
+numericIndexedVectorPointwiseNotEqual
+numericIndexedVectorPointwiseSubtract
+numericIndexedVectorShortDebugString
+numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2479,6 +2521,7 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
+pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2634,6 +2677,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2749,6 +2797,8 @@ satisfiable
 scala
 sccache
 schemas
+searchAny
+searchAll
 seekable
 seektable
 sequenceCount
@@ -2980,7 +3030,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3067,6 +3123,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
@@ -3086,6 +3143,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml
