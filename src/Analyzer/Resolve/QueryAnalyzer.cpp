@@ -260,6 +260,31 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 }
 
+bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
+{
+    if (node_source == tree_node)
+        return true;
+
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(tree_node);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (node_source == current)
+            return true;
+
+        if (const auto * child_join_node = current->as<JoinNode>())
+        {
+            stack.push(child_join_node->getLeftTableExpression().get());
+            stack.push(child_join_node->getRightTableExpression().get());
+        }
+    }
+    return false;
+}
+
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
@@ -289,9 +314,9 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 
     const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
 
-    if (join_node.getLeftTableExpression().get() == column_src)
+    if (isFromJoinTree(column_src, join_node.getLeftTableExpression().get()))
         return JoinTableSide::Left;
-    if (join_node.getRightTableExpression().get() == column_src)
+    if (isFromJoinTree(column_src, join_node.getRightTableExpression().get()))
         return JoinTableSide::Right;
     return {};
 }
@@ -2244,15 +2269,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
-          * We are taking the nearest JoinNode to check to which table column belongs,
-          * because for LEFT/RIGHT join, we convert only the corresponding side.
+          * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
+          * If it's on null side, we need to convert column type to Nullable.
           */
-        const auto * nearest_query_scope = scope.getNearestQueryScope();
-        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
-        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
-        if (nearest_scope_join_node)
+        for (const auto & table_expression : scope.registered_table_expression_nodes)
         {
+            const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
+            if (!nearest_scope_join_node)
+                continue;
+
             for (auto & [node, node_name] : matched_expression_nodes_with_names)
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
@@ -4948,10 +4973,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(insertion_table, scope_context)
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            auto insert_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
+            const auto & insert_columns = insert_storage->getInMemoryMetadataPtr()->getColumns();
             const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 

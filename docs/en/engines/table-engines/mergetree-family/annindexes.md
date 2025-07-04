@@ -105,7 +105,7 @@ Accordingly, above `ALTER TABLE` statement only causes the index to be build for
 To build the index for existing data as well, you need to materialize it:
 
 ```sql
-ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutations_sync = 2;
+ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 ```
 
 Function `<distance_function>` must be

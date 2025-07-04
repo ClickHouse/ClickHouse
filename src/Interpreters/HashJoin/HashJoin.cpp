@@ -715,13 +715,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
                 {
                     /// Condition hold, do not save row
-                    if ((*join_mask)[i])
+                    if (!join_mask_col.isRowFiltered(i))
                         continue;
 
                     /// NULL key will be saved anyway because, do not save twice
@@ -751,7 +750,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             &stored_columns->columns,
                             stored_columns->selector,
                             null_map,
-                            join_mask_col.getData(),
+                            join_mask_col,
                             data->pool,
                             is_inserted);
 

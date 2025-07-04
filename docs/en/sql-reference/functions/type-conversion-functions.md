@@ -4373,7 +4373,7 @@ Query:
 SELECT
     toDecimal32OrZero(toString(-1.111), 5) AS a,
     toTypeName(a),
-    toDecimal32OrZero(toString('Inf'), 5) as b,
+    toDecimal32OrZero(toString('Inf'), 5) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4436,7 +4436,7 @@ Query:
 SELECT
     toDecimal32OrNull(toString(-1.111), 5) AS a,
     toTypeName(a),
-    toDecimal32OrNull(toString('Inf'), 5) as b,
+    toDecimal32OrNull(toString('Inf'), 5) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4639,7 +4639,7 @@ Query:
 SELECT
     toDecimal64OrZero(toString(0.0001), 18) AS a,
     toTypeName(a),
-    toDecimal64OrZero(toString('Inf'), 18) as b,
+    toDecimal64OrZero(toString('Inf'), 18) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4702,7 +4702,7 @@ Query:
 SELECT
     toDecimal64OrNull(toString(0.0001), 18) AS a,
     toTypeName(a),
-    toDecimal64OrNull(toString('Inf'), 18) as b,
+    toDecimal64OrNull(toString('Inf'), 18) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4905,7 +4905,7 @@ Query:
 SELECT
     toDecimal128OrZero(toString(0.0001), 38) AS a,
     toTypeName(a),
-    toDecimal128OrZero(toString('Inf'), 38) as b,
+    toDecimal128OrZero(toString('Inf'), 38) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -4968,7 +4968,7 @@ Query:
 SELECT
     toDecimal128OrNull(toString(1/42), 38) AS a,
     toTypeName(a),
-    toDecimal128OrNull(toString('Inf'), 38) as b,
+    toDecimal128OrNull(toString('Inf'), 38) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5171,7 +5171,7 @@ Query:
 SELECT
     toDecimal256OrZero(toString(0.0001), 76) AS a,
     toTypeName(a),
-    toDecimal256OrZero(toString('Inf'), 76) as b,
+    toDecimal256OrZero(toString('Inf'), 76) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5234,7 +5234,7 @@ Query:
 SELECT
     toDecimal256OrNull(toString(1/42), 76) AS a,
     toTypeName(a),
-    toDecimal256OrNull(toString('Inf'), 76) as b,
+    toDecimal256OrNull(toString('Inf'), 76) AS b,
     toTypeName(b)
 FORMAT Vertical;
 ```
@@ -5977,7 +5977,7 @@ reinterpretAsFloat32(x)
 Query:
 
 ```sql
-SELECT reinterpretAsUInt32(toFloat32(0.2)) as x, reinterpretAsFloat32(x);
+SELECT reinterpretAsUInt32(toFloat32(0.2)) AS x, reinterpretAsFloat32(x);
 ```
 
 Result:
@@ -6011,7 +6011,7 @@ reinterpretAsFloat64(x)
 Query:
 
 ```sql
-SELECT reinterpretAsUInt64(toFloat64(0.2)) as x, reinterpretAsFloat64(x);
+SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x);
 ```
 
 Result:
@@ -6257,9 +6257,9 @@ reinterpret(x, type)
 
 Query:
 ```sql
-SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpret(toInt8(1), 'Float32') as int_to_float,
-    reinterpret('1', 'UInt32') as string_to_int;
+SELECT reinterpret(toInt8(-1), 'UInt8') AS int_to_uint,
+    reinterpret(toInt8(1), 'Float32') AS int_to_float,
+    reinterpret('1', 'UInt32') AS string_to_int;
 ```
 
 Result:
@@ -6386,7 +6386,7 @@ The difference from [cast](#cast) is that `accurateCast` does not allow overflow
 Query:
 
 ```sql
-SELECT cast(-1, 'UInt8') as uint8;
+SELECT cast(-1, 'UInt8') AS uint8;
 ```
 
 Result:
@@ -6400,7 +6400,7 @@ Result:
 Query:
 
 ```sql
-SELECT accurateCast(-1, 'UInt8') as uint8;
+SELECT accurateCast(-1, 'UInt8') AS uint8;
 ```
 
 Result:
@@ -6448,9 +6448,9 @@ Query:
 
 ```sql
 SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string;
+    accurateCastOrNull(-1, 'UInt8') AS uint8,
+    accurateCastOrNull(128, 'Int8') AS int8,
+    accurateCastOrNull('Test', 'FixedString(2)') AS fixed_string;
 ```
 
 Result:
@@ -6502,12 +6502,12 @@ Query:
 
 ```sql
 SELECT
-    accurateCastOrDefault(-1, 'UInt8') as uint8,
-    accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
-    accurateCastOrDefault(128, 'Int8') as int8,
-    accurateCastOrDefault(128, 'Int8', 5) as int8_default,
-    accurateCastOrDefault('Test', 'FixedString(2)') as fixed_string,
-    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') as fixed_string_default;
+    accurateCastOrDefault(-1, 'UInt8') AS uint8,
+    accurateCastOrDefault(-1, 'UInt8', 5) AS uint8_default,
+    accurateCastOrDefault(128, 'Int8') AS int8,
+    accurateCastOrDefault(128, 'Int8', 5) AS int8_default,
+    accurateCastOrDefault('Test', 'FixedString(2)') AS fixed_string,
+    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') AS fixed_string_default;
 ```
 
 Result:
@@ -7226,7 +7226,7 @@ Result:
 Query:
 
 ```sql
-SELECT toYear(now()) as year, parseDateTimeBestEffort('10 20:19');
+SELECT toYear(now()) AS year, parseDateTimeBestEffort('10 20:19');
 ```
 
 Result:

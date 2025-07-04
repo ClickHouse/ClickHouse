@@ -8,6 +8,8 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -17,6 +19,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 function_date_trunc_return_type_behavior;
 }
 
 namespace
@@ -89,7 +96,8 @@ public:
 
             /// If we have a DateTime64 or Date32 as an input, it can be negative.
             /// In this case, we should provide the corresponding return type, which supports negative values.
-            if (isDateTime64(arguments[1].type) || isDate32(arguments[1].type))
+            /// For compatibility, we do it under a setting.
+            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior] == 0)
             {
                 if (result_type == ResultType::Date)
                     result_type = Date32;
