@@ -11,6 +11,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Formats/FormatFactory.h>
 
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
@@ -135,7 +136,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
-        std::make_unique<S3ObjectStorageSettings>(*s3_settings),
+        std::make_unique<S3Settings>(*s3_settings),
         url,
         *s3_capabilities,
         key_generator,
@@ -155,7 +156,9 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
     const auto & config = context->getConfigRef();
-    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
+
+    s3_settings = std::make_unique<S3Settings>();
+    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -359,7 +362,8 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     /// This argument is always the first
     url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
 
-    s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    s3_settings = std::make_unique<S3Settings>();
+    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {

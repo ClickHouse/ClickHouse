@@ -671,15 +671,24 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-            commit(
-                /*insert_succeeded=*/ false,
-                rows,
-                sources,
-                transaction_start_time,
-                getCurrentExceptionMessage(true),
-                getCurrentExceptionCode());
+            std::string message = getCurrentExceptionMessage(true);
+            try
+            {
+                commit(
+                    /*insert_succeeded=*/ false,
+                    rows,
+                    sources,
+                    transaction_start_time,
+                    getCurrentExceptionMessage(true),
+                    getCurrentExceptionCode());
 
-            file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Previous exception: {}", message);
+                throw;
+            }
             throw;
         }
 

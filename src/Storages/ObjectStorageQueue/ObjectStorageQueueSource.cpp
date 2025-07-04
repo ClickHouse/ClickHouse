@@ -405,7 +405,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called, stopping file iterator");
+            LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
             return {};
         }
 
@@ -797,6 +797,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
+                LOG_DEBUG(
+                    log, "Reader was cancelled "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -814,11 +819,16 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called");
+            LOG_TEST(log, "Shutdown was called"); /// test_drop_table depends on this log message
 
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
+                LOG_DEBUG(
+                    log, "Shutdown was called "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -856,7 +866,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             if (shutdown_called)
             {
-                LOG_TEST(log, "Shutdown called");
+                LOG_DEBUG(
+                    log, "Shutdown was called "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// Stop processing.
                 break;
             }
