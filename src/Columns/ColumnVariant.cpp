@@ -1705,13 +1705,14 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variants = assert_cast<const ColumnVariant &>(*source_column).variants;
+        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        const auto & source_variants = source_variant.variants;
         for (size_t i = 0; i != source_variants.size(); ++i)
-            variants_source_columns[i].push_back(source_variants[i]);
+            variants_source_columns[source_variant.globalDiscriminatorByLocal(i)].push_back(source_variants[i]);
     }
 
     for (size_t i = 0; i != variants.size(); ++i)
-        variants[i]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        variants[localDiscriminatorByGlobal(i)]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
 }
