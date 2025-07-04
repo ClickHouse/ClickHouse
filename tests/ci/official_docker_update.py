@@ -292,7 +292,7 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
         cwd=images_dir,
     )
     run(
-        f"{GIT_PREFIX} push --set-upstream origin {LIBRARY_BRANCH}",
+        f"{GIT_PREFIX} push --set-upstream --force-with-lease origin {LIBRARY_BRANCH}",
         dry_run,
         cwd=images_dir,
     )
