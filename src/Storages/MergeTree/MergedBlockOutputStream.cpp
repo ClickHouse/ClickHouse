@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -161,7 +163,9 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
     }
 
     for (const auto & file_name : files_to_remove_after_finish)
+    {
         part->getDataPartStorage().removeFile(file_name);
+    }
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept

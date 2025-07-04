@@ -3,9 +3,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
@@ -33,12 +31,20 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
+#include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
+#include <Common/escapeForFileName.h>
 
+#include <algorithm>
+#include <cstdint>
 
 namespace ProfileEvents
 {
@@ -95,6 +101,7 @@ enum class ExecuteTTLType : uint8_t
     RECALCULATE= 2,
 };
 
+
 namespace MutationHelpers
 {
 
@@ -147,17 +154,23 @@ static void splitAndModifyMutationCommands(
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
+    LOG_TRACE(log, "splitAndModifyMutationCommands, Splitting mutation commands for part {}, commands: {}", part->name, commands.toString());
+
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
     if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
+        LOG_TRACE(log, "1");
+
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet ignored_columns;
 
         for (const auto & command : commands)
         {
+            LOG_TRACE(log, "1 command.clear: {}", command.clear);
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
@@ -191,8 +204,8 @@ static void splitAndModifyMutationCommands(
                 }
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
-                     || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTICS)
+                    || command.type == MutationCommand::Type::DROP_PROJECTION
+                    || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -281,6 +294,7 @@ static void splitAndModifyMutationCommands(
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
+
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
@@ -298,8 +312,12 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
+        LOG_TRACE(log, "else 1");
+
         for (const auto & command : commands)
         {
+            LOG_TRACE(log, "else 1 command.clear: {} type: {}", command.clear, command.type);
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
@@ -318,9 +336,10 @@ static void splitAndModifyMutationCommands(
             {
                 for_interpreter.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX
-                     || command.type == MutationCommand::Type::DROP_PROJECTION
-                     || command.type == MutationCommand::Type::DROP_STATISTICS)
+            else if (command.type == MutationCommand::Type::DROP_COLUMN
+                    || command.type == MutationCommand::Type::DROP_INDEX
+                    || command.type == MutationCommand::Type::DROP_PROJECTION
+                    || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -1372,10 +1391,14 @@ class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
 
-    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_)
+        : ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Creating MutateAllPartColumnsTask for future part {}", ctx->future_part->name);
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { return ctx->data->getStorageID(); }
     Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
@@ -1720,7 +1743,11 @@ private:
 class MutateSomePartColumnsTask : public IExecutableTask
 {
 public:
-    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_)
+        : ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Creating MutateSomePartColumnsTask for future part {}", ctx->future_part->name);
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1729,6 +1756,8 @@ public:
 
     bool executeStep() override
     {
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask::executeStep for future part {} state {}", ctx->future_part->name, uint32_t(state));
+
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1805,10 +1834,10 @@ private:
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
-            if (ctx->files_to_skip.contains(it->name()))
-                continue;
+            const String & file_name = it->name();
 
-            String file_name = it->name();
+            if (ctx->files_to_skip.contains(file_name))
+                continue;
 
             auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
             {
@@ -1877,6 +1906,11 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
+        for (const auto & file_to_skip : ctx->files_to_skip)
+            ctx->new_data_part->checksums.remove(file_to_skip);
+
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: source part {} checksums files: {}", ctx->source_part->name, fmt::join(ctx->source_part->checksums.getFileNamesWithSizes(), ", "));
+
         ctx->compression_codec = ctx->source_part->default_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
@@ -1923,38 +1957,87 @@ private:
         }
     }
 
-
     void finalize()
     {
+        NameSet files_to_remove_after_finish;
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
-            auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
-            ctx->new_data_part->checksums.add(std::move(changed_checksums));
+            {
+                auto only_outputstream = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
 
-            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+                auto [changed_checksums, removed_files] = only_outputstream->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
+
+                // We have to remove files after `ctx->out.finish()` called.
+                // Otherwise new files are not visible because they have not been written yet
+                files_to_remove_after_finish = std::move(removed_files);
+
+                only_outputstream->finish(ctx->need_sync);
+
+                LOG_DEBUG(ctx->log, "MutateSomePartColumnsTask: removed_files {} for part {}",
+                          fmt::join(files_to_remove_after_finish, ", "), ctx->new_data_part->name);
+
+                ctx->new_data_part->checksums.add(std::move(changed_checksums));
+            }
 
             ctx->out.reset();
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
+            ctx->new_data_part->checksums.files.erase(rename_from);
+
+            if (!rename_to.empty())
+                ctx->new_data_part->checksums.files[rename_to] = ctx->source_part->checksums.files.at(rename_from);
+        }
+
+        constexpr std::string proj_suffix = ".proj";
+
+        // checksums should not contain records with not existed projections
+        // this might be not a proper fix
+        // it is better to remove projection close to the place where the decision to remove them is made
+        NameSet active_projections;
+        for (const auto & ptr : ctx->projections_to_recalc)
+            active_projections.insert(ptr->name + proj_suffix);
+
+        for (const auto & ptr : ctx->projections_to_build)
+            active_projections.insert(ptr->name + proj_suffix);
+
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: files_to_skip: {}", fmt::join(ctx->files_to_skip, ", "));
+
+        for (const auto & name : ctx->files_to_skip)
+        {
+            if (name.ends_with(proj_suffix) && !active_projections.contains(name) && ctx->new_data_part->checksums.has(name))
             {
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
+                ctx->new_data_part->checksums.remove(name);
             }
         }
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
+
+        /// TODO: this code looks really stupid. It's because DiskTransaction is
+        /// unable to see own write operations. When we merge part with column TTL
+        /// and column completely outdated we first write empty column and after
+        /// remove it. In case of single DiskTransaction it's impossible because
+        /// remove operation will not see just written files. That is why we finish
+        /// one transaction and start new...
+        ///
+        /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
+        if (!files_to_remove_after_finish.empty() && ctx->new_data_part->getDataPartStorage().hasActiveTransaction())
+        {
+            ctx->new_data_part->getDataPartStorage().commitTransaction();
+            ctx->new_data_part->getDataPartStorage().beginTransaction();
+        }
+
+        // We have to remove files after `ctx->out.finish()` called.
+        // Otherwise new files are not visible because they have not been written yet
+        for (const String & removed_file : files_to_remove_after_finish)
+        {
+            ctx->new_data_part->getDataPartStorage().removeFile(removed_file);
+        }
     }
 
     enum class State : uint8_t
@@ -1988,12 +2071,16 @@ public:
         std::unique_ptr<IExecutableTask> executable_task_,
         MutationContextPtr ctx_
         )
-        : executable_task(std::move(executable_task_)), ctx(ctx_) {}
+        : executable_task(std::move(executable_task_)), ctx(ctx_)
+    {
+        LOG_DEBUG(ctx->log, "Created decorator for task: {}",
+                  executable_task->getStorageID().getNameForLogs());
+    }
 
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    void onCompleted() override { executable_task->onCompleted(); }
+    StorageID getStorageID() const override { return executable_task->getStorageID(); }
+    Priority getPriority() const override { return executable_task->getPriority(); }
+    String getQueryId() const override { return executable_task->getQueryId(); }
 
     bool executeStep() override
     {
@@ -2096,6 +2183,9 @@ bool MutateTask::execute()
 {
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
+
+    LOG_TRACE(ctx->log, "Executing mutation task for part {} with commands: {}, state {}",
+              ctx->source_part->name, ctx->commands->toString(), int32_t(state));
 
     switch (state)
     {
@@ -2499,12 +2589,15 @@ bool MutateTask::prepare()
             ctx->mrk_extension,
             projections_to_skip,
             ctx->stats_to_recalc);
+        LOG_TRACE(ctx->log, "MutateTask::prepare: files_to_skip: {}", fmt::join(ctx->files_to_skip, ", "));
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
+        LOG_TRACE(ctx->log, "MutateTask::prepare: files_to_rename: {}", fmt::join(ctx->files_to_rename, ", "));
+
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state

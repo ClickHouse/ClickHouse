@@ -10,6 +10,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/logger_useful.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
@@ -108,9 +109,9 @@
 #include <thread>
 #include <unordered_set>
 #include <filesystem>
+#include <vector>
 
 #include <fmt/format.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -4020,7 +4021,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (old_metadata.columns.has(command.column_name))
             {
-                dropped_columns.emplace(command.column_name);
+                dropped_columns.emplace(command.column_name); /// What if clear is true?
             }
             else
             {
@@ -4625,6 +4626,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
+    checkChecksumsFileIsConsistentWithFileSystem(part);
+
     if (&out_transaction.data != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::Transaction for one table cannot be used with another. It is a bug.");
 
@@ -4853,6 +4856,151 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
     }
     return parts_to_remove;
 }
+
+
+Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part)
+{
+    auto & storage = part->getDataPartStorage();
+
+    Strings files_in_part;
+    for (auto it = storage.iterate(); it->isValid(); it->next())
+        files_in_part.push_back(it->name());
+
+    std::sort(files_in_part.begin(), files_in_part.end());
+    return files_in_part;
+}
+
+
+void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPartPtr & part)
+{
+    Strings files_in_part = getPartFiles(part);
+
+    std::vector<String> projections_in_part;
+    for (const auto & file : files_in_part)
+        if (file.ends_with(".proj"))
+            projections_in_part.push_back(file);
+
+    // This is a pedantic check that the checksums file contains exactly the records with actual files
+    // There are some suspicion that some time it could contain excess files
+    files_in_part.erase(
+        std::remove_if(files_in_part.begin(), files_in_part.end(), [] (auto & item)
+            {
+                // this files are not listed in "checksums.txt"
+                return item == "checksums.txt"
+                || item == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME
+                || item == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME
+                || item == "columns.txt"
+                || item == "txn_version.txt"
+                || item == "columns_substreams.txt"
+                || item.ends_with(".proj");
+            }),
+        files_in_part.end());
+
+    Strings files_in_checksums = part->checksums.getFileNames();
+
+    std::vector<String> projections_in_checksums;
+    for (const auto & file : files_in_checksums)
+        if (file.ends_with(".proj"))
+            projections_in_checksums.push_back(file);
+
+    files_in_checksums.erase(
+        std::remove_if(files_in_checksums.begin(), files_in_checksums.end(), [] (const auto & item)
+            {
+                return item.ends_with(".proj");
+            }),
+        files_in_checksums.end());
+
+    Strings missed_files;
+    std::set_difference(
+        files_in_checksums.begin(), files_in_checksums.end(),
+        files_in_part.begin(), files_in_part.end(),
+        std::back_inserter(missed_files));
+
+    Strings extra_files;
+    std::set_difference(
+        files_in_part.begin(), files_in_part.end(),
+        files_in_checksums.begin(), files_in_checksums.end(),
+        std::back_inserter(extra_files));
+
+    Strings files_in_checksums_with_size;
+    for (const auto & file : files_in_checksums)
+    {
+        auto it = part->checksums.files.find(file);
+        chassert(it != part->checksums.files.end());
+        files_in_checksums_with_size.push_back(fmt::format("{} ({} bytes)", file, it->second.file_size));
+    }
+
+    LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+            "checksums.txt file has {} files, part '{}' has {} files, "
+            "files in checksums: {}, files in part: {}"
+            "Missed files in part: {}, Extra files in part: {}",
+            part->checksums.files.size(),
+            part->name,
+            files_in_part.size(),
+            fmt::join(files_in_checksums_with_size, ", "),
+            fmt::join(files_in_part, ", "),
+            fmt::join(missed_files, ", "),
+            fmt::join(extra_files, ", "));
+
+    if (files_in_part != files_in_checksums)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "checksums.txt file is not consistent with the files on file system, "
+            "checksums.txt file has {} files, part '{}' has {} files, "
+            "files in checksums: {}, files in part: {} "
+            "Missed files in part: {}, Extra files in part: {}",
+            part->checksums.files.size(),
+            part->name,
+            files_in_part.size(),
+            fmt::join(files_in_checksums_with_size, ", "),
+            fmt::join(files_in_part, ", "),
+            fmt::join(missed_files, ", "),
+            fmt::join(extra_files, ", "));
+
+    std::sort(projections_in_part.begin(), projections_in_part.end());
+    std::sort(projections_in_checksums.begin(), projections_in_checksums.end());
+
+    Strings missed_projections;
+    std::set_difference(
+        projections_in_checksums.begin(), projections_in_checksums.end(),
+        projections_in_part.begin(), projections_in_part.end(),
+        std::back_inserter(missed_projections));
+
+    if (!missed_projections.empty())
+    {
+        LOG_WARNING(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+            "checksums.txt file is not consistent with the files on file system, "
+            "checksums.txt file has {} projections, part '{}' has {} projections, "
+            "projections in checksums: {}, projections in part: {} "
+            "Missed projections in part: {}",
+            projections_in_checksums.size(),
+            part->name,
+            projections_in_part.size(),
+            fmt::join(projections_in_checksums, ", "),
+            fmt::join(projections_in_part, ", "),
+            fmt::join(missed_projections, ", "));
+    }
+
+    Strings extra_projections;
+    std::set_difference(
+        projections_in_part.begin(), projections_in_part.end(),
+        projections_in_checksums.begin(), projections_in_checksums.end(),
+        std::back_inserter(extra_projections));
+
+    if (!extra_projections.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "checksums.txt file is not consistent with the files on file system, "
+            "checksums.txt file has {} projections, part '{}' has {} projections, "
+            "projections in checksums: {}, projections in part: {} "
+            "Extra projections in part: {}",
+            projections_in_checksums.size(),
+            part->name,
+            projections_in_part.size(),
+            fmt::join(projections_in_checksums, ", "),
+            fmt::join(projections_in_part, ", "),
+            fmt::join(extra_projections, ", "));
+    }
+}
+
 
 MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part)

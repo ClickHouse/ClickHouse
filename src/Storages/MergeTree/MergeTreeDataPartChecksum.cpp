@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Common/SipHash.h>
-#include <base/hex.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -10,6 +9,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/GinIndexStore.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
+
 #include <optional>
 
 #include <fmt/ranges.h>
@@ -246,13 +249,51 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
     out.finalize();
 }
 
+Strings MergeTreeDataPartChecksums::getFileNamesWithSizes() const
+{
+    Strings result;
+    result.reserve(files.size());
+
+    for (const auto & [name, checksum] : files)
+        result.push_back(name + " (" + std::to_string(checksum.file_size) + " bytes)");
+
+    std::sort(result.begin(), result.end());
+
+    return result;
+}
+
+Strings MergeTreeDataPartChecksums::getFileNames() const
+{
+    Strings result;
+    result.reserve(files.size());
+
+    for (const auto & [name, _] : files)
+        result.push_back(name);
+
+    std::sort(result.begin(), result.end());
+
+    return result;
+}
+
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
+    LOG_TRACE(getLogger("MergeTreeDataPartChecksums"), "Add file {} with size {} and hash {}", file_name, file_size, getHexUIntLowercase(file_hash));
+
     files[file_name] = Checksum(file_size, file_hash);
 }
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
 {
+    auto get_keys = [](const std::map<String, Checksum> & container)
+    {
+        Strings keys;
+        keys.reserve(container.size());
+        for (const auto & [name, _] : container)
+            keys.push_back(name);
+        return keys;
+    };
+    LOG_TRACE(getLogger("MergeTreeDataPartChecksums"), "Merging checksums from {} files: files {}", rhs_checksums.files.size(), fmt::join(get_keys(rhs_checksums.files), ", "));
+
     for (auto && checksum : rhs_checksums.files)
     {
         files[checksum.first] = std::move(checksum.second);
