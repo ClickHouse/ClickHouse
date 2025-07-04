@@ -118,6 +118,8 @@ private:
     bool async_insert = false;
     bool skip_destination_table = false;
 
+    /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
+    /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.
     StorageIDPrivate root_view;
 
     MapIdManyId dependent_views;
