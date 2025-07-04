@@ -526,6 +526,25 @@ class JobConfigs:
             ["Build (amd_msan)"],
         ],
     )
+
+    integration_tests_for_divanik = Job.Config(
+        name=JobNames.INTEGRATION,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/integration_test_check.py",
+                "./tests/ci/integration_tests_runner.py",
+                "./tests/integration/",
+                "./ci/docker/integration",
+            ],
+        ),
+    ).parametrize(
+        parameter=[f"release, 3/4, {i}" for i in range(20)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _i in range(20)],
+        requires=[["Build (amd_release)"] for _i in range(20)],
+    )
+
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],

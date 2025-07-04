@@ -39,7 +39,7 @@ import urllib.parse
 import zlib
 from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
-from contextlib import redirect_stdout, contextmanager
+from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
 from errno import ESRCH
 from ssl import SSLEOFError

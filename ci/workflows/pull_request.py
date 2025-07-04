@@ -15,8 +15,8 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        *[job.set_dependency(REGULAR_BUILD_NAMES) for job in JobConfigs.special_build_jobs],
-        *JobConfigs.integration_test_jobs_required,
+        *[job for job in JobConfigs.build_jobs if "amd_release" in job.name],
+        *JobConfigs.integration_tests_for_divanik,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
