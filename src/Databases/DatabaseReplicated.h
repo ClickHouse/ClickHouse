@@ -8,6 +8,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 #include <Interpreters/QueryFlags.h>
+#include <Parsers/SyncReplicaMode.h>
 
 
 namespace zkutil
@@ -64,7 +65,7 @@ public:
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
-    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
+    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode = SyncReplicaMode::DEFAULT);
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.

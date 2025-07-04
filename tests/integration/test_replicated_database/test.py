@@ -1700,7 +1700,7 @@ def test_lag_after_recovery(started_cluster):
     dummy_node.query(
         "system disable failpoint database_replicated_delay_entry_execution"
     )
-    dummy_node.query("system sync database replica lag_after_recovery")
+    dummy_node.query("system sync database replica lag_after_recovery strict")
     assert (
         dummy_node.query(
             "select unsynced_after_recovery from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"

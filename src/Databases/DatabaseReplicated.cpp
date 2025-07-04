@@ -80,6 +80,7 @@ namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
+    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
 }
 
 namespace ErrorCodes
@@ -644,14 +645,35 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
     DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
 }
 
-bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
 {
+    chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
     {
         std::lock_guard lock{ddl_worker_mutex};
         if (!ddl_worker || is_probably_dropped)
             return false;
     }
-    return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+    if (mode == SyncReplicaMode::DEFAULT)
+        return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+
+    Stopwatch elapsed;
+    while (true)
+    {
+        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
+        if (elapsed_ms > timeout_ms)
+            return false;
+
+        if (ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms - elapsed_ms))
+            return true;
+
+        UInt32 our_log_ptr = ddl_worker->getLogPointer();
+        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
+        bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
+        if (became_synced)
+            return true;
+
+        /// max_log_ptr might be increased while we were waiting - retry until replication lag is below the threshold
+    }
 }
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
