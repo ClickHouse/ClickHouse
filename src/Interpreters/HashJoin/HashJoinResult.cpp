@@ -76,21 +76,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     else
         lazy_output.buildOutput();
 
-    std::cerr << "!!!!!!! before filtering" << std::endl;
-    std::cerr << scattered_block->getSourceBlock().dumpStructure() << std::endl;
-
-    //if (!lazy_output.filter.empty() && lazy_output.offsets_to_replicate.empty())
     if (need_filter)
-    {
-        std::cerr << "!!!!!! filtering " << lazy_output.filter.size() << " rows" << std::endl;
-
         scattered_block->filter(lazy_output.filter);
-    }
 
     scattered_block->filterBySelector();
-
-    std::cerr << "!!!!!!! after filtering" << std::endl;
-    std::cerr << scattered_block->getSourceBlock().dumpStructure() << std::endl;
 
     auto block = std::move(*scattered_block).getSourceBlock();
     appendRightColumns(
