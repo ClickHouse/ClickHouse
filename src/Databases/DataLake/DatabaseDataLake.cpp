@@ -453,7 +453,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog();
-    const auto iceberg_tables = catalog->getTables();
+    DB::Names iceberg_tables;
+
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
+    try
+    {
+        iceberg_tables = catalog->getTables();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     for (const auto & table_name : iceberg_tables)
     {
@@ -479,7 +490,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 {
      Tables tables;
     auto catalog = getCatalog();
-    const auto iceberg_tables = catalog->getTables();
+    DB::Names iceberg_tables;
+
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
+    try
+    {
+        iceberg_tables = catalog->getTables();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     for (const auto & table_name : iceberg_tables)
     {
