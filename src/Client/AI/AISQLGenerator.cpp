@@ -13,10 +13,11 @@ extern const int LOGICAL_ERROR;
 extern const int NETWORK_ERROR;
 }
 
-AISQLGenerator::AISQLGenerator(const AIConfiguration & config_, QueryExecutor executor)
+AISQLGenerator::AISQLGenerator(const AIConfiguration & config_, QueryExecutor executor, std::ostream & output_stream_)
     : config(config_)
     , client(AIClientFactory::createClient(config))
     , schema_tools(std::make_unique<SchemaExplorationTools>(std::move(executor)))
+    , output_stream(output_stream_)
 {
 }
 
@@ -24,7 +25,7 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
 {
     try
     {
-        AIToolExecutionDisplay display(true);
+        AIToolExecutionDisplay display(output_stream, true);
 
         display.showProgress("Starting AI SQL generation with schema discovery...");
         display.showSeparator();
@@ -118,7 +119,7 @@ std::string AISQLGenerator::buildSystemPrompt() const
 
 You have access to functions that help you explore the database schema:
 - list_databases(): Lists all available databases
-- list_tables_in_database(database): Lists all tables in a specific database  
+- list_tables_in_database(database): Lists all tables in a specific database
 - get_schema_for_table(database, table): Gets the CREATE TABLE statement for a specific table
 
 Your workflow should be:

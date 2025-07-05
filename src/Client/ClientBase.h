@@ -249,7 +249,7 @@ private:
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
-    
+
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
@@ -424,7 +424,7 @@ protected:
 
     /// Options for BuzzHouse
     String buzz_house_options_path;
-    
+
     /// Text to prepopulate in the next query prompt
     String next_query_to_prepopulate;
     bool buzz_house = false;

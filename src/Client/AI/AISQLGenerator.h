@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <ostream>
 #include <Client/AI/AIConfiguration.h>
 #include <Client/AI/SchemaExplorationTools.h>
 #include <ai/ai.h>
@@ -14,7 +15,7 @@ class AISQLGenerator
 {
 public:
     /// Constructor with configuration and query executor
-    AISQLGenerator(const AIConfiguration & config, QueryExecutor executor);
+    AISQLGenerator(const AIConfiguration & config, QueryExecutor executor, std::ostream & output_stream);
 
     /// Generate SQL from natural language prompt
     /// Returns the generated SQL query on success, throws exception on error
@@ -30,6 +31,7 @@ private:
     AIConfiguration config;
     ai::Client client;
     std::unique_ptr<SchemaExplorationTools> schema_tools;
+    std::ostream & output_stream;
 
     /// Build the system prompt for SQL generation
     std::string buildSystemPrompt() const;
