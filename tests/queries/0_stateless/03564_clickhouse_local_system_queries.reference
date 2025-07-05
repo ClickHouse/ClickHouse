@@ -1,4 +1,4 @@
-Testing clickhouse-local SYSTEM queries that should throw UNSUPPORTED_METHOD:
+Testing clickhouse-local SYSTEM queries that should fail with UNSUPPORTED_METHOD:
 Testing: SYSTEM RELOAD CONFIG
 ✓ PASS: SYSTEM RELOAD CONFIG failed with UNSUPPORTED_METHOD
 ✓ PASS: Error message mentions clickhouse-local
@@ -8,6 +8,13 @@ Testing: SYSTEM STOP LISTEN HTTP
 Testing: SYSTEM START LISTEN HTTP
 ✓ PASS: SYSTEM START LISTEN HTTP failed with UNSUPPORTED_METHOD
 ✓ PASS: Error message mentions clickhouse-local
+Testing: SYSTEM STOP LISTEN TCP
+✓ PASS: SYSTEM STOP LISTEN TCP failed with UNSUPPORTED_METHOD
+✓ PASS: Error message mentions clickhouse-local
+Testing: SYSTEM START LISTEN TCP
+✓ PASS: SYSTEM START LISTEN TCP failed with UNSUPPORTED_METHOD
+✓ PASS: Error message mentions clickhouse-local
+
 Testing clickhouse-local SYSTEM queries that should work:
 Testing: SYSTEM DROP DNS CACHE
 ✓ PASS: SYSTEM DROP DNS CACHE succeeded
@@ -21,4 +28,5 @@ Testing: SYSTEM DROP SCHEMA CACHE
 ✓ PASS: SYSTEM DROP SCHEMA CACHE succeeded
 Testing: SYSTEM DROP FORMAT SCHEMA CACHE
 ✓ PASS: SYSTEM DROP FORMAT SCHEMA CACHE succeeded
-All tests passed! 
+
+All tests passed!
