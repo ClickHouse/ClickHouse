@@ -5,6 +5,7 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -17,10 +18,7 @@
 #include <Storages/MergeTree/DropPartsRanges.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
-
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Storages/MergeTree/AlterConversions.h>
-
 
 namespace DB
 {
@@ -45,6 +43,7 @@ private:
     friend class DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
     friend class MergeFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class StorageReplicatedMergeTree;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -221,8 +220,11 @@ private:
       * Called under the state_mutex.
       */
     bool shouldExecuteLogEntry(
-        const LogEntry & entry, String & out_postpone_reason,
-        MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
+        const LogEntry & entry,
+        String & out_postpone_reason,
+        MergeTreeDataMergerMutator & merger_mutator,
+        MergeTreeData & data,
+        const CommittingBlocks & committing_blocks,
         std::unique_lock<std::mutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -230,6 +232,7 @@ private:
     /// was created after the mutation).
     /// If there is no such mutation or it has already been executed and deleted, return 0.
     Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version) const;
+    Int64 getNextMutationVersion(const String & partition_id, int64_t data_version) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
@@ -270,6 +273,9 @@ private:
     bool isIntersectingWithDropReplaceIntent(
         const LogEntry & entry,
         const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
+
+    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -429,7 +435,7 @@ public:
         MutationsByPartititon mutations_by_partition;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_);
+        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
@@ -440,7 +446,6 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
-
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time

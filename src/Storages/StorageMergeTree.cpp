@@ -38,6 +38,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -72,6 +75,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_parts_to_move;
+    extern const SettingsUpdateParallelMode update_parallel_mode;
 }
 
 namespace MergeTreeSetting
@@ -133,7 +137,6 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
 
     return {};
 }
-
 
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
@@ -302,15 +305,17 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    if (auto plan = reader.read(
-            column_names,
-            storage_snapshot,
-            query_info,
-            local_context,
-            max_block_size,
-            num_streams,
-            nullptr,
-            enable_parallel_reading))
+    auto plan = reader.read(
+        column_names,
+        storage_snapshot,
+        query_info,
+        local_context,
+        max_block_size,
+        num_streams,
+        local_context->getPartitionIdToMaxBlock(),
+        enable_parallel_reading);
+
+    if (plan)
         query_plan = std::move(*plan);
 }
 
@@ -574,7 +579,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     }
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-    Int64 version = increment.get();
+    PlainCommittingBlockHolder block_holder(allocateBlockNumber(CommittingBlock::Op::Mutation), *this);
+
+    Int64 version = block_holder.block.number;
     entry.commit(version);
     String mutation_id = entry.file_name;
     if (txn)
@@ -722,6 +729,72 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
         waitForMutation(version, false);
+}
+
+std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context)
+{
+    auto update_lock = std::make_unique<PlainLightweightUpdateLock>();
+    auto parallel_mode = local_context->getSettingsRef()[Setting::update_parallel_mode];
+    auto timeout_ms = local_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
+
+    if (parallel_mode == UpdateParallelMode::SYNC)
+    {
+        update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
+        bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
+
+        if (!res)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightwegiht update with sync mode", timeout_ms);
+
+        LOG_TRACE(log, "Got lock for lightweight update in sync mode");
+    }
+    else if (parallel_mode == UpdateParallelMode::AUTO)
+    {
+        auto affected_columns = getUpdateAffectedColumns(commands, local_context);
+        lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
+
+        update_lock->affected_columns = std::move(affected_columns);
+        update_lock->lightweight_updates_sync = &lightweight_updates_sync;
+
+        LOG_TRACE(log, "Got lock for lightweight update in auto mode");
+    }
+
+    return update_lock;
+}
+
+QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+{
+    assertNotReadonly();
+    auto context_copy = Context::createCopy(query_context);
+
+    PlainLightweightUpdateHolder update_holder;
+    update_holder.update_lock = getLockForLightweightUpdate(commands, context_copy);
+    update_holder.block_holder = std::make_unique<PlainCommittingBlockHolder>(allocateBlockNumber(CommittingBlock::Op::Update), *this);
+
+    auto all_partitions = getAllPartitionIds();
+    auto partition_id_to_max_block = std::make_shared<PartitionIdToMaxBlock>();
+    UInt64 block_number = update_holder.block_holder->block.number;
+
+    size_t timeout_ms = context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
+    waitForCommittingInsertsAndMutations(block_number, timeout_ms);
+
+    for (const auto & partition_id : all_partitions)
+    {
+        if (!partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            partition_id_to_max_block->emplace(partition_id, block_number);
+    }
+
+    context_copy->setPartitionIdToMaxBlock(std::move(partition_id_to_max_block));
+
+    /// Updates currently don't work with parallel replicas.
+    context_copy->setSetting("max_parallel_replicas", Field(1));
+
+    auto pipeline = updateLightweightImpl(commands, context_copy);
+    auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
+    auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy);
+
+    chassert(!pipeline.completed());
+    pipeline.complete(std::move(sink));
+    return pipeline;
 }
 
 bool StorageMergeTree::hasLightweightDeletedMask() const
@@ -1523,6 +1596,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */true);
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
+                cleared_count += clearUnusedPatchParts();
                 cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
@@ -1533,14 +1607,20 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return scheduled;
 }
 
-UInt64 StorageMergeTree::getCurrentMutationVersion(
-    const MergeTreePartInfo & part_info,
-    std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
+UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
 {
-    auto it = current_mutations_by_version.upper_bound(part_info.getDataVersion());
+    auto it = current_mutations_by_version.upper_bound(data_version);
     if (it == current_mutations_by_version.begin())
         return 0;
     --it;
+    return it->first;
+}
+
+UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+{
+    auto it = current_mutations_by_version.upper_bound(data_version);
+    if (it == current_mutations_by_version.end())
+        return 0;
     return it->first;
 }
 
@@ -2081,6 +2161,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+
         if (txn)
         {
             DataPartsVector parts_to_remove;
@@ -2104,14 +2185,15 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto operation_data_parts_lock = lockOperationsWithParts();
 
             DataPartsVector parts;
+
+            if (partition_ast && partition_ast->all)
             {
-                if (partition_ast && partition_ast->all)
-                    parts = getVisibleDataPartsVector(query_context);
-                else
-                {
-                    String partition_id = getPartitionIDFromQuery(partition, query_context);
-                    parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
-                }
+                parts = getVisibleDataPartsVector(query_context);
+            }
+            else
+            {
+                String partition_id = getPartitionIDFromQuery(partition, query_context);
+                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
 
             if (detach)
@@ -2202,7 +2284,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
-            fillNewPartNameAndResetLevel(loaded_parts[i], lock);
+            auto block_holder = fillNewPartNameAndResetLevel(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
@@ -2324,7 +2406,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     {
         drop_range.setPartitionId(partition_id);
         drop_range.min_block = 0;
-        drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
+        drop_range.max_block = allocateBlockNumber(CommittingBlock::Op::NewPart).number; // there will be a "hole" in block numbers
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
     }
 
@@ -2337,13 +2419,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             Transaction transaction(*this, local_context->getCurrentTransaction().get());
 
             auto data_parts_lock = lockParts();
+            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
             for (auto part : dst_parts)
             {
-                fillNewPartName(part, data_parts_lock);
+                block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
             /// Populate transaction
@@ -2462,10 +2545,11 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
+            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
             {
-                dest_table_storage->fillNewPartName(part, dest_data_parts_lock);
+                block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
             }
 
@@ -2626,15 +2710,15 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
-            fillNewPartName(part, lock);
+            auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
     }
 }
 
-StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot)
-    : MutationsSnapshotBase(std::move(params_), std::move(counters_))
+StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_)
+    : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_version(std::move(mutations_snapshot))
 {
 }
@@ -2649,7 +2733,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
         if (mutation_version <= part_data_version)
             break;
 
-        addSupportedCommands(*commands, result);
+        addSupportedCommands(*commands, mutation_version, result);
     }
 
     std::reverse(result.begin(), result.end());
@@ -2658,7 +2742,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 
 NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    NameSet res;
+    NameSet res = getColumnsUpdatedInPatches();
     if (!hasDataMutations())
         return res;
 
@@ -2672,25 +2756,33 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 
 MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
+    DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByVersion mutations_snapshot;
 
+    if (params.need_patch_parts)
+        patch_parts = getPatchPartsVectorForInternalUsage();
+
     std::lock_guard lock(currently_processing_in_background_mutex);
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
+        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+
+    UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();
+    if (params.max_mutation_versions && !params.max_mutation_versions->empty())
+        max_mutation_version = params.max_mutation_versions->begin()->second;
 
     for (const auto & [version, entry] : current_mutations_by_version)
     {
         /// Copy a pointer to all commands to avoid extracting and copying them.
         /// Required commands will be copied later only for specific parts.
-        if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
+        if (version <= max_mutation_version && MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
         {
             mutations_snapshot.emplace(version, entry.commands);
             incrementMutationsCounters(mutations_snapshot_counters, *entry.commands);
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
+    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 }
 
 MutationCounters StorageMergeTree::getMutationCounters() const
@@ -2745,21 +2837,77 @@ void StorageMergeTree::assertNotReadonly() const
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
 
-void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
-    part->info.min_block = part->info.max_block = increment.get();
-    part->info.mutation = 0;
+    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+
+    part->info.min_block = block.number;
+    part->info.max_block = block.number;
     part->setName(part->getNewName(part->info));
+
+    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
 }
 
-void StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
 {
-    part->info.min_block = part->info.max_block = increment.get();
+    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+
+    part->info.min_block = block.number;
+    part->info.max_block = block.number;
     part->info.mutation = 0;
 
     bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->setName(part->getNewName(part->info));
+
+    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+}
+
+void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
+{
+    std::lock_guard lock(committing_blocks_mutex);
+    committing_blocks.erase(block);
+    committing_blocks_cv.notify_one();
+}
+
+CommittingBlock StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
+{
+    std::lock_guard lock(committing_blocks_mutex);
+
+    auto block = CommittingBlock(op, increment.get());
+    committing_blocks.insert(block);
+
+    LOG_DEBUG(log, "Allocated block number {}", block.number);
+    return block;
+}
+
+void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const
+{
+    auto all_committed = [&]
+    {
+        for (const auto & block : committing_blocks)
+        {
+            if (block.number >= max_block_number)
+                break;
+
+            if (block.op != CommittingBlock::Op::Update)
+                return false;
+        }
+
+        return true;
+    };
+
+    std::unique_lock lock(committing_blocks_mutex);
+    bool res = committing_blocks_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), all_committed);
+
+    if (!res)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to wait ({} ms) for inserts and mutations to commit up to block number {}", timeout_ms, max_block_number);
+}
+
+CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
+{
+    std::lock_guard lock(committing_blocks_mutex);
+    return committing_blocks;
 }
 
 }
