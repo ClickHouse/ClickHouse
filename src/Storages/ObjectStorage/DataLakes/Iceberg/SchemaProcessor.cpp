@@ -7,7 +7,8 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
-#include "base/scope_guard.h"
+#include <Common/SharedLockGuard.h>
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -95,6 +96,8 @@ std::string IcebergSchemaProcessor::default_link{};
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
 {
+    std::lock_guard lock(mutex);
+
     Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
@@ -126,6 +129,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
 
 NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
@@ -134,6 +139,8 @@ NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_ver
 
 std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         return {};
@@ -142,6 +149,8 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
 
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_ids_by_source_names.find({schema_id, name});
     if (it == clickhouse_ids_by_source_names.end())
         return {};
@@ -150,6 +159,8 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_i
 
 NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
 {
+    SharedLockGuard lock(mutex);
+
     NamesAndTypesList fields;
     for (const auto & source_id : source_ids)
     {
@@ -236,13 +247,17 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
             auto required = field->getValue<bool>("required");
             if (is_subfield_of_root)
             {
+                /// NOTE: getComplexTypeFromObject() with is_subfield_of_root==true called only from addIcebergTableSchema(), which already holds the exclusive lock
+                /// So it is OK to use TSA_SUPPRESS_WARNING_FOR_READ/TSA_SUPPRESS_WARNING_FOR_WRITE
+                Int32 schema_id = TSA_SUPPRESS_WARNING_FOR_READ(current_schema_id).value();
+
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
-                clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>("id")}]
                     = NameAndTypePair{current_full_name, element_types.back()};
 
-                clickhouse_ids_by_source_names[{current_schema_id.value(), current_full_name}] = field->getValue<Int32>("id");
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>("id");
             }
             else
             {
@@ -402,32 +417,29 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
 std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
 {
     if (old_id == new_id)
-    {
         return nullptr;
-    }
+
     std::lock_guard lock(mutex);
     auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
     if (required_transform_dag_it != transform_dags_by_ids.end())
-    {
         return required_transform_dag_it->second;
-    }
 
     auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
     if (old_schema_it == iceberg_table_schemas_by_ids.end())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
-    }
+
     auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
     if (new_schema_it == iceberg_table_schemas_by_ids.end())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
-    }
+
     return transform_dags_by_ids[{old_id, new_id}]
         = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
@@ -436,6 +448,8 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
 
 bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
 {
-    return clickhouse_table_schemas_by_ids.find(id) != clickhouse_table_schemas_by_ids.end();
+    SharedLockGuard lock(mutex);
+
+    return clickhouse_table_schemas_by_ids.contains(id);
 }
 }
