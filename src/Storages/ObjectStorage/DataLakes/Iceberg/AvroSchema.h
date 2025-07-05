@@ -129,7 +129,8 @@ static constexpr const char * manifest_list_v2_schema = R"(
                 "null",
                 {
                     "type": "array",
-                    "items": {
+                    "items":
+                    {
                         "type": "record",
                         "name": "r508",
                         "fields": [
@@ -177,7 +178,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
         {"name": "snapshot_id", "type": "long", "field-id": 1},
         {
             "name": "data_file",
-            "type": {
+            "type":
+            {
                 "type": "record",
                 "name": "r2",
                 "fields": [
@@ -190,7 +192,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                     },
                     {
                         "name": "partition",
-                        "type": {
+                        "type":
+                        {
                             "type": "record",
                             "name": "r102",
                             "fields": #
@@ -206,7 +209,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k117_v118",
                                     "fields": [
@@ -226,7 +230,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k119_v120",
                                     "fields": [
@@ -246,7 +251,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k121_v122",
                                     "fields": [
@@ -266,7 +272,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k138_v139",
                                     "fields": [
@@ -286,7 +293,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k126_v127",
                                     "fields": [
@@ -306,7 +314,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k129_v130",
                                     "fields": [
@@ -356,7 +365,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
         {"name": "file_sequence_number", "type": ["null", "long"], "field-id": 4},
         {
             "name": "data_file",
-            "type": {
+            "type":
+            {
                 "type": "record",
                 "name": "r2",
                 "fields": [
@@ -370,7 +380,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                     },
                     {
                         "name": "partition",
-                        "type": {
+                        "type":
+                        {
                             "type": "record",
                             "name": "r102",
                             "fields": #
@@ -385,7 +396,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k117_v118",
                                     "fields": [
@@ -405,7 +417,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k119_v120",
                                     "fields": [
@@ -425,7 +438,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k121_v122",
                                     "fields": [
@@ -445,7 +459,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k138_v139",
                                     "fields": [
@@ -465,7 +480,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k126_v127",
                                     "fields": [
@@ -485,7 +501,8 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                             "null",
                             {
                                 "type": "array",
-                                "items": {
+                                "items":
+                                {
                                     "type": "record",
                                     "name": "k129_v130",
                                     "fields": [
