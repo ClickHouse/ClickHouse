@@ -6,6 +6,7 @@ table3
 table4
 table5
 table6\'
+table7
 show creare table:
 CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int64)\n)\nENGINE = SQLite
 CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int64),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
@@ -48,6 +49,8 @@ not a null	2
 	4
 line\'6	6
 	7
+\'	8
+\\	9
 test table function
 line1	1
 line2	2
@@ -56,6 +59,19 @@ line4	4
 table6_line1	1
 table6_line2	2
 table6_line3	3
+create table engine with table7
+Data from sqlite_table7 via clickhouse:
+line\'6\0\0\0\0	6
+\0\0\0\0\0\0\0\0\0\0	7
+\'\0\0\0\0\0\0\0\0\0	8
+\\\0\0\0\0\0\0\0\0\0	9
+abc\0\0def\0\0	10
+Data from table7 from sqlite:
+line'6|6
+|7
+'|8
+\|9
+abc|10
 test schema inference
 col1	Nullable(String)					
 col2	Nullable(Int64)					
