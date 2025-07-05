@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeVariant.h>
 
 namespace DB
 {
@@ -51,6 +52,19 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
     {
         return std::make_pair(DataTypeFactory::instance().get("Array(Polygon)"),
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeMultiPolygonName>()));
+    });
+
+    factory.registerSimpleDataTypeCustom("Geometry", []
+    {
+        auto point_type = DataTypeFactory::instance().get(DataTypePointName().getName());
+        auto linestring_type = DataTypeFactory::instance().get(DataTypeLineStringName().getName());
+        auto polygon_type = DataTypeFactory::instance().get(DataTypePolygonName().getName());
+        auto multipolygon_type = DataTypeFactory::instance().get(DataTypeMultiPolygonName().getName());
+
+        auto variant_type = std::make_shared<DataTypeVariant>(std::vector{point_type, linestring_type, polygon_type, multipolygon_type});
+
+        return std::make_pair(variant_type,
+            std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));
     });
 }
 

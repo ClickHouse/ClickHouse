@@ -10,14 +10,18 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
+#include <Functions/geometryConverters.h>
+#include <Columns/ColumnVariant.h>
 
 #include <memory>
+#include <variant>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -97,6 +101,119 @@ struct ReadWKBPolygonNameHolder
 struct ReadWKBMultiPolygonNameHolder
 {
     static constexpr const char * name = "readWKBMultiPolygon";
+};
+
+class FunctionReadWKBCommon : public IFunction
+{
+public:
+    enum class WKBTypes
+    {
+        Point = 2,
+        LineString = 0,
+        Ring = 0,
+        Polygon = 3,
+        MultiLineString = 3,
+        MultiPolygon = 1
+    };
+
+    explicit FunctionReadWKBCommon() = default;
+
+    static constexpr const char * name = "readWkb";
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get("Geometry");
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    {
+        auto column = arguments[0].column;
+
+        PointSerializer<CartesianPoint> point_serializer;
+        LineStringSerializer<CartesianPoint> linestring_serializer;
+        MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
+        MultiPolygonSerializer<CartesianPoint> multipolygon_serializer;
+
+        auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            auto str = column->getDataAt(i);
+            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
+
+            auto object = parseWKBFormat(in_buffer);
+            UInt8 converted_type = -1;
+            if (std::holds_alternative<CartesianPoint>(object))
+            {
+                point_serializer.add(std::get<CartesianPoint>(object));
+                converted_type = static_cast<UInt8>(WKBTypes::Point);
+            }
+            else if (std::holds_alternative<LineString<CartesianPoint>>(object))
+            {
+                linestring_serializer.add(std::get<LineString<CartesianPoint>>(object));
+                converted_type = static_cast<UInt8>(WKBTypes::LineString);
+            }
+            else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
+            {
+                auto polygon = std::get<Polygon<CartesianPoint>>(object);
+                MultiLineString<CartesianPoint> multilinestring = {LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end())};
+                for (const auto & inner : polygon.inners())
+                    multilinestring.push_back(LineString<CartesianPoint>(inner.begin(), inner.end()));
+
+                multilinestring_serializer.add(multilinestring);
+                converted_type = static_cast<UInt8>(WKBTypes::Polygon);
+            }
+            else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+            {
+                multilinestring_serializer.add(std::get<MultiLineString<CartesianPoint>>(object));
+                converted_type = static_cast<UInt8>(WKBTypes::MultiLineString);
+            }
+            else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
+            {
+                multipolygon_serializer.add(std::get<MultiPolygon<CartesianPoint>>(object));
+                converted_type = static_cast<UInt8>(WKBTypes::MultiPolygon);
+            }
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str.data);
+
+            discriminators_column->insertValue(converted_type);
+        }
+
+        Columns result_columns;
+        result_columns.push_back(linestring_serializer.finalize());
+        result_columns.push_back(multipolygon_serializer.finalize());
+        result_columns.push_back(point_serializer.finalize());
+        result_columns.push_back(multilinestring_serializer.finalize());
+        
+        return ColumnVariant::create(std::move(discriminators_column), result_columns);
+    }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionReadWKBCommon>();
+    }
 };
 
 }
@@ -238,6 +355,31 @@ REGISTER_FUNCTION(ReadWKB)
     factory.registerAlias("ST_MLineFromWKB", ReadWKBMultiLineStringNameHolder::name);
     factory.registerAlias("ST_PolyFromWKB", ReadWKBPolygonNameHolder::name);
     factory.registerAlias("ST_MPolyFromWKB", ReadWKBMultiPolygonNameHolder::name);
+
+    factory.registerFunction<FunctionReadWKBCommon>(
+        FunctionDocumentation{
+            .description = R"(
+    Parses a Well-Known Binary (WKB) representation of a Geometry and returns it in the internal ClickHouse format.
+    )",
+            .syntax = "readWkb(wkt_string)",
+            .arguments{{"wkb_string", "The input WKB string representing a Point geometry."}},
+            .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
+            .examples{
+                {"first call",
+                 "SELECT "
+                 "readWKkb(unhex('"
+                 "010100000000000000000000000000000000000000"
+                 "'));",
+                 R"(
+    ┌─readWkb(unhex'010100000000000000000000000...'))─┐
+    │ (0,0)                                           │
+    └─────────────────────────────────────────────────┘
+                )"},
+            },
+            .introduced_in = {25, 7},
+            .category = FunctionDocumentation::Category::Geo,
+        }
+    );
 }
 
 }
