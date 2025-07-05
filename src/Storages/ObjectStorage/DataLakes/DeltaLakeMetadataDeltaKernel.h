@@ -35,9 +35,9 @@ public:
 
     NamesAndTypesList getTableSchema() const override;
 
-    DB::ReadFromFormatInfo prepareReadingFromFormat(
+    ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns) override;
 
