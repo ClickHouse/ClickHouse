@@ -144,7 +144,15 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         lazy_output.buildOutput();
 
     if (need_filter)
+    {
+        // if (!current_block->getSourceBlock())
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter is not empty but block is empty {}", lazy_output.filter.size());
+
+        // if (current_block->rows() != lazy_output.filter.size())
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter size {} does not match block size {}", lazy_output.filter.size(), current_block->rows());
+
         current_block->filter(lazy_output.filter);
+    }
 
     current_block->filterBySelector();
 

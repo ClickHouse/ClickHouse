@@ -266,7 +266,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Filters selector by mask discarding rows for which filter is false
     void filter(const IColumnFilter & filter)
     {
-        chassert(block && block.rows() == filter.size());
+        chassert(rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();
         new_selector->reserve(selector.size());
         std::copy_if(
