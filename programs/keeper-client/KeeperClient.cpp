@@ -141,9 +141,13 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("host"));
 
     options.addOption(
-        Poco::Util::Option("port", "p", "server port. default `9181`")
+        Poco::Util::Option("port", "p", "server port. default `9181` for standard and `9440` for secure")
             .argument("<port>")
             .binding("port"));
+
+    options.addOption(
+    Poco::Util::Option("secure", "s", "use secure connection. default `false`")
+        .binding("secure"));
 
     options.addOption(
         Poco::Util::Option("password", "", "password to connect to keeper server")
@@ -404,6 +408,11 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     Poco::Util::AbstractConfiguration::Keys keys;
     clickhouse_config.configuration->keys("zookeeper", keys);
 
+    bool is_secure = config().has("secure");
+    String default_port = "9181";
+    if (is_secure)
+        default_port = "9440";
+
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
         LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
@@ -415,9 +424,16 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
             String prefix = "zookeeper." + key;
             String host = clickhouse_config.configuration->getString(prefix + ".host");
-            String port = clickhouse_config.configuration->getString(prefix + ".port");
+            String port;
+            if (clickhouse_config.configuration->has(prefix + ".port"))
+                port = clickhouse_config.configuration->getString(prefix + ".port");
+            else if (clickhouse_config.configuration->has(prefix + ".tcp_port_secure"))
+                port = clickhouse_config.configuration->getString(prefix + ".tcp_port_secure");
+            else
+                port = default_port;
 
-            if (clickhouse_config.configuration->has(prefix + ".secure"))
+            if ((clickhouse_config.configuration->has(prefix + ".secure")
+                || is_secure) && !host.starts_with("secure://"))
                 host = "secure://" + host;
 
             zk_args.hosts.push_back(host + ":" + port);
@@ -426,7 +442,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     else
     {
         String host = config().getString("host", "localhost");
-        String port = config().getString("port", "9181");
+        String port = config().getString("port", default_port);
+
+        if (is_secure && !host.starts_with("secure://"))
+            host = "secure://" + host;
 
         zk_args.hosts.push_back(host + ":" + port);
     }
