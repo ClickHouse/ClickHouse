@@ -1143,9 +1143,31 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 
 namespace
 {
-template <typename TMustHaveDataType>
+
 void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
 {
+    if (command.type == AlterCommand::DROP_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER DROP {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER RENAME {} ({}) column",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name));
+    }
+};
+
+template <typename TMustHaveDataType>
+void checkSpecialColumnWithDataType(const std::string_view column_meta_name, const AlterCommand & command)
+{
+    checkSpecialColumn(column_meta_name, command);
     if (command.type == AlterCommand::MODIFY_COLUMN)
     {
         if (!command.data_type)
@@ -1167,23 +1189,8 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
                 TypeName<TMustHaveDataType>);
         }
     }
-    else if (command.type == AlterCommand::DROP_COLUMN)
-    {
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Trying to ALTER DROP {} ({}) column",
-            column_meta_name,
-            backQuoteIfNeed(command.column_name));
-    }
-    else if (command.type == AlterCommand::RENAME_COLUMN)
-    {
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Trying to ALTER RENAME {} ({}) column",
-            column_meta_name,
-            backQuoteIfNeed(command.column_name));
-    }
 };
+
 }
 
 void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
@@ -3913,24 +3920,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// No other checks required
                 continue;
             }
-            if (command.type == AlterCommand::DROP_COLUMN)
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP version {} column", backQuoteIfNeed(command.column_name));
-            }
-            if (command.type == AlterCommand::RENAME_COLUMN)
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER RENAME version {} column", backQuoteIfNeed(command.column_name));
-            }
+            checkSpecialColumn("version", command);
         }
         else if (command.column_name == merging_params.is_deleted_column)
         {
-            checkSpecialColumn<DataTypeUInt8>("is_deleted", command);
+            checkSpecialColumnWithDataType<DataTypeUInt8>("is_deleted", command);
         }
         else if (command.column_name == merging_params.sign_column)
         {
-            checkSpecialColumn<DataTypeUInt8>("sign", command);
+            checkSpecialColumnWithDataType<DataTypeUInt8>("sign", command);
+        }
+        else if (merging_params.columns_to_sum.end() != std::find(merging_params.columns_to_sum.begin(), merging_params.columns_to_sum.end(), command.column_name))
+        {
+            checkSpecialColumn("columns to sum", command);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
