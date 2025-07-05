@@ -113,7 +113,6 @@ public:
         MultiPolygon,
         Point,
         Polygon,
-        Ring,
     };
 
     explicit FunctionReadWKBCommon() = default;
@@ -200,7 +199,7 @@ public:
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());
         result_columns.push_back(ring_serializer.finalize());
-        
+
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
 
