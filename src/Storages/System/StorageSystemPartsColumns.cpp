@@ -1,4 +1,4 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
