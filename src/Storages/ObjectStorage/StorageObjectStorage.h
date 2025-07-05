@@ -224,14 +224,14 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual std::optional<size_t> totalRows() { return {}; }
-    virtual std::optional<size_t> totalBytes() { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String &) const { return {}; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String &) const { return {}; }
 
     virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
     {

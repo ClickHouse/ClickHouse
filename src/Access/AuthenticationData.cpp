@@ -614,10 +614,12 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         auth_data.setPasswordHashHex(value, validate);
 
-        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
+        if ((query.type == AuthenticationType::SHA256_PASSWORD || query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
+            && args_size == 2)
         {
             String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
             auth_data.setSalt(parsed_salt);
+            return auth_data;
         }
     }
     else if (query.type == AuthenticationType::LDAP)

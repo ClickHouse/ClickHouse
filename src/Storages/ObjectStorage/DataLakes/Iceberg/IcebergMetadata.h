@@ -27,7 +27,7 @@
 namespace DB
 {
 
-class IcebergMetadata : public IDataLakeMetadata, private WithContext
+class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
@@ -70,8 +70,8 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
-    std::optional<size_t> totalRows() const override;
-    std::optional<size_t> totalBytes() const override;
+    std::optional<size_t> totalRows(ContextPtr local_context) const override;
+    std::optional<size_t> totalBytes(ContextPtr local_context) const override;
 
 protected:
     ObjectIterator iterate(

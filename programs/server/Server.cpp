@@ -265,6 +265,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -1960,12 +1962,20 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
-            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
 
-            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
-            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
-            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
+            size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
+
+            global_context->reloadRemoteThrottlerConfig(remote_read_bandwidth,remote_write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", remote_read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", remote_write_bandwidth);
+
+            size_t local_read_bandwidth = new_server_settings[ServerSetting::max_local_read_bandwidth_for_server];
+            size_t local_write_bandwidth = new_server_settings[ServerSetting::max_local_write_bandwidth_for_server];
+
+            global_context->reloadLocalThrottlerConfig(local_read_bandwidth,local_write_bandwidth);
+            LOG_INFO(log, "Setting max_local_read_bandwidth_for_server was set to {}", local_read_bandwidth);
+            LOG_INFO(log, "Setting max_local_write_bandwidth_for_server was set to {}", local_write_bandwidth);
 
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
