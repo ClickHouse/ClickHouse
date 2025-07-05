@@ -90,12 +90,9 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     size_t remaining_rows = 0;
     bool is_last = true;
 
-    //std::cerr << lazy_output.row_count << " " << lazy_output.row_refs.size() << " " << lazy_output.output_by_row_list << " ; " << join->max_joined_block_rows << std::endl;
     size_t rows_count = 0;
     if (!lazy_output.offsets_to_replicate.empty())
         rows_count = lazy_output.offsets_to_replicate.back();
-
-    // std::cerr << rows_count << " ; " << join->max_joined_block_rows << std::endl;
 
     if (join->max_joined_block_rows && rows_count > join->max_joined_block_rows)
     {
@@ -108,7 +105,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             num_rhs_rows += offset;
             ++num_lhs_rows;
         }
-        // std::cerr << num_lhs_rows << " " << num_rhs_rows << " " << current_block->rows()<< std::endl;
 
         is_last = false;
 
