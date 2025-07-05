@@ -15,6 +15,14 @@ struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
+struct ChunkInfoRowNumOffset : public ChunkInfoCloneable<ChunkInfoRowNumOffset>
+{
+    ChunkInfoRowNumOffset(const ChunkInfoRowNumOffset & other) = default;
+    explicit ChunkInfoRowNumOffset(size_t row_num_offset_) : row_num_offset(row_num_offset_) { }
+
+    const size_t row_num_offset;
+};
+
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public SourceWithKeyCondition
