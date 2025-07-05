@@ -282,7 +282,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (auto filter_actions = read_from_dummy->detachFilterActionsDAG())
         {
             const auto & table_node = dummy_storage_to_table.at(&read_from_dummy->getStorage());
-            res[table_node] = FiltersForTableExpression{std::move(filter_actions), read_from_dummy->getPrewhereInfo()};
+            res[table_node] = FiltersForTableExpression{filter_actions, read_from_dummy->getPrewhereInfo()};
         }
     }
 

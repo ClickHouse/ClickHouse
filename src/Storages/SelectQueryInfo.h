@@ -182,7 +182,11 @@ struct SelectQueryInfo
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
 
-    /// Filter actions dag for current storage
+    /// Filter actions dag for current storage.
+    /// NOTE: Currently we store two copies of the filter DAGs:
+    /// (1) SourceStepWithFilter::filter_actions_dag, (2) SelectQueryInfo::filter_actions_dag.
+    /// Prefer to use the one in SourceStepWithFilter, not this one.
+    /// (See comment in ReadFromMergeTree::applyFilters.)
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
