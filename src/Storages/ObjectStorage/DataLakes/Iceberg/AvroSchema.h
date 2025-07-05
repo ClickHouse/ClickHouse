@@ -4,9 +4,9 @@
 
 namespace DB
 {
-// clang-format off
 
-static constexpr const char * manifest_list_v1_schema = R"({
+static constexpr const char * manifest_list_v1_schema = R"(
+{
 	"type": "record",
     "name": "manifest_file",
     "fields": [
@@ -62,13 +62,13 @@ static constexpr const char * manifest_list_v1_schema = R"({
                             {
                                 "name": "lower_bound",
                                 "type": ["null", "bytes"],
-                                "doc": "Partition lower bound for all files",								
+                                "doc": "Partition lower bound for all files",
                                 "field-id": 510
                             },
                             {
                                 "name": "upper_bound",
                                 "type": ["null", "bytes"],
-                                "doc": "Partition upper bound for all files",								
+                                "doc": "Partition upper bound for all files",
                                 "field-id": 511
                             }
                         ]
@@ -76,26 +76,27 @@ static constexpr const char * manifest_list_v1_schema = R"({
                     "element-id": 508
                 }
             ],
-            "doc": "Summary for each partition",			
+            "doc": "Summary for each partition",
             "field-id": 507
         },
         {"name": "added_rows_count", "type": ["null", "long"], "doc": "Added rows count", "field-id": 512},
         {
             "name": "existing_rows_count",
             "type": ["null", "long"],
-            "doc": "Existing rows count",			
+            "doc": "Existing rows count",
             "field-id": 513
         },
         {
             "name": "deleted_rows_count",
             "type": ["null", "long"],
-            "doc": "Deleted rows count",			
+            "doc": "Deleted rows count",
             "field-id": 514
         }
     ]
 })";
 
-static constexpr const char * manifest_list_v2_schema = R"({
+static constexpr const char * manifest_list_v2_schema = R"(
+{
     "type": "record",
     "name": "manifest_file",
     "fields": [
@@ -167,7 +168,8 @@ static constexpr const char * manifest_list_v2_schema = R"({
     ]
 })";
 
-static constexpr const char * manifest_entry_v1_schema = R"({
+static constexpr const char * manifest_entry_v1_schema = R"(
+{
     "type": "record",
     "name": "manifest_entry",
     "fields": [
@@ -343,7 +345,8 @@ static constexpr const char * manifest_entry_v1_schema = R"({
     ]
 })";
 
-static constexpr const char * manifest_entry_v2_schema = R"({
+static constexpr const char * manifest_entry_v2_schema = R"(
+{
     "type": "record",
     "name": "manifest_entry",
     "fields": [
@@ -526,7 +529,5 @@ static constexpr const char * manifest_entry_v2_schema = R"({
         }
     ]
 })";
-
-// clang-format on
 
 }

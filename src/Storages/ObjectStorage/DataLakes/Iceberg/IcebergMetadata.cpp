@@ -33,7 +33,6 @@
 namespace ProfileEvents
 {
     extern const Event IcebergTrivialCountOptimizationApplied;
-    extern const Event IcebergVersionHintUsed;
 }
 
 namespace DB
