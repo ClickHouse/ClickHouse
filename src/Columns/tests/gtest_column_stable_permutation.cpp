@@ -92,7 +92,7 @@ void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size,
     }
 }
 
-void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std::vector<size_t> & ranges_permutations, IColumn & column)
+void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std::vector<UInt32> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -144,7 +144,7 @@ void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransfor
     static const std::vector<size_t> range_sizes = {1, 5, 50, 500};
 
     std::vector<std::vector<Field>> ranges(ranges_size);
-    std::vector<size_t> ranges_permutations(ranges_size);
+    std::vector<UInt32> ranges_permutations(ranges_size);
     iota(ranges_permutations.data(), ranges_size, IColumn::Permutation::value_type(0));
 
     IColumn::Permutation actual_permutation;

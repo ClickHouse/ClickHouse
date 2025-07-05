@@ -192,7 +192,7 @@ TEST(ColumnSparse, Permute)
         auto [sparse_src, full_src] = createColumns(n, k);
 
         IColumn::Permutation perm(n);
-        iota(perm.data(), perm.size(), size_t(0));
+        iota(perm.data(), perm.size(), UInt32(0));
         std::shuffle(perm.begin(), perm.end(), rng);
 
         auto sparse_dst = sparse_src->permute(perm, limit);
