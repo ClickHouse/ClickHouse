@@ -1640,6 +1640,9 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         const auto & source_statistics = source_object.getStatistics();
         for (const auto & [path, column_ptr] : source_object.dynamic_paths_ptrs)
         {
+            // If column_ptr is null, it means that this path is not present in the source column.
+            if (!column_ptr)
+                continue;
             auto it = path_to_total_number_of_non_null_values.find(path);
             if (it == path_to_total_number_of_non_null_values.end())
                 it = path_to_total_number_of_non_null_values.emplace(path, 0).first;

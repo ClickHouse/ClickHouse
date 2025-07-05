@@ -36,7 +36,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithType
             ++num_const;
     }
 
-    result.type = getLeastSupertype(types);
+    result.type = getLeastSupertypeOrVariant(types);
 
     /// Create supertype column saving constness if possible.
 
