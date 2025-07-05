@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
 
+#include <string>
 #include <memory>
 
 namespace DB
@@ -13,8 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -28,9 +28,15 @@ public:
 
     static constexpr const char * name = NameHolder::name;
 
-    String getName() const override { return name; }
+    String getName() const override
+    {
+        return name;
+    }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -44,8 +50,7 @@ public:
         return DataTypeFactory::instance().get(DataTypeName().getName());
     }
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
@@ -62,9 +67,15 @@ public:
         return serializer.finalize();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReadWKT<DataTypeName, Geometry, Serializer, NameHolder>>(); }
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionReadWKT<DataTypeName, Geometry, Serializer, NameHolder>>();
+    }
 };
 
 class FunctionReadWKTCommon : public IFunction
@@ -244,38 +255,39 @@ struct ReadWKTMultiPolygonNameHolder
 REGISTER_FUNCTION(ReadWKT)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
-    factory.registerFunction<
-        FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(
-        FunctionDocumentation{
-            .description = R"(
+    factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(FunctionDocumentation
+    {
+        .description=R"(
 Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
 )",
-            .syntax = "readWKTLineString(wkt_string)",
-            .arguments{{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}},
-            .returned_value = {"The function returns a ClickHouse internal representation of the linestring geometry."},
-            .examples{
-                {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
+        .syntax = "readWKTLineString(wkt_string)",
+        .arguments{
+            {"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}
+        },
+        .returned_value = {"The function returns a ClickHouse internal representation of the linestring geometry."},
+        .examples{
+            {"first call", "SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
 ┌─readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
 │ [(1,1),(2,2),(3,3),(1,1)]                            │
 └──────────────────────────────────────────────────────┘
             )"},
-                {"second call", "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));", R"(
+            {"second call", "SELECT toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'));", R"(
 ┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
 │ LineString                                                       │
 └──────────────────────────────────────────────────────────────────┘
             )"},
-            },
-            .category = FunctionDocumentation::Category::UUID});
-    factory.registerFunction<FunctionReadWKT<
-        DataTypeMultiLineStringName,
-        CartesianMultiLineString,
-        MultiLineStringSerializer<CartesianPoint>,
-        ReadWKTMultiLineStringNameHolder>>(FunctionDocumentation{
-        .description = R"(
+        },
+        .category = FunctionDocumentation::Category::UUID
+    });
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiLineStringName, CartesianMultiLineString, MultiLineStringSerializer<CartesianPoint>, ReadWKTMultiLineStringNameHolder>>(FunctionDocumentation
+    {
+        .description=R"(
 Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
 )",
         .syntax = "readWKTMultiLineString(wkt_string)",
-        .arguments{{"wkt_string", "The input WKT string representing a MultiLineString geometry.", {"String"}}},
+        .arguments{
+            {"wkt_string", "The input WKT string representing a MultiLineString geometry.", {"String"}}
+        },
         .returned_value = {"The function returns a ClickHouse internal representation of the multilinestring geometry."},
         .examples{
             {"first call", "SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');", R"(
@@ -290,15 +302,11 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
 └─────────────────────────────────────────────────────────────────────────┘
             )"},
         },
-        .category = FunctionDocumentation::Category::Geo});
+        .category = FunctionDocumentation::Category::Geo
+    });
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
-    factory.registerFunction<
-        FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
-    factory.registerFunction<FunctionReadWKT<
-        DataTypeMultiPolygonName,
-        CartesianMultiPolygon,
-        MultiPolygonSerializer<CartesianPoint>,
-        ReadWKTMultiPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>();
 
     factory.registerFunction<FunctionReadWKTCommon>(FunctionDocumentation{
         .description = R"(
