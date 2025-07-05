@@ -38,17 +38,20 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
         {"INTEGER", "Int32"}, {"BIGINT", "Int64"}, {"FLOAT", "Float32"}, {"DOUBLE", "Float64"},
         {"VARCHAR(10)", "String"}, {"CHAR(10)", "String"}, {"Date", "Date32"}, {"DateTime", "DateTime"},
         {"TIMESTAMP", "DateTime"}, {"BOOLEAN", "Bool"}, {"BIT", "UInt64"}, {"SET", "UInt64"},
-        {"YEAR", "UInt16"}, {"Time", "Time"}, {"GEOMETRY", "String"}
+        {"YEAR", "UInt16"}, {"Time", "Time"}, {"GEOMETRY", "Geometry"}
     };
 
     for (const auto & [test_type, mapped_type] : test_types)
     {
-        EXPECT_EQ(tryRewrittenCreateQuery(
-            "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, test " + test_type + ")", context_holder.context)->formatWithSecretsOneLine(),
-            "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Nullable(" + mapped_type + ")" +
-            MATERIALIZEDMYSQL_TABLE_COLUMNS + ") ENGINE = "
-            "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
-
+        /// Geometry is not tested due it can not be wrapped into nullable.
+        if (test_type != "GEOMETRY")
+        {
+            EXPECT_EQ(tryRewrittenCreateQuery(
+                "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, test " + test_type + ")", context_holder.context)->formatWithSecretsOneLine(),
+                "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` Nullable(" + mapped_type + ")" +
+                MATERIALIZEDMYSQL_TABLE_COLUMNS + ") ENGINE = "
+                "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
+        }
         EXPECT_EQ(tryRewrittenCreateQuery(
             "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, test " + test_type + " NOT NULL)", context_holder.context)->formatWithSecretsOneLine(),
             "CREATE TABLE test_database.test_table_1 (`key` Int32, `test` " + mapped_type +
