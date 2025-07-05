@@ -12,10 +12,10 @@ class AIClientFactory
 {
 public:
     /// Create an AI client based on configuration
-    static ai::Client createClient(const AIConfiguration& config);
-    
+    static ai::Client createClient(const AIConfiguration & config);
+
     /// Load AI configuration from Poco configuration
-    static AIConfiguration loadConfiguration(const Poco::Util::AbstractConfiguration& config);
+    static AIConfiguration loadConfiguration(const Poco::Util::AbstractConfiguration & config);
 };
 
-} 
+}

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string>
-#include <iostream>
-#include <chrono>
-#include <thread>
 #include <algorithm>
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <thread>
 #include <base/terminalColors.h>
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 class AIToolExecutionDisplay
 {
 public:
-    explicit AIToolExecutionDisplay(bool enable_colors = true) 
+    explicit AIToolExecutionDisplay(bool enable_colors = true)
         : use_colors(enable_colors)
     {
     }
@@ -29,10 +29,10 @@ public:
             std::cerr << "." << std::flush;
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
         }
-        
+
         // Clear the line
         std::cerr << "\r\033[K";
-        
+
         if (use_colors)
             std::cerr << resetColor();
     }
@@ -41,7 +41,7 @@ public:
     {
         // Clear any previous line
         std::cerr << "\r\033[K";
-        
+
         // Tool call header with icon
         if (use_colors)
             std::cerr << "\033[33m"; // Yellow
@@ -55,7 +55,7 @@ public:
         if (use_colors)
             std::cerr << resetColor();
         std::cerr << std::endl;
-        
+
         // Show arguments if provided (indented)
         if (!arguments.empty() && arguments != "{}")
         {
@@ -80,21 +80,21 @@ public:
         if (use_colors)
             std::cerr << "\033[0m"; // Reset bold
         std::cerr << std::endl;
-        
+
         // Show result preview (truncated if too long)
         if (!result.empty())
         {
             std::string preview = result;
             // Replace newlines with spaces for preview
             std::replace(preview.begin(), preview.end(), '\n', ' ');
-            
+
             // Truncate if too long
             const size_t max_preview_length = 80;
             if (preview.length() > max_preview_length)
             {
                 preview = preview.substr(0, max_preview_length - 3) + "...";
             }
-            
+
             if (use_colors)
                 std::cerr << "\033[90m"; // Dark gray
             std::cerr << "  └─ " << preview;
@@ -128,4 +128,4 @@ private:
     bool use_colors;
 };
 
-} 
+}
