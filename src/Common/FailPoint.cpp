@@ -91,6 +91,8 @@ static struct InitFiu
     ONCE(keeper_leader_sets_invalid_digest) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(database_replicated_delay_recovery) \
+    REGULAR(database_replicated_delay_entry_execution) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
 

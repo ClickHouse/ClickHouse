@@ -272,6 +272,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
             break;
         }
         case Type::DROP_REPLICA:

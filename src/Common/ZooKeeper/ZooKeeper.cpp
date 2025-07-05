@@ -1080,13 +1080,21 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
 void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
+    deleteEphemeralNodeIfContentMatches(path, [&fast_delete_if_equal_value](const std::string & actual_content)
+    {
+        return actual_content == fast_delete_if_equal_value;
+    });
+}
+
+void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition)
+{
     zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
     Coordination::Stat stat;
     if (!tryGet(path, content, &stat, eph_node_disappeared))
         return;
 
-    if (content == fast_delete_if_equal_value)
+    if (condition(content))
     {
         auto code = tryRemove(path, stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
