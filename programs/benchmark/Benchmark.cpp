@@ -647,7 +647,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
