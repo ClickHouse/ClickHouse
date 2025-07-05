@@ -33,7 +33,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsS3UriStyleIdentifierMode s3_uri_style_identifier_mode;
+    extern const SettingsS3UriStyle s3_uri_style_identifier_mode;
 }
 
 namespace S3AuthSetting
@@ -84,7 +84,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
         config.getBool(config_prefix + ".readonly", false),
-        SettingFieldS3UriStyleIdentifierModeTraits::fromString(config.getString(config_prefix + ".s3_uri_style_identifier_mode", "auto"))
+        SettingFieldS3UriStyleTraits::fromString(config.getString(config_prefix + ".s3_uri_style_identifier_mode", "auto"))
     );
 }
 

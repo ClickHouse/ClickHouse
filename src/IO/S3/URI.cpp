@@ -35,7 +35,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyleIdentifierMode uri_style)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyle uri_style)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -101,10 +101,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyleIde
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
 
-    if (uri_style == S3UriStyleIdentifierMode::AUTO)
+    if (uri_style == S3UriStyle::AUTO)
     {
-        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, true))
-            if (!tryInitPathStyle())
+        if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, true) && !tryInitPathStyle())
             {
                 /// Custom endpoint, e.g. a public domain of Cloudflare R2,
                 /// which could be served by a custom server-side code.
@@ -116,13 +115,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyleIde
                     key = uri.getPath().substr(1);
             }
     }
-    else if (uri_style == S3UriStyleIdentifierMode::VIRTUAL_HOSTED)
+    else if (uri_style == S3UriStyle::VIRTUAL_HOSTED)
     {
         if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, false))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? uri.toString() : "");
 
     }
-    else if (uri_style == S3UriStyleIdentifierMode::PATH)
+    else if (uri_style == S3UriStyle::PATH)
     {
         if (!tryInitPathStyle())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? uri.toString() : "");
@@ -162,11 +161,10 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
 
     if (is_using_aws_private_link_interface)
         return false;
-    
+
     String name;
     String endpoint_authority_from_uri;
-    std::cerr << uri.getAuthority() << "\n";
-    
+
     if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
         return false;
 

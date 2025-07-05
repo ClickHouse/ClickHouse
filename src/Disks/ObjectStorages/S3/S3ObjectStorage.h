@@ -26,7 +26,7 @@ struct S3ObjectStorageSettings
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
         bool read_only_,
-        S3UriStyleIdentifierMode uri_style_identifier_mode_)
+        S3UriStyle uri_style_identifier_mode_)
         : request_settings(request_settings_)
         , auth_settings(auth_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
@@ -43,7 +43,7 @@ struct S3ObjectStorageSettings
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
     bool read_only;
-    S3UriStyleIdentifierMode uri_style_identifier_mode;
+    S3UriStyle uri_style_identifier_mode;
 };
 
 class S3ObjectStorage : public IObjectStorage

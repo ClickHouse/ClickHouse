@@ -21,7 +21,6 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -37,7 +36,7 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
-    extern const SettingsS3UriStyleIdentifierMode s3_uri_style_identifier_mode;
+    extern const SettingsS3UriStyle s3_uri_style_identifier_mode;
 }
 
 namespace S3AuthSetting

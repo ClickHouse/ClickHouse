@@ -34,10 +34,10 @@ struct URI
     std::optional<std::string> archive_pattern;
     std::string uri_str;
 
-    bool is_virtual_hosted_style;
+    bool is_virtual_hosted_style = false;
 
     URI() = default;
-    explicit URI(const std::string & uri_, bool allow_archive_path_syntax = false, S3UriStyleIdentifierMode uri_style = S3UriStyleIdentifierMode::AUTO);
+    explicit URI(const std::string & uri_, bool allow_archive_path_syntax = false, S3UriStyle uri_style = S3UriStyle::AUTO);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);

@@ -328,9 +328,9 @@ IMPLEMENT_SETTING_ENUM(
 
 
 IMPLEMENT_SETTING_ENUM(
-    S3UriStyleIdentifierMode,
+    S3UriStyle,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"auto", S3UriStyleIdentifierMode::AUTO},
-     {"path", S3UriStyleIdentifierMode::PATH},
-     {"virtual_hosted", S3UriStyleIdentifierMode::VIRTUAL_HOSTED}})
+    {{"auto", S3UriStyle::AUTO},
+     {"path", S3UriStyle::PATH},
+     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
 }
