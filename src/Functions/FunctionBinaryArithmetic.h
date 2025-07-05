@@ -1783,7 +1783,7 @@ public:
                     isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
         /// Special case - one or both arguments are IPv6
@@ -1794,7 +1794,7 @@ public:
                     isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
 
@@ -1864,6 +1864,11 @@ public:
             }
         }
 
+        return getReturnTypeImplStatic2(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context)
+    {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
