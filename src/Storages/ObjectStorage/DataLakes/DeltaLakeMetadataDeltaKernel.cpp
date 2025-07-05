@@ -59,7 +59,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
-    auto info = prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
 
     info.format_header.clear();
     for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())

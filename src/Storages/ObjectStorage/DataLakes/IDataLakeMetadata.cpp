@@ -66,7 +66,7 @@ ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
-    return prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
 }
 
 }
