@@ -32,7 +32,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserKeyword s_if_empty(Keyword::IF_EMPTY);
     ParserIdentifier name_p(true);
-    ParserStringLiteral like_p;
+    ParserStringLiteral like_p(Highlight::string_like);
     ParserKeyword s_permanently(Keyword::PERMANENTLY);
     ParserKeyword s_no_delay(Keyword::NO_DELAY);
     ParserKeyword s_sync(Keyword::SYNC);
