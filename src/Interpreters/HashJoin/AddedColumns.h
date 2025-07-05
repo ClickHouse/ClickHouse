@@ -48,19 +48,6 @@ struct LazyOutput
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
 
-
-    // struct TypeAndName
-    // {
-    //     DataTypePtr type;
-    //     String name;
-    //     String qualified_name;
-
-    //     TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
-    //         : type(type_), name(name_), qualified_name(qualified_name_)
-    //     {
-    //     }
-    // };
-
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
 
