@@ -267,7 +267,7 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    auto canMergeWith = [&](const RPNElement & e)
+    auto canMergeWith = [](const RPNElement & e)
     {
         return (e.function == FUNCTION_IN_RANGE
                 /// if the sub-clause is also cnf/dnf, it's good to merge
