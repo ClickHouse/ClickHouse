@@ -42,6 +42,18 @@ DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(uuid);
 DEFINE_ICEBERG_FIELD(value);
+DEFINE_ICEBERG_FIELD(manifest_length);
+DEFINE_ICEBERG_FIELD(partition_spec_id);
+DEFINE_ICEBERG_FIELD(content);
+DEFINE_ICEBERG_FIELD(min_sequence_number);
+DEFINE_ICEBERG_FIELD(added_snapshot_id);
+DEFINE_ICEBERG_FIELD(added_files_count);
+DEFINE_ICEBERG_FIELD(existing_files_count);
+DEFINE_ICEBERG_FIELD(deleted_files_count);
+DEFINE_ICEBERG_FIELD(added_rows_count);
+DEFINE_ICEBERG_FIELD(existing_rows_count);
+DEFINE_ICEBERG_FIELD(deleted_rows_count);
+
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
