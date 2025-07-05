@@ -70,4 +70,4 @@ for query in "${supported_queries[@]}"; do
 done
 
 echo ""
-echo "All tests passed!" 
+echo "All tests passed!"
