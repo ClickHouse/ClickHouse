@@ -151,6 +151,7 @@ private:
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
         /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
+        time_t finish_time = 0;
 
         String latest_failed_part;
         MergeTreePartInfo latest_failed_part_info;
