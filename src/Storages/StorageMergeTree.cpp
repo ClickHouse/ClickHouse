@@ -2219,8 +2219,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted parts.
-    local_context->clearCaches();
     return results;
 }
 
