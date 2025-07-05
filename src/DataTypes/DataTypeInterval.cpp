@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInterval.h>
+#include "Common/IntervalKind.h"
 #include <Common/SipHash.h>
 
 
@@ -16,7 +17,7 @@ bool DataTypeInterval::equals(const IDataType & rhs) const
 
 void DataTypeInterval::updateHashImpl(SipHash & hash) const
 {
-    hash.update(kind);
+    hash.update(static_cast<uint8_t>(IntervalKind::Kind(kind)));
 }
 
 void registerDataTypeInterval(DataTypeFactory & factory)
