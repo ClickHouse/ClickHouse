@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/OpenedFileCache.h>
 

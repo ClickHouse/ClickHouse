@@ -75,7 +75,7 @@ class CIDB:
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
-            head_repo=env.FORK_NAME,
+            head_repo=env.REPOSITORY,  # TODO: remove from table?
             task_url="",
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])

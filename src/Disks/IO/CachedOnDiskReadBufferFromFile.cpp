@@ -81,10 +81,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
-    LOG_TEST(
-        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
-        settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
-        use_external_buffer, allow_seeks_after_first_read);
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -1106,47 +1102,18 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
         auto cache_file_path = getFileNameFromReadBuffer(*implementation_buffer);
 
-        std::string download_finished_time;
-        if (file_segment.isDownloaded())
-        {
-            WriteBufferFromString buf{download_finished_time};
-            writeDateTimeText(file_segment.getFinishedDownloadTime(), buf);
-        }
-        else
-            download_finished_time = "None";
-
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: "
-            "result: {}, "
-            "file offset: {}, "
-            "read bytes: {}, "
-            "initial read offset: {}, "
-            "nextimpl working buffer offset: {},"
-            "reading until: {}, "
-            "read type: {}, "
-            "working buffer size: {}, "
-            "internal buffer size: {}, "
-            "finished download time: {}, "
-            "cache file size: {}, "
-            "cache file path: {}, "
-            "cache file offset: {}, "
-            "remaining file segments: {}, "
-            "current file segment: {}",
-            result,
+            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, "
+            "reading until: {}, read type: {}, cache file size: {}, cache file path: {}, "
+            "cache file offset: {}, current file segment: {}",
             file_offset_of_buffer_end,
-            size,
             first_offset,
-            nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
-            implementation_buffer->buffer().size(),
-            implementation_buffer->internalBuffer().size(),
-            download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
             implementation_buffer->getFileOffsetOfBufferEnd(),
-            file_segments->size(),
             file_segment.getInfoForLog());
     }
 

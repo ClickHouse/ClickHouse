@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
@@ -234,14 +234,10 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
-struct ClusterFunctionReadTaskResponse;
-using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
+using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
-
-using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
@@ -252,18 +248,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
-
 class SessionTracker;
 
 struct ServerSettings;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -353,22 +340,15 @@ protected:
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
-    std::optional<ClusterFunctionReadTaskCallback> next_task_callback;
+    std::optional<ReadTaskCallback> next_task_callback;
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
-    BlockMarshallingCallback block_marshalling_callback;
-
-    bool is_under_restore = false;
-
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
-
-    /// Max block numbers in partitions to read from MergeTree tables.
-    PartitionIdToMaxBlockPtr partition_id_to_max_block;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -441,8 +421,6 @@ public:
             functions = rhs.functions;
             storages = rhs.storages;
             table_functions = rhs.table_functions;
-            executable_user_defined_functions = rhs.executable_user_defined_functions;
-            sql_user_defined_functions = rhs.sql_user_defined_functions;
         }
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
@@ -456,8 +434,6 @@ public:
         std::unordered_set<std::string> functions TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> storages TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> executable_user_defined_functions TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> sql_user_defined_functions TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
@@ -551,15 +527,6 @@ public:
 protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
-    mutable std::mutex sample_block_cache_mutex;
-
-    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
-    mutable StorageMetadataCache storage_metadata_cache;
-    mutable std::mutex storage_metadata_cache_mutex;
-
-    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
-    mutable StorageSnapshotCache storage_snapshot_cache;
-    mutable std::mutex storage_snapshot_cache_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -685,7 +652,6 @@ public:
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
-    void removeAllWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -872,10 +838,6 @@ public:
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
-        const StorageID & table_id,
-        const Names & column_names);
-
-    void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
@@ -903,9 +865,7 @@ public:
         Format,
         Function,
         Storage,
-        TableFunction,
-        ExecutableUserDefinedFunction,
-        SQLUserDefinedFunction
+        TableFunction
     };
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
@@ -955,9 +915,6 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
-
-    bool isUnderRestore() const { return is_under_restore; }
-    void setUnderRestore(bool under_restore) { is_under_restore = under_restore; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -1025,7 +982,7 @@ public:
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1069,13 +1026,6 @@ public:
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
-
-    double getMinOSCPUWaitTimeRatioToDropConnection() const;
-    double getMaxOSCPUWaitTimeRatioToDropConnection() const;
-    void setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection);
-
-    bool getS3QueueDisableStreaming() const;
-    void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1204,6 +1154,7 @@ public:
     void clearUncompressedCache() const;
 
     void setPageCache(
+        size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
         size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
         size_t num_shards);
@@ -1444,9 +1395,7 @@ public:
     String getGoogleProtosPath() const;
     void setGoogleProtosPath(const String & path);
 
-    std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
-    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
-    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+    SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1504,17 +1453,14 @@ public:
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
-    ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
-    void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
+    ReadTaskCallback getReadTaskCallback() const;
+    void setReadTaskCallback(ReadTaskCallback && callback);
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
-
-    BlockMarshallingCallback getBlockMarshallingCallback() const;
-    void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
@@ -1557,9 +1503,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
-    PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
 
     const ServerSettings & getServerSettings() const;
 
@@ -1643,7 +1586,6 @@ public:
     ThrottlerPtr getMergesThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
-    void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

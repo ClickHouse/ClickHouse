@@ -15,9 +15,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
-#include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Common/ThrottlerArray.h>
+
 
 namespace DB
 {
@@ -122,8 +121,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
@@ -135,14 +133,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     switch (type)
     {
         case Mutation:
-            addThrottler(read_settings.remote_throttler, context->getMutationsThrottler());
-            addThrottler(read_settings.local_throttler, context->getMutationsThrottler());
+            read_settings.local_throttler = context->getMutationsThrottler();
             break;
         case Merge:
-            addThrottler(read_settings.remote_throttler, context->getMergesThrottler());
-            addThrottler(read_settings.local_throttler, context->getMergesThrottler());
+            read_settings.local_throttler = context->getMergesThrottler();
             break;
     }
+
+    read_settings.remote_throttler = read_settings.local_throttler;
 
     MergeTreeReaderSettings reader_settings =
     {
@@ -216,30 +214,8 @@ try
 
     for (size_t i = 0; i < result_header.columns(); ++i)
     {
-        const auto & name = result_header.safeGetByPosition(i).name;
-        auto pos = reader_header.getPositionByName(name);
+        auto pos = reader_header.getPositionByName(result_header.safeGetByPosition(i).name);
         auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
-
-        /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
-        /// be different when parent has order by column and merge will change order of rows.
-        if (read_task_info->merged_part_offsets && read_task_info->data_part->isProjectionPart() && name == "_parent_part_offset")
-        {
-            chassert(read_task_info->merged_part_offsets->isFinalized());
-
-            result_column = result_column->convertToFullColumnIfSparse();
-            auto & column = result_column->assumeMutableRef();
-            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
-            if (read_task_info->merged_part_offsets->isMappingEnabled())
-            {
-                for (auto & offset : offset_data)
-                    offset = (*read_task_info->merged_part_offsets)[read_task_info->part_index_in_query, offset];
-            }
-            else
-            {
-                for (auto & offset : offset_data)
-                    offset += read_task_info->part_starting_offset_in_query;
-            }
-        }
         result_column->assumeMutableRef().shrinkToFit();
     }
 
@@ -277,9 +253,8 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    RangesInDataPart data_part,
+    MergeTreeData::DataPartPtr data_part,
     AlterConversionsPtr alter_conversions,
-    MergedPartOffsetsPtr merged_part_offsets,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
@@ -288,13 +263,8 @@ Pipe createMergeTreeSequentialSource(
     bool prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
-    info->data_part = std::move(data_part.data_part);
-    info->alter_conversions = std::move(alter_conversions);
-    info->merged_part_offsets = std::move(merged_part_offsets);
-    info->part_index_in_query = data_part.part_index_in_query;
-    info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
-    info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
-    info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
+    info->data_part = data_part;
+    info->alter_conversions = alter_conversions;
 
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
@@ -352,9 +322,8 @@ public:
         MergeTreeSequentialSourceType type_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
-        RangesInDataPart data_part_,
+        MergeTreeData::DataPartPtr data_part_,
         AlterConversionsPtr alter_conversions_,
-        MergedPartOffsetsPtr merged_part_offsets_,
         Names columns_to_read_,
         std::shared_ptr<std::atomic<size_t>> filtered_rows_count_,
         bool apply_deleted_mask_,
@@ -369,7 +338,6 @@ public:
         , storage_snapshot(storage_snapshot_)
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
-        , merged_part_offsets(std::move(merged_part_offsets_))
         , columns_to_read(std::move(columns_to_read_))
         , filtered_rows_count(std::move(filtered_rows_count_))
         , apply_deleted_mask(apply_deleted_mask_)
@@ -381,7 +349,7 @@ public:
     {
     }
 
-    String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
+    String getName() const override { return fmt::format("ReadFromPart({})", data_part->name); }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -402,7 +370,6 @@ public:
                     metadata_snapshot,
                     key_condition,
                     /*part_offset_condition=*/{},
-                    /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
                     context->getSettingsRef(),
                     log);
@@ -419,7 +386,6 @@ public:
             storage_snapshot,
             data_part,
             alter_conversions,
-            merged_part_offsets,
             columns_to_read,
             std::move(mark_ranges),
             filtered_rows_count,
@@ -434,9 +400,8 @@ private:
     const MergeTreeSequentialSourceType type;
     const MergeTreeData & storage;
     const StorageSnapshotPtr storage_snapshot;
-    const RangesInDataPart data_part;
+    const MergeTreeData::DataPartPtr data_part;
     const AlterConversionsPtr alter_conversions;
-    const MergedPartOffsetsPtr merged_part_offsets;
     const Names columns_to_read;
     const std::shared_ptr<std::atomic<size_t>> filtered_rows_count;
     const bool apply_deleted_mask;
@@ -452,9 +417,8 @@ void createReadFromPartStep(
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    RangesInDataPart data_part,
+    MergeTreeData::DataPartPtr data_part,
     AlterConversionsPtr alter_conversions,
-    MergedPartOffsetsPtr merged_part_offsets,
     Names columns_to_read,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
@@ -470,7 +434,6 @@ void createReadFromPartStep(
         storage_snapshot,
         std::move(data_part),
         std::move(alter_conversions),
-        std::move(merged_part_offsets),
         std::move(columns_to_read),
         filtered_rows_count,
         apply_deleted_mask,

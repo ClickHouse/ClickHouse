@@ -11,7 +11,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -111,7 +110,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
-        LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
     if (prewhere_info || has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
@@ -188,12 +187,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
-                            String part_name = data_part->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                : data_part->name;
                             query_condition_cache->write(
                                 data_part->storage.getStorageID().uuid,
-                                part_name,
+                                data_part->name,
                                 output->getHash(),
                                 reader_settings.query_condition_cache_store_conditions_as_plaintext
                                     ? prewhere_info->prewhere_actions.getNames()[0]
@@ -227,7 +223,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (res.row_count)
         {
-            injectLazilyReadColumns(res.row_count, res.block, task.get()->getInfo().part_index_in_query, lazily_read_info);
+            injectLazilyReadColumns(res.row_count, res.block, task.get(), lazily_read_info);
 
             /// Reorder the columns according to result_header
             Columns ordered_columns;
@@ -245,12 +241,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (reader_settings.use_query_condition_cache)
             {
-                String part_name = data_part->isProjectionPart()
-                    ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                    : data_part->name;
                 chunk.getChunkInfos().add(
                     std::make_shared<MarkRangesInfo>(
-                        data_part->storage.getStorageID().uuid, part_name,
+                        data_part->storage.getStorageID().uuid, data_part->name,
                         data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
                         res.read_mark_ranges));
             }
@@ -287,7 +280,7 @@ void MergeTreeSelectProcessor::initializeReadersChain()
 void MergeTreeSelectProcessor::injectLazilyReadColumns(
     size_t rows,
     Block & block,
-    size_t part_index,
+    MergeTreeReadTask * task,
     const LazilyReadInfoPtr & lazily_read_info)
 {
     if (!lazily_read_info)
@@ -298,7 +291,7 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     if (rows)
     {
         row_num_column = block.getByName("_part_offset").column;
-        part_num_column = DataTypeUInt64().createColumnConst(rows, part_index)->convertToFullColumnIfConst();
+        part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
     }
     else
     {
@@ -330,7 +323,7 @@ Block MergeTreeSelectProcessor::transformHeader(
     const PrewhereInfoPtr & prewhere_info)
 {
     auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
-    injectLazilyReadColumns(0, transformed, -1, lazily_read_info);
+    injectLazilyReadColumns(0, transformed, nullptr, lazily_read_info);
     return transformed;
 }
 
@@ -349,7 +342,7 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
 
 void MergeTreeSelectProcessor::onFinish() const
 {
-    LOG_TEST(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
+    LOG_TRACE(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
 }
 
 }

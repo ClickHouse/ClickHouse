@@ -1,5 +1,5 @@
 #include "DiskLocal.h"
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
@@ -398,8 +398,6 @@ void DiskLocal::removeDirectory(const String & path)
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (!existsDirectory(fs_path))
-        return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
@@ -451,7 +449,7 @@ void DiskLocal::createDirectorySymlink(const String & target, const String & lin
 {
     auto link_path_inside_disk = fs::path(disk_path) / link;
     /// Symlinks will be relative.
-    fs::create_directory_symlink(fs::proximate(fs::path(disk_path) / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
+    fs::create_directory_symlink(fs::proximate(link_path_inside_disk.parent_path() / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const
@@ -745,7 +743,7 @@ void DiskLocal::setup()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "disk_checker_magic_number is not initialized. It's a bug");
 }
 
-void DiskLocal::startupImpl()
+void DiskLocal::startupImpl(ContextPtr)
 {
     broken = false;
     disk_checker_magic_number = -1;
@@ -804,7 +802,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
-        disk->startup(skip_access_check);
+        disk->startup(context, skip_access_check);
         return disk;
     };
     factory.registerDiskType("local", creator);
