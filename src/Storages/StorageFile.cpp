@@ -6,8 +6,10 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -72,6 +74,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include "DataTypes/DataTypeString.h"
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "Formats/EscapingRuleUtils.h"
+
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
@@ -105,6 +111,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -128,6 +135,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int INCORRECT_DATA;
 }
 
 using String = std::string;
@@ -1140,7 +1148,39 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    const auto sample_path = paths.empty() ? "" : paths[0];
+
+    auto & storage_columns = storage_metadata.columns;
+
+    if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, format_settings, args.getContext());
+
+        /// If the structure was inferred (not present in `args.columns`), then we might need to enrich the schema with partition columns
+        /// Because they might not be present in the data and exist only in the path
+        if (args.columns.empty())
+        {
+            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+            {
+                if (!storage_columns.has(name))
+                {
+                    storage_columns.add({name, type});
+                }
+            }
+        }
+
+        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
+        }
+    }
+
+    /// If the `partition_strategy` argument is ever implemented for File storage, this must be updated
+    file_columns = storage_columns.getAllPhysical();
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -1160,19 +1200,20 @@ StorageFileSource::FilesIterator::FilesIterator(
     std::optional<StorageFile::ArchiveInfo> archive_info_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
     const ContextPtr & context_,
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
     if (filter_dag)
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, context_);
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, hive_columns, context_);
     }
 }
 
@@ -1220,6 +1261,7 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1502,6 +1544,20 @@ Chunk StorageFileSource::generate()
                     .last_modified = current_file_last_modified
                 }, getContext());
 
+            // the order is important, it must be added after virtual columns..
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(current_path);
+                for (const auto & column : hive_partition_columns_to_read_from_file_path)
+                {
+                    if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
+                    {
+                        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+                        chunk.addColumn(std::move(chunk_column));
+                    }
+                }
+            }
+
             return chunk;
         }
 
@@ -1644,7 +1700,13 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        context,
+        supportsSubsetOfColumns(context),
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToPairMap()});
+
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
@@ -1673,6 +1735,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info,
         predicate,
         storage->getVirtualsList(),
+        info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
 }
@@ -1911,7 +1974,7 @@ class PartitionedStorageFileSink : public PartitionedSink
 {
 public:
     PartitionedStorageFileSink(
-        const ASTPtr & partition_by,
+        std::shared_ptr<PartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
@@ -1922,7 +1985,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        : PartitionedSink(partition_strategy_, context_, metadata_snapshot_->getSampleBlock())
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1938,19 +2001,19 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+        std::string filepath = partition_strategy->getPathForWrite(path, partition_id);
 
-        fs::create_directories(fs::path(partition_path).parent_path());
+        fs::create_directories(fs::path(filepath).parent_path());
 
-        PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
+        validatePartitionKey(filepath, true);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
             -1,
             /* use_table_fd */false,
             base_path,
-            partition_path,
+            filepath,
             compression_method,
             format_settings,
             format_name,
@@ -2000,8 +2063,18 @@ SinkToStoragePtr StorageFile::write(
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
-        return std::make_shared<PartitionedStorageFileSink>(
+        auto partition_strategy = PartitionStrategyFactory::get(
+            PartitionStrategyFactory::StrategyType::WILDCARD,
             insert_query->partition_by,
+            metadata_snapshot->getSampleBlock(),
+            context,
+            format_name,
+            is_path_with_globs,
+            has_wildcards,
+            true);
+
+        return std::make_shared<PartitionedStorageFileSink>(
+            partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
