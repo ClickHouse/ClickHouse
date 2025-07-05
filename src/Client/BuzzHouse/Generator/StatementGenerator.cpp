@@ -1375,10 +1375,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             else if (add_column && nopt < (heavy_delete + alter_order_by + add_column + 1))
             {
                 const uint32_t next_option = rg.nextSmallNumber();
+                const uint32_t ncname = t.col_counter++;
                 AddColumn * add_col = ati->mutable_add_column();
+                ColumnDef * def = add_col->mutable_new_col();
 
-                addTableColumn(
-                    rg, t, t.col_counter++, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
                     flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
@@ -1388,6 +1388,36 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 else if (next_option < 8)
                 {
                     add_col->mutable_add_where()->set_first(true);
+                }
+
+                /// Add small chance to add to a nested column
+                if (rg.nextSmallNumber() < 4)
+                {
+                    for (const auto & [key, val] : t.cols)
+                    {
+                        if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
+                        {
+                            this->ids.emplace_back(key);
+                        }
+                    }
+                }
+                addTableColumn(rg, t, ncname, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
+                if (!this->ids.empty())
+                {
+                    std::unordered_map<uint32_t, SQLColumn> nested_cols;
+                    SQLColumn ncol = std::move(t.staged_cols[ncname]);
+                    SQLColumn & nested_col = t.cols.at(rg.pickRandomly(this->ids));
+                    NestedType * ntp = dynamic_cast<NestedType *>(nested_col.tp);
+
+                    ntp->subtypes.emplace_back(NestedSubType(ncname, ncol.tp));
+                    nested_cols[nested_col.cname] = nested_col;
+                    flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
+                    columnPathRef(this->entries.back(), def->mutable_col());
+                    this->entries.clear();
+
+                    ncol.tp = nullptr;
+                    t.staged_cols.erase(ncname);
+                    this->ids.clear();
                 }
             }
             else if (materialize_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + 1))
@@ -1446,9 +1476,8 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             {
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
+                ColumnDef * def = add_col->mutable_new_col();
 
-                addTableColumn(
-                    rg, t, rg.pickRandomly(t.cols), true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
                     flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
@@ -1458,6 +1487,35 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 else if (next_option < 8)
                 {
                     add_col->mutable_add_where()->set_first(true);
+                }
+
+                /// Add small chance to modify a nested column
+                if (rg.nextSmallNumber() < 4)
+                {
+                    for (const auto & [key, val] : t.cols)
+                    {
+                        if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
+                        {
+                            this->ids.emplace_back(key);
+                        }
+                    }
+                }
+                const uint32_t ncol = this->ids.empty() ? rg.pickRandomly(t.cols) : t.col_counter++;
+                addTableColumn(rg, t, ncol, true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
+                if (!this->ids.empty())
+                {
+                    std::unordered_map<uint32_t, SQLColumn> nested_cols;
+                    const SQLColumn & nested_col = t.cols.at(rg.pickRandomly(this->ids));
+
+                    nested_cols[nested_col.cname] = nested_col;
+                    flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
+                    const auto & entry = rg.pickRandomly(this->entries);
+                    columnPathRef(entry, def->mutable_col());
+                    const uint32_t refcol = static_cast<uint32_t>(std::stoul(entry.getBottomName().substr(1)));
+                    this->entries.clear();
+                    t.staged_cols[refcol] = std::move(t.staged_cols[ncol]);
+                    t.staged_cols.erase(ncol);
+                    this->ids.clear();
                 }
             }
             else if (
@@ -4272,7 +4330,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 const AlterItem & ati = i == 0 ? at.alter() : at.other_alters(i - 1);
 
-                if (success && ati.has_add_column() && !v.has_with_cols)
+                if (success && ati.has_modify_query() && !v.has_with_cols)
                 {
                     v.cols.clear();
                     for (uint32_t j = 0; j < v.staged_ncols; j++)
@@ -4293,13 +4351,28 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 chassert(!ati.has_modify_query() && !ati.has_refresh());
                 if (ati.has_add_column())
                 {
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.add_column().new_col().col().column().substr(1)));
+                    const bool is_nested = ati.add_column().new_col().col().sub_cols_size() > 0;
+                    const Column & cstr = is_nested
+                        ? ati.add_column().new_col().col().sub_cols(ati.add_column().new_col().col().sub_cols_size() - 1)
+                        : ati.add_column().new_col().col().col();
+                    const uint32_t cname = static_cast<uint32_t>(std::stoul(cstr.column().substr(1)));
 
-                    if (success)
+                    if (is_nested && !success)
                     {
-                        t.cols[cname] = std::move(t.staged_cols[cname]);
+                        const uint32_t top_col
+                            = static_cast<uint32_t>(std::stoul(ati.add_column().new_col().col().col().column().substr(1)));
+                        NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
+
+                        ntp->subtypes.pop_back();
                     }
-                    t.staged_cols.erase(cname);
+                    else if (!is_nested)
+                    {
+                        if (success)
+                        {
+                            t.cols[cname] = std::move(t.staged_cols[cname]);
+                        }
+                        t.staged_cols.erase(cname);
+                    }
                 }
                 else if (ati.has_drop_column() && success)
                 {
@@ -4375,14 +4448,44 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else if (ati.has_modify_column())
                 {
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.modify_column().new_col().col().column().substr(1)));
+                    const bool is_nested = ati.modify_column().new_col().col().sub_cols_size() > 0;
+                    const Column & cstr = is_nested
+                        ? ati.modify_column().new_col().col().sub_cols(ati.modify_column().new_col().col().sub_cols_size() - 1)
+                        : ati.add_column().new_col().col().col();
+                    const uint32_t cname = static_cast<uint32_t>(std::stoul(cstr.column().substr(1)));
 
-                    if (success)
+                    if (is_nested)
                     {
-                        t.cols.erase(cname);
-                        t.cols[cname] = std::move(t.staged_cols[cname]);
+                        const uint32_t top_col
+                            = static_cast<uint32_t>(std::stoul(ati.modify_column().new_col().col().col().column().substr(1)));
+
+                        if (success)
+                        {
+                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
+
+                            for (auto & entry : ntp->subtypes)
+                            {
+                                if (entry.cname == cname)
+                                {
+                                    SQLColumn & ncol = t.staged_cols.at(cname);
+                                    delete entry.subtype;
+                                    entry.subtype = ncol.tp;
+                                    ncol.tp = nullptr;
+                                    break;
+                                }
+                            }
+                        }
+                        t.staged_cols.erase(cname);
                     }
-                    t.staged_cols.erase(cname);
+                    else
+                    {
+                        if (success)
+                        {
+                            t.cols.erase(cname);
+                            t.cols[cname] = std::move(t.staged_cols[cname]);
+                        }
+                        t.staged_cols.erase(cname);
+                    }
                 }
                 else if (
                     ati.has_column_remove_property() && success

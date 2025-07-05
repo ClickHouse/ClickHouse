@@ -3031,7 +3031,7 @@ message CodecList {
 }
 
 message ColumnDef {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;

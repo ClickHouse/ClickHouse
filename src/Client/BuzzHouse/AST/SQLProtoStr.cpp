@@ -2832,9 +2832,8 @@ CONV_FN(CodecList, cl)
 
 CONV_FN(ColumnDef, cdf)
 {
-    ret += "`";
-    ColumnToString(ret, 1, cdf.col());
-    ret += "` ";
+    ColumnPathToString(ret, 0, cdf.col());
+    ret += " ";
     TypeNameToString(ret, 0, cdf.type());
     if (cdf.has_nullable())
     {

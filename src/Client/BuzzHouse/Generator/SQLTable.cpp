@@ -1304,7 +1304,7 @@ void StatementGenerator::addTableColumnInternal(
     SQLType * tp = nullptr;
 
     col.cname = cname;
-    cd->mutable_col()->set_column("c" + std::to_string(cname));
+    cd->mutable_col()->mutable_col()->set_column("c" + std::to_string(cname));
     if (special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED)
     {
         tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
