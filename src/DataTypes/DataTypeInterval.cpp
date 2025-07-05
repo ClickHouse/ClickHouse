@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInterval.h>
-#include "Common/IntervalKind.h"
 #include <Common/SipHash.h>
 
 
