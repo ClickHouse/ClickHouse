@@ -7,7 +7,7 @@
 #include <Storages/StorageSQLite.h>
 
 #include <Databases/SQLite/SQLiteUtils.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 

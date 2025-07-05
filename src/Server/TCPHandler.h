@@ -28,8 +28,8 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include "Client/IServerConnection.h"
-#include "IServer.h"
+#include <Client/IServerConnection.h>
+#include <Server/IServer.h>
 
 
 namespace CurrentMetrics

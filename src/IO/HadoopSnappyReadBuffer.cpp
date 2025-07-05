@@ -9,7 +9,7 @@
 
 #include <snappy-c.h>
 
-#include "HadoopSnappyReadBuffer.h"
+#include <IO/HadoopSnappyReadBuffer.h>
 
 #include <IO/WithFileName.h>
 

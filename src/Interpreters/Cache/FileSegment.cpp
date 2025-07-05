@@ -1,4 +1,4 @@
-#include "FileSegment.h"
+#include <Interpreters/Cache/FileSegment.h>
 
 #include <filesystem>
 #include <IO/Operators.h>

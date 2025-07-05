@@ -6,6 +6,7 @@ import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
+from datetime import datetime
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -740,8 +741,15 @@ def test_macros_support(started_cluster):
     ).strip()
     keeper_path = f"/clickhouse/s3queue/{table_name}/{table_uuid}/"
 
-    assert node.query(f"SELECT count() > 0 FROM system.zookeeper WHERE path = '{keeper_path}'") == "1\n"
-    assert f"keeper_path = \\'{table_name}/{{uuid}}\\'" in node.query(f"SHOW CREATE TABLE r.{table_name}")
+    assert (
+        node.query(
+            f"SELECT count() > 0 FROM system.zookeeper WHERE path = '{keeper_path}'"
+        )
+        == "1\n"
+    )
+    assert f"keeper_path = \\'{table_name}/{{uuid}}\\'" in node.query(
+        f"SHOW CREATE TABLE r.{table_name}"
+    )
 
 
 def test_disable_streaming(started_cluster):
@@ -820,3 +828,47 @@ def test_disable_streaming(started_cluster):
         time.sleep(1)
 
     assert expected_rows == get_count()
+
+
+def test_shutdown_logs(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_shutdown_logs"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 300
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 5,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
+    )
+    create_mv(node, table_name, dst_table_name)
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node.restart_clickhouse()
+
+    def check_in_text_log(message, logger_name):
+        return int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name ilike '%{logger_name}%' and message ilike '%{message}%' and event_time >= toDateTime('{start_time}')"
+            )
+        )
+
+    assert 1 == check_in_text_log("Shutting down storages", "Application")
+    assert 1 == check_in_text_log(
+        "Waiting for streaming to finish...", f"StorageS3Queue (default.{table_name})"
+    )
+    assert 1 == check_in_text_log(
+        "Shut down storage", f"StorageS3Queue (default.{table_name})"
+    )
+    assert 1 == check_in_text_log("Shutting down system logs", "DatabaseCatalog")
+    assert 0 == check_in_text_log("Shutting down system databases", "DatabaseCatalog")

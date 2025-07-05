@@ -1,4 +1,4 @@
-#include "ITokenExtractor.h"
+#include <Interpreters/ITokenExtractor.h>
 
 #include <boost/algorithm/string.hpp>
 

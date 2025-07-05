@@ -6,7 +6,7 @@
 
 #if USE_AWS_S3
 
-#include "PocoHTTPClient.h"
+#include <IO/S3/PocoHTTPClient.h>
 
 #include <utility>
 #include <algorithm>

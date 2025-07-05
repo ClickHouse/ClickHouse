@@ -113,6 +113,7 @@ def main():
         os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+        os.environ["CTCACHE_LOG_LEVEL"] = "debug"
         os.environ["CTCACHE_DIR"] = f"{build_dir}/ccache/clang-tidy-cache"
         os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
@@ -161,6 +162,7 @@ def main():
         )
         res = results[-1].is_ok()
 
+    files = []
     if res and JobStages.BUILD in stages:
         run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
@@ -169,7 +171,7 @@ def main():
             targets = "fuzzers"
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             targets = "-k0 all"
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         else:
             targets = "clickhouse-bundle"
         results.append(
@@ -181,7 +183,12 @@ def main():
         )
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache --show-stats")
+            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
+            Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
+            files.append(clang_tidy_cache_log)
+            run_shell("clang-tidy-cache.log stats", f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
+                                                    f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"')
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
@@ -211,7 +218,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch, files=files).complete_job()
 
 
 if __name__ == "__main__":

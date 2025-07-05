@@ -165,6 +165,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
@@ -1702,12 +1703,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
 
-    if (noption < 4)
+    if (noption < 3)
     {
         b.teng = MergeTree;
         return;
     }
-    if (noption < 9)
+    if (noption < 6)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, VersionedCollapsingMergeTree);
         b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));

@@ -1,4 +1,4 @@
-#include "StorageSystemDetachedTables.h"
+#include <Storages/System/StorageSystemDetachedTables.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/NamesAndTypes.h>

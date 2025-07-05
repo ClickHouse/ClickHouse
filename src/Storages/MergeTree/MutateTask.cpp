@@ -2220,6 +2220,7 @@ bool MutateTask::prepare()
     {
         .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = ctx->source_part->getMetadataVersion(),
+        .min_part_data_versions = nullptr,
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);

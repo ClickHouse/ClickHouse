@@ -56,7 +56,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>

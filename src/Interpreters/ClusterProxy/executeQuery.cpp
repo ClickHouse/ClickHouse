@@ -37,7 +37,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 
 namespace DB

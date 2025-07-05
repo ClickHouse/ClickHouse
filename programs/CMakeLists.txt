@@ -260,12 +260,12 @@ else()
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
-# A target to get stripped binary.
-# Note: this is different to the above (extract debug symbols to a separate place)
-add_custom_target(clickhouse-stripped ALL
-    COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
-    DEPENDS clickhouse
-    COMMENT "Stripping clickhouse binary" VERBATIM)
+if (BUILD_STRIPPED_BINARY)
+    add_custom_target(clickhouse-stripped ALL
+        COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
+        DEPENDS clickhouse
+        COMMENT "Stripping clickhouse binary" VERBATIM)
+endif()
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

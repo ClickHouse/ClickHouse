@@ -299,13 +299,14 @@ def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
+        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
         raise RuntimeError(
-            f"rabbitmqctl {command} timed out. Output: {e.output.decode(errors='replace')}"
+            f"rabbitmqctl {command} timed out{output}"
         )
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
-    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", timeout)
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", 5)
     return True
 
 
@@ -2485,13 +2486,13 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
                 ):
                     logging.debug("RabbitMQ is available")
                     return True
             except Exception as ex:
                 logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(0.1)
+                time.sleep(1)
 
         start = time.time()
         while time.time() - start < timeout:

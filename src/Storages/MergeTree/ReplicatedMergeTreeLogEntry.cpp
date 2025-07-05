@@ -1,5 +1,5 @@
 #include <Common/ZooKeeper/Types.h>
-#include "Access/IAccessEntity.h"
+#include <Access/IAccessEntity.h>
 
 #include <Common/Exception.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>

@@ -1,4 +1,4 @@
-#include "IMergeTreeDataPart.h"
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <Columns/ColumnNullable.h>

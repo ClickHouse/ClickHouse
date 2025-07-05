@@ -25,7 +25,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     const Columns * stored_columns,
     const ScatteredBlock::Selector & selector,
     ConstNullMapPtr null_map,
-    UInt8ColumnDataPtr join_mask,
+    const JoinCommon::JoinMask & join_mask,
     Arena & pool,
     bool & is_inserted)
 {
@@ -230,7 +230,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     const Columns * stored_columns,
     const Selector & selector,
     ConstNullMapPtr null_map,
-    UInt8ColumnDataPtr join_mask,
+    const JoinCommon::JoinMask & join_mask,
     Arena & pool,
     bool & is_inserted)
 {
@@ -270,8 +270,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
         }
 
         /// Check condition for right table from ON section
-        chassert(!join_mask || ind < join_mask->size());
-        if (join_mask && !(*join_mask)[ind])
+        if (join_mask.isRowFiltered(ind))
             continue;
 
         if constexpr (is_asof_join)

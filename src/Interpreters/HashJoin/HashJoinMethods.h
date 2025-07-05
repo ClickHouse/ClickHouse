@@ -75,7 +75,7 @@ public:
         const Columns * stored_columns,
         const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
-        UInt8ColumnDataPtr join_mask,
+        const JoinCommon::JoinMask & join_mask,
         Arena & pool,
         bool & is_inserted);
 
@@ -108,7 +108,7 @@ private:
         const Columns * stored_columns,
         const Selector & selector,
         ConstNullMapPtr null_map,
-        UInt8ColumnDataPtr join_mask,
+        const JoinCommon::JoinMask & join_mask,
         Arena & pool,
         bool & is_inserted);
 
