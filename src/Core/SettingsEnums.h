@@ -421,4 +421,24 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class MergeTreeObjectSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V2_WITH_BUCKETS,
+    V3,
+    V4,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+
+enum class MergeTreeDynamicSerializationVersion : uint8_t
+{
+    V1,
+    V2,
+    V3,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+
 }

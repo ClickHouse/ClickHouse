@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
+#include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -149,7 +150,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
 {
     settings.path.push_back(Substream::Regular);
 
-    auto cached_column = getFromSubstreamsCache(cache, settings.path);
+    auto cached_column = getColumnFromSubstreamsCache(cache, settings.path);
     if (cached_column)
     {
         column = cached_column;
@@ -159,7 +160,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
         auto mutable_column = column->assumeMutable();
         deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
-        addToSubstreamsCache(cache, settings.path, column);
+        addColumnToSubstreamsCache(cache, settings.path, column);
     }
 
     settings.path.pop_back();
@@ -222,6 +223,34 @@ String getNameForSubstreamPath(
             stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
+        else if (it->type == SubstreamType::ObjectSharedDataBucket)
+            stream_name += it->object_shared_data_bucket > 0 ? "." + std::to_string(it->object_shared_data_bucket) : "";
+        else if (it->type == SubstreamType::ObjectSharedDataStructure)
+            stream_name += ".structure";
+        else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
+            stream_name += ".structure_prefix";
+        else if (it->type == SubstreamType::ObjectSharedDataStructureSuffix)
+            stream_name += ".structure_suffix";
+        else if (it->type == SubstreamType::ObjectSharedDataSubstreams)
+            stream_name += ".substreams";
+        else if (it->type == SubstreamType::ObjectSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (it->type == SubstreamType::ObjectSharedDataSubstreamsMarks)
+            stream_name += ".substreams_marks";
+        else if (it->type == SubstreamType::ObjectSharedDataPathsSubstreamsMetadata)
+            stream_name += ".paths_substreams_metadata";
+        else if (it->type == SubstreamType::ObjectSharedDataPathsInfos)
+            stream_name += ".paths_infos";
+        else if (it->type == SubstreamType::ObjectSharedDataData)
+            stream_name += ".data";
+        else if (it->type == SubstreamType::ObjectSharedDataCopy)
+            stream_name += ".copy";
+        else if (it->type == SubstreamType::ObjectSharedDataCopySizes)
+            stream_name += ".sizes";
+        else if (it->type == SubstreamType::ObjectSharedDataCopyIndexes)
+            stream_name += ".indexes";
+        else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
+            stream_name += ".values";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
             stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
@@ -282,21 +311,51 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
     return subcolumn_name;
 }
 
-void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
+namespace
+{
+
+/// Element of substeams cache that contains single column.
+struct SubstreamsCacheColumnElement : public ISerialization::ISubstreamsCacheElement
+{
+    SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
+
+    ColumnPtr column;
+};
+
+}
+
+void ISerialization::addColumnToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path), column);
+    cache->emplace(getSubcolumnNameForStream(path), std::make_unique<SubstreamsCacheColumnElement>(column));
 }
 
-ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+ColumnPtr ISerialization::getColumnFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
 {
     if (!cache || path.empty())
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    return it == cache->end() ? nullptr : it->second;
+    return it == cache->end() ? nullptr : assert_cast<SubstreamsCacheColumnElement *>(it->second.get())->column;
+}
+
+void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
+{
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
+}
+
+ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    return it == cache->end() ? nullptr : it->second.get();
 }
 
 void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
@@ -467,7 +526,7 @@ bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
-bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
 {
     if (path.empty())
         return false;
@@ -482,7 +541,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
             return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];
         case SubstreamType::VariantDiscriminators:
-            return !use_specialized_prefixes_substreams;
+            return !use_specialized_prefixes_and_suffixes_substreams;
         default:
             return false;
     }
