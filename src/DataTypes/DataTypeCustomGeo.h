@@ -41,4 +41,11 @@ public:
     DataTypeMultiPolygonName() : DataTypeCustomFixedName("MultiPolygon") {}
 };
 
+class DataTypeGeometryName : public DataTypeCustomFixedName
+{
+public:
+    DataTypeGeometryName() : DataTypeCustomFixedName("Geometry") {}
+};
+
+
 }
