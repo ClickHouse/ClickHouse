@@ -28,7 +28,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     {
         switch (element.function)
         {
-            /// for a AND b / a or b, we check:
+            /// for a AND b / a OR b, we check:
             /// 1. if a / b is always true or false
             /// 2. if a / b is AND / OR clause
             /// 2.a if a AND b and a/b is OR clause containing different columns, we don't merge the ranges
