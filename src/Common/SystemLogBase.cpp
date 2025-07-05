@@ -22,6 +22,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
+#include <Interpreters/DeadLetter.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
