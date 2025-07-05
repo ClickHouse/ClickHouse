@@ -2631,7 +2631,13 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
     }
 }
 
-MutationCommands StorageMergeTree::MutationsSnapshot::getAlterMutationCommandsForPart(const DataPartPtr & part) const
+StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot)
+    : MutationsSnapshotBase(std::move(params_), std::move(counters_))
+    , mutations_by_version(std::move(mutations_snapshot))
+{
+}
+
+MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsForPart(const DataPartPtr & part) const
 {
     MutationCommands result;
     UInt64 part_data_version = part->info.getDataVersion();
@@ -2664,21 +2670,25 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 
 MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    MutationCounters mutations_snapshot_counters;
+    MutationsSnapshot::MutationsByVersion mutations_snapshot;
 
-    auto res = std::make_shared<MutationsSnapshot>(params, mutation_counters);
-    if (!res->hasAnyMutations())
-        return res;
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
+        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
 
     for (const auto & [version, entry] : current_mutations_by_version)
     {
         /// Copy a pointer to all commands to avoid extracting and copying them.
         /// Required commands will be copied later only for specific parts.
-        if (res->hasSupportedCommands(*entry.commands))
-            res->mutations_by_version.emplace(version, entry.commands);
+        if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
+        {
+            mutations_snapshot.emplace(version, entry.commands);
+            incrementMutationsCounters(mutations_snapshot_counters, *entry.commands);
+        }
     }
 
-    return res;
+    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
 }
 
 MutationCounters StorageMergeTree::getMutationCounters() const

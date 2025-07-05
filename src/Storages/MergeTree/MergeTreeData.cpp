@@ -456,30 +456,44 @@ DataPartsLock::~DataPartsLock()
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
-MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_)
-    : params(std::move(params_)), counters(std::move(counters_))
+static Int64 extractVersion(const MergeTreeData::PartitionIdToMinBlockPtr & versions, const String & partition_id, Int64 default_value)
 {
+    if (!versions)
+        return default_value;
+
+    auto it = versions->find(partition_id);
+    if (it == versions->end())
+        return default_value;
+
+    return it->second;
 }
 
-bool MergeTreeData::MutationsSnapshotBase::hasSupportedCommands(const MutationCommands & commands) const
+Int64 MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(const Params & params, const String & partition_id)
 {
-    bool need_data_mutations = hasDataMutations();
-    bool need_alter_mutations = hasAlterMutations();
-    bool need_metatadata_mutations = hasMetadataMutations();
+    return extractVersion(params.min_part_data_versions, partition_id, std::numeric_limits<Int64>::min());
+}
 
+bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands)
+{
     for (const auto & command : commands)
     {
-        if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+        if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             return true;
 
-        if (need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
+        if (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
             return true;
 
-        if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+        /// Metadata mutations must be included into the snapshot regardless of the parameters.
+        if (AlterConversions::isSupportedMetadataMutation(command.type))
             return true;
     }
 
     return false;
+}
+
+MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_)
+    : params(std::move(params_)), counters(std::move(counters_))
+{
 }
 
 void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCommands & commands, MutationCommands & result_commands) const
@@ -8875,7 +8889,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MutationsSnapshotPtr & mutations,
     const ContextPtr & query_context)
 {
-    auto commands = mutations->getAlterMutationCommandsForPart(part);
+    auto commands = mutations->getOnFlyMutationCommandsForPart(part);
     return std::make_shared<AlterConversions>(commands, query_context);
 }
 
@@ -9254,6 +9268,24 @@ Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
     return version;
 }
 
+MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachPartition(const DataPartsVector & parts)
+{
+    PartitionIdToMinBlock partition_to_min_data_version;
+
+    for (const auto & part : parts)
+    {
+        const String & partition_id = part->info.getPartitionId();
+        const Int64 data_version = part->info.getDataVersion();
+
+        if (auto partition_it = partition_to_min_data_version.find(partition_id); partition_it != partition_to_min_data_version.end())
+            partition_it->second = std::min(partition_it->second, data_version);
+        else
+            partition_to_min_data_version.emplace(partition_id, data_version);
+    }
+
+    return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
+}
+
 StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
 {
     auto query_context = CurrentThread::get().getQueryContext();
@@ -9268,8 +9300,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
     return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
 }
 
-StorageSnapshotPtr
-MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
+StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     if (without_data)
     {
@@ -9294,6 +9325,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = getMinMetadataVersion(parts),
+        .min_part_data_versions = getMinDataVersionForEachPartition(parts),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly,
     };
