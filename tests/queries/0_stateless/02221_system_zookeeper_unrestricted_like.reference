@@ -34,12 +34,8 @@ pinned_part_uuids
 queue
 quorum
 replicas
-shared
-shared
 table_shared_id
 temp
-zero_copy_hdfs
-zero_copy_s3
 -------------------------
 1
 abandonable_lock-insert
@@ -77,9 +73,5 @@ pinned_part_uuids
 queue
 quorum
 replicas
-shared
-shared
 table_shared_id
 temp
-zero_copy_hdfs
-zero_copy_s3
