@@ -745,6 +745,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
+
+            /// Finalize write in query cache to save scalar subquery result
+            if (context->getCanUseQueryResultCache())
+                io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);
