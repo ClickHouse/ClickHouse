@@ -60,8 +60,10 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
         auto linestring_type = DataTypeFactory::instance().get(DataTypeLineStringName().getName());
         auto polygon_type = DataTypeFactory::instance().get(DataTypePolygonName().getName());
         auto multipolygon_type = DataTypeFactory::instance().get(DataTypeMultiPolygonName().getName());
+        auto ring_type = DataTypeFactory::instance().get(DataTypeRingName().getName());
+        auto multi_linestring_type = DataTypeFactory::instance().get(DataTypeMultiLineStringName().getName());
 
-        auto variant_type = std::make_shared<DataTypeVariant>(std::vector{point_type, linestring_type, polygon_type, multipolygon_type});
+        auto variant_type = std::make_shared<DataTypeVariant>(std::vector{point_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type});
 
         return std::make_pair(variant_type,
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));
