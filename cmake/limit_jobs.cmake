@@ -2,7 +2,7 @@
 #
 # Usage from CMake:
 #    set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "") # megabyte
-#    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "") # megabyte
+#    set (MAX_LINKER_MEMORY 5000 CACHE INTERNAL "") # megabyte
 #    include (cmake/limit_jobs.cmake)
 #
 # (bigger values mean fewer jobs)
