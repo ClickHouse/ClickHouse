@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/FileCachesHolder.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
@@ -7,9 +8,9 @@
 namespace DB
 {
 
-void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
+void DiskObjectStorage::wrapWithCache(const FileCachesHolder & holder, const String & layer_name)
 {
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, holder, layer_name);
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const
