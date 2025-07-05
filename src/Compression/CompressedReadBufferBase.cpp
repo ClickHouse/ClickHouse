@@ -19,7 +19,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-
 namespace ProfileEvents
 {
     extern const Event ReadCompressedBytes;
@@ -221,6 +220,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
+
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
@@ -277,7 +277,7 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
                                   bool allow_different_codecs, bool external_data)
 {
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks, 1);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);

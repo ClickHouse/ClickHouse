@@ -7,9 +7,11 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <cfloat>
 #include <random>
+#include <thread>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -1118,20 +1120,40 @@ void Timer::end()
 }
 
 Counters::Counters(VariableContext level_, Counters * parent_)
-    : counters_holder(new Counter[num_counters] {}),
-      parent(parent_),
+    : parent(parent_),
       level(level_)
 {
-    counters = counters_holder.get();
+    shards.resize(num_shards);
+
+    counters_holder = std::make_unique<Counter[]>(num_counters * num_shards);
+
+    for (size_t i = 0; i < num_shards; ++i)
+        shards[i].counters = counters_holder.get() + i * num_counters;
+
+    counters = shards[0].counters;
 }
 
 Counters::Counters(Counters && src) noexcept
-    : counters(std::exchange(src.counters, nullptr))
-    , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events)
-    , level(src.level)
+    : counters(src.counters),
+      counters_holder(std::move(src.counters_holder)),
+      parent(src.parent.load(std::memory_order_relaxed)),
+      trace_profile_events(src.trace_profile_events),
+      prev_cpu_wait_microseconds(src.prev_cpu_wait_microseconds.load(std::memory_order_relaxed)),
+      prev_cpu_virtual_time_microseconds(src.prev_cpu_virtual_time_microseconds.load(std::memory_order_relaxed)),
+      shards(std::move(src.shards)),
+      num_shards(src.num_shards),
+      level(src.level)
 {
+    src.counters = nullptr;
+    src.parent.store(nullptr, std::memory_order_relaxed);
+}
+
+Count Counters::getValue(Event event) const
+{
+    Count sum = 0;
+    for (size_t shard = 0; shard < num_shards; ++shard)
+        sum += shards[shard].counters[event].load(std::memory_order_relaxed);
+    return sum;
 }
 
 void Counters::resetCounters()
@@ -1156,8 +1178,12 @@ Counters::Snapshot::Snapshot()
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-    for (Event i = Event(0); i < num_counters; ++i)
-        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
+
+    for (size_t event = 0; event < num_counters; ++event)
+    {
+        res.counters_holder[event] = getValue(Event(event));
+    }
+
     return res;
 }
 
@@ -1251,8 +1277,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
 {
     /// It's possible that we'll have slightly inconsistent values between wait time and busy time. But since we take the value of CPU wait time first,
     /// it should not affect the situation a lot. In the worst case scenario we will have a slightly lower CPU overload value than it should be, but it's fine.
-    Int64 curr_cpu_wait_microseconds = counters[OSCPUWaitMicroseconds];
-    Int64 curr_cpu_virtual_time_microseconds = counters[OSCPUVirtualTimeMicroseconds];
+    Int64 curr_cpu_wait_microseconds = getValue(OSCPUWaitMicroseconds);
+    Int64 curr_cpu_virtual_time_microseconds = getValue(OSCPUVirtualTimeMicroseconds);
 
     Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
     Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
@@ -1271,6 +1297,12 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
+ShardIndex Counters::getShardIndex() const
+{
+    static thread_local ShardIndex thread_shard_index = std::hash<std::thread::id>{}(std::this_thread::get_id()) % num_shards;
+    return thread_shard_index;
+}
+
 void Counters::increment(Event event, Count amount)
 {
     Counters * current = this;
@@ -1278,13 +1310,18 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
+        ShardIndex shard_idx = current->getShardIndex();
+        current->shards[shard_idx].counters[static_cast<size_t>(event)].fetch_add(amount, std::memory_order_relaxed);
+
         send_to_trace_log |= current->trace_profile_events;
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
-        current = current->parent;
+
+        current = current->parent.load(std::memory_order_relaxed);
     } while (current != nullptr);
 
-    if (unlikely(send_to_trace_log))
+    if (send_to_trace_log)
+    {
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+    }
 }
 
 void Counters::incrementNoTrace(Event event, Count amount)
@@ -1292,8 +1329,10 @@ void Counters::incrementNoTrace(Event event, Count amount)
     Counters * current = this;
     do
     {
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
-        current = current->parent;
+        ShardIndex shard_idx = current->getShardIndex();
+        current->shards[shard_idx].counters[static_cast<size_t>(event)].fetch_add(amount, std::memory_order_relaxed);
+
+        current = current->parent.load(std::memory_order_relaxed);
     } while (current != nullptr);
 }
 
