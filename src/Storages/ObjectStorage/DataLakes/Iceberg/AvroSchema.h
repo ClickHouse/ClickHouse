@@ -93,7 +93,8 @@ static constexpr const char * manifest_list_v1_schema = R"(
             "field-id": 514
         }
     ]
-})";
+}
+)";
 
 static constexpr const char * manifest_list_v2_schema = R"(
 {
@@ -167,7 +168,8 @@ static constexpr const char * manifest_list_v2_schema = R"(
             "field-id": 507
         }
     ]
-})";
+}
+)";
 
 static constexpr const char * manifest_entry_v1_schema = R"(
 {
@@ -352,7 +354,8 @@ static constexpr const char * manifest_entry_v1_schema = R"(
             "field-id": 2
         }
     ]
-})";
+}
+)";
 
 static constexpr const char * manifest_entry_v2_schema = R"(
 {
@@ -545,6 +548,7 @@ static constexpr const char * manifest_entry_v2_schema = R"(
             "field-id": 2
         }
     ]
-})";
+}
+)";
 
 }
