@@ -2824,17 +2824,17 @@ bool ClientBase::processQueryText(const String & text)
             error_stream << "AI SQL generator is not initialized" << std::endl;
             return true;
         }
-        
+
         if (free_text.empty())
         {
             error_stream << "Please provide a natural language query after ??" << std::endl;
             return true;
         }
-        
+
         try
         {
             std::string generated_sql = ai_generator->generateSQL(free_text);
-            
+
             /// Prepopulate the next query with the generated SQL
             next_query_to_prepopulate = generated_sql;
         }
@@ -2973,15 +2973,17 @@ void ClientBase::initAIProvider()
 {
     try {
         AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
-        
+
         // Create a query executor that uses the connection
         auto query_executor = [this](const std::string & query) -> std::string
         {
             return executeQueryForSingleString(query);
         };
-        
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, query_executor);
-    } catch (const std::exception & e) {
+
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, query_executor, error_stream);
+    }
+    catch (const std::exception & e)
+    {
         error_stream << "Failed to initialize AI SQL generator: " << e.what() << std::endl;
     }
 }
@@ -2996,11 +2998,11 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
     if (!connection)
         return "";
-        
+
     try
     {
         std::string result;
-        
+
         /// Send the query
         connection->sendQuery(
             connection_parameters.timeouts,
@@ -3014,7 +3016,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             {},       /// external_roles
             {}        /// external_data
         );
-        
+
         /// Receive and process results
         while (true)
         {
@@ -3035,14 +3037,14 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         }
                     }
                     break;
-                    
+
                 case Protocol::Server::EndOfStream:
                     return result;
-                    
+
                 case Protocol::Server::Exception:
                     /// Return empty string on exception
                     return "";
-                    
+
                 case Protocol::Server::Progress:
                 case Protocol::Server::ProfileInfo:
                 case Protocol::Server::Log:
@@ -3050,7 +3052,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                 case Protocol::Server::TimezoneUpdate:
                     /// Ignore these packet types
                     break;
-                    
+
                 default:
                     /// Ignore unknown packet types
                     break;

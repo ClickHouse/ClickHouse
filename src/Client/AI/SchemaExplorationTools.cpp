@@ -1,7 +1,10 @@
-#include <sstream>
 #include <Client/AI/SchemaExplorationTools.h>
 #include <Common/escapeString.h>
 #include <Common/quoteString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -44,14 +47,18 @@ ai::JsonValue SchemaExplorationTools::listDatabases(
         auto result = query_executor("SELECT name FROM system.databases ORDER BY name");
         auto databases = parseStringVector(result);
 
-        std::ostringstream oss;
-        oss << "Found " << databases.size() << " databases:\n";
+        WriteBufferFromOwnString buf;
+        writeString("Found ", buf);
+        writeIntText(databases.size(), buf);
+        writeString(" databases:\n", buf);
         for (const auto & db : databases)
         {
-            oss << "- " << db << "\n";
+            writeString("- ", buf);
+            writeString(db, buf);
+            writeChar('\n', buf);
         }
 
-        return ai::JsonValue{{"success", true}, {"result", oss.str()}, {"databases", databases}};
+        return ai::JsonValue{{"success", true}, {"result", buf.str()}, {"databases", databases}};
     }
     catch (const std::exception & e)
     {
@@ -69,18 +76,24 @@ SchemaExplorationTools::listTablesInDatabase(const ai::JsonValue & args, const a
         auto result = query_executor(query);
         auto tables = parseStringVector(result);
 
-        std::ostringstream oss;
-        oss << "Found " << tables.size() << " tables in database '" << database << "':\n";
+        WriteBufferFromOwnString buf;
+        writeString("Found ", buf);
+        writeIntText(tables.size(), buf);
+        writeString(" tables in database '", buf);
+        writeString(database, buf);
+        writeString("':\n", buf);
         for (const auto & table : tables)
         {
-            oss << "- " << table << "\n";
+            writeString("- ", buf);
+            writeString(table, buf);
+            writeChar('\n', buf);
         }
         if (tables.empty())
         {
-            oss << "(No tables found in this database)\n";
+            writeString("(No tables found in this database)\n", buf);
         }
 
-        return ai::JsonValue{{"success", true}, {"result", oss.str()}, {"database", database}, {"tables", tables}};
+        return ai::JsonValue{{"success", true}, {"result", buf.str()}, {"database", database}, {"tables", tables}};
     }
     catch (const std::exception & e)
     {
@@ -123,12 +136,14 @@ std::vector<std::string> SchemaExplorationTools::parseStringVector(const std::st
     if (result.empty())
         return values;
 
-    std::stringstream ss(result);
+    ReadBufferFromString buf(result);
     std::string line;
-    while (std::getline(ss, line))
+    while (!buf.eof())
     {
+        readString(line, buf);
         if (!line.empty())
             values.push_back(line);
+        skipWhitespaceIfAny(buf);
     }
     return values;
 }

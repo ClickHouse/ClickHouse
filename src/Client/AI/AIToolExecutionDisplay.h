@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 #include <string>
 #include <thread>
 #include <base/terminalColors.h>
+#include <ostream>
 
 namespace DB
 {
@@ -13,58 +13,58 @@ namespace DB
 class AIToolExecutionDisplay
 {
 public:
-    explicit AIToolExecutionDisplay(bool enable_colors = true)
-        : use_colors(enable_colors)
+    explicit AIToolExecutionDisplay(std::ostream & output_stream_, bool enable_colors = true)
+        : output_stream(output_stream_), use_colors(enable_colors)
     {
     }
 
     void showThinking() const
     {
         if (use_colors)
-            std::cerr << "\033[36m"; // Cyan
-        std::cerr << "🧠 thinking";
+            output_stream << "\033[36m"; // Cyan
+        output_stream << "🧠 thinking";
         // Animated dots
         for (int i = 0; i < 3; ++i)
         {
-            std::cerr << "." << std::flush;
+            output_stream << "." << std::flush;
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
         }
 
         // Clear the line
-        std::cerr << "\r\033[K";
+        output_stream << "\r\033[K";
 
         if (use_colors)
-            std::cerr << resetColor();
+            output_stream << resetColor();
     }
 
     void showToolCall(const std::string & tool_call_id, const std::string & function_name, const std::string & arguments = "") const
     {
         // Clear any previous line
-        std::cerr << "\r\033[K";
+        output_stream << "\r\033[K";
 
         // Tool call header with icon
         if (use_colors)
-            std::cerr << "\033[33m"; // Yellow
-        std::cerr << "🔧 ";
+            output_stream << "\033[33m"; // Yellow
+        output_stream << "🔧 ";
         if (use_colors)
-            std::cerr << "\033[1m"; // Bold
-        std::cerr << "Calling: " << function_name;
+            output_stream << "\033[1m"; // Bold
+        output_stream << "Calling: " << function_name;
         if (use_colors)
-            std::cerr << "\033[0m" << "\033[33m"; // Reset bold, keep yellow
-        std::cerr << " [" << tool_call_id.substr(0, 8) << "...]";
+            output_stream << "\033[0m" << "\033[33m"; // Reset bold, keep yellow
+        output_stream << " [" << tool_call_id.substr(0, 8) << "...]";
         if (use_colors)
-            std::cerr << resetColor();
-        std::cerr << std::endl;
+            output_stream << resetColor();
+        output_stream << std::endl;
 
         // Show arguments if provided (indented)
         if (!arguments.empty() && arguments != "{}")
         {
             if (use_colors)
-                std::cerr << "\033[90m"; // Dark gray
-            std::cerr << "  └─ Args: " << arguments;
+                output_stream << "\033[90m"; // Dark gray
+            output_stream << "  └─ Args: " << arguments;
             if (use_colors)
-                std::cerr << resetColor();
-            std::cerr << std::endl;
+                output_stream << resetColor();
+            output_stream << std::endl;
         }
     }
 
@@ -72,14 +72,14 @@ public:
     {
         // Result with icon
         if (use_colors)
-            std::cerr << (success ? "\033[32m" : "\033[31m"); // Green for success, Red for error
-        std::cerr << (success ? "✓" : "✗") << " ";
+            output_stream << (success ? "\033[32m" : "\033[31m"); // Green for success, Red for error
+        output_stream << (success ? "✓" : "✗") << " ";
         if (use_colors)
-            std::cerr << "\033[1m"; // Bold
-        std::cerr << function_name << " completed";
+            output_stream << "\033[1m"; // Bold
+        output_stream << function_name << " completed";
         if (use_colors)
-            std::cerr << "\033[0m"; // Reset bold
-        std::cerr << std::endl;
+            output_stream << "\033[0m"; // Reset bold
+        output_stream << std::endl;
 
         // Show result preview (truncated if too long)
         if (!result.empty())
@@ -96,35 +96,36 @@ public:
             }
 
             if (use_colors)
-                std::cerr << "\033[90m"; // Dark gray
-            std::cerr << "  └─ " << preview;
+                output_stream << "\033[90m"; // Dark gray
+            output_stream << "  └─ " << preview;
             if (use_colors)
-                std::cerr << resetColor();
-            std::cerr << std::endl;
+                output_stream << resetColor();
+            output_stream << std::endl;
         }
     }
 
     void showProgress(const std::string & message) const
     {
         if (use_colors)
-            std::cerr << "\033[36m"; // Cyan
-        std::cerr << "• " << message;
+            output_stream << "\033[36m"; // Cyan
+        output_stream << "• " << message;
         if (use_colors)
-            std::cerr << resetColor();
-        std::cerr << std::endl;
+            output_stream << resetColor();
+        output_stream << std::endl;
     }
 
     void showSeparator() const
     {
         if (use_colors)
-            std::cerr << "\033[90m"; // Dark gray
-        std::cerr << "─────────────────────────────────────────────────";
+            output_stream << "\033[90m"; // Dark gray
+        output_stream << "─────────────────────────────────────────────────";
         if (use_colors)
-            std::cerr << resetColor();
-        std::cerr << std::endl;
+            output_stream << resetColor();
+        output_stream << std::endl;
     }
 
 private:
+    std::ostream & output_stream;
     bool use_colors;
 };
 
