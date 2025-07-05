@@ -91,10 +91,6 @@ private:
     std::tuple<Int64, Int32> getVersion() const;
 
     mutable SharedMutex mutex;
-    Int32 last_metadata_version;
-    Int32 format_version;
-    Poco::JSON::Object::Ptr last_metadata_object;
-
     Int32 last_metadata_version TSA_GUARDED_BY(mutex);
     const Int32 format_version;
 
