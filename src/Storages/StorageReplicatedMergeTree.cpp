@@ -993,7 +993,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(true),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "",
             zkutil::CreateMode::Persistent));
@@ -1047,7 +1047,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(true),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(metadata_snapshot->getMetadataVersion()),
             zkutil::CreateMode::Persistent));
@@ -1104,7 +1104,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
     LOG_DEBUG(log, "Creating replica {}", replica_path);
 
     const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
-    const String local_columns = metadata_snapshot->getColumns().toString();
+    const String local_columns = metadata_snapshot->getColumns().toString(true);
     const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
     const String creator_info = toString(getStorageID().uuid) + "|" + toString(ServerUUID::get());
 
@@ -1671,13 +1671,13 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     {
         LOG_WARNING(log, "Table columns structure in ZooKeeper is different from local table structure. "
                     "Assuming it's because the table was altered concurrently. Metadata version: {}. Local columns:\n"
-                    "{}\nZookeeper columns:\n{}", metadata_stat.version, old_columns.toString(), columns_from_zk.toString());
+                    "{}\nZookeeper columns:\n{}", metadata_stat.version, old_columns.toString(true), columns_from_zk.toString(true));
         return false;
     }
 
     throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
         "Table columns structure in ZooKeeper is different from local table structure. Local columns:\n"
-        "{}\nZookeeper columns:\n{}", old_columns.toString(), columns_from_zk.toString());
+        "{}\nZookeeper columns:\n{}", old_columns.toString(true), columns_from_zk.toString(true));
 }
 
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
@@ -6640,7 +6640,7 @@ void StorageReplicatedMergeTree::alter(
         String new_metadata_str = future_metadata_in_zk.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "metadata", new_metadata_str, current_metadata->getMetadataVersion()));
 
-        String new_columns_str = future_metadata.columns.toString();
+        String new_columns_str = future_metadata.columns.toString(true);
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
         bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));

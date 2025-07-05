@@ -221,7 +221,7 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
-    String toString(bool include_comments = true) const;
+    String toString(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
