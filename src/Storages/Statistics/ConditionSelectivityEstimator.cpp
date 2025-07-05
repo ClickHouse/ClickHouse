@@ -274,7 +274,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 || e.function == function
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
-                || e.column_ranges.size() + e.column_not_ranges.size() == 1
+                || (e.column_ranges.size() + e.column_not_ranges.size()) == 1
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
