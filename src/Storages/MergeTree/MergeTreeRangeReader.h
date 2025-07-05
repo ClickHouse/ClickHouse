@@ -175,7 +175,7 @@ private:
         bool continue_reading = false;
         bool is_finished = true;
 
-        /// Current position from the begging of file in rows
+        /// Current position from the beginning of file in rows
         size_t position() const;
         size_t readRows(Columns & columns, size_t num_rows);
     };
@@ -186,8 +186,7 @@ private:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark,
-               size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
         size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
@@ -208,19 +207,17 @@ private:
         UInt64 currentPartOffset() const;
         UInt64 lastPartOffset() const;
 
+        IMergeTreeReader * merge_tree_reader = nullptr;
+        const MergeTreeIndexGranularity * index_granularity = nullptr;
+        DelayedStream stream;
         size_t current_mark = 0;
-        /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
+        size_t current_mark_index_granularity = 0;
+
+        /// Invariant: offset_after_current_mark <= current_mark_index_granularity
         size_t offset_after_current_mark = 0;
 
         /// Last mark in current range.
         size_t last_mark = 0;
-
-        IMergeTreeReader * merge_tree_reader = nullptr;
-        const MergeTreeIndexGranularity * index_granularity = nullptr;
-
-        size_t current_mark_index_granularity = 0;
-
-        DelayedStream stream;
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
@@ -251,6 +248,13 @@ public:
 
         using NumRows = std::vector<size_t>;
 
+        struct GranuleOffset
+        {
+            UInt64 starting_offset;  /// Granule starting offset within the part
+            UInt64 granule_offset;   /// Granule index within the part
+        };
+        using GranuleOffsets = std::vector<GranuleOffset>;
+
         struct RangeInfo
         {
             size_t num_granules_read_before_start;
@@ -263,16 +267,23 @@ public:
 
         static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
-        void addGranule(size_t num_rows_);
+        /// Populate @rows_per_granule and @granule_offsets. See comments below.
+        void addGranule(size_t num_rows_, GranuleOffset granule_offset);
         void adjustLastGranule();
+
         void addRows(size_t rows) { num_read_rows += rows; }
+
+        /// Populate @started_ranges. See comments below.
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
+
+        /// For query condition cache.
         void addReadRange(MarkRange mark_range) { read_mark_ranges.push_back(std::move(mark_range)); }
 
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
         void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules);
+
         /// Remove all rows from granules.
         void clear();
 
@@ -295,11 +306,27 @@ public:
         /// Contains columns that are not included into result but might be needed for default values calculation.
         Block additional_columns;
 
+        /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
+        /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
-        /// The number of rows read from each granule.
-        /// Granule here is not number of rows between two marks
-        /// It's amount of rows per single reading act
+
+        /// Number of rows intended to be read per granule during the reading chain.
+        ///
+        /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
+        /// May be further filtered in `optimize` when `PREWHERE` filters prune rows early.
+        /// Used by `continueReadingChain` to guide how many rows to fetch from each granule.
+        ///
+        /// Example:
+        ///                 startReadingChain         optimize   continueReadingChain   optimize       ...
+        ///
+        /// Granule i       8192                      4000       4000                   4000
+        /// Granule i+1     8192                      3000       3000                   0 (filtered)
+        /// Granule i+2     8192                      3000       3000                   1000
+        /// Granule i+3     1000 (last incomplete)    1000       1000                   1000
         NumRows rows_per_granule;
+        /// Stores starting row offset and granule index for each granule.
+        /// Used to generate _part_offset and _part_granule_offset columns.
+        GranuleOffsets granule_offsets;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
@@ -343,8 +370,9 @@ public:
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
 
 private:
-    void fillVirtualColumns(Columns & columns, ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillVirtualColumns(Columns & columns, ReadResult & result);
+    ColumnPtr createPartOffsetColumn(ReadResult & result);
+    ColumnPtr createPartGranuleOffsetColumn(ReadResult & result);
 
     void updatePerformanceCounters(size_t num_rows_read);
 
