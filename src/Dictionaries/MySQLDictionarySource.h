@@ -7,9 +7,9 @@
 #if USE_MYSQL
 #    include <Common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
-#    include "DictionaryStructure.h"
-#    include "ExternalQueryBuilder.h"
-#    include "IDictionarySource.h"
+#    include <Dictionaries/DictionaryStructure.h>
+#    include <Dictionaries/ExternalQueryBuilder.h>
+#    include <Dictionaries/IDictionarySource.h>
 #    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco

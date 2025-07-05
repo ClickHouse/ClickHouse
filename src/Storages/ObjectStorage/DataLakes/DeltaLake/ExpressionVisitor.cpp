@@ -1,5 +1,5 @@
-#include "ExpressionVisitor.h"
-#include "Functions/FunctionFactory.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
+#include <Functions/FunctionFactory.h>
 
 #if USE_DELTA_KERNEL_RS
 
@@ -34,7 +34,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <fmt/ranges.h>
-#include "KernelUtils.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include "delta_kernel_ffi.hpp"
 
 

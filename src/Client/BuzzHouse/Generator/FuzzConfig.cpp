@@ -23,7 +23,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
 {
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
-    String hostname = "localhost";
+    String client_hostname = "localhost";
+    String server_hostname = "localhost";
     String container;
     String unix_socket;
     String user = "test";
@@ -33,7 +34,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     static const SettingEntries configEntries
-        = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+        = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
+           {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -55,8 +57,18 @@ static std::optional<ServerCredentials> loadServerCredentials(
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, container, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
+    return std::optional<ServerCredentials>(ServerCredentials(
+        client_hostname,
+        server_hostname,
+        container,
+        port,
+        mysql_port,
+        unix_socket,
+        user,
+        password,
+        database,
+        user_files_dir,
+        query_log_file));
 }
 
 static PerformanceMetric
@@ -130,6 +142,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
         {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
+        {"min_string_length", [&](const JSONObjectType & value) { min_string_length = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_string_length", [&](const JSONObjectType & value) { max_string_length = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
@@ -159,6 +172,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_sleep_between_reconnects",
          [&](const JSONObjectType & value)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
+        {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -271,6 +285,14 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
             min_nested_rows,
             max_nested_rows);
+    }
+    if (min_string_length > max_string_length)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "min_string_length value ({}) is higher than max_string_length value ({})",
+            min_string_length,
+            max_string_length);
     }
     for (const auto & entry : std::views::values(metrics))
     {
