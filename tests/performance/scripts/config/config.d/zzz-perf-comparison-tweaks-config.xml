@@ -17,7 +17,6 @@
     <part_log remove="remove"/>
     <text_log remove="remove"/>
 <!--    <metric_log remove="remove"/>-->
-    <latency_log remove="remove"/>
     <error_log remove="remove"/>
     <query_metric_log remove="remove"/>
 <!--    <asynchronous_metric_log remove="remove"/>-->
