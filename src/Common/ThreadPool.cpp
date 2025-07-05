@@ -272,9 +272,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 std::swap(exception, first_exception);
                 std::rethrow_exception(exception);
             }
-            throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
-                "Cannot schedule a task: {} (threads={}, jobs={})", reason,
-                threads.size(), scheduled_jobs);
+
+            auto pool = std::is_same_v<Thread, std::thread> ? "global" : "local";
+            throw DB::Exception(
+                DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+                "Cannot schedule a task (pool={}, threads={}, jobs={}): {}",
+                pool,
+                threads.size(),
+                scheduled_jobs,
+                reason);
         }
         else
             return false;
@@ -305,7 +311,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 // Failed to create the thread, restore capacity
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 std::lock_guard lock(mutex); // needed to change first_exception.
-                return on_error("failed to start the thread");
+                return on_error(DB::getCurrentExceptionMessage(false, false, false, false));
             }
         }
         // capacity gets reloaded by (unsuccessful) compare_exchange_weak
@@ -373,7 +379,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             {
                 // If thread creation fails, restore the pool capacity and return an error.
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                return on_error("failed to start the thread");
+                return on_error(DB::getCurrentExceptionMessage(false, false, false, false));
             }
             adding_new_thread = true;
         }
@@ -388,7 +394,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             catch (...)
             {
                 /// Most likely this is a std::bad_alloc exception
-                return on_error("cannot emplace the thread in the pool");
+                return on_error(fmt::format("cannot emplace the thread in the pool: {}", DB::getCurrentExceptionMessage(false, false, false, false)));
             }
         }
         else // we have a thread but there is no space for that in the pool.
@@ -418,7 +424,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             if (adding_new_thread)
                 threads.pop_front();
 
-            return on_error("cannot start the job or thread");
+            return on_error(fmt::format("cannot start the job or thread: {}", DB::getCurrentExceptionMessage(false, false, false, false)));
         }
     }
 
