@@ -1,8 +1,6 @@
 #include <Interpreters/JoinInfo.h>
 
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
-#include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -22,7 +20,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsOverflowMode join_overflow_mode;
@@ -48,7 +46,6 @@ namespace Setting
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
     extern const SettingsBool allow_experimental_join_right_table_sorting;
-    extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsMaxThreads max_threads;
 
@@ -84,7 +81,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
     extern const QueryPlanSerializationSettingsBool allow_experimental_join_right_table_sorting;
-    extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_bytes;
 
     extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
@@ -101,7 +97,6 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
     max_joined_block_size_rows = query_settings[Setting::max_joined_block_size_rows];
-    min_joined_block_size_rows = query_settings[Setting::min_joined_block_size_rows];
     min_joined_block_size_bytes = query_settings[Setting::min_joined_block_size_bytes];
 
     join_overflow_mode = query_settings[Setting::join_overflow_mode];
@@ -163,7 +158,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = settings[QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting];
-    min_joined_block_size_rows = settings[QueryPlanSerializationSetting::min_joined_block_size_rows];
     min_joined_block_size_bytes = settings[QueryPlanSerializationSetting::min_joined_block_size_bytes];
 
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
@@ -202,7 +196,6 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;
     settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows] = join_to_sort_maximum_table_rows;
     settings[QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting] = allow_experimental_join_right_table_sorting;
-    settings[QueryPlanSerializationSetting::min_joined_block_size_rows] = min_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::min_joined_block_size_bytes] = min_joined_block_size_bytes;
 
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
@@ -362,16 +355,6 @@ JoinActionRef JoinActionRef::deserialize(ReadBuffer & in, const ActionsDAGRawPtr
     return res;
 }
 
-JoinActionRef JoinActionRef::clone(const ActionsDAG * actions_dag_) const
-{
-    return JoinActionRef{actions_dag_, column_name};
-}
-
-JoinActionRef::JoinActionRef(const ActionsDAG * actions_dag_, const String & column_name_)
-    : actions_dag(actions_dag_)
-    , column_name(column_name_)
-{}
-
 void JoinPredicate::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
     serializePredicateOperator(op, out);
@@ -451,40 +434,6 @@ JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::A
     };
 }
 
-JoinCondition JoinCondition::clone(const JoinExpressionActions & expression_actions) const
-{
-    JoinCondition copy;
-
-    copy.predicates.reserve(predicates.size());
-    for (const auto & predicate : predicates)
-    {
-        copy.predicates.emplace_back(
-            predicate.left_node.clone(expression_actions.left_pre_join_actions.get()),
-            predicate.right_node.clone(expression_actions.right_pre_join_actions.get()),
-            predicate.op);
-    }
-
-    copy.left_filter_conditions.reserve(left_filter_conditions.size());
-    for (const auto & condition: left_filter_conditions)
-    {
-        copy.left_filter_conditions.emplace_back(condition.clone(expression_actions.left_pre_join_actions.get()));
-    }
-
-    copy.right_filter_conditions.reserve(right_filter_conditions.size());
-    for (const auto & condition: right_filter_conditions)
-    {
-        copy.right_filter_conditions.emplace_back(condition.clone(expression_actions.right_pre_join_actions.get()));
-    }
-
-    copy.residual_conditions.reserve(residual_conditions.size());
-    for (const auto & condition: residual_conditions)
-    {
-        copy.residual_conditions.emplace_back(condition.clone(expression_actions.post_join_actions.get()));
-    }
-
-    return copy;
-}
-
 void JoinExpression::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
     UInt8 is_using_flag = is_using ? 1 : 0;
@@ -521,20 +470,6 @@ JoinExpression JoinExpression::deserialize(ReadBuffer & in, const JoinActionRef:
         disjunctive_conditions.emplace_back(JoinCondition::deserialize(in, dags));
 
     return {std::move(condition), std::move(disjunctive_conditions), bool(is_using_flag)};
-}
-
-JoinExpression JoinExpression::clone(const JoinExpressionActions & expression_copy) const
-{
-    JoinExpression copy;
-    copy.condition = condition.clone(expression_copy);
-
-    copy.disjunctive_conditions.reserve(disjunctive_conditions.size());
-    for (const auto & disjunctive_condition : disjunctive_conditions)
-        copy.disjunctive_conditions.emplace_back(disjunctive_condition.clone(expression_copy));
-
-    copy.is_using = is_using;
-
-    return copy;
 }
 
 void JoinInfo::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const

@@ -1,4 +1,4 @@
-#include<Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include "ReadFromMemoryStorageStep.h"
 
 #include <atomic>
 #include <functional>
@@ -133,11 +133,6 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     pipeline.init(std::move(pipe));
-}
-
-QueryPlanStepPtr ReadFromMemoryStorageStep::clone() const
-{
-    return std::make_unique<ReadFromMemoryStorageStep>(*this);
 }
 
 Pipe ReadFromMemoryStorageStep::makePipe()

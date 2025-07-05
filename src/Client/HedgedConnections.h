@@ -93,9 +93,7 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles) override;
 
-    void sendQueryPlan(const QueryPlan & query_plan) override;
-
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
+    void sendReadTaskResponse(const String &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }

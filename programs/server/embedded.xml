@@ -8,17 +8,10 @@
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
     <mysql_port>9004</mysql_port>
-    <postgresql_port>9005</postgresql_port>
 
     <path>./</path>
 
     <mlock_executable>true</mlock_executable>
-
-    <send_crash_reports>
-        <enabled>true</enabled>
-        <send_logical_errors>true</send_logical_errors>
-        <endpoint>https://crash.clickhouse.com/</endpoint>
-    </send_crash_reports>
 
     <users>
         <default>

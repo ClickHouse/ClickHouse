@@ -25,7 +25,7 @@ curl https://clickhouse.com/ | sh
 ```
 
 :::note
-The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](/get-started/quick-start).
+The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](../../quick-start.mdx).
 :::
 
 ## Query data in a file using SQL {#query_data_in_file}
@@ -171,7 +171,7 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
 ```
 
 :::tip
-When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](/get-started/quick-start) for more details.
+When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](../../quick-start.mdx) for more details.
 :::
 
 
@@ -179,18 +179,18 @@ When you are ready to insert your files into ClickHouse, startup a ClickHouse se
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
-```bash
+``` bash
 $ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 Formats are auto-detected from file extensions: 
 
-```bash
+``` bash
 $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-```bash
+``` bash
 $ clickhouse-local --copy < data.json > data.csv
 ```
 

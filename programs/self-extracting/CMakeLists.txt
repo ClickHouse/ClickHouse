@@ -10,23 +10,14 @@ else ()
     set (COMPRESSOR "${PROJECT_BINARY_DIR}/utils/self-extracting-executable/compressor")
 endif ()
 
-set(self_extracting_deps)
-
-add_custom_target (clickhouse-self-extracting ALL
-    ${CMAKE_COMMAND} -E remove clickhouse
+add_custom_target (self-extracting-server ALL
+    ${CMAKE_COMMAND} -E remove clickhouse clickhouse-stripped
     COMMAND ${COMPRESSOR} ${DECOMPRESSOR} clickhouse ../clickhouse
-    DEPENDS clickhouse compressor
+    COMMAND ${COMPRESSOR} ${DECOMPRESSOR} clickhouse-stripped ../clickhouse-stripped
+    DEPENDS clickhouse clickhouse-stripped compressor
 )
-list(APPEND self_extracting_deps clickhouse-self-extracting)
 
-if (BUILD_STRIPPED_BINARY)
-    add_custom_target (clickhouse-self-extracting-stripped ALL
-        ${CMAKE_COMMAND} -E remove clickhouse-stripped
-        COMMAND ${COMPRESSOR} ${DECOMPRESSOR} clickhouse-stripped ../clickhouse-stripped
-        DEPENDS clickhouse clickhouse-stripped
-    )
-    list(APPEND self_extracting_deps clickhouse-self-extracting-stripped)
-endif()
+set(self_extracting_deps "self-extracting-server")
 
 if (BUILD_STANDALONE_KEEPER)
     add_custom_target (self-extracting-keeper ALL
@@ -34,7 +25,7 @@ if (BUILD_STANDALONE_KEEPER)
         COMMAND ${COMPRESSOR} ${DECOMPRESSOR} clickhouse-keeper ../clickhouse-keeper
         DEPENDS compressor clickhouse-keeper
     )
-    list(APPEND self_extracting_deps self-extracting-keeper)
+    list(APPEND self_extracting_deps "self-extracting-keeper")
 endif()
 
 add_custom_target (self-extracting ALL

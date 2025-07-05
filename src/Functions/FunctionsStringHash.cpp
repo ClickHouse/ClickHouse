@@ -15,7 +15,7 @@
 #include <city.h>
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include <vec_crc32.h>
+#include "vec_crc32.h"
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__

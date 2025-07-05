@@ -1,79 +1,74 @@
-#include <algorithm>
-#include <csignal>
-#include <filesystem>
-#include <unistd.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AllowedClientHosts.h>
-#include <Access/ContextAccess.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Common/DNSResolver.h>
+#include <Common/ActionLock.h>
+#include <Common/typeid_cast.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/SymbolIndex.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/ShellCommand.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/PageCache.h>
+#include <Common/HostResolvePool.h>
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Formats/FormatSchemaInfo.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/AsynchronousInsertLog.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/BackupLog.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/FilesystemCacheLog.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Interpreters/EmbeddedDictionaries.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/MetricLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSystemQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Storages/Freeze.h>
-#include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/BackupLog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AllowedClientHosts.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <base/coverage.h>
-#include <Common/ActionLock.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/DNSResolver.h>
-#include <Common/FailPoint.h>
-#include <Common/HostResolvePool.h>
-#include <Common/PageCache.h>
-#include <Common/ShellCommand.h>
-#include <Common/SymbolIndex.h>
+#include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
+#include <base/coverage.h>
+#include <csignal>
+#include <algorithm>
+#include <unistd.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -389,14 +384,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
             break;
-        case Type::DROP_ICEBERG_METADATA_CACHE:
-#if USE_AVRO
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
-            system_context->clearIcebergMetadataFilesCache();
-            break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
-#endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -413,9 +400,8 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+        case Type::DROP_SKIPPING_INDEX_CACHE:
+            /// No-op. This change was reverted in https://github.com/ClickHouse/ClickHouse/pull/77447
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
@@ -581,30 +567,13 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_format.empty())
-                caches_to_drop = {"Protobuf", "Files"};
+                caches_to_drop = {"Protobuf"};
             else
                 caches_to_drop = {query.schema_cache_format};
 #if USE_PROTOBUF
             if (caches_to_drop.contains("Protobuf"))
                 ProtobufSchemas::instance().clear();
 #endif
-            if (caches_to_drop.contains("Files"))
-            {
-                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
-                if (fs::exists(format_schema_cached_dir))
-                {
-                    size_t count = 0;
-                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
-                    {
-                        if (entry.is_regular_file())
-                        {
-                            fs::remove(entry.path());
-                            count++;
-                        }
-                    }
-                    LOG_INFO(log, "Cleared format schema cache files {}", count);
-                }
-            }
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -931,12 +900,10 @@ void InterpreterSystemQuery::restoreReplica()
     const auto & settings = getContext()->getSettingsRef();
 
     table_replicated_ptr->restoreMetadataInZooKeeper(
-        ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            getContext()->getProcessListElementSafe()},
-        false);
+        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
+                             settings[Setting::keeper_retry_initial_backoff_ms],
+                             settings[Setting::keeper_retry_max_backoff_ms],
+                             getContext()->getProcessListElementSafe()});
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -994,28 +961,13 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    StoragePtr new_table;
-    while (true)
-    {
-        try
-        {
-            new_table = StorageFactory::instance().get(create,
-                data_path,
-                system_context,
-                system_context->getGlobalContext(),
-                columns,
-                constraints,
-                LoadingStrictnessLevel::ATTACH);
-
-            break;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
-        }
-    }
+    auto new_table = StorageFactory::instance().get(create,
+        data_path,
+        system_context,
+        system_context->getGlobalContext(),
+        columns,
+        constraints,
+        LoadingStrictnessLevel::ATTACH);
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
@@ -1306,19 +1258,7 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table;
-
-    if (query.if_exists)
-    {
-        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-        if (!table)
-            return;
-    }
-    else
-    {
-        table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    }
-
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
     if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -1516,7 +1456,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
@@ -1525,7 +1464,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         case Type::DROP_DISTRIBUTED_CACHE:

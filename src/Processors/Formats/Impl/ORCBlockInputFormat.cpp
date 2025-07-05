@@ -1,5 +1,4 @@
-#include <Processors/Formats/Impl/ORCBlockInputFormat.h>
-#include <Common/Exception.h>
+#include "ORCBlockInputFormat.h"
 
 #if USE_ORC
 #    include <DataTypes/NestedUtils.h>
@@ -9,11 +8,10 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
-#    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
-#    include <Interpreters/Context.h>
+#    include "ArrowBufferedStreams.h"
+#    include "ArrowColumnToCHColumn.h"
+#    include "ArrowFieldIndexUtil.h"
+#    include "NativeORCBlockInputFormat.h"
 
 namespace DB
 {
@@ -79,13 +77,7 @@ Chunk ORCBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    std::shared_ptr<const arrow::KeyValueMetadata> metadata;
-    if (auto status = file_reader->ReadMetadata(); status.ok())
-        metadata = status.ValueOrDie();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected error while reading parquet metadata {}", status.status().message());
-
-    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, metadata, block_missing_values_ptr);
+    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
 }
 
 void ORCBlockInputFormat::resetParser()
@@ -138,11 +130,9 @@ void ORCBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "ORC",
-        format_settings,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
-        format_settings.parquet.allow_geoparquet_parser,
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
@@ -165,11 +155,6 @@ void ORCSchemaReader::initializeIfNeeded()
     if (file_reader)
         return;
 
-    if (auto status = file_reader->ReadMetadata(); status.ok())
-        metadata = status.ValueUnsafe();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading incorrect metadata of ORC {}", status.status().message());
-
     std::atomic<int> is_stopped = 0;
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
 }
@@ -177,16 +162,11 @@ void ORCSchemaReader::initializeIfNeeded()
 NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
-
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        metadata,
         "ORC",
-        format_settings,
         format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0,
-        false,
-        format_settings.parquet.allow_geoparquet_parser);
+        format_settings.schema_inference_make_columns_nullable != 0);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
@@ -200,26 +180,13 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
 
 void registerInputFormatORC(FormatFactory & factory)
 {
-    factory.registerRandomAccessInputFormat(
+    factory.registerInputFormat(
         "ORC",
-        [](ReadBuffer & buf,
-           const Block & sample,
-           const FormatSettings & settings,
-           const ReadSettings & read_settings,
-           bool is_remote_fs,
-           size_t /* max_download_threads */,
-           size_t /* max_parsing_threads */)
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
         {
             InputFormatPtr res;
             if (settings.orc.use_fast_decoder)
-            {
-                const bool has_file_size = isBufferWithFileSize(buf);
-                auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
-                    && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
-                res = std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings, use_prefetch, min_bytes_for_seek);
-            }
+                res = std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings);
             else
                 res = std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
 

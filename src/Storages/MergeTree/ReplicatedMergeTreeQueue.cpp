@@ -31,10 +31,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
 }
 
 namespace ErrorCodes
@@ -42,7 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -71,7 +66,8 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
-    mutation_counters = {};
+    num_data_mutations_to_apply = 0;
+    num_metadata_mutations_to_apply = 0;
 }
 
 void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch)
@@ -473,7 +469,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 
     LOG_TEST(log, "Removing part {} from mutations (remove_part: {}, remove_covered_parts: {})", part_name, remove_part, remove_covered_parts);
 
-    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
 
@@ -514,7 +510,7 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name, cons
     LOG_TEST(log, "Adding part {} to mutations", part_name);
     assert(!part_info.isFakeDropRangePart());
 
-    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
 
@@ -903,7 +899,7 @@ ActiveDataPartSet getPartNamesToMutate(
             for (const auto & part_to_drop : entry_representation.dropped_parts)
             {
                 auto part_to_drop_info = MergeTreePartInfo::fromPartName(part_to_drop, format_version);
-                if (part_to_drop_info.getPartitionId() == partition_id)
+                if (part_to_drop_info.partition_id == partition_id)
                     result.removePartAndCoveredParts(part_to_drop);
             }
 
@@ -911,7 +907,7 @@ ActiveDataPartSet getPartNamesToMutate(
             for (const auto & part_to_add : entry_representation.produced_parts)
             {
                 auto part_to_add_info = MergeTreePartInfo::fromPartName(part_to_add, format_version);
-                if (part_to_add_info.getPartitionId() == partition_id && part_to_add_info.getDataVersion() < block_num)
+                if (part_to_add_info.partition_id == partition_id && part_to_add_info.getDataVersion() < block_num)
                     result.add(part_to_add);
             }
         }
@@ -969,7 +965,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     const auto commands = entry.commands;
                     it = mutations_by_znode.erase(it);
-                    decrementMutationsCounters(mutation_counters, commands);
+                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands);
                 }
                 else
                     it = mutations_by_znode.erase(it);
@@ -992,18 +988,14 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     {
         LOG_INFO(log, "Loading {} mutation entries: {} - {}", toString(entries_to_load.size()), entries_to_load.front(), entries_to_load.back());
 
-        std::vector<String> entry_paths;
-        entry_paths.reserve(entries_to_load.size());
-
+        std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
-            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
-
-        auto entries = zookeeper->tryGet(entry_paths);
+            futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            const auto & maybe_response = entries[i];
+            auto maybe_response = futures[i].get();
             if (maybe_response.error != Coordination::Error::ZOK)
             {
                 assert(maybe_response.error == Coordination::Error::ZNONODE);
@@ -1023,7 +1015,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
-                incrementMutationsCounters(mutation_counters, entry->commands);
+                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1099,7 +1091,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
 
         if (mutation_was_active)
         {
-            decrementMutationsCounters(mutation_counters, entry->commands);
+            decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
         }
 
         mutations_by_znode.erase(it);
@@ -1391,36 +1383,6 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 }
 
 
-UInt64 ReplicatedMergeTreeQueue::getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const
-{
-    UInt64 postpone_time_upper_bound_ms = 0;
-    const auto data_settings = data.getSettings();
-    switch (entry.type)
-    {
-    case LogEntry::GET_PART:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_fetches_ms];
-        break;
-    case LogEntry::MUTATE_PART:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms];
-        break;
-    case LogEntry::MERGE_PARTS:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_merges_ms];
-        break;
-    default:
-        postpone_time_upper_bound_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_failed_replicated_tasks_ms];
-        break;
-    }
-    if (!postpone_time_upper_bound_ms)
-        return postpone_time_upper_bound_ms;
-
-    auto current_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
-    UInt64 postpone_time_ms = 1ull << std::min(entry.num_tries, static_cast<size_t>(std::numeric_limits<UInt64>::digits - 1));
-    postpone_time_ms = std::min(postpone_time_ms, postpone_time_upper_bound_ms);
-
-    auto next_min_allowed_time_ms = entry.last_exception_time_ms + postpone_time_ms;
-    return ((current_time_ms >= next_min_allowed_time_ms) ? 0ull : next_min_allowed_time_ms - current_time_ms);
-}
-
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     const LogEntry & entry,
     String & out_postpone_reason,
@@ -1428,16 +1390,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::unique_lock<std::mutex> & state_lock) const
 {
-
-    if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
-    {
-        constexpr auto fmt_string = "Not executing log entry {} of type {} "
-                           "because recently it has failed. According to exponential backoff policy, put aside this log entry for {} ms.";
-
-        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
-        return false;
-    }
-
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
@@ -1513,6 +1465,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+
+                if (entry.type == LogEntry::MUTATE_PART && !storage.mutation_backoff_policy.partCanBeMutated(part->name))
+                {
+                        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
+
+                        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+                        return false;
+                }
             }
         }
 
@@ -1879,7 +1840,8 @@ bool ReplicatedMergeTreeQueue::processEntry(
     if (saved_exception)
     {
         std::lock_guard lock(state_mutex);
-        entry->updateLastExeption(saved_exception);
+        entry->exception = saved_exception;
+        entry->last_exception_time = time(nullptr);
         return false;
     }
 
@@ -1952,15 +1914,10 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
     return std::make_shared<ReplicatedMergeTreeZooKeeperMergePredicate>(*this, zookeeper, std::move(partition_ids_hint));
 }
 
-ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_)
-    : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_))
-    , mutations_by_partition(std::move(mutations_by_partition_))
-{
-}
 
-MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
+    auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return {};
 
@@ -1969,11 +1926,22 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 
     MutationCommands result;
 
-    bool seen_all_data_mutations = !hasDataMutations() && !hasAlterMutations();
+    bool seen_all_data_mutations = !hasDataMutations();
     bool seen_all_metadata_mutations = part_metadata_version >= params.metadata_version;
 
     if (seen_all_data_mutations && seen_all_metadata_mutations)
         return {};
+
+    auto add_to_result = [&](const ReplicatedMergeTreeMutationEntryPtr & entry)
+    {
+        for (const auto & command : entry->commands | std::views::reverse)
+        {
+            if (AlterConversions::isSupportedMetadataMutation(command.type))
+                result.push_back(command);
+            else if (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+                result.push_back(command);
+        }
+    };
 
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
@@ -1992,29 +1960,28 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                addSupportedCommands(entry->commands, result);
+                add_to_result(entry);
             else
                 seen_all_metadata_mutations = true;
         }
         else if (!seen_all_data_mutations)
         {
             if (mutation_version > part_data_version)
-                addSupportedCommands(entry->commands, result);
+                add_to_result(entry);
             else
                 seen_all_data_mutations = true;
         }
     }
 
-    std::reverse(result.begin(), result.end());
     return result;
 }
 
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    NameSet res;
     if (!hasDataMutations())
-        return res;
+        return {};
 
+    NameSet res;
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
         for (const auto & [version, entry] : mutations)
@@ -2028,27 +1995,47 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
 
 MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
 {
-    MutationCounters mutations_snapshot_counters;
-    MutationsSnapshot::MutationsByPartititon mutations_snapshot;
-
     std::lock_guard lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
+
+    MutationsSnapshot::Info info
+    {
+        .num_data_mutations = num_data_mutations_to_apply,
+        .num_metadata_mutations = num_metadata_mutations_to_apply,
+    };
+
+    auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
+
+    bool need_data_mutations = res->hasDataMutations();
+    bool need_metatadata_mutations = params.min_part_metadata_version < params.metadata_version;
+
+    if (!need_data_mutations && !need_metatadata_mutations)
+        return res;
+
+    auto is_supported_command = [&](const auto & command)
+    {
+        if (need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+            return true;
+
+        if (need_metatadata_mutations && AlterConversions::isSupportedMetadataMutation(command.type))
+            return true;
+
+        return false;
+    };
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
-        const int64_t min_part_data_version = MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(params, partition_id);
+        auto & in_partition = res->mutations_by_partition[partition_id];
 
-        bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
-        bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
+        bool seen_all_data_mutations = !need_data_mutations;
+        bool seen_all_metadata_mutations = !need_metatadata_mutations;
 
-        auto & partition_snapshot = mutations_snapshot[partition_id];
         for (const auto & [mutation_version, status] : mutations | std::views::reverse)
         {
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
 
             auto alter_version = status->entry->alter_version;
+
             if (alter_version != -1)
             {
                 if (seen_all_metadata_mutations || alter_version > params.metadata_version)
@@ -2059,11 +2046,8 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
-                    {
-                        partition_snapshot.emplace(mutation_version, status->entry);
-                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
-                    }
+                    if (std::ranges::any_of(status->entry->commands, is_supported_command))
+                        in_partition.emplace(mutation_version, status->entry);
                 }
                 else
                 {
@@ -2072,15 +2056,12 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             }
             else if (!seen_all_data_mutations)
             {
-                if (mutation_version > min_part_data_version)
+                if (!status->is_done)
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
-                    {
-                        partition_snapshot.emplace(mutation_version, status->entry);
-                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
-                    }
+                    if (std::ranges::any_of(status->entry->commands, is_supported_command))
+                        in_partition.emplace(mutation_version, status->entry);
                 }
                 else
                 {
@@ -2090,13 +2071,19 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot));
+    return res;
 }
 
-MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyDataMutations() const
 {
     std::lock_guard lock(state_mutex);
-    return mutation_counters;
+    return num_data_mutations_to_apply;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
@@ -2117,10 +2104,10 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     std::lock_guard lock(state_mutex);
 
-    auto in_partition = mutations_by_partition.find(part->info.getPartitionId());
+    auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.getPartitionId(), part->name, toString(desired_mutation_version));
+        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.partition_id, part->name, toString(desired_mutation_version));
         return MutationCommands{};
     }
 
@@ -2131,7 +2118,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         LOG_WARNING(log,
             "Mutation with version {} not found in partition ID {} (trying to mutate part {})",
             desired_mutation_version,
-            part->info.getPartitionId(),
+            part->info.partition_id,
             part->name);
     else
         ++end;
@@ -2180,7 +2167,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
 
-                decrementMutationsCounters(mutation_counters, mutation.entry->commands);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, mutation.entry->commands);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2237,7 +2224,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                decrementMutationsCounters(mutation_counters, entry->commands);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
             }
         }
     }
@@ -2357,7 +2344,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
     if (mutation_ids && !status.latest_fail_reason.empty())
     {
         const auto & latest_failed_part_info = status.latest_failed_part_info;
-        auto in_partition = mutations_by_partition.find(latest_failed_part_info.getPartitionId());
+        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
         if (in_partition != mutations_by_partition.end())
         {
             const auto & version_to_status = in_partition->second;
@@ -2437,26 +2424,10 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         std::unordered_set<String> existing_replicas;
         if (!src_replicas.empty())
         {
-            Strings unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-            existing_replicas.reserve(unfiltered_hosts.size());
-
+            Strings unfiltered_hosts;
+            unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
             for (const auto & host : unfiltered_hosts)
-                existing_replicas.emplace(host);
-
-            for (const auto & requested_replica : src_replicas)
-            {
-                if (!existing_replicas.contains(requested_replica))
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "SYSTEM SYNC REPLICA FROM '{}' failed: replica does not exist. "
-                        "Available replicas at '{}/replicas': {}",
-                        requested_replica,
-                        zookeeper_path,
-                        fmt::join(unfiltered_hosts, ", ")
-                    );
-                }
-            }
+                existing_replicas.insert(host);
         }
 
         out_entry_names.reserve(queue.size());

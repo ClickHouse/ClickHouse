@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
+#include "ReplicatedMergeTreeMutationEntry.h"
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 

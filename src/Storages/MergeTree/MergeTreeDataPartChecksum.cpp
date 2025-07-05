@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
 #include <base/hex.h>
 #include <IO/ReadHelpers.h>

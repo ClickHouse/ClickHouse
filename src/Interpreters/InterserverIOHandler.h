@@ -25,8 +25,6 @@ namespace ErrorCodes
 
 class HTMLForm;
 class HTTPServerResponse;
-class ReadBuffer;
-class WriteBuffer;
 
 /** Query processor from other servers.
   */

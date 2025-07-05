@@ -160,11 +160,11 @@ struct SelectQueryInfo
     StorageLimits local_storage_limits;
 
     /// This is a leak of abstraction.
-    /// StorageMerge/StorageBuffer/StorageMaterializedView replace storage into query_tree. However, column types may be changed for inner table.
+    /// StorageMerge replaces storage into query_tree. However, column types may be changed for inner table.
     /// So, resolved query tree might have incompatible types.
     /// StorageDistributed uses this query tree to calculate a header, throws if we use storage snapshot.
-    /// To avoid this, we use initial_storage_snapshot.
-    StorageSnapshotPtr initial_storage_snapshot;
+    /// To avoid this, we use initial merge_storage_snapshot.
+    StorageSnapshotPtr merge_storage_snapshot;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -190,7 +190,6 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
-    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 

@@ -518,7 +518,8 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
         }
         else
         {
-            return nullptr;
+            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+            return unlimited_quota;
         }
     }
 
