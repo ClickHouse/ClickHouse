@@ -1,7 +1,9 @@
+#include <atomic>
 #include <Common/Throttler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -47,46 +49,65 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
-UInt64 Throttler::add(size_t amount)
+bool Throttler::throttle(size_t amount, size_t max_block_us)
 {
     // Values obtained under lock to be checked after release
     size_t count_value = 0;
     double tokens_value = 0.0;
     size_t max_speed_value = 0;
-    addImpl(amount, count_value, tokens_value, max_speed_value);
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
+    if (event_amount != ProfileEvents::end())
+        ProfileEvents::increment(event_amount, amount);
 
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
-    Int64 sleep_time_ns = 0;
-    if (max_speed_value && tokens_value < 0)
+    bool block = max_speed_value && tokens_value < 0;
+    if (block)
     {
-        sleep_time_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
-        accumulated_sleep += sleep_time_ns;
-        sleepForNanoseconds(sleep_time_ns);
-        accumulated_sleep -= sleep_time_ns;
-        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time_ns / 1000UL);
+        block_count.fetch_add(1, std::memory_order_relaxed);
+        SCOPE_EXIT({block_count.fetch_sub(1, std::memory_order_relaxed);});
+
+        auto & profile_events = CurrentThread::getProfileEvents();
+        auto timer = profile_events.timer(ProfileEvents::ThrottlerSleepMicroseconds);
+        std::optional<ProfileEvents::Timer> timer2;
         if (event_sleep_us != ProfileEvents::end())
-            ProfileEvents::increment(event_sleep_us, sleep_time_ns / 1000UL);
+            timer2.emplace(profile_events.timer(event_sleep_us));
+
+        // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
+        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
+        sleepForNanoseconds(std::min<Int64>(max_block_us * 1000, block_ns));
     }
+
+    bool parent_block = false;
+    if (parent)
+        parent_block = parent->throttle(amount, max_block_us);
+
+    return block || parent_block;
+}
+
+void Throttler::throttleNonBlocking(size_t amount)
+{
+    size_t count_value = 0;
+    double tokens_value = 0.0;
+    size_t max_speed_value = 0;
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
 
     if (event_amount != ProfileEvents::end())
         ProfileEvents::increment(event_amount, amount);
 
     if (parent)
-        sleep_time_ns += parent->add(amount);
-
-    return static_cast<UInt64>(sleep_time_ns);
+        parent->throttleNonBlocking(amount);
 }
 
-void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value)
+void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)
 {
     size_t max_speed_value = 0;
-    addImpl(amount, count_value, tokens_value, max_speed_value);
+    throttleImpl(amount, count_value, tokens_value, max_speed_value);
 }
 
-void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value)
+void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value)
 {
     std::lock_guard lock(mutex);
     auto now = clock_gettime_ns_adjusted(prev_ns);
@@ -114,13 +135,7 @@ void Throttler::reset()
 
 bool Throttler::isThrottling() const
 {
-    if (accumulated_sleep != 0)
-        return true;
-
-    if (parent)
-        return parent->isThrottling();
-
-    return false;
+    return block_count.load(std::memory_order_relaxed) > 0 || (parent && parent->isThrottling());
 }
 
 Int64 Throttler::getAvailable()
@@ -128,7 +143,7 @@ Int64 Throttler::getAvailable()
     // To update bucket state and receive current number of token in a thread-safe way
     size_t count_value = 0;
     double tokens_value = 0.0;
-    addImpl(0, count_value, tokens_value);
+    throttleImpl(0, count_value, tokens_value);
 
     return static_cast<Int64>(tokens_value);
 }

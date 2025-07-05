@@ -86,7 +86,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->add(res);
+                throttler->throttle(res);
         }
 
 

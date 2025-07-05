@@ -75,7 +75,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             bytes_written += res;
             if (throttler)
-                throttler->add(res);
+                throttler->throttle(res);
         }
     }
 
