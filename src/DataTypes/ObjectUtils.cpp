@@ -1,4 +1,5 @@
 #include <memory>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -26,6 +27,18 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnUnique.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
 
 
 namespace DB
@@ -145,17 +158,65 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();
     WhichDataType which(idx);
-    if (which.isSimple())
+    if (which.isSimple() || which.isDateTime64() || which.isIPv4() || which.isIPv6() || which.isUUID())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
+
+    if (which.isObject())
+        return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+
+    if (const auto * column_fixedstring = checkAndGetColumn<ColumnFixedString>(&column))
+        return std::make_shared<DataTypeFixedString>(column_fixedstring->getN());
+
+#define HANDLE_DECIMAL_COLUMN(TYPE) \
+    if (const auto * column_decimal = checkAndGetColumn<ColumnDecimal<TYPE>>(&column)) /* NOLINT(bugprone-macro-parentheses) */ \
+        return createDecimalMaxPrecision<TYPE>(column_decimal->getScale());
+
+    HANDLE_DECIMAL_COLUMN(Decimal32)
+    HANDLE_DECIMAL_COLUMN(Decimal64)
+    HANDLE_DECIMAL_COLUMN(Decimal128)
+    HANDLE_DECIMAL_COLUMN(Decimal256)
+
+#undef HANDLE_DECIMAL_COLUMN
 
     if (which.isNothing())
         return std::make_shared<DataTypeNothing>();
 
+    if (const auto * column_lowcardinality = checkAndGetColumn<ColumnLowCardinality>(&column))
+        return std::make_shared<DataTypeLowCardinality>(getDataTypeByColumn(*column_lowcardinality->getDictionary().getNestedColumn()));
+
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
 
+    if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column))
+    {
+        DataTypes types;
+        types.reserve(column_tuple->tupleSize());
+        for (const auto & col : column_tuple->getColumns())
+            types.push_back(getDataTypeByColumn(*col));
+        return std::make_shared<DataTypeTuple>(types);
+    }
+
+    if (const auto * column_map = checkAndGetColumn<ColumnMap>(&column))
+        return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_map->getNestedData()));
+
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
         return makeNullable(getDataTypeByColumn(column_nullable->getNestedColumn()));
+
+    if (const auto * column_aggregate_func = checkAndGetColumn<ColumnAggregateFunction>(&column))
+    {
+        const auto aggregate_func = column_aggregate_func->getAggregateFunction();
+        return std::make_shared<DataTypeAggregateFunction>(aggregate_func, aggregate_func->getArgumentTypes(), aggregate_func->getParameters());
+    }
+
+    if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
+    {
+        const auto & variants = column_variant->getVariants();
+        DataTypes types;
+        types.reserve(variants.size());
+        for (const auto & variant : variants)
+            types.push_back(getDataTypeByColumn(*variant));
+        return std::make_shared<DataTypeVariant>(types);
+    }
 
     /// TODO: add more types.
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get data type of column {}", column.getFamilyName());
