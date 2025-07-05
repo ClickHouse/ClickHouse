@@ -66,10 +66,68 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
+template <typename T>
+PaddedPODArray<T> cut(PaddedPODArray<T> & from, size_t num_rows)
+{
+    if (from.empty())
+        return {};
+
+    PaddedPODArray<T> result(from.begin() + num_rows, from.end());
+    from.resize(num_rows);
+    return result;
+}
+
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
     if (!scattered_block)
         return {};
+
+    auto current_block = std::move(scattered_block);
+    MutableColumns columns;
+    PaddedPODArray<UInt64> row_refs;
+    IColumn::Offsets offsets_to_replicate;
+    IColumn::Filter filter;
+    size_t remaining_rows = 0;
+    bool is_last = true;
+
+    //std::cerr << lazy_output.row_count << " " << lazy_output.row_refs.size() << " " << lazy_output.output_by_row_list << " ; " << join->max_joined_block_rows << std::endl;
+    size_t rows_count = 0;
+    if (!lazy_output.offsets_to_replicate.empty())
+        rows_count = lazy_output.offsets_to_replicate.back();
+
+    // std::cerr << rows_count << " ; " << join->max_joined_block_rows << std::endl;
+
+    if (join->max_joined_block_rows && rows_count > join->max_joined_block_rows)
+    {
+        size_t num_lhs_rows = 0;
+        size_t num_rhs_rows = 0;
+        for (auto offset : lazy_output.offsets_to_replicate)
+        {
+            if (num_lhs_rows && num_rhs_rows + offset > join->max_joined_block_rows)
+                break;
+            num_rhs_rows += offset;
+            ++num_lhs_rows;
+        }
+        // std::cerr << num_lhs_rows << " " << num_rhs_rows << " " << current_block->rows()<< std::endl;
+
+        is_last = false;
+
+        scattered_block = current_block->cut(num_lhs_rows);
+        offsets_to_replicate = cut(lazy_output.offsets_to_replicate, num_lhs_rows);
+        for (auto & off : offsets_to_replicate)
+            off -= lazy_output.offsets_to_replicate.back();
+        filter = cut(lazy_output.filter, num_lhs_rows);
+        row_refs = cut(lazy_output.row_refs, num_lhs_rows);
+        if (lazy_output.row_count)
+        {
+            remaining_rows = lazy_output.row_count - num_rhs_rows;
+            lazy_output.row_count = num_rhs_rows;
+        }
+
+        columns.reserve(lazy_output.columns.size());
+        for (auto & column : lazy_output.columns)
+            columns.push_back(column->cloneEmpty());
+    }
 
     if (is_join_get)
         lazy_output.buildJoinGetOutput();
@@ -77,11 +135,11 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         lazy_output.buildOutput();
 
     if (need_filter)
-        scattered_block->filter(lazy_output.filter);
+        current_block->filter(lazy_output.filter);
 
-    scattered_block->filterBySelector();
+    current_block->filterBySelector();
 
-    auto block = std::move(*scattered_block).getSourceBlock();
+    auto block = std::move(*current_block).getSourceBlock();
     appendRightColumns(
         block,
         join,
@@ -91,7 +149,17 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         std::move(lazy_output.offsets_to_replicate),
         need_filter,
         is_asof_join);
-    return {block, true};
+
+    if (!is_last)
+    {
+        lazy_output.filter = std::move(filter);
+        lazy_output.offsets_to_replicate = std::move(offsets_to_replicate);
+        lazy_output.row_refs = std::move(row_refs);
+        lazy_output.row_count = remaining_rows;
+        lazy_output.columns = std::move(columns);
+    }
+
+    return {std::move(block), is_last};
 }
 
 void HashJoinResult::appendRightColumns(

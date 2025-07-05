@@ -55,7 +55,7 @@ public:
     struct JoinResultBlock
     {
         Block block;
-        bool is_last;
+        bool is_last = true;
     };
 
     virtual JoinResultBlock next() = 0;
