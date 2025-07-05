@@ -494,7 +494,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
