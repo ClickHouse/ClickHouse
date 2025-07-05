@@ -63,10 +63,10 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (with())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+        ostr << indent_str << "WITH";
 
         if (recursive_with)
-            ostr << (s.hilite ? hilite_keyword : "") << " RECURSIVE" << (s.hilite ? hilite_none : "");
+            ostr << " RECURSIVE";
 
         s.one_line
             ? with()->format(ostr, s, state, frame)
@@ -74,7 +74,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws;
     }
 
-    ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT" << (distinct ? " DISTINCT" : "") << (s.hilite ? hilite_none : "");
+    ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
 
     s.one_line
         ? select()->format(ostr, s, state, frame)
@@ -82,7 +82,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (tables())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
     }
 
@@ -91,28 +91,28 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;
         frame.expression_list_prepend_whitespace = false;
 
-        ostr << (s.hilite ? hilite_none : "") << indent_str << " (";
+        ostr << indent_str << " (";
         aliases()->format(ostr, s, state, frame);
-        ostr << (s.hilite ? hilite_none : "") << indent_str << ")";
+        ostr << indent_str << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
 
     if (prewhere())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "PREWHERE " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "PREWHERE ";
         prewhere()->format(ostr, s, state, frame);
     }
 
     if (where())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "WHERE " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "WHERE ";
         where()->format(ostr, s, state, frame);
     }
 
     if (!group_by_all && groupBy())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "GROUP BY";
         if (!group_by_with_grouping_sets)
         {
             s.one_line
@@ -122,7 +122,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     }
 
     if (group_by_all)
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "GROUP BY ALL";
 
     if (group_by_with_grouping_sets && groupBy())
     {
@@ -130,7 +130,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
         nested_frame.indent++;
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS";
         ostr << " (";
         s.one_line
         ? groupBy()->format(ostr, s, state, nested_frame)
@@ -139,43 +139,43 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     }
 
     if (group_by_with_rollup)
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP";
 
     if (group_by_with_cube)
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE";
 
     if (group_by_with_totals)
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS";
 
     if (having())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "HAVING " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "HAVING ";
         having()->format(ostr, s, state, frame);
     }
 
     if (window())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
-            "WINDOW" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str <<
+            "WINDOW";
         window()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (qualify())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "QUALIFY " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "QUALIFY ";
         qualify()->format(ostr, s, state, frame);
     }
 
     if (!order_by_all && orderBy())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "ORDER BY";
         s.one_line
             ? orderBy()->format(ostr, s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
         if (interpolate())
         {
-            ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTERPOLATE" << (s.hilite ? hilite_none : "");
+            ostr << s.nl_or_ws << indent_str << "INTERPOLATE";
             if (!interpolate()->children.empty())
             {
                 ostr << " (";
@@ -187,32 +187,32 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (order_by_all)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY ALL" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "ORDER BY ALL";
 
         auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
-        ostr << (s.hilite ? hilite_keyword : "")
+        ostr
                << (elem->direction == -1 ? " DESC" : " ASC")
-               << (s.hilite ? hilite_none : "");
+              ;
 
         if (elem->nulls_direction_was_explicitly_specified)
         {
-            ostr << (s.hilite ? hilite_keyword : "")
+            ostr
                    << " NULLS "
                    << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST")
-                   << (s.hilite ? hilite_none : "");
+                  ;
         }
     }
 
     if (limitByLength())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "LIMIT ";
         if (limitByOffset())
         {
             limitByOffset()->format(ostr, s, state, frame);
             ostr << ", ";
         }
         limitByLength()->format(ostr, s, state, frame);
-        ostr << (s.hilite ? hilite_keyword : "") << " BY" << (s.hilite ? hilite_none : "");
+        ostr << " BY";
         if (limitBy())
             s.one_line ? limitBy()->format(ostr, s, state, frame)
                        : limitBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
@@ -220,7 +220,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     if (limitLength())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "LIMIT ";
         if (limitOffset())
         {
             limitOffset()->format(ostr, s, state, frame);
@@ -228,17 +228,17 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
         limitLength()->format(ostr, s, state, frame);
         if (limit_with_ties)
-            ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
+            ostr << s.nl_or_ws << indent_str << " WITH TIES";
     }
     else if (limitOffset())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "OFFSET ";
         limitOffset()->format(ostr, s, state, frame);
     }
 
     if (settings())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "SETTINGS ";
         settings()->format(ostr, s, state, frame);
     }
 }

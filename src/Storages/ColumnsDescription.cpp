@@ -121,7 +121,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(true, false);
+    IAST::FormatSettings settings(true);
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }

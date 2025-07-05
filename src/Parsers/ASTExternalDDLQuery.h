@@ -43,7 +43,7 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
+        ostr << "EXTERNAL DDL FROM ";
         from->format(ostr, settings, state, stacked);
         external_ddl->format(ostr, settings, state, stacked);
     }

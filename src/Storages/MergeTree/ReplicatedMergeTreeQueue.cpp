@@ -2387,7 +2387,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite=*/false);
+            IAST::FormatSettings format_settings(/*one_line=*/true);
             command.ast->format(buf, format_settings);
             result.push_back(MergeTreeMutationStatus
             {
