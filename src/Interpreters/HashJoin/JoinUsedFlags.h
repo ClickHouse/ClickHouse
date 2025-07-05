@@ -20,9 +20,30 @@ class JoinUsedFlags
     /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
     std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> flags;
 
-    bool need_flags;
+    bool need_flags = false;
 
 public:
+    /// Used to read used flags for a block faster.
+    class UsedFlagsHolder
+    {
+    private:
+        bool need_flags;
+        const UsedFlagsForColumns * flags;
+
+    public:
+        UsedFlagsHolder(bool need_flags_, const UsedFlagsForColumns * flags_)
+            : need_flags(need_flags_)
+            , flags(flags_)
+        {
+        }
+
+        ALWAYS_INLINE bool isUsed(size_t i) const
+        {
+            /// Equivelant to `return need_flags ? (*flags)[i].load() : true`
+            return !!need_flags * (*flags)[i].load() + !need_flags;
+        }
+    };
+
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
@@ -64,6 +85,16 @@ public:
             return it->second[row_idx].load();
         return !need_flags;
     }
+
+    /// Get flags for block. If block is not found, return nullptr.
+    UsedFlagsHolder getUsedFlagsHolder(const Columns * columns) const
+    {
+        if (auto it = flags.find(columns); it != flags.end())
+            return UsedFlagsHolder(need_flags, &it->second);
+        return UsedFlagsHolder(need_flags, nullptr);
+    }
+
+    UsedFlagsHolder getUsedFlagsHolder() const { return getUsedFlagsHolder(nullptr); }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
     void setUsed(const FindResult & f)
