@@ -267,11 +267,11 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    auto canMergeWith = [](const RPNElement & e)
+    auto canMergeWith = [](const RPNElement & e, Function function_to_merge)
     {
         return (e.function == FUNCTION_IN_RANGE
                 /// if the sub-clause is also cnf/dnf, it's good to merge
-                || e.function == function
+                || e.function == function_to_merge
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
                 || (e.column_ranges.size() + e.column_not_ranges.size()) == 1
@@ -301,7 +301,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 result_ranges.emplace(column_name, ranges);
         }
     };
-    if (canMergeWith(lhs) && canMergeWith(rhs))
+    if (canMergeWith(lhs, function) && canMergeWith(rhs, function))
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
