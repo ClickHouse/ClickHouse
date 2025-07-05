@@ -29,24 +29,36 @@ Write:
 
 Avoid technical jargon a user might not understand without explanation. Aim for between 1-5 sentences, and
 don't be afraid to use an LLM to help catch typos, grammar mistakes or to rephrase the entry for you in a 
-user friendly way.
-
-## Follow a few simple formatting guidelines
-
-### Write in full sentences
+user friendly way (it's not cheating, I promise!)
 
 Instead of:
 
-> Fix a crash: if an exception is thrown in an attempt to remove a temporary file
+> Support correlated subqueries as an argument of `EXISTS` expression
+
+Write:
+
+> You can now use subqueries that reference outer query columns within `EXISTS` clauses.
+
+An example of a clear, simple entry:
+
+> Makes page cache settings adjustable on a per-query level. This is needed for faster experimentation and for the possibility of fine-tuning for high-throughput and low-latency queries.
+
+## Follow a few simple formatting guidelines
+
+### Write in full sentences and in the present tense
+
+Instead of:
+
+> Fixed a crash: if an exception is thrown in an attempt to remove a temporary file
 
 Write:
 
 > Fixes a crash where an exception is thrown in an attempt to remove a temporary file.
 
-### Backtick code elements
+### Use backticks where necessary
 
-Backtick code elements like settings, function names, SQL statements, format names, and data types. This helps
-to make the changelog entries more readable.
+Backtick code elements like settings, function names, SQL statements, format names, and data types. Generally,
+anything you would type into clickhouse-client should be backticked. This helps to make the changelog entries more readable.
 
 Instead of:
 
