@@ -30,7 +30,7 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
-#include "Interpreters/IJoin.h"
+#include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>

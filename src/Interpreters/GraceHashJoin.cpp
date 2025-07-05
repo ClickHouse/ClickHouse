@@ -10,7 +10,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include "Interpreters/IJoin.h"
+#include <Interpreters/IJoin.h>
 #include <Core/Settings.h>
 
 #include <numeric>

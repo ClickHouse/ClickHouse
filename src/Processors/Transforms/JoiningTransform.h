@@ -5,10 +5,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include "Interpreters/IJoin.h"
-
-#include <deque>
-#include <memory>
+#include <Interpreters/IJoin.h>
 
 namespace DB
 {

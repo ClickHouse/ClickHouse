@@ -92,17 +92,23 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     size_t rows_count = 0;
     if (!lazy_output.offsets_to_replicate.empty())
+    {
         rows_count = lazy_output.offsets_to_replicate.back();
-
+        if (lazy_output.row_count)
+        {
+            if (rows_count != lazy_output.row_count)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch {} {}", rows_count, lazy_output.row_count);
+        }
+    }
     if (join->max_joined_block_rows && rows_count > join->max_joined_block_rows)
     {
         size_t num_lhs_rows = 0;
         size_t num_rhs_rows = 0;
         for (auto offset : lazy_output.offsets_to_replicate)
         {
-            if (num_lhs_rows && num_rhs_rows + offset > join->max_joined_block_rows)
+            if (num_lhs_rows && offset > join->max_joined_block_rows)
                 break;
-            num_rhs_rows += offset;
+            num_rhs_rows = offset;
             ++num_lhs_rows;
         }
 
@@ -113,12 +119,14 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         for (auto & off : offsets_to_replicate)
             off -= lazy_output.offsets_to_replicate.back();
         filter = cut(lazy_output.filter, num_lhs_rows);
-        row_refs = cut(lazy_output.row_refs, num_lhs_rows);
+        row_refs = cut(lazy_output.row_refs, lazy_output.output_by_row_list ? num_lhs_rows : num_rhs_rows);
         if (lazy_output.row_count)
         {
             remaining_rows = lazy_output.row_count - num_rhs_rows;
             lazy_output.row_count = num_rhs_rows;
         }
+
+        //std::cerr << lazy_output.offsets_to_replicate.back() << ' ' << num_rhs_rows << std::endl;
 
         columns.reserve(lazy_output.columns.size());
         for (auto & column : lazy_output.columns)
@@ -205,7 +213,7 @@ void HashJoinResult::appendRightColumns(
 
         const auto & left_column = block.getByName(join->required_right_keys_sources[i]);
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);
-        const auto * filter_ptr = (need_filter || filter.empty()) ? nullptr : &filter;
+        const auto * filter_ptr = need_filter ? nullptr : &filter; //(need_filter || filter.empty()) ? nullptr : &filter;
         auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
         block.insert(std::move(right_col));
 

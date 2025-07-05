@@ -4,7 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/IJoin.h"
+#include <Interpreters/IJoin.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

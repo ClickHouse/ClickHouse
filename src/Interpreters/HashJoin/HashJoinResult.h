@@ -1,3 +1,4 @@
+#pragma once
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/IJoin.h>
 
