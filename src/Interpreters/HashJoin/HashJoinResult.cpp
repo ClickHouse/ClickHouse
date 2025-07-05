@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
 {
     if (nullable)
