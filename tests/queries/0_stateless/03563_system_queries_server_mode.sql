@@ -24,4 +24,4 @@ SYSTEM DROP FORMAT SCHEMA CACHE;
 
 -- Test that the queries work again after stopping/starting
 SYSTEM STOP LISTEN HTTP;
-SYSTEM START LISTEN HTTP; 
+SYSTEM START LISTEN HTTP;

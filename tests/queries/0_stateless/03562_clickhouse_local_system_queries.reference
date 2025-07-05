@@ -3,6 +3,3 @@ Code: 432. DB::Exception: SYSTEM STOP LISTEN HTTP query is not supported in clic
 Code: 432. DB::Exception: SYSTEM START LISTEN HTTP query is not supported in clickhouse-local. (UNSUPPORTED_METHOD)
 Code: 432. DB::Exception: SYSTEM STOP LISTEN TCP query is not supported in clickhouse-local. (UNSUPPORTED_METHOD)
 Code: 432. DB::Exception: SYSTEM START LISTEN TCP query is not supported in clickhouse-local. (UNSUPPORTED_METHOD)
-Code: 432. DB::Exception: SYSTEM RELOAD CONFIG query is not supported in clickhouse-local. (UNSUPPORTED_METHOD)
-Code: 432. DB::Exception: SYSTEM STOP LISTEN HTTP query is not supported in clickhouse-local. (UNSUPPORTED_METHOD)
-Code: 432. DB::Exception: SYSTEM START LISTEN HTTP query is not supported in clickhouse-local. (UNSUPPORTED_METHOD) 
