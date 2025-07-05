@@ -37,7 +37,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -206,15 +205,20 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = true;
-        for (const auto & shard : cluster.getShardsInfo())
+        bool disable_parallel_replicas = is_remote_function; // disable parallel replicas with remote() table functions
+        if (!disable_parallel_replicas)
         {
-            if (shard.getAllNodeCount() > 1)
+            disable_parallel_replicas = true;
+            for (const auto & shard : cluster.getShardsInfo())
             {
-                disable_parallel_replicas = false;
-                break;
+                if (shard.getAllNodeCount() > 1)
+                {
+                    disable_parallel_replicas = false;
+                    break;
+                }
             }
         }
+
         if (disable_parallel_replicas)
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
@@ -233,6 +237,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         new_settings[Setting::load_balancing] = LoadBalancing::ROUND_ROBIN;
     }
+
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
@@ -377,7 +382,7 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
+            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
 
             stream_factory.createForShard(
                 shard_info,
