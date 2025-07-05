@@ -32,6 +32,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
+    void updateHashImpl(SipHash & hash) const override;
     TypeIndex getTypeId() const override { return type_id; }
 
     bool equals(const IDataType & rhs) const override;

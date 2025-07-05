@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
@@ -48,6 +49,13 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
 
     if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
+}
+
+void DataTypeVariant::updateHashImpl(SipHash & hash) const
+{
+    hash.update(variants.size());
+    for (const auto & variant : variants)
+        variant->updateHash(hash);
 }
 
 std::string DataTypeVariant::doGetName() const

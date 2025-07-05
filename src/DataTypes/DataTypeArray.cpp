@@ -49,6 +49,11 @@ bool DataTypeArray::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
 }
 
+void DataTypeArray::updateHashImpl(SipHash & hash) const
+{
+    nested->updateHash(hash);
+}
+
 SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationArray>(nested->getDefaultSerialization());

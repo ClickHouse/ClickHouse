@@ -9,6 +9,8 @@
 
 #include <boost/noncopyable.hpp>
 
+class SipHash;
+
 namespace DB
 {
 
@@ -100,6 +102,9 @@ public:
     virtual TypeIndex getTypeId() const = 0;
     /// Storage type (e.g. Int64 for Interval)
     virtual TypeIndex getColumnType() const { return getTypeId(); }
+
+    void updateHash(SipHash & hash) const;
+    virtual void updateHashImpl(SipHash & hash) const = 0;
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
