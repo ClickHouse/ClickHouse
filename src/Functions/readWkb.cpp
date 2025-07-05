@@ -108,12 +108,12 @@ class FunctionReadWKBCommon : public IFunction
 public:
     enum class WKBTypes
     {
-        Point = 2,
-        LineString = 0,
-        Ring = 0,
-        Polygon = 3,
-        MultiLineString = 3,
-        MultiPolygon = 1
+        LineString,
+        MultiLineString,
+        MultiPolygon,
+        Point,
+        Polygon,
+        Ring,
     };
 
     explicit FunctionReadWKBCommon() = default;
@@ -148,8 +148,10 @@ public:
 
         PointSerializer<CartesianPoint> point_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
+        PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
         MultiPolygonSerializer<CartesianPoint> multipolygon_serializer;
+        RingSerializer<CartesianPoint> ring_serializer;
 
         auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
 
@@ -172,12 +174,7 @@ public:
             }
             else if (std::holds_alternative<Polygon<CartesianPoint>>(object))
             {
-                auto polygon = std::get<Polygon<CartesianPoint>>(object);
-                MultiLineString<CartesianPoint> multilinestring = {LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end())};
-                for (const auto & inner : polygon.inners())
-                    multilinestring.push_back(LineString<CartesianPoint>(inner.begin(), inner.end()));
-
-                multilinestring_serializer.add(multilinestring);
+                polygon_serializer.add(std::get<Polygon<CartesianPoint>>(object));
                 converted_type = static_cast<UInt8>(WKBTypes::Polygon);
             }
             else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
@@ -198,9 +195,11 @@ public:
 
         Columns result_columns;
         result_columns.push_back(linestring_serializer.finalize());
+        result_columns.push_back(multilinestring_serializer.finalize());
         result_columns.push_back(multipolygon_serializer.finalize());
         result_columns.push_back(point_serializer.finalize());
-        result_columns.push_back(multilinestring_serializer.finalize());
+        result_columns.push_back(polygon_serializer.finalize());
+        result_columns.push_back(ring_serializer.finalize());
         
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
