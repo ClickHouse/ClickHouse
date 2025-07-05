@@ -35,6 +35,7 @@ SETTINGS
     kafka_topic_list = 'topic1,topic2,...',
     kafka_group_name = 'group_name',
     kafka_format = 'data_format'[,]
+    [kafka_format_avro_schema_registry_url = '',]
     [kafka_security_protocol = '',]
     [kafka_sasl_mechanism = '',]
     [kafka_sasl_username = '',]
@@ -63,6 +64,7 @@ Required parameters:
 
 Optional parameters:
 
+- `kafka_format_avro_schema_registry_url` — For AvroConfluent format: Confluent Schema Registry URL.
 - `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
 - `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
 - `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
