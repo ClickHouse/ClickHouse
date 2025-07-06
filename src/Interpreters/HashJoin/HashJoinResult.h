@@ -33,13 +33,7 @@ public:
         bool is_join_get_,
         bool is_asof_join_,
         ScatteredBlock && block_,
-        const HashJoin * join_)
-        : lazy_output(std::move(lazy_output_))
-        , join(join_)
-        , need_filter(need_filter_)
-        , is_join_get(is_join_get_)
-        , is_asof_join(is_asof_join_)
-        , scattered_block(std::move(block_)) {}
+        const HashJoin * join_);
 
     JoinResultBlock next() override;
 };

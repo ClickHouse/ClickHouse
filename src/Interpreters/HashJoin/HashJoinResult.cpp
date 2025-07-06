@@ -72,14 +72,56 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 }
 
 template <typename T>
-PaddedPODArray<T> cut(PaddedPODArray<T> & from, size_t num_rows)
+PaddedPODArray<T> cut(PaddedPODArray<T> & from, size_t num_rows, const char * msg)
 {
     if (from.empty())
         return {};
 
+    // LOG_TRACE(getLogger("cut"), "cutting {} rows from {} rows ({})", num_rows, from.size(), msg);
+
+    if (from.size() < num_rows)
+    {
+        // LOG_TRACE(getLogger("cut"), "!!!!!!!!!!!!!!!!!!!!!!!!!");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: expected {} rows, got {}", msg, num_rows, from.size());
+    }
+
     PaddedPODArray<T> result(from.begin() + num_rows, from.end());
     from.resize(num_rows);
+
+    // LOG_TRACE(getLogger("cut"), "result ({}): {} {} rows", msg, from.size(), result.size());
     return result;
+}
+
+HashJoinResult::HashJoinResult(
+    LazyOutput && lazy_output_,
+    bool need_filter_,
+    bool is_join_get_,
+    bool is_asof_join_,
+    ScatteredBlock && block_,
+    const HashJoin * join_)
+    : lazy_output(std::move(lazy_output_))
+    , join(join_)
+    , need_filter(need_filter_)
+    , is_join_get(is_join_get_)
+    , is_asof_join(is_asof_join_)
+    , scattered_block(std::move(block_))
+{
+    if (!lazy_output.offsets_to_replicate.empty())
+    {
+        auto rows_count = lazy_output.offsets_to_replicate.back();
+        if (lazy_output.row_count)
+        {
+            if (rows_count != lazy_output.row_count)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 1 {} {}", rows_count, lazy_output.row_count);
+        }
+        if (!lazy_output.row_refs.empty())
+        {
+            if (!lazy_output.output_by_row_list && rows_count != lazy_output.row_refs.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 2 {} {}", rows_count, lazy_output.row_refs.size());
+            // if (lazy_output.output_by_row_list && lazy_output.row_refs.size() != lazy_output.offsets_to_replicate.size())
+            //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 3 {} {}", lazy_output.row_refs.size(), lazy_output.offsets_to_replicate.size());
+        }
+    }
 }
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
@@ -102,7 +144,14 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         if (lazy_output.row_count)
         {
             if (rows_count != lazy_output.row_count)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch {} {}", rows_count, lazy_output.row_count);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 1 {} {}", rows_count, lazy_output.row_count);
+        }
+        if (!lazy_output.row_refs.empty())
+        {
+            if (!lazy_output.output_by_row_list && rows_count != lazy_output.row_refs.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 2 {} {}", rows_count, lazy_output.row_refs.size());
+            // if (lazy_output.output_by_row_list && lazy_output.row_refs.size() != lazy_output.offsets_to_replicate.size())
+            //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 3 {} {}", lazy_output.row_refs.size(), lazy_output.offsets_to_replicate.size());
         }
     }
     if (join->max_joined_block_rows && rows_count > join->max_joined_block_rows)
@@ -117,14 +166,34 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             ++num_lhs_rows;
         }
 
+        size_t num_refs_to_cut = num_lhs_rows;
+        if (lazy_output.output_by_row_list)
+        {
+            num_refs_to_cut = 0;
+            size_t num_joined = 0;
+            for (auto ref : lazy_output.row_refs)
+            {
+                if (num_joined >= num_rhs_rows)
+                    break;
+                ++num_refs_to_cut;
+                if (const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(ref))
+                    num_joined += row_ref_list->rows;
+                else
+                    ++num_joined;
+            }
+
+            if (num_joined != num_rhs_rows)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 7 {} {}", num_joined, num_rhs_rows);
+        }
+
         is_last = false;
 
         scattered_block = current_block->cut(num_lhs_rows);
-        offsets_to_replicate = cut(lazy_output.offsets_to_replicate, num_lhs_rows);
+        offsets_to_replicate = cut(lazy_output.offsets_to_replicate, num_lhs_rows, "offsets_to_replicate");
         for (auto & off : offsets_to_replicate)
             off -= lazy_output.offsets_to_replicate.back();
-        filter = cut(lazy_output.filter, num_lhs_rows);
-        row_refs = cut(lazy_output.row_refs, lazy_output.output_by_row_list ? num_lhs_rows : num_rhs_rows);
+        filter = cut(lazy_output.filter, num_lhs_rows, "filter");
+        row_refs = cut(lazy_output.row_refs, num_refs_to_cut, "row_refs");
         if (lazy_output.row_count)
         {
             remaining_rows = lazy_output.row_count - num_rhs_rows;
@@ -174,6 +243,23 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         lazy_output.row_refs = std::move(row_refs);
         lazy_output.row_count = remaining_rows;
         lazy_output.columns = std::move(columns);
+
+        // if (!lazy_output.offsets_to_replicate.empty())
+        // {
+        //     rows_count = lazy_output.offsets_to_replicate.back();
+        //     if (lazy_output.row_count)
+        //     {
+        //         if (rows_count != lazy_output.row_count)
+        //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 4 {} {}", rows_count, lazy_output.row_count);
+        //     }
+        //     if (!lazy_output.row_refs.empty())
+        //     {
+        //         if (!lazy_output.output_by_row_list && rows_count != lazy_output.row_refs.size())
+        //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 5 {} {}", rows_count, lazy_output.row_refs.size());
+        //         if (lazy_output.output_by_row_list && lazy_output.row_refs.size() != lazy_output.offsets_to_replicate.size())
+        //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 6 {} {}", lazy_output.row_refs.size(), lazy_output.offsets_to_replicate.size());
+        //     }
+        // }
     }
 
     return {std::move(block), is_last};
