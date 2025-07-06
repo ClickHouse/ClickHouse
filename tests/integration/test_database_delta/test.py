@@ -25,17 +25,6 @@ def start_unity_catalog(node):
         ]
     )
 
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""
- rm -f metastore_db/dbex.lck
- """,
-        ],
-    )
-
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -61,7 +50,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text, ignore_exit_code=False, limit=10):
+def execute_spark_query(node, query_text, ignore_exit_code=False, limit=3):
     if limit == 0:
         raise ValueError("Limit of retries execute spark query exceeded")
     try:
