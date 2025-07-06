@@ -25,6 +25,17 @@ def start_unity_catalog(node):
         ]
     )
 
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+ rm -f metastore_db/dbex.lck
+ """,
+        ],
+    )
+
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -49,18 +60,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-def start_test(node):
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""
- rm -f metastore_db/dbex.lck
- """,
-        ],
-        nothrow=False,
-    )
 
 def execute_spark_query(node, query_text, ignore_exit_code=False):
     return node.exec_in_container(
@@ -92,7 +91,6 @@ def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query("drop database if exists unity_test")
     node1.query(
         f"create database unity_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
@@ -136,7 +134,6 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
 
 def test_multiple_schemes_tables(started_cluster):
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     execute_multiple_spark_queries(
         node1, [f"CREATE SCHEMA test_schema{i}" for i in range(10)], True
     )
@@ -186,7 +183,6 @@ def test_multiple_schemes_tables(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     schema_name = f"schema_with_complex_tables_{use_delta_kernel}"
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name = f"complex_table_{use_delta_kernel}"
@@ -245,7 +241,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_timestamp_ntz(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query("drop database if exists ntz_schema")
 
     schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
@@ -318,7 +313,6 @@ def test_no_permission_and_list_tables(started_cluster):
     # So this query fails and the test doesn't check anything :(
     pytest.skip("Skipping test because it doesn't check anything")
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query("drop database if exists schema_with_permissions")
 
     schema_name = f"schema_with_permissions"
