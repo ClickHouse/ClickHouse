@@ -24,14 +24,14 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsIntersects : public IFunction
+class FunctionpolygonsIntersect : public IFunction
 {
 public:
     static inline const char * name;
 
-    explicit FunctionPolygonsIntersects() = default;
+    explicit FunctionpolygonsIntersect() = default;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPolygonsIntersects>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionpolygonsIntersect>(); }
 
     String getName() const override { return name; }
 
@@ -99,20 +99,20 @@ public:
 
 
 template <>
-const char * FunctionPolygonsIntersects<CartesianPoint>::name = "polygonsIntersectsCartesian";
+const char * FunctionpolygonsIntersect<CartesianPoint>::name = "polygonsIntersectCartesian";
 
 template <>
-const char * FunctionPolygonsIntersects<SphericalPoint>::name = "polygonsIntersectsSpherical";
+const char * FunctionpolygonsIntersect<SphericalPoint>::name = "polygonsIntersectSpherical";
 
 }
 
-REGISTER_FUNCTION(PolygonsIntersects)
+REGISTER_FUNCTION(polygonsIntersect)
 {
-    factory.registerFunction<FunctionPolygonsIntersects<CartesianPoint>>(FunctionDocumentation{
+    factory.registerFunction<FunctionpolygonsIntersect<CartesianPoint>>(FunctionDocumentation{
         .description = R"(
         Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
-        .syntax = "polygonsIntersectsCartesian(polygon1, polygon2)",
+        .syntax = "polygonsIntersectCartesian(polygon1, polygon2)",
         .arguments
         = {{"polygon1",
             "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
@@ -124,22 +124,22 @@ REGISTER_FUNCTION(PolygonsIntersects)
         .examples
         = {{"Usage example",
             R"(
-                SELECT polygonsIntersectsCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+                SELECT polygonsIntersectCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
 
         )",
             R"(
-                ┌─polygonsIntersectsCartesian()─┐
+                ┌─polygonsIntersectCartesian()─┐
                 │ 1 │
                 └───────────────────┘
         )"}},
         .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Geo});
 
-    factory.registerFunction<FunctionPolygonsIntersects<SphericalPoint>>(FunctionDocumentation{
+    factory.registerFunction<FunctionpolygonsIntersect<SphericalPoint>>(FunctionDocumentation{
         .description = R"(
         Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
-        .syntax = "polygonsIntersectsSpherical(polygon1, polygon2)",
+        .syntax = "polygonsIntersectSpherical(polygon1, polygon2)",
         .arguments
         = {{"polygon1",
             "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
@@ -152,11 +152,11 @@ REGISTER_FUNCTION(PolygonsIntersects)
         .examples
         = {{"Usage example",
             R"(
-                SELECT polygonsIntersectsSpherical([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+                SELECT polygonsIntersectSpherical([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
 
         )",
             R"(
-                ┌─polygonsIntersectsSpherical()─┐
+                ┌─polygonsIntersectSpherical()─┐
                 │ 1 │
                 └───────────────────┘
         )"}},

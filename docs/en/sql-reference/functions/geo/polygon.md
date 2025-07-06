@@ -531,14 +531,14 @@ Two polygons
 
 UInt8, 0 for false, 1 for true
 
-## polygonsIntersectsCartesian {#polygonsintersectscartesian}
+## polygonsIntersectCartesian {#polygonsintersectcartesian}
 
 Returns true if the two polygons intersect (share any common area or boundary).
 
 ### Example {#example-intersects-cartesian}
 
 ```sql
-SELECT polygonsIntersectsCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+SELECT polygonsIntersectCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
 ```
 ```response
 1
@@ -552,14 +552,14 @@ Two polygons
 
 UInt8, 0 for false, 1 for true
 
-## polygonsIntersectsSpherical {#polygonsintersectsspherical}
+## polygonsIntersectSpherical {#polygonsintersectspherical}
 
 Returns true if the two polygons intersect (share any common area or boundary). Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/intersects.html
 
 ### Example {#example-intersects-spherical}
 
 ```sql
-SELECT polygonsIntersectsSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
+SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
 ```
 ```response
 1
