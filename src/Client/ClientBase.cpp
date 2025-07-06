@@ -3007,12 +3007,6 @@ void ClientBase::initAIProvider()
     }
 }
 
-void ClientBase::setupAISchemaProvider()
-{
-    // AI schema provider is set up during initialization in initAIProvider
-    // This method is kept for compatibility with the original interface
-}
-
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
     if (!connection)
@@ -3341,7 +3335,6 @@ void ClientBase::runInteractive()
 
 #if USE_CLIENT_AI
     initAIProvider();
-    setupAISchemaProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3593,7 +3586,6 @@ void ClientBase::runNonInteractive()
 
 #if USE_CLIENT_AI
     initAIProvider();
-    setupAISchemaProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

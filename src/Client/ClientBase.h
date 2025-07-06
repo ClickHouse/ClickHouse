@@ -159,7 +159,6 @@ protected:
 
 #if USE_CLIENT_AI
     void initAIProvider();
-    void setupAISchemaProvider();
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
