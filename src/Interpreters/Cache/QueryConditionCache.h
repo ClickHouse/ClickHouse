@@ -90,7 +90,7 @@ public:
     void clear();
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
-    size_t maxSizeInBytes();
+    size_t maxSizeInBytes() const;
 
 private:
     Cache cache;
