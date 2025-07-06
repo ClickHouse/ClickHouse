@@ -28,7 +28,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_INDEX;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
