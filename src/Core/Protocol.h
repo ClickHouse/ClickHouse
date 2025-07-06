@@ -105,18 +105,6 @@ namespace Protocol
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         std::string_view toString(UInt64 packet);
-
-        inline size_t stringsInMessage(UInt64 msg_type)
-        {
-            switch (msg_type)
-            {
-                case TableColumns:
-                    return 2;
-                default:
-                    break;
-            }
-            return 0;
-        }
     }
 
     /// Packet types that client transmits.
