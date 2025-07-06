@@ -35,6 +35,3 @@ af	text
 1
 Test max_rows_per_postings_list
 1
-Test multiple text indices creation
-Test multiple text indices on the same column
-Test different column or wrapper around the column
