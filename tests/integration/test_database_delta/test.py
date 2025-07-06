@@ -50,40 +50,35 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text, ignore_exit_code=False, limit=3):
-    if limit == 0:
-        raise ValueError("Limit of retries execute spark query exceeded")
-    try:
-        return node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"""
-    cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
-        --master "local[*]" \\
-        --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
-        --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
-        --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
-        --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
-        --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
-        --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
-        --conf "spark.sql.catalog.unity.token=" \\
-        --conf "spark.sql.defaultCatalog=unity" \\
-        -S -e "{query_text}" | grep -v 'loading settings'
-    """,
-            ],
-            nothrow=ignore_exit_code,
-        )
-    except:
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"""rm -f metastore_db/dbex.lck""",
-            ],
-        )
-        return execute_spark_query(node, query_text, ignore_exit_code, limit - 1)
+def execute_spark_query(node, query_text, ignore_exit_code=False):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""rm -f metastore_db/dbex.lck""",
+        ],
+    )
 
+    return node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
+    --master "local[*]" \\
+    --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
+    --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
+    --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
+    --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
+    --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
+    --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
+    --conf "spark.sql.catalog.unity.token=" \\
+    --conf "spark.sql.defaultCatalog=unity" \\
+    -S -e "{query_text}" | grep -v 'loading settings'
+""",
+        ],
+        nothrow=ignore_exit_code,
+    )
 
 
 def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
@@ -242,14 +237,15 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_timestamp_ntz(started_cluster, use_delta_kernel):
+    table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    node1.query("drop database if exists ntz_schema")
+    node1.query(f"drop database if exists {table_name_src}")
 
     schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name = f"table_with_timestamp_{use_delta_kernel}"
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/ntz_schema/{table_name}'"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
     execute_spark_query(node1, create_query, ignore_exit_code=True)
     execute_spark_query(
         node1,
@@ -259,8 +255,8 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
 
     node1.query(
         f"""
-drop database if exists ntz_schema;
-create database ntz_schema
+drop database if exists {table_name};
+create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
@@ -270,7 +266,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     ntz_tables = list(
         sorted(
             node1.query(
-                f"SHOW TABLES FROM ntz_schema LIKE '{schema_name}%'",
+                f"SHOW TABLES FROM {table_name_src} LIKE '{schema_name}%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -290,7 +286,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         try:
             ntz_data = (
                 node1.query(
-                    f"SELECT * FROM ntz_schema.`{schema_name}.{table_name}`",
+                    f"SELECT * FROM {table_name_src}.`{schema_name}.{table_name}`",
                     settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
                 )
                 .strip()
