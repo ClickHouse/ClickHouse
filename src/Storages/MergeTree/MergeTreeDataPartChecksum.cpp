@@ -92,7 +92,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     for (const auto & [name, checksum] : files)
     {
         /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
-        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+        if (isGinFile(name))
             continue;
 
         auto it = rhs.files.find(name);
