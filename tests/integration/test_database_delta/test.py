@@ -66,6 +66,7 @@ cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
     --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
     --conf "spark.sql.catalog.unity.token=" \\
     --conf "spark.sql.defaultCatalog=unity" \\
+    --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:memory:metastore_db;create=true" \\
     -S -e "{query_text}" | grep -v 'loading settings'
 """,
         ],

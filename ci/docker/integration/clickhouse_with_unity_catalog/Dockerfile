@@ -15,6 +15,9 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.4/spark-3.5.4-
     && tar xzvf spark-3.5.4-bin-hadoop3.tgz -C / \
     && rm spark-3.5.4-bin-hadoop3.tgz
 
+# Remove default Derby-based Hive metastore DB to avoid locking issues
+RUN rm -rf /spark-3.5.4-bin-hadoop3/metastore_db
+
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
 RUN packages="org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \
