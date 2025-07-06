@@ -8,7 +8,6 @@
 namespace DB
 {
 
-class Block;
 class StorageMergeTree;
 struct BlockWithPartition;
 
