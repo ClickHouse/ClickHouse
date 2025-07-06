@@ -18,7 +18,7 @@ Positions: 0
                FUNCTION toString(__table3.value :: 2) -> toString(__table3.value) String : 3
                FUNCTION toDateTime(toString(__table3.value) :: 3) -> toDateTime(toString(__table3.value)) DateTime : 2
                FUNCTION greaterOrEquals(__table2.value :: 1, toDateTime(toString(__table3.value)) :: 2) -> greaterOrEquals(__table2.value, toDateTime(toString(__table3.value))) UInt8 : 3
-               ALIAS greaterOrEquals(__table2.value, toDateTime(toString(__table3.value))) :: 3 -> and(greaterOrEquals(__table2.value, toDateTime(toString(__table3.value))), equals(__table1.key, 162601_UInt32)) UInt8 : 2
+               ALIAS greaterOrEquals(__table2.value, toDateTime(toString(__table3.value))) :: 3 -> and(greaterOrEquals(__table2.value, toDateTime(toString(__table3.value))), equals(__table1.key, 1626... UInt8 : 2
       Positions: 2
         Join (JOIN FillRightFirst)
         Type: CROSS
