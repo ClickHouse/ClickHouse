@@ -295,12 +295,30 @@ ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngram', ngram
 
 DROP TABLE tab;
 
-SELECT 'Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.';
+SELECT 'Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.';
 
 CREATE TABLE tab
 (
     key UInt64,
     str UInt64,
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(String),
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(FixedString(2)),
     INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
