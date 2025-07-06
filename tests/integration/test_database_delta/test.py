@@ -87,16 +87,17 @@ def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    node1.query("drop database if exists unity_test")
+    node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
-        f"create database unity_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
+        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
         settings={"allow_experimental_database_unity_catalog": "1"},
     )
     default_tables = list(
         sorted(
             node1.query(
-                "SHOW TABLES FROM unity_test LIKE 'default%'",
+                f"SHOW TABLES FROM unity_test_{test_uuid} LIKE 'default%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -114,10 +115,10 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
     for table in default_tables:
         if table == "default.marksheet_uniform":
             continue
-        assert "DeltaLake" in node1.query(f"show create table unity_test.`{table}`")
+        assert "DeltaLake" in node1.query(f"show create table unity_test_{test_uuid}.`{table}`")
         if table in ("default.marksheet", "default.user_countries"):
             data_clickhouse = TSV(
-                node1.query(f"SELECT * FROM unity_test.`{table}` ORDER BY 1,2,3")
+                node1.query(f"SELECT * FROM unity_test_{test_uuid}.`{table}` ORDER BY 1,2,3")
             )
             data_spark = TSV(
                 execute_spark_query(
@@ -130,14 +131,15 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
 
 
 def test_multiple_schemes_tables(started_cluster):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA test_schema{i}" for i in range(10)], True
+        node1, [f"CREATE SCHEMA test_schema{i}{test_uuid}" for i in range(10)], True
     )
     execute_multiple_spark_queries(
         node1,
         [
-            f"CREATE TABLE test_schema{i}.test_table{i} (col1 int, col2 double) using Delta location '/tmp/test_schema{i}/test_table{i}'"
+            f"CREATE TABLE test_schema{i}{test_uuid}.test_table{i}{test_uuid} (col1 int, col2 double) using Delta location '/tmp/test_schema{i}{test_uuid}/test_table{i}'"
             for i in range(10)
         ],
         True,
@@ -145,20 +147,20 @@ def test_multiple_schemes_tables(started_cluster):
     execute_multiple_spark_queries(
         node1,
         [
-            f"INSERT INTO test_schema{i}.test_table{i} VALUES ({i}, {i}.0)"
+            f"INSERT INTO test_schema{i}{test_uuid}.test_table{i}{test_uuid} VALUES ({i}, {i}.0)"
             for i in range(10)
         ],
         True,
     )
 
     node1.query(
-        "create database multi_schema_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
         settings={"allow_experimental_database_unity_catalog": "1"},
     )
     multi_schema_tables = list(
         sorted(
             node1.query(
-                "SHOW TABLES FROM multi_schema_test LIKE 'test_schema%'",
+                f"SHOW TABLES FROM multi_schema_test{test_uuid} LIKE 'test_schema%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -169,10 +171,10 @@ def test_multiple_schemes_tables(started_cluster):
 
     for i, table in enumerate(multi_schema_tables):
         assert node1.query(
-            f"SELECT col1 FROM multi_schema_test.`{table}`"
+            f"SELECT col1 FROM multi_schema_test{test_uuid}.`{table}`"
         ).strip() == str(i)
         assert (
-            int(node1.query(f"SELECT col2 FROM multi_schema_test.`{table}`").strip())
+            int(node1.query(f"SELECT col2 FROM multi_schema_test{test_uuid}.`{table}`").strip())
             == i
         )
 
@@ -180,9 +182,9 @@ def test_multiple_schemes_tables(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    schema_name = f"schema_with_complex_tables_{use_delta_kernel}"
+    schema_name = f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
-    table_name = f"complex_table_{use_delta_kernel}"
+    table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
     execute_spark_query(node1, create_query, ignore_exit_code=True)
