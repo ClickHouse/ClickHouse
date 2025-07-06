@@ -624,6 +624,11 @@ void GinIndexStoreFactory::remove(const String & part_path)
     }
 }
 
+bool isGinFile(const String & file_name)
+{
+    return file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid");
+}
+
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
