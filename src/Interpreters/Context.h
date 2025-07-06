@@ -31,6 +31,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 
 
 namespace Poco::Net
@@ -560,6 +561,9 @@ protected:
     using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
     mutable StorageSnapshotCache storage_snapshot_cache;
     mutable std::mutex storage_snapshot_cache_mutex;
+
+    mutable StorageSnapshotPtr storage_snapshot;
+    mutable std::shared_mutex storage_snapshot_mutex;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1447,6 +1451,26 @@ public:
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
     std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
     std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+
+    /// TODO: JAM
+    /// storage_snapshot could be atomic, not needed lock protection.
+    /// ContextPtr is intended to be set in the ReadFromMergeTree constructor, which access it as a const, that's why these functions
+    /// need to be const and storage_metadata mutable. (Consider this a temporal solution for obvious reasons)
+    /// TODO: JAM There is formally an error here. Returning a shared pointer by reference. Check what to do with that.
+    std::pair<const StorageSnapshotPtr, std::shared_lock<std::shared_mutex>> getStorageSnapshot() const
+    {
+        return std::make_pair(storage_snapshot, std::shared_lock(storage_snapshot_mutex));
+    }
+    bool setStorageSnapshot(StorageSnapshotPtr _storage_snapshot) const
+    {
+        chassert(_storage_snapshot != nullptr);
+        std::lock_guard lk(storage_snapshot_mutex);
+        if (storage_snapshot && _storage_snapshot != storage_snapshot)
+            return false;
+
+        storage_snapshot = _storage_snapshot;
+        return true;
+    }
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;

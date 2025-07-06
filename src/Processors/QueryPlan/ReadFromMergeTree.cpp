@@ -346,6 +346,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     , enable_remove_parts_from_snapshot_optimization(!context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
     , number_of_current_replica(number_of_current_replica_)
 {
+    context_->setStorageSnapshot(storage_snapshot_);
+    
     if (is_parallel_reading_from_replicas)
     {
         if (all_ranges_callback_.has_value())
