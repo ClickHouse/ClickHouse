@@ -119,7 +119,7 @@ public:
 
     void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
     {
-        /// Noop
+        throwNotImplemented();
     }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
