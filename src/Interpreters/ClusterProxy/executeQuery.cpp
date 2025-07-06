@@ -212,10 +212,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
                 disable_parallel_replicas = true;
             else
-            {
                 new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-            }
-
         }
 
         if (!disable_parallel_replicas)
