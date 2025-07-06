@@ -5,8 +5,12 @@
 
 set -e
 
-# Use the built clickhouse binary with local subcommand
-CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:-"./build/programs/clickhouse local"}
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+# Use the standard ClickHouse test environment variables or fall back to local path
+CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:-"./build/programs/clickhouse-local"}
 
 # Test cases that should fail with UNSUPPORTED_METHOD in clickhouse-local
 test_cases=(

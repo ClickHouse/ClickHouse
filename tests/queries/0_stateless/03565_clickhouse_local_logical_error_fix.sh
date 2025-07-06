@@ -5,7 +5,9 @@
 
 set -e
 
-CLICKHOUSE_LOCAL="./build/programs/clickhouse-local"
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 echo "Testing clickhouse-local SYSTEM queries that should throw UNSUPPORTED_METHOD:"
 
