@@ -51,6 +51,17 @@ def started_cluster():
 
 
 def execute_spark_query(node, query_text, ignore_exit_code=False):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""
+rm -f metastore_db/dbex.lck
+""",
+        ],
+        nothrow=ignore_exit_code,
+    )
+
     return node.exec_in_container(
         [
             "bash",
