@@ -79,16 +79,18 @@ void QueryConditionCache::write(
             return;
     }
 
-    std::lock_guard lock(entry->mutex); /// (*)
+    {
+        std::lock_guard lock(entry->mutex); /// (*)
 
-    chassert(marks_count == entry->matching_marks.size());
+        chassert(marks_count == entry->matching_marks.size());
 
-    /// The input mark ranges are the areas which the scan can skip later on.
-    for (const auto & mark_range : mark_ranges)
-        std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+        /// The input mark ranges are the areas which the scan can skip later on.
+        for (const auto & mark_range : mark_ranges)
+            std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-    if (has_final_mark)
-        entry->matching_marks[marks_count - 1] = false;
+        if (has_final_mark)
+            entry->matching_marks[marks_count - 1] = false;
+    }
 
     LOG_TEST(
         logger,
