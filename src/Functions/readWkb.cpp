@@ -365,7 +365,7 @@ REGISTER_FUNCTION(ReadWKB)
             .examples{
                 {"first call",
                  "SELECT "
-                 "readWKkb(unhex('"
+                 "readWkb(unhex('"
                  "010100000000000000000000000000000000000000"
                  "'));",
                  R"(
