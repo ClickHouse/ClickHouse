@@ -1,3 +1,5 @@
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -6,8 +8,8 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// This is not really an optimization. The purpose of this function is to extract and hash the filter condition of WHERE or PREWHERE
-/// filters. These correspond to these steps:
+/// This is no optimization. This function extracts and hashes the filter condition of WHERE or PREWHERE filters.
+/// These correspond to these steps:
 ///
 ///   [...]
 ///     ^
@@ -61,7 +63,13 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 condition = outputs_names[0];
             }
 
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            if (query_condition_cache)
+            {
+                auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(*query_condition_cache, condition_hash, condition);
+                filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
+            }
+
             return;
         }
     }

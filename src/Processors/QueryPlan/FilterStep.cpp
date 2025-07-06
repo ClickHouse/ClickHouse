@@ -173,7 +173,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, query_condition_cache_writer);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -248,9 +248,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
+void FilterStep::setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_)
 {
-    condition = {condition_hash_, condition_};
+    query_condition_cache_writer = query_condition_cache_writer_;
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
