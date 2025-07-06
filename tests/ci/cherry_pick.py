@@ -646,16 +646,22 @@ class CherryPickPRs:
 
         assignees = ", ".join(f"@{user.login}" for user in pr.assignees)
         comment_body = (
-            f"Dear {assignees}, this PR is reopened after #{original_pr.number} was "
+            f"Dear {assignees}, this PR is opened while #{original_pr.number} was "
             f"marked as backported. The `{Labels.PR_BACKPORTS_CREATED}` is removed, so "
-            "the original PR can be processed again."
+            "the original PR can be processed again.\n\n"
+            "If the cherry-pick is not needed anymore, then just close this PR."
+        )
+        logging.info(
+            "Label %s should be removed from from #%s due opened cherry-pick PR #%s",
+            Labels.PR_BACKPORTS_CREATED,
+            original_pr.number,
+            pr.number,
         )
         if self.dry_run:
             logging.info(
-                "DRY RUN: would remove label %s from #%s and comment the cherry-pick PR #%s:\n",
-                Labels.PR_BACKPORTS_CREATED,
-                original_pr.number,
+                "DRY RUN: would remove label and comment the cherry-pick PR #%s:\n%s",
                 pr.number,
+                comment_body,
             )
             return
 
