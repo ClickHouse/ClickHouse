@@ -3716,14 +3716,15 @@ void Context::setQueryResultCache(
     const String & disk,
     const String & path)
 {
+    auto disk_ptr = getDisk(disk);
+    if (!disk_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache disk does not exist.");
+
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_result_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    auto disk_ptr = getDisk(disk);
-    if (disk_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache disk does not exist.");
 
     shared->query_result_cache = std::make_shared<QueryResultCache>(
         max_size_in_bytes,

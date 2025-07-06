@@ -224,7 +224,7 @@ public:
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
 
 private:
-    void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry) const;
+    void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const;
     std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCache::MappedPtr> deserializeEntry(const Key & key);
 
     void compressEntry(const QueryResultCache::Cache::MappedPtr & entry);

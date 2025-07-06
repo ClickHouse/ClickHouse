@@ -1,8 +1,4 @@
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <memory>
-#include <optional>
-#include <tuple>
-#include <utility>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -27,14 +23,13 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
-#include "IO/ReadHelpers.h"
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
-#include <sys/socket.h>
 
 
 namespace ProfileEvents
@@ -410,6 +405,7 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
     if (user_id_ != UUIDHelpers::Nil)
         user_id = user_id_;
 
+    assertChar('\n', buf);
     assertString(token_current_user_roles, buf);
     std::vector<UUID> current_user_roles_;
     while (!checkChar('\n', buf))
@@ -419,32 +415,31 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
         current_user_roles_.push_back(user_role);
         assertChar(',', buf);
     }
-    assertChar('\n', buf);
     if (!current_user_roles_.empty())
         current_user_roles = current_user_roles_;
 
     assertString(token_is_shared, buf);
     readBoolText(is_shared, buf);
-    assertChar('\n', buf);
 
+    assertChar('\n', buf);
     assertString(token_expires_at, buf);
     std::time_t timestamp;
     readVarUInt(timestamp, buf);
     expires_at = std::chrono::system_clock::from_time_t(timestamp);
-    assertChar('\n', buf);
 
+    assertChar('\n', buf);
     assertString(token_is_compressed, buf);
     readBoolText(is_compressed, buf);
-    assertChar('\n', buf);
 
+    assertChar('\n', buf);
     assertString(token_query_id, buf);
     readString(query_id, buf);
-    assertChar('\n', buf);
 
+    assertChar('\n', buf);
     assertString(token_tag, buf);
     readString(tag, buf);
-    assertChar('\n', buf);
 
+    assertChar('\n', buf);
     assertString(token_query_string, buf);
     readStringUntilNewlineInto(query_string, buf);
 }
@@ -873,9 +868,10 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     {
         auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
         key.serialize(*entry_file);
+        entry_file->finalize();
     }
     
-    serializeEntry(key, entry);
+    serializeEntry(key, entry, disk_entry);
     disk_cache.set(key, disk_entry);
 }
 
@@ -958,20 +954,20 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
     return {{disk_entry->key, entry_}};
 }
 
-void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry) const
+void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const
 {
     auto entry_path = path / key.getKeyPath();
     auto writeChunk = [](const Chunk & chunk, NativeWriter & writer)
     {
         Block block = writer.getHeader();
         const Columns & columns = chunk.getColumns();
-        for (size_t i = 0; i < block.columns(); ++i)
-        {
-            auto column = block.getByPosition(i);
-            column.column = columns[i];
-            block.insert(column);
-        }
-
+        block.setColumns(columns);
+        // for (size_t i = 0; i < block.columns(); ++i)
+        // {
+        //     auto column = block.getByPosition(i);
+        //     column.column = columns[i];
+        //     block.insert(column);
+        // }
         writer.write(block);
     };
 
@@ -982,6 +978,10 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
 
         for (const auto & chunk : entry->chunks)
             writeChunk(chunk, writer);
+
+        compress_out->finalize();
+        out->finalize();
+        disk_entry->bytes_on_disk += out->count();
     }
 
     if (entry->totals.has_value())
@@ -990,6 +990,9 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         NativeWriter writer(*compress_out, 0, key.header);
         writeChunk(*entry->totals, writer);
+        compress_out->finalize();
+        out->finalize();
+        disk_entry->bytes_on_disk += out->count();
     }
 
     if (entry->extremes.has_value())
@@ -998,6 +1001,9 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         NativeWriter writer(*compress_out, 0, key.header);
         writeChunk(*entry->extremes, writer);
+        compress_out->finalize();
+        out->finalize();
+        disk_entry->bytes_on_disk += out->count();
     }
 }
 
@@ -1091,7 +1097,7 @@ void QueryResultCache::loadEntrysFromDisk()
             auto entry_path = fs::path(entry_it->path());
             try
             {
-                String ast_hash_str = entry_path.filename();
+                String ast_hash_str = entry_path.parent_path().filename();
                 size_t separator_pos = ast_hash_str.find('_');
                 chassert(separator_pos != String::npos);
                 String low64_str = ast_hash_str.substr(0, separator_pos);
