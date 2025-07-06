@@ -85,6 +85,8 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         std::string sql = cleanSQL(result.text);
         if (!sql.empty())
         {
+            display.showGeneratedQuery(sql);
+            display.showSeparator();
             display.showProgress("✨ SQL query generated successfully!");
         }
         else

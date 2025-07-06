@@ -6,6 +6,9 @@
 #include <thread>
 #include <base/terminalColors.h>
 #include <ostream>
+#include <Common/StringUtils.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -112,6 +115,37 @@ public:
         if (use_colors)
             output_stream << resetColor();
         output_stream << std::endl;
+    }
+
+    void showGeneratedQuery(const std::string & query, const std::string & description = "") const
+    {
+        // Clear any previous line
+        output_stream << "\r\033[K";
+
+        if (use_colors)
+            output_stream << "\033[90m"; // Dark gray
+        if (!description.empty())
+        {
+            output_stream << description << ":";
+        }
+        else
+        {
+            output_stream << "query:";
+        }
+        if (use_colors)
+            output_stream << resetColor();
+        output_stream << std::endl;
+
+        if (!query.empty())
+        {
+            if (use_colors)
+                output_stream << "\033[37m"; // Light gray
+
+            output_stream << query << std::endl;
+
+            if (use_colors)
+                output_stream << resetColor();
+        }
     }
 
     void showSeparator() const
