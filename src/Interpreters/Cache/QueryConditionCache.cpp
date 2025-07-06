@@ -109,10 +109,12 @@ size_t QueryConditionCache::maxSizeInBytes() const
 QueryConditionCacheWriter::QueryConditionCacheWriter(
     QueryConditionCache & query_condition_cache_,
     size_t condition_hash_,
-    const String & condition_)
+    const String & condition_,
+    double selectivity_threshold_)
     : query_condition_cache(query_condition_cache_)
     , condition_hash(condition_hash_)
     , condition(condition_)
+    , selectivity_threshold(selectivity_threshold_)
     /// Implementation note: It would be nicer to pass in the table_id as well ...
 {}
 
@@ -184,12 +186,15 @@ void QueryConditionCacheWriter::finalize()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    for (const auto & [key, matching_marks] : new_entries)
+    for (const auto & [key, entry] : new_entries)
     {
-        if (matching_marks.empty())
+        if (entry.empty())
             continue;
 
-        query_condition_cache.write(key, matching_marks);
+        size_t matching_marks = std::count(entry.begin(), entry.end(), true);
+        double selectivity = static_cast<double>(matching_marks) / entry.size();
+        if (selectivity <= selectivity_threshold)
+            query_condition_cache.write(key, entry);
     }
 }
 

@@ -66,7 +66,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
             if (query_condition_cache)
             {
-                auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(*query_condition_cache, condition_hash, condition);
+                auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                    *query_condition_cache,
+                    condition_hash, condition,
+                    optimization_settings.query_condition_cache_selectivity_threshold);
+
                 filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
             }
 

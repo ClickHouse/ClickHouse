@@ -133,7 +133,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                     query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
                         *query_condition_cache,
                         output->getHash(),
-                        reader_settings.query_condition_cache_store_conditions_as_plaintext ? prewhere_info->prewhere_actions.getNames()[0] : "");
+                        reader_settings.query_condition_cache_store_conditions_as_plaintext ? prewhere_info->prewhere_actions.getNames()[0] : "",
+                        reader_settings.query_condition_cache_selectivity_threshold);
                 }
 
                 break;

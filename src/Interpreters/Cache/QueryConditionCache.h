@@ -88,7 +88,8 @@ public:
     QueryConditionCacheWriter(
         QueryConditionCache & query_condition_cache_,
         size_t condition_hash_,
-        const String & condition_);
+        const String & condition_,
+        double selectivity_threshold_);
 
     ~QueryConditionCacheWriter();
 
@@ -102,6 +103,7 @@ private:
     QueryConditionCache & query_condition_cache;
     const size_t condition_hash;
     const String condition;
+    const double selectivity_threshold;
 
     std::unordered_map<QueryConditionCache::Key, QueryConditionCache::Entry, QueryConditionCache::KeyHasher> new_entries;
     std::mutex mutex;
