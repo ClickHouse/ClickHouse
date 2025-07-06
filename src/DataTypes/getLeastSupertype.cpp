@@ -271,6 +271,71 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
+{
+    Strings element_names;
+    size_t element_size = 0;
+    std::vector<DataTypes> element_types;
+    for (const auto & type : types)
+    {
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            const auto & current_elements = type_tuple->getElements();
+            if (element_types.empty())
+            {
+                element_size = current_elements.size();
+                element_types.resize(element_size);
+                for (size_t i = 0; i < element_size; ++i)
+                    element_types[i].reserve(types.size());
+                if (type_tuple->hasExplicitNames())
+                    element_names = type_tuple->getElementNames();
+            }
+
+            if (element_size != type_tuple->getElements().size())
+                return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
+            for (size_t i = 0; i < element_size; ++i)
+                element_types[i].emplace_back(current_elements[i]);
+
+            // If there are different names, drop all names. The result will be an unnamed tuple.
+            if (element_names.empty() == type_tuple->hasExplicitNames())
+                element_names.clear();
+            if (!element_names.empty())
+            {
+                const auto & current_element_names = type_tuple->getElementNames();
+                for (size_t i = 0; i < element_size; ++i)
+                {
+                    if (element_names[i] != current_element_names[i])
+                    {
+                        element_names.clear();
+                        break;
+                    }
+                }
+            }
+        }
+        else
+            return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+    }
+
+
+    DataTypes commont_element_types(element_size);
+    for (size_t i = 0; i < element_size; ++i)
+    {
+        auto common_type = getLeastSupertype<on_error>(element_types[i]);
+        /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+        /// common_type will be nullptr, we should return nullptr in this case.
+        if (!common_type)
+            return nullptr;
+        commont_element_types[i] = common_type;
+    }
+
+    if (element_names.empty())
+        return std::make_shared<DataTypeTuple>(commont_element_types);
+    else
+        return std::make_shared<DataTypeTuple>(commont_element_types, element_names);
+
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
     /// Trivial cases
@@ -365,54 +430,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     }
 
     /// For tuples
+    for (const auto & type : types)
     {
-        bool have_tuple = false;
-        bool all_tuples = true;
-        size_t tuple_size = 0;
-
-        std::vector<DataTypes> nested_types;
-
-        for (const auto & type : types)
-        {
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-            {
-                if (!have_tuple)
-                {
-                    tuple_size = type_tuple->getElements().size();
-                    nested_types.resize(tuple_size);
-                    for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                        nested_types[elem_idx].reserve(types.size());
-                }
-                else if (tuple_size != type_tuple->getElements().size())
-                    return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
-
-                have_tuple = true;
-
-                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                    nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
-            }
-            else
-                all_tuples = false;
-        }
-
-        if (have_tuple)
-        {
-            if (!all_tuples)
-                return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            DataTypes common_tuple_types(tuple_size);
-            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-            {
-                auto common_type = getLeastSupertype<on_error>(nested_types[elem_idx]);
-                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
-                /// common_type will be nullptr, we should return nullptr in this case.
-                if (!common_type)
-                    return nullptr;
-                common_tuple_types[elem_idx] = common_type;
-            }
-
-            return std::make_shared<DataTypeTuple>(common_tuple_types);
-        }
+        if (typeid_cast<const DataTypeTuple *>(type.get()))
+            return getLeastSuperTypeForTuple<on_error>(types);
     }
 
     /// For maps
