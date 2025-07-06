@@ -1753,10 +1753,27 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
     /// We don't need to do fsync when writing CSN, because in case of hard restart
     /// we will be able to restore CSN from transaction log in Keeper.
+    try
+    {
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+        version.writeCSN(*out, which_csn);
+        out->finalize();
+    }
+    catch (const Exception & e)
+    {
+        /// Some disks do not support WriteMode::Append
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
 
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
+        LOG_INFO(storage.log, "writeCSN with 'WriteMode::Append' is not implemented: '{}', try with 'WriteMode::Rewrite'", e.what());
+        auto out = getDataPartStorage().writeTransactionFile(WriteMode::Rewrite);
+        version.write(*out);
+        out->finalize();
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
