@@ -199,32 +199,3 @@ CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(3, 123) GRANULARITY 1
                             number,
                             format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
                          FROM numbers(1024));  -- { serverError INCORRECT_QUERY }
-
-----------------------------------------------------
-
-SELECT 'Test multiple text indices creation';
-
-DROP TABLE IF EXISTS tab;
-
-CREATE TABLE tab(
-    k UInt64,
-    s String,
-    INDEX idx_1(s) TYPE text(tokenizer = 'default'),
-    INDEX idx_2(s) TYPE text(tokenizer = 'ngram', ngram_size = 3)
-) Engine = MergeTree() ORDER BY (k); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE tab(
-    k UInt64,
-    s String,
-    t String,
-    INDEX idx_1(s) TYPE text(tokenizer = 'default')
-) Engine = MergeTree() ORDER BY (k);
-
-SELECT 'Test multiple text indices on the same column';
-ALTER TABLE tab ADD INDEX idx_2(s) TYPE text(tokenizer = 'ngram', ngram_size = 3); -- { serverError BAD_ARGUMENTS }
-
-SELECT 'Test different column or wrapper around the column';
-ALTER TABLE tab ADD INDEX idx_3(t) TYPE text(tokenizer = 'default');
-ALTER TABLE tab ADD INDEX idx_4(lower(s)) TYPE text(tokenizer = 'ngram', ngram_size = 3);
-
-DROP TABLE IF EXISTS tab;

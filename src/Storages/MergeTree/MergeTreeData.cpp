@@ -878,7 +878,7 @@ void MergeTreeData::checkProperties(
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
-        std::unordered_set<String> text_index_columns;
+        std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -893,14 +893,25 @@ void MergeTreeData::checkProperties(
 
             MergeTreeIndexFactory::instance().validate(index, attach);
 
-            if (auto [_, inserted] = indices_names.emplace(index.name); !inserted)
+            if (indices_names.contains(index.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
 
-            if (index.type == TEXT_INDEX_NAME && !text_index_columns.emplace(index.column_names[0]).second)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Text index for column {} already exists. A column can be defined only for a single text index",
-                    backQuote(index.column_names[0]));
+            indices_names.insert(index.name);
+
+            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions searchAll/searchAny don't work
+            /// on columns with more than one text index
+            if (index.type == TEXT_INDEX_NAME)
+            {
+                const auto & column = index.column_names[0];
+
+                if (columns_with_text_indexes.contains(column))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} must not have more than one text index",
+                        backQuote(index.column_names[0]));
+
+                columns_with_text_indexes.insert(column);
+            }
         }
     }
 
@@ -920,7 +931,7 @@ void MergeTreeData::checkProperties(
 
         for (const auto & projection : new_metadata.projections)
         {
-            if (projections_names.find(projection.name) != projections_names.end())
+            if (projections_names.contains(projection.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
             const auto settings = getSettings();
