@@ -81,7 +81,6 @@ PaddedPODArray<T> cut(PaddedPODArray<T> & from, size_t num_rows, const char * ms
 
     if (from.size() < num_rows)
     {
-        // LOG_TRACE(getLogger("cut"), "!!!!!!!!!!!!!!!!!!!!!!!!!");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: expected {} rows, got {}", msg, num_rows, from.size());
     }
 
