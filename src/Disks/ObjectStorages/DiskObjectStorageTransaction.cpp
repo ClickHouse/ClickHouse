@@ -1,13 +1,14 @@
-#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
-#include <Interpreters/Context.h>
-#include <Common/checkStackSize.h>
 #include <ranges>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
+#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/WriteMode.h>
+#include <Interpreters/Context.h>
 #include <base/defines.h>
+#include <Common/Exception.h>
+#include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -749,6 +751,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
+    if (mode == WriteMode::Append && typeid_cast<const MetadataStorageFromPlainObjectStorageTransaction *>(metadata_transaction.get()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MetadataStorageFromPlainObjectStorageTransactior does not support WriteMode::Append");
+
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
