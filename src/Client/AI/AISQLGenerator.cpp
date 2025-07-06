@@ -77,8 +77,6 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AI generation failed: {}", result.error_message());
         }
 
-        // Tool execution information is now displayed in real-time via callbacks
-
         display.showSeparator();
 
         // Display the generated SQL
