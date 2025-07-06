@@ -1,12 +1,12 @@
-#include "ArrowBlockOutputFormat.h"
+#include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Port.h>
 
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
