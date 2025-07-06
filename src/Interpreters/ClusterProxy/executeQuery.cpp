@@ -205,7 +205,8 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = is_remote_function; // disable parallel replicas with remote() table functions
+        bool disable_parallel_replicas = is_remote_function
+            && cluster.getName().empty(); // disable parallel replicas with remote() table functions w/o configured cluster
         if (!disable_parallel_replicas)
         {
             disable_parallel_replicas = true;
