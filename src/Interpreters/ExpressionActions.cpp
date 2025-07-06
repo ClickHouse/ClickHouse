@@ -489,7 +489,7 @@ std::string ExpressionActions::Action::toString() const
     {
         static constexpr size_t max_length_to_display = 100;
         if (name.size() <= max_length_to_display)
-            out << name.size();
+            out << name;
         else
             out << std::string_view(name).substr(0, max_length_to_display) << "...";
         /// Note: it will cut UTF-8 strings incorrectly, but it's acceptable here.
