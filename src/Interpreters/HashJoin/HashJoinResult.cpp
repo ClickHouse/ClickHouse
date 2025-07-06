@@ -167,7 +167,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         }
 
         size_t num_refs_to_cut = num_lhs_rows;
-        if (lazy_output.output_by_row_list)
+        if (lazy_output.output_by_row_list && !lazy_output.row_refs.empty())
         {
             num_refs_to_cut = 0;
             size_t num_joined = 0;
