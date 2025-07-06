@@ -228,22 +228,4 @@ template class FunctionSearchImpl<traits::SearchAllTraits>;
 
 FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-
-REGISTER_FUNCTION(SearchAny)
-{
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAnyTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if any needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
-}
-
-REGISTER_FUNCTION(SearchAll)
-{
-    factory.registerFunction<FunctionSearchImpl<traits::SearchAllTraits>>(FunctionDocumentation{
-        .description = "Searches the needle tokens in the generated tokens from the text by a given tokenizer. Returns true if all needle "
-                       "tokens exists in the text, otherwise false.",
-        .introduced_in = introduced_in,
-        .category = category});
-}
 }

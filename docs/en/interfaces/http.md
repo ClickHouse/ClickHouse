@@ -198,6 +198,14 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
+You can use POST method with parameterized queries. The parameters are specified using curly braces with the parameter name and type, like `{name:Type}`. The parameter values are passed with the `param_name`:
+
+```bash
+$ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
+
+7
+```
+
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
 The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.

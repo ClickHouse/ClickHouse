@@ -13,4 +13,4 @@ Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.
 Must be created on single column.
-Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.
+Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.
