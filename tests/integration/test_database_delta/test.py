@@ -61,27 +61,40 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text, ignore_exit_code=False):
-    return node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""
-cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
-    --master "local[*]" \\
-    --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
-    --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
-    --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
-    --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
-    --conf "spark.sql.catalog.unity.token=" \\
-    --conf "spark.sql.defaultCatalog=unity" \\
-    -S -e "{query_text}" | grep -v 'loading settings'
-""",
-        ],
-        nothrow=ignore_exit_code,
-    )
+def execute_spark_query(node, query_text, ignore_exit_code=False, limit=10):
+    if limit == 0:
+        raise ValueError("Limit of retries execute spark query exceeded")
+    try:
+        return node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""
+    cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
+        --master "local[*]" \\
+        --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
+        --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
+        --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
+        --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
+        --conf "spark.sql.catalog.unity.token=" \\
+        --conf "spark.sql.defaultCatalog=unity" \\
+        -S -e "{query_text}" | grep -v 'loading settings'
+    """,
+            ],
+            nothrow=ignore_exit_code,
+        )
+    except:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""rm -f metastore_db/dbex.lck""",
+            ],
+        )
+        return execute_spark_query(node, query_text, ignore_exit_code, limit - 1)
+
 
 
 def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
