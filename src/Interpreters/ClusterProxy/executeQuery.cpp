@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace DistributedSetting
@@ -205,8 +206,18 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = is_remote_function
-            && cluster.getName().empty(); // disable parallel replicas with remote() table functions w/o configured cluster
+        bool disable_parallel_replicas = false;
+        if (is_remote_function)
+        {
+            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
+                disable_parallel_replicas = true;
+            else
+            {
+                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+            }
+
+        }
+
         if (!disable_parallel_replicas)
         {
             disable_parallel_replicas = true;
@@ -354,6 +365,16 @@ void executeQuery(
             log,
             "Parallel reading from replicas is disabled for cluster. There are no shards with more than 1 replica: cluster={}",
             cluster->getName());
+    }
+
+    if (is_remote_function && !new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty()
+        && context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value
+            != new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value)
+    {
+        LOG_TRACE(
+            log,
+            "'cluster_for_parallel_replicas' setting has been updated for the query to '{}'",
+            new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].toString());
     }
 
     new_context->increaseDistributedDepth();

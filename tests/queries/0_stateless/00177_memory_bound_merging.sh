@@ -25,8 +25,6 @@ check_replicas_read_in_order() {
 test1() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
-        SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-
         SELECT URL, EventDate, max(URL)
         FROM remote(test_cluster_one_shard_two_replicas, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
@@ -42,8 +40,6 @@ test1() {
 test2() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
-        SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-
         SELECT URL, EventDate, max(URL)
         FROM remote(test_cluster_one_shard_two_replicas, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
