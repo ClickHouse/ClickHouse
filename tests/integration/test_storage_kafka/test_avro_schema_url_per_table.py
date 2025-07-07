@@ -104,6 +104,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "id": 1,
                     "name": "foo",
                 },
+                topic=topic1_name,
             ),
             k.avro_confluent_message(
                 schema_registry_client,
@@ -112,6 +113,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "id": 2,
                     "name": "bar",
                 },
+                topic=topic1_name,
             ),
             k.avro_confluent_message(
                 schema_registry_client,
@@ -120,6 +122,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "id": 3,
                     "name": "baz",
                 },
+                topic=topic1_name,
             ),
         ],
     )
@@ -135,6 +138,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "blockNo": 1,
                     "val1": "foo",
                 },
+                topic=topic2_name,
             ),
             k.avro_confluent_message(
                 schema_registry_client,
@@ -144,6 +148,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "blockNo": 2,
                     "val1": "bar",
                 },
+                topic=topic2_name,
             ),
             k.avro_confluent_message(
                 schema_registry_client,
@@ -153,6 +158,7 @@ def test_avro_schema_url_per_table(kafka_cluster, create_query_generator):
                     "blockNo": 3,
                     "val1": "baz",
                 },
+                topic=topic2_name,
             ),
         ],
     )

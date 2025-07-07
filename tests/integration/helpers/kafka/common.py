@@ -259,12 +259,12 @@ def avro_message(value):
     return raw_bytes
 
 
-def avro_confluent_message(schema_registry_client, schema, value):
+def avro_confluent_message(schema_registry_client, schema, value, topic="test_subject"):
     # type: (CachedSchemaRegistryClient, dict, dict) -> str
 
     serializer = MessageSerializer(schema_registry_client)
     schema_object = avro.schema.make_avsc_object(schema)
-    return serializer.encode_record_with_schema("test_subject", schema_object, value)
+    return serializer.encode_record_with_schema(topic, schema_object, value)
 
 
 def create_settings_string(settings):
