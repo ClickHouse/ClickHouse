@@ -1,7 +1,6 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Common/memcpySmall.h>
-#include "Core/Joins.h"
 
 namespace DB
 {
