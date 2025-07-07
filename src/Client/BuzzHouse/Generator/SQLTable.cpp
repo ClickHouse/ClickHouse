@@ -308,14 +308,14 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(1, 12);
-                    cp->add_params(next_dist(rg.generator));
+                    cp->add_params()->set_ival(next_dist(rg.generator));
                 }
                 break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(1, 22);
-                    cp->add_params(next_dist(rg.generator));
+                    cp->add_params()->set_ival(next_dist(rg.generator));
                 }
                 break;
             case COMP_Delta:
@@ -324,15 +324,26 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(0, 3);
-                    cp->add_params(UINT32_C(1) << next_dist(rg.generator));
+                    cp->add_params()->set_ival(UINT32_C(1) << next_dist(rg.generator));
                 }
                 break;
             case COMP_FPC:
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
-                    cp->add_params(next_dist1(rg.generator));
-                    cp->add_params(rg.nextBool() ? 4 : 9);
+                    cp->add_params()->set_ival(next_dist1(rg.generator));
+                    cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
+                }
+                break;
+            case COMP_SZ3:
+                if (rg.nextBool())
+                {
+                    static const DB::Strings & algorithms = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
+                    static const DB::Strings & errorBounds = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
+
+                    cp->add_params()->set_sval(rg.pickRandomly(algorithms));
+                    cp->add_params()->set_sval(rg.pickRandomly(errorBounds));
+                    cp->add_params()->set_dval(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
                 }
                 break;
             default:

@@ -383,7 +383,12 @@ policy_properties = {
 
 
 all_disks_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "perform_ttl_move_on_insert": true_false_lambda,
+    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
+    "skip_access_check": true_false_lambda,
 }
 
 
@@ -667,23 +672,8 @@ def add_single_disk(
                     ]
                 )
 
-    if random.randint(1, 100) <= 50:
-        next_properties = dict(all_disks_properties)
-        if disk_type != "cache":
-            next_properties.update(
-                {
-                    "description": lambda: generate_xml_safe_string(
-                        random.randint(1, 1024)
-                    ),
-                    "min_bytes_for_seek": threshold_generator(
-                        0.2, 0.2, 0, 10 * 1024 * 1024
-                    ),
-                    "perform_ttl_move_on_insert": true_false_lambda,
-                    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
-                    "skip_access_check": true_false_lambda,
-                }
-            )
-        apply_properties_recursively(next_disk, next_properties)
+    if disk_type != "cache" and random.randint(1, 100) <= 50:
+        apply_properties_recursively(next_disk, all_disks_properties)
     return (prev_disk, final_type)
 
 

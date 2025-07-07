@@ -3016,13 +3016,23 @@ enum CompressionCodec {
     COMP_Gorilla = 11;
     COMP_FPC = 12;
     COMP_T64 = 13;
-    COMP_AES_128_GCM_SIV = 14;
-    COMP_AES_256_GCM_SIV = 15;
+    COMP_SZ3 = 14;
+    COMP_AES_128_GCM_SIV = 15;
+    COMP_AES_256_GCM_SIV = 16;
+}
+
+message IndexParam {
+    oneof index_param_oneof {
+        double dval = 1;
+        uint32 ival = 2;
+        string sval = 3;
+        string unescaped_sval = 4;
+    }
 }
 
 message CodecParam {
     required CompressionCodec codec = 1;
-    repeated uint32 params = 2;
+    repeated IndexParam params = 2;
 }
 
 message CodecList {
@@ -3052,15 +3062,6 @@ enum IndexType {
     IDX_ngrambf_v1 = 6;
     IDX_tokenbf_v1 = 7;
     IDX_text = 8;
-}
-
-message IndexParam {
-    oneof index_param_oneof {
-        double dval = 1;
-        uint32 ival = 2;
-        string sval = 3;
-        string unescaped_sval = 4;
-    }
 }
 
 message IndexDef {
