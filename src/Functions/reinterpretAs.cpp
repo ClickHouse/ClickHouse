@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 
 #include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
@@ -100,6 +101,15 @@ public:
             if (!canBeReinterpretedAsNumeric(from_data_type) && !from_data_type.isStringOrFixedString())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Cannot reinterpret {} as {} because only Numeric, String or FixedString can be reinterpreted in Numeric",
+                    from_type->getName(),
+                    to_type->getName());
+        }
+        else if (result_reinterpret_type.isArray())
+        {
+            WhichDataType from_data_type(from_type);
+            if (!from_data_type.isStringOrFixedString() || !to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {} because only String or FixedString can be reinterpreted as Array of fixed length data type",
                     from_type->getName(),
                     to_type->getName());
         }
@@ -275,10 +285,61 @@ public:
             return false;
         }))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Cannot reinterpret {} as {}",
-                from_type->getName(),
-                result_type->getName());
+            /// Destination could be array, source has to be String/FixedString
+            if (WhichDataType(result_type).isArray())
+            {
+                auto inner_type = typeid_cast<const DataTypeArray &>(*result_type).getNestedType();
+                if (WhichDataType(from_type).isString())
+                {
+                    const auto * col_from = assert_cast<const ColumnString *>(arguments[0].column.get());
+                    const auto & data_from = col_from->getChars();
+                    const auto & offsets_from = col_from->getOffsets();
+
+                    auto col_res = ColumnArray::create(inner_type->createColumn());
+
+                    size_t offset = 0;
+
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                    {
+                        size_t copy_size = offsets_from[i] - offset - 1;
+                        col_res->insertData(reinterpret_cast<const char *>(data_from.data() + offset), copy_size);
+                        offset = offsets_from[i];
+                    }
+
+                    result = std::move(col_res);
+                }
+                else if (WhichDataType(from_type).isFixedString())
+                {
+                    const auto * col_from_fixed = assert_cast<const ColumnFixedString *>(arguments[0].column.get());
+                    const auto & data_from = col_from_fixed->getChars();
+
+                    auto col_res = ColumnArray::create(inner_type->createColumn());
+
+                    size_t offset = 0;
+
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                    {
+                        col_res->insertData(reinterpret_cast<const char *>(data_from.data() + offset), col_from_fixed->getN());
+                        offset += col_from_fixed->getN();
+                    }
+
+                    result = std::move(col_res);
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Cannot reinterpret {} as {}, expected String or FixedString as source",
+                        from_type->getName(),
+                        result_type->getName());
+                }
+            }
+            else
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {}",
+                    from_type->getName(),
+                    result_type->getName());
+            }
         }
 
         return result;

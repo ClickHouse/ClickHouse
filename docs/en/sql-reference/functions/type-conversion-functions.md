@@ -6236,7 +6236,7 @@ Result:
 
 ## reinterpret {#reinterpret}
 
-Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
+Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type. Destination type can be an array of fixed size type.
 
 **Syntax**
 
@@ -6247,7 +6247,7 @@ reinterpret(x, type)
 **Arguments**
 
 - `x` — Any type.
-- `type` — Destination type. [String](../data-types/string.md).
+- `type` — Destination type.
 
 **Returned value**
 
@@ -6268,6 +6268,18 @@ Result:
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
+```
+
+```sql
+SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS string_to_array_of_Float32;
+```
+
+Result:
+
+```text
+┌─string_to_array_of_Float32─┐
+│ [5.626,6.626,5.626,6.626]  │
+└────────────────────────────┘
 ```
 
 ## CAST {#cast}
