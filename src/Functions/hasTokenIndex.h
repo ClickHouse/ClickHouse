@@ -16,6 +16,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <Storages/MergeTree/MergeTreeIndexGin.h>
+
 namespace DB
 {
 
@@ -73,6 +75,9 @@ public:
         const ColumnWithTypeAndName & index_argument = arguments[0];
         const ColumnWithTypeAndName & token_argument = arguments[1];
 
+        chassert(index_argument.column->size() == input_rows_count);
+        chassert(token_argument.column->size() == input_rows_count);
+
         printf("input_rows_count = %zu index->size() = %zu token->size() = %zu context = %p, index_argument %s, token_argument %s\n",
             input_rows_count,
             index_argument.column->size(),
@@ -87,22 +92,15 @@ public:
         vec_res.resize(index_argument.column->size());
         std::ranges::fill(vec_res, 0);
 
-        auto const [storage_snapshot, storage_snapshot_shared_mutex] = context->getStorageSnapshot();
-        if (!storage_snapshot)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Index function: {} cannot access storage_snapshot.", getName());
+        /// This is a not totally save method to ensure that this works.
+        /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
+        /// This seems to happen when calling interpreter_with_analyzer->GetQueryPlan();
+        if (input_rows_count == 0)
+            return col_res;
 
-        const StorageMetadataPtr metadata_snapshot = storage_snapshot->metadata;
-        if (!metadata_snapshot)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Index function: {} cannot access metadata_snapshot.", getName());
-
-        const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
-
-        for (const auto & index : all_indexes)
-        {
-            auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        }
-
+        auto const [skip_indexes, skip_indexes_mutex] = context->getStorageSnapshot();
+        if (skip_indexes == nullptr)
+            throw Exception(ErrorCodes::NOT_INITIALIZED, "Index function: {} cannot access skip_indexes.", getName());
 
         // RangesInDataParts parts_with_ranges = indexInfo.parts;
         // UsefulSkipIndexes & skip_indexes = indexInfo.indexes->skip_indexes

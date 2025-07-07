@@ -266,6 +266,8 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+struct UsefulSkipIndexes;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -562,9 +564,9 @@ protected:
     mutable StorageSnapshotCache storage_snapshot_cache;
     mutable std::mutex storage_snapshot_cache_mutex;
 
-    mutable StorageSnapshotPtr storage_snapshot;
-    mutable std::shared_mutex storage_snapshot_mutex;
-
+    mutable std::shared_mutex skip_indexes_mutex;
+    mutable const UsefulSkipIndexes* skip_indexes {};
+    
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
@@ -1452,24 +1454,16 @@ public:
     std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
     std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
-    /// TODO: JAM
-    /// storage_snapshot could be atomic, not needed lock protection.
-    /// ContextPtr is intended to be set in the ReadFromMergeTree constructor, which access it as a const, that's why these functions
-    /// need to be const and storage_metadata mutable. (Consider this a temporal solution for obvious reasons)
-    /// TODO: JAM There is formally an error here. Returning a shared pointer by reference. Check what to do with that.
-    std::pair<const StorageSnapshotPtr, std::shared_lock<std::shared_mutex>> getStorageSnapshot() const
+    /// The skipping indices. These are set at the end of buildIndexes which happen at a delayed moment respect to the ReadFromMergeTree.
+    std::pair<const UsefulSkipIndexes *, std::shared_lock<std::shared_mutex>> getStorageSnapshot() const
     {
-        return std::make_pair(storage_snapshot, std::shared_lock(storage_snapshot_mutex));
+        return std::make_pair(skip_indexes, std::shared_lock(skip_indexes_mutex));
     }
-    bool setStorageSnapshot(StorageSnapshotPtr _storage_snapshot) const
+    void setSkippingIndices(const UsefulSkipIndexes *_skip_indexes) const
     {
-        chassert(_storage_snapshot != nullptr);
-        std::lock_guard lk(storage_snapshot_mutex);
-        if (storage_snapshot && _storage_snapshot != storage_snapshot)
-            return false;
-
-        storage_snapshot = _storage_snapshot;
-        return true;
+        chassert(_skip_indexes != nullptr);
+        std::lock_guard lk(skip_indexes_mutex);
+        skip_indexes = _skip_indexes;
     }
 
     /// Query parameters for prepared statements.
