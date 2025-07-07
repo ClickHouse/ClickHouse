@@ -42,9 +42,11 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
+#include <Core/NamesAndTypes.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -154,7 +156,7 @@ static void splitAndModifyMutationCommands(
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
-    LOG_TRACE(log, "splitAndModifyMutationCommands, Splitting mutation commands for part {}, commands: {}", part->name, commands.toString());
+    LOG_TRACE(log, "splitAndModifyMutationCommands, Splitting mutation commands for part {}, commands: {} alter_conversions: {}", part->name, commands.toString(), alter_conversions->printMutationCommands());
 
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
@@ -243,15 +245,15 @@ static void splitAndModifyMutationCommands(
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
         /// can be deduced based on difference between part's schema and table schema.
-        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+        for (const auto & item : alter_conversions->getRenameMap())
         {
-            if (part_columns.has(rename_from))
+            if (part_columns.has(item.rename_from))
             {
                 /// Actual rename
                 for_interpreter.push_back(
                 {
                     .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
+                    .column_name = item.rename_to,
                 });
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
@@ -259,11 +261,11 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
-                     .column_name = rename_from,
-                     .rename_to = rename_to
+                     .column_name = item.rename_from,
+                     .rename_to = item.rename_to
                 });
 
-                part_columns.rename(rename_from, rename_to);
+                part_columns.rename(item.rename_from, item.rename_to);
             }
         }
 
@@ -319,6 +321,15 @@ static void splitAndModifyMutationCommands(
     {
         LOG_TRACE(log, "else 1");
 
+        /// We don't add renames from commands, instead we take them from rename_map.
+        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
+        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
+        /// can be deduced based on difference between part's schema and table schema.
+
+        /// Action in alter_conversions has higher priority than action in commands, put it first
+        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+
         for (const auto & command : commands)
         {
             LOG_TRACE(log, "else 1 command.clear: {} type: {}", command.clear, command.type);
@@ -366,17 +377,24 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
         }
-
-        /// We don't add renames from commands, instead we take them from rename_map.
-        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
-        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
-        /// can be deduced based on difference between part's schema and table schema.
-
-        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-        {
-            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
-        }
     }
+
+    Strings renames = [&]()
+    {
+        Strings result;
+        for (const auto & command : for_file_renames)
+        {
+            if (command.type == MutationCommand::Type::RENAME_COLUMN || command.type == MutationCommand::Type::DROP_COLUMN)
+            {
+                result.push_back(fmt::format("{} -> {}", command.column_name, command.rename_to));
+            }
+        }
+        return result;
+    }();
+    LOG_DEBUG(getLogger("AlterConversions"),
+        "for_file_renames: {}",
+        fmt::join(renames, ", "));
+
 }
 
 static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
@@ -2655,6 +2673,7 @@ bool MutateTask::prepare()
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension);
+
         LOG_TRACE(ctx->log, "MutateTask::prepare: files_to_rename: {}", fmt::join(ctx->files_to_rename, ", "));
 
 
