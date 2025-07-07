@@ -1,9 +1,6 @@
 #pragma once
 
-#include <atomic>
 #include <mutex>
-#include <utility>
-#include <vector>
 #include <functional>
 
 #include <Common/ThreadPool.h>
