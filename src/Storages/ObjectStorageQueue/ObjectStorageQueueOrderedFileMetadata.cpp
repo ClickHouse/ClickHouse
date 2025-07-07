@@ -529,7 +529,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
             auto cn = created_nodes->find(processed_node_path_);
             if (cn == created_nodes->end())
             {
-                created_nodes->insert(std::make_pair(processed_node_path_, LastProcessedFileInfo({path, requests.size()})));
+                created_nodes->emplace(processed_node_path_, LastProcessedFileInfo({path, requests.size()}));
                 requests.push_back(zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version));
             }
             else if (cn->second.file_path < path)
@@ -548,7 +548,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
         if (cn == created_nodes->end())
         {
             LOG_TEST(log, "Max processed file does not exist, creating at: {}", processed_node_path_);
-            created_nodes->insert(std::make_pair(processed_node_path_, LastProcessedFileInfo({path, requests.size()})));
+            created_nodes->emplace(processed_node_path_, LastProcessedFileInfo({path, requests.size()}));
             requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
         }
         else if (cn->second.file_path < path)
@@ -749,7 +749,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 std::string hive_part(getHivePart(path));
                 auto max_processed_file = max_processed_file_per_bucket_and_hive_partition[bucket].find(std::string(hive_part));
                 if (max_processed_file != max_processed_file_per_bucket_and_hive_partition[bucket].end()
-                    && path < max_processed_file->second)
+                    && path <= max_processed_file->second)
                 {
                     LOG_TEST(log_, "Skipping file {}: Processed", path);
                     continue;

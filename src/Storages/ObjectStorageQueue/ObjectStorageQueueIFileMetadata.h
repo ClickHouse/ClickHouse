@@ -52,23 +52,35 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
+    /// Helper structure for storing the flag of presence or absence of a node in the keeper.
     struct HiveLastProcessedFileInfo
     {
+        /// Flag if node exists. For existing node need to call `set`, for non-existes - `create`.
         bool exists;
+        /// Last processed path for some hive partition.
         std::string file_path;
     };
 
+    /// An auxiliary structure to properly create or rewrite node in keeper.
+    /// Instead, a more current value replaces the previously saved one in the `request` list.
+    /// Needed when queue processed in several threads, some threads can process different files
+    /// with the same hive partition.
+    /// Key is a path in keeper.
     using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
 
     struct LastProcessedFileInfo
     {
+        /// Last processed path for some hive partition.
         std::string file_path;
         /// Position of record in `requests` list with keeper commands.
         /// Used to avoid double creation Keeper node with same path.
-        /// Instead more actual record overrides old one in `requests` list.
+        /// Instead more actual record overrides old one in the `requests` list.
         size_t index;
     };
 
+    /// An auxiliary structure to avoid rewriting the same node in Keeper several times with different values.
+    /// Instead, a more current value replaces the previously saved one in the `request` list.
+    /// Key is a path in keeper.
     using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
     using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
 
