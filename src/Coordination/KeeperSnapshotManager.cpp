@@ -33,6 +33,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
+}
+
+
 namespace
 {
     void moveSnapshotBetweenDisks(
@@ -393,8 +399,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
+    if constexpr (use_rocksdb)
+        storage.container.startBatch();
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
+        if (nodes_read % 100000 == 0)
+            LOG_TRACE(&Poco::Logger::get("KeeperSnapshotManager"), "Deserializing node {} / {}", nodes_read, snapshot_container_size);
+
         size_t path_size = 0;
         readVarUInt(path_size, in);
         chassert(path_size != 0);
@@ -459,6 +470,15 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             storage.nodes_digest += node.getDigest(path);
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
+
+        if constexpr (!use_rocksdb)
+        {
+            if (nodes_read % keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size] == 0)
+            {
+                storage.container.commitBatch();
+                storage.container.startBatch();
+            }
+        }
     }
 
     LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");

@@ -10,6 +10,8 @@
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 #include <rocksdb/snapshot.h>
+#include <rocksdb/write_batch.h>
+#include <rocksdb/utilities/write_batch_with_index.h>
 
 namespace DB
 {
@@ -320,11 +322,49 @@ public:
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
     }
 
+    void startBatch()
+    {
+        write_batch.emplace();
+    }
+
+    void commitBatch()
+    {
+        if (!write_batch)
+            return;
+
+        auto status = rocksdb_ptr->Write(write_options, write_batch->GetWriteBatch());
+        write_batch.reset();
+
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
+        
+        counter += batch_counter;
+        batch_counter = 0;
+    }
+
     template<bool need_get = true>
     void insertOrReplace(const std::string & key, Node & value)
     {
         bool increase_counter = false;
         rocksdb::Status status;
+
+        if (write_batch)
+        {
+            if constexpr (need_get)
+            {
+                std::string existing_value;
+                status = write_batch->GetFromBatchAndDB(rocksdb_ptr.get(), rocksdb::ReadOptions{}, key, &existing_value);
+
+                if (status.IsNotFound())
+                    ++batch_counter;
+                else if (!status.ok())
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
+            }
+
+            write_batch->Put(key, value.getEncodedString());
+            return;
+        }
+
         if constexpr (need_get)
         {
             std::string value_str;
@@ -449,6 +489,9 @@ private:
     size_t snapshot_up_to_version{0};
     size_t snapshot_size{0};
     size_t counter{0};
+
+    std::optional<rocksdb::WriteBatchWithIndex> write_batch;
+    size_t batch_counter = 0;
 
 };
 
