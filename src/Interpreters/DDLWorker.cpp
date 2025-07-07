@@ -1081,7 +1081,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
     if (entry.hosts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
 
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = context->getZooKeeper();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";
     zookeeper->createAncestors(query_path_prefix);
@@ -1216,13 +1216,6 @@ void DDLWorker::runMainThread()
             LOG_DEBUG(log, "Waiting for queue updates");
             auto zookeeper = getAndSetZooKeeper();
             queue_updated_event->wait();
-            if (zookeeper->expired())
-            {
-                LOG_INFO(log, "Zookeeper connection expired during the events wait, will try to reconnect again");
-                mark_reinitializing();
-                sleepForSeconds(1);
-                continue;
-            }
         }
         catch (const Coordination::Exception & e)
         {
