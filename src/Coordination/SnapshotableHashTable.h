@@ -229,10 +229,6 @@ public:
 
     void reserve(size_t node_num) { map.reserve(node_num); }
 
-    void startBatch() { }
-
-    void commitBatch() { }
-
     void insertOrReplace(const std::string & key, V value)
     {
         insertOrReplace(key, std::move(value), /*owns_key*/ false);

@@ -11,7 +11,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/snapshot.h>
 #include <rocksdb/write_batch.h>
-#include <rocksdb/utilities/write_batch_with_index.h>
 
 namespace DB
 {
@@ -153,12 +152,12 @@ public:
 
     void initialize(const KeeperContextPtr & context)
     {
-        DiskPtr disk = context->getTemporaryRocksDBDisk();
+        disk = context->getTemporaryRocksDBDisk();
         if (disk == nullptr)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb disk");
         }
-        auto options = context->getRocksDBOptions();
+        options = context->getRocksDBOptions();
         if (options == nullptr)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb options");
@@ -305,10 +304,6 @@ public:
     {
         std::string value_str;
         rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &value_str);
-        if (status.ok())
-        {
-            return false;
-        }
         if (status.IsNotFound())
         {
             status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
@@ -320,6 +315,52 @@ public:
         }
 
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
+    }
+
+    void startLoading()
+    {
+        if (rocksdb_ptr != nullptr)
+            rocksdb_ptr->Close();
+
+        auto load_options = *options;
+        load_options.disable_auto_compactions = true;     // Defer compaction
+        load_options.level0_file_num_compaction_trigger = 1000;
+        load_options.write_buffer_size = 128 * 1024 * 1024; // Larger memtables
+        load_options.max_write_buffer_number = 8;
+        load_options.target_file_size_base = 256 * 1024 * 1024;
+
+        rocksdb_dir = disk->getPath();
+        rocksdb::DB * db;
+        auto status = rocksdb::DB::Open(load_options, rocksdb_dir, &db);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+    }
+
+    void finishLoading()
+    {
+        if (rocksdb_ptr != nullptr)
+            rocksdb_ptr->Close();
+
+        auto load_options = *options;
+        rocksdb_dir = disk->getPath();
+        rocksdb::DB * db;
+        auto status = rocksdb::DB::Open(*options, rocksdb_dir, &db);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+
+        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
+        for (it->SeekToFirst(); it->Valid(); it->Next())
+        {
+            ++counter;
+        }
     }
 
     void startBatch()
@@ -342,51 +383,20 @@ public:
         batch_counter = 0;
     }
 
-    void updateStats()
-    {
-        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
-        for (it->SeekToFirst(); it->Valid(); it->Next()) {
-            ++counter;
-        }
-    }
-
     template<bool need_get = true>
     void insertOrReplace(const std::string & key, Node & value)
     {
-        bool increase_counter = false;
         rocksdb::Status status;
 
         if (write_batch)
         {
-            // if constexpr (need_get)
-            // {
-            //     std::string existing_value;
-            //     status = write_batch->GetFromBatchAndDB(rocksdb_ptr.get(), rocksdb::ReadOptions{}, key, &existing_value);
-
-            //     if (status.IsNotFound())
-            //         ++batch_counter;
-            //     else if (!status.ok())
-            //         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
-            // }
 
             write_batch->Put(key, value.getEncodedString());
             return;
         }
 
-        if constexpr (need_get)
-        {
-            std::string value_str;
-            status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &value_str);
-            if (status.IsNotFound())
-                increase_counter = true;
-            else if (!status.ok())
-                throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
-        }
-
         status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
-        if (status.ok())
-            counter += increase_counter;
-        else
+        if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
     }
 
@@ -489,6 +499,9 @@ private:
 
     std::unique_ptr<rocksdb::DB> rocksdb_ptr;
     rocksdb::WriteOptions write_options;
+
+    DiskPtr disk;
+    std::shared_ptr<rocksdb::Options> options;
 
     const rocksdb::Snapshot * snapshot;
 
