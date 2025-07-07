@@ -1625,3 +1625,17 @@ def test_create_alter_sleeping(started_cluster, engine):
         SHOW CREATE TABLE create_alter_sleeping.t;
         """, timeout=10
     )
+
+
+def test_system_database_replicas(started_cluster):
+    database_1 = "test_system_database_replicas_1"
+    database_1 = "test_system_database_replicas_1"
+    database_1 = "test_system_database_replicas_1"
+
+    main_node.query(
+        f"CREATE DATABASE {database_1} ENGINE = Replicated('/test/{database_1}', 'shard1', 'replica1');"
+    )
+
+    assert (
+        main_node.query("SELECT * FROM system.database_replicas;") == "test_system_database_replicas_1\t0\n"
+    )
