@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 

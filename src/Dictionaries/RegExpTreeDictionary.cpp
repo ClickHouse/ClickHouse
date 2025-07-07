@@ -1,8 +1,6 @@
-#include <exception>
 #include <optional>
 #include <string_view>
 
-#include <type_traits>
 #include <unordered_map>
 #include <base/defines.h>
 
@@ -15,6 +13,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -248,7 +247,8 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
 
 #if USE_VECTORSCAN
         String required_substring;
-        bool is_trivial, required_substring_is_prefix;
+        bool is_trivial;
+        bool required_substring_is_prefix;
         std::vector<std::string> alternatives;
 
         if (use_vectorscan)
@@ -321,6 +321,7 @@ void RegExpTreeDictionary::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
         Block block;
         while (executor.pull(block))
@@ -375,8 +376,8 @@ void RegExpTreeDictionary::loadData()
 
             if (error->expression < 0)
                 throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
 
         /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
@@ -455,7 +456,7 @@ public:
             if (!this->contains(attr_name))
                 (*this)[attr_name] = Array();
 
-            Array & values = (*this)[attr_name].safeGet<Array &>();
+            Array & values = (*this)[attr_name].safeGet<Array>();
             if (values.size() < *collect_values_limit)
             {
                 values.push_back(std::move(field));
@@ -489,12 +490,10 @@ public:
             auto it = this->find(attr_name);
             if (it == this->end())
                 return false;
-            return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
+            return it->second.safeGet<Array>().size() >= *collect_values_limit;
         }
-        else
-        {
-            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
-        }
+
+        return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
     }
 
     // Returns the number of full attributes
@@ -888,7 +887,8 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            std::vector<Field> keys, values;
+            std::vector<Field> keys;
+            std::vector<Field> values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);
@@ -975,7 +975,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
 
 void registerDictionaryRegExpTree(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string &,
+    auto create_layout = [=](const std::string & /*name*/,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,

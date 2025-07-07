@@ -1,11 +1,13 @@
-#include "CompressedReadBufferBase.h"
+#include <Compression/CompressedReadBufferBase.h>
 
 #include <bit>
 #include <cstring>
 #include <cassert>
 #include <city.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/demangle.h>
 #include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -13,6 +15,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -22,6 +25,10 @@ namespace ProfileEvents
     extern const Event ReadCompressedBytes;
     extern const Event CompressedReadBufferBlocks;
     extern const Event CompressedReadBufferBytes;
+
+    extern const Event CompressedReadBufferChecksumDoesntMatch;
+    extern const Event CompressedReadBufferChecksumDoesntMatchSingleBitMismatch;
+    extern const Event CompressedReadBufferChecksumDoesntMatchMicroseconds;
 }
 
 namespace DB
@@ -33,6 +40,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -44,6 +52,9 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
         return;
+
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatch);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CompressedReadBufferChecksumDoesntMatchMicroseconds);
 
     WriteBufferFromOwnString message;
 
@@ -87,6 +98,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
+                ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
                 throw Exception::createDeprecated(message.str(), error_code);
@@ -102,6 +114,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     if (difference == 1)
     {
+        ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
         throw Exception::createDeprecated(message.str(), error_code);
@@ -167,8 +180,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
-
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -221,6 +234,7 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -255,11 +269,9 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
         return size_compressed_without_checksum + sizeof(Checksum);
     }
-    else
-    {
-        compressed_in->position() -= (sizeof(Checksum) + header_size);
-        return 0;
-    }
+
+    compressed_in->position() -= (sizeof(Checksum) + header_size);
+    return 0;
 }
 
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
@@ -319,6 +331,25 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
 }
 
+void CompressedReadBufferBase::addDiagnostics(Exception & e) const
+{
+    /// Error messages can look really scary when we can't decompress something.
+    /// It makes sense to give more information to help debugging such issues.
+    std::optional<off_t> current_pos;
+    if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
+        current_pos = seekable_in->tryGetPosition();
+    UInt8 header_size = ICompressionCodec::getHeaderSize();
+    String header_hex = own_compressed_buffer_header_init ?
+        hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size)) :
+        String("<uninitialized>"); // We do not print uninitialized memory because it's a security vulnerability and triggers msan
+
+    e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
+                 getFileNameFromReadBuffer(*compressed_in),
+                 (current_pos ? std::to_string(*current_pos) : "?"),
+                 demangle(typeid(*compressed_in).name()),
+                 header_hex);
+}
+
 void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
 {
     if (codec)
@@ -337,6 +368,15 @@ CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_d
 {
 }
 
+void CompressedReadBufferBase::seek(size_t, size_t)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implements seek");
+}
+
+off_t CompressedReadBufferBase::getPosition() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
+}
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 

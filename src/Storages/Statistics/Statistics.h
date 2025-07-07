@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
@@ -13,6 +11,8 @@ namespace DB
 
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
+
+class Field;
 
 struct StatisticsUtils
 {

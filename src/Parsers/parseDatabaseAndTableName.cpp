@@ -1,4 +1,4 @@
-#include "parseDatabaseAndTableName.h"
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -110,7 +110,7 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                     table.clear();
                     return true;
                 }
-                else if (identifier_parser.parse(pos, ast, expected))
+                if (identifier_parser.parse(pos, ast, expected))
                 {
                     /// db.table
                     database = std::move(first_identifier);

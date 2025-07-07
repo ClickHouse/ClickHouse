@@ -10,7 +10,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -53,7 +56,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -66,6 +69,8 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace ProfileEvents
 {
@@ -89,7 +94,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -99,6 +104,7 @@ namespace Setting
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
 namespace ErrorCodes
@@ -123,6 +129,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
+
+using String = std::string;
 
 namespace
 {
@@ -384,7 +392,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     bool can_be_directory = true;
 
-    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    if (path.contains(PartitionedSink::PARTITION_ID_WILDCARD))
     {
         paths.push_back(path);
     }
@@ -1136,7 +1144,6 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     setInMemoryMetadata(storage_metadata);
 }
 
-
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
 {
     const Settings & settings = context->getSettingsRef();
@@ -1159,7 +1166,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
@@ -1172,17 +1179,20 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-        return getContext()->getReadTaskCallback()();
-    else
     {
-        const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
-
-        auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= fs.size())
+        auto task = getContext()->getClusterFunctionReadTaskCallback()();
+        if (!task || task->isEmpty())
             return {};
-
-        return fs[current_index];
+        return task->path;
     }
+
+    const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
+
+    auto current_index = index.fetch_add(1, std::memory_order_relaxed);
+    if (current_index >= fs.size())
+        return {};
+
+    return fs[current_index];
 }
 
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()
@@ -1209,6 +1219,7 @@ StorageFileSource::StorageFileSource(
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
+    , serialization_hints(info.serialization_hints)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1439,6 +1450,8 @@ Chunk StorageFileSource::generate()
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
+            input_format->setSerializationHints(serialization_hints);
+
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
 
@@ -1496,7 +1509,8 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1561,7 +1575,7 @@ public:
         const bool need_only_count_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1630,7 +1644,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
@@ -1835,7 +1849,9 @@ public:
 
     void onFinish() override
     {
-        chassert(!isCancelled());
+        if (isCancelled())
+            return;
+
         finalizeBuffers();
     }
 
@@ -1847,17 +1863,16 @@ private:
 
         try
         {
-            writer->finalize();
             writer->flush();
+            writer->finalize();
+            write_buf->finalize();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            cancelBuffers();
             throw;
         }
-
-        write_buf->finalize();
     }
 
     void releaseBuffers()
@@ -1866,7 +1881,7 @@ private:
         write_buf.reset();
     }
 
-    void cancelBuffers()
+    void cancelBuffers() noexcept
     {
         if (writer)
             writer->cancel();
@@ -1976,7 +1991,7 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
-    bool has_wildcards = path_for_partitioned_write.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
@@ -1998,62 +2013,60 @@ SinkToStoragePtr StorageFile::write(
             context,
             flags);
     }
-    else
+
+    String path;
+    if (!paths.empty())
     {
-        String path;
-        if (!paths.empty())
+        if (is_path_with_globs)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "Table '{}' is in readonly mode because of globs in filepath",
+                            getStorageID().getNameForLogs());
+
+        path = paths.front();
+        fs::create_directories(fs::path(path).parent_path());
+
+        std::error_code error_code;
+        if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
+            && fs::file_size(path, error_code) != 0 && !error_code)
         {
-            if (is_path_with_globs)
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                                "Table '{}' is in readonly mode because of globs in filepath",
-                                getStorageID().getNameForLogs());
-
-            path = paths.front();
-            fs::create_directories(fs::path(path).parent_path());
-
-            std::error_code error_code;
-            if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
-                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-                && fs::file_size(path, error_code) != 0 && !error_code)
+            if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
+                auto pos = path.find_first_of('.', path.find_last_of('/'));
+                size_t index = paths.size();
+                String new_path;
+                do
                 {
-                    auto pos = path.find_first_of('.', path.find_last_of('/'));
-                    size_t index = paths.size();
-                    String new_path;
-                    do
-                    {
-                        new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
-                        ++index;
-                    }
-                    while (fs::exists(new_path));
-                    paths.push_back(new_path);
-                    path = new_path;
+                    new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                    ++index;
                 }
-                else
-                    throw Exception(
-                        ErrorCodes::CANNOT_APPEND_TO_FILE,
-                        "Cannot append data in format {} to file, because this format doesn't support appends."
-                        " You can allow to create a new file "
-                        "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                        format_name);
+                while (fs::exists(new_path));
+                paths.push_back(new_path);
+                path = new_path;
             }
+            else
+                throw Exception(
+                    ErrorCodes::CANNOT_APPEND_TO_FILE,
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    path, format_name);
         }
-
-        return std::make_shared<StorageFileSink>(
-            metadata_snapshot,
-            getStorageID().getNameForLogs(),
-            std::unique_lock{rwlock, getLockTimeout(context)},
-            table_fd,
-            use_table_fd,
-            base_path,
-            path,
-            chooseCompressionMethod(path, compression_method),
-            format_settings,
-            format_name,
-            context,
-            flags);
     }
+
+    return std::make_shared<StorageFileSink>(
+        metadata_snapshot,
+        getStorageID().getNameForLogs(),
+        std::unique_lock{rwlock, getLockTimeout(context)},
+        table_fd,
+        use_table_fd,
+        base_path,
+        path,
+        chooseCompressionMethod(path, compression_method),
+        format_settings,
+        format_name,
+        context,
+        flags);
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -2115,13 +2128,19 @@ void StorageFile::truncate(
     }
 }
 
+void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
+        args[0] = std::make_shared<ASTLiteral>(format_name);
+}
 
 void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::FILE,
+        .source_access_type = AccessTypeObjects::Source::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(
@@ -2215,8 +2234,9 @@ void registerStorageFile(StorageFactory & factory)
 
             if (0 <= source_fd) /// File descriptor
                 return std::make_shared<StorageFile>(source_fd, storage_args);
-            else /// User's file
-                return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
+
+            /// User's file
+            return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
         },
         storage_features);
 }

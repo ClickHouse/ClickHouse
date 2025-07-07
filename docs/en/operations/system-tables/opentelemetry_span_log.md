@@ -1,7 +1,15 @@
 ---
-slug: /en/operations/system-tables/opentelemetry_span_log
+description: 'System table containing information about trace spans for executed queries.'
+keywords: ['system table', 'opentelemetry_span_log']
+slug: /operations/system-tables/opentelemetry_span_log
+title: 'system.opentelemetry_span_log'
 ---
-# opentelemetry_span_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.opentelemetry_span_log
+
+<SystemTableCloud/>
 
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
 
@@ -27,13 +35,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.opentelemetry_span_log LIMIT 1 FORMAT Vertical;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 trace_id:         cdab0847-0d62-61d5-4d38-dd65b19a1914

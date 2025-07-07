@@ -245,6 +245,7 @@ struct Client : DB::S3::Client
             remote_host_filter,
             /* s3_max_redirects = */ 100,
             /* s3_retry_attempts = */ 0,
+            /* s3_slow_all_threads_after_network_error = */ true,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},
@@ -557,7 +558,7 @@ public:
 
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
-        S3::RequestSettings request_settings;
+        S3::S3RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
 
         client->resetCounters();

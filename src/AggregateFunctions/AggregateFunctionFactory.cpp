@@ -1,12 +1,14 @@
+#include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
-#include <Core/Settings.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -137,13 +139,12 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
 {
     if (action == NullsAction::RESPECT_NULLS)
     {
-        if (auto it = respect_nulls.find(name); it == respect_nulls.end())
+        auto it = respect_nulls.find(name);
+        if (it == respect_nulls.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
-        else if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
+        if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
             return {associated_it->second};
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
     if (action == NullsAction::IGNORE_NULLS)
@@ -152,9 +153,8 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         {
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
                 return {associated_it->second};
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
@@ -251,6 +251,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
+        /// Aggregate function nothing does not support parameters
+        if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
+                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, Array());
+
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
@@ -263,8 +269,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                         "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+    throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
@@ -352,4 +357,9 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
+
+bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
+{
+    return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+}
 }

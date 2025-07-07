@@ -1,6 +1,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
@@ -20,9 +21,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,6 +47,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -116,7 +120,13 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/{},
+            planner_context,
+            empty_correlated_columns_set);
+        correlated_subtrees.assertEmpty("in constant expression without query context");
 
         if (actions.getOutputs().size() != 1)
         {
@@ -315,7 +325,7 @@ namespace
             --limit;
             return analyzeEquals(identifier, literal, expr);
         }
-        else if (fn->name == "in")
+        if (fn->name == "in")
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
@@ -359,7 +369,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -385,7 +395,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "or")
+        if (fn->name == "or")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -411,7 +421,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "and")
+        if (fn->name == "and")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -597,15 +607,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr casted_col;
+        ColumnPtr cast_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            casted_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!casted_col)
+            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!cast_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }
@@ -686,8 +696,11 @@ namespace
                 if (lists.empty())
                     return {};
 
+                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
+                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
+                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;
@@ -740,10 +753,13 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, inverted_dag, false);
+    if (!predicate)
+        return {};
 
-    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    auto matches = matchTrees(expr, *filter_dag.dag, false);
+
+    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
 
     if (!predicates)
         return {};
@@ -856,8 +872,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
         // Check if it's always true or false.
         if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
-        else
-            return {};
+        return {};
     }
 
     return {result};

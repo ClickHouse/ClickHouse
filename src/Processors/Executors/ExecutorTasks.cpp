@@ -28,24 +28,40 @@ void ExecutorTasks::rethrowFirstThreadException()
         executor_context->rethrowExceptionIfHas();
 }
 
-void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)
+ExecutorTasks::SpawnStatus ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)
 {
-    if (!task_queue.empty() && !threads_queue.empty() && !finished)
+    if (!threads_queue.empty() && !finished)
     {
-        size_t next_thread = self.thread_number + 1 >= use_threads ? 0 : (self.thread_number + 1);
-        auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
-
-        if (threads_queue.has(thread_to_wake))
-            threads_queue.pop(thread_to_wake);
-        else
-            thread_to_wake = threads_queue.popAny();
-
-        if (thread_to_wake >= use_threads)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
-
-        lock.unlock();
-        executor_contexts[thread_to_wake]->wakeUp();
+        // Task execution priority is take into account:
+        // We try first wake up thread to do fast tasks and only then to do regular tasks
+        if (!fast_task_queue.empty())
+            return tryWakeUpAnyOtherThreadWithTasksInQueue(self, fast_task_queue, lock);
+        else if (!task_queue.empty())
+            return tryWakeUpAnyOtherThreadWithTasksInQueue(self, task_queue, lock);
     }
+    return SHOULD_SPAWN; // There is no idle threads - we'd like to have more threads
+}
+
+ExecutorTasks::SpawnStatus ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock)
+{
+    size_t next_thread = self.thread_number + 1 >= use_threads ? 0 : (self.thread_number + 1);
+    auto thread_to_wake = queue.getAnyThreadWithTasks(next_thread);
+
+    if (threads_queue.has(thread_to_wake))
+        threads_queue.pop(thread_to_wake);
+    else
+        thread_to_wake = threads_queue.popAny();
+
+    idle_threads--;
+    if (thread_to_wake >= use_threads)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
+
+    // Do not spawn new threads if there are already a lot of idle threads
+    SpawnStatus result = idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+
+    lock.unlock();
+    executor_contexts[thread_to_wake]->wakeUp();
+    return result;
 }
 
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
@@ -65,13 +81,16 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     #endif
 
         /// Try get async task assigned to this thread or any other task from queue.
-        if (auto * async_task = context.tryPopAsyncTask())
+        if (!fast_task_queue.empty())
         {
-            context.setTask(async_task);
-            --num_waiting_async_tasks;
+            context.setTask(fast_task_queue.pop(context.thread_number));
+            if (fast_task_queue.empty())
+                has_fast_tasks = false;
         }
         else if (!task_queue.empty())
+        {
             context.setTask(task_queue.pop(context.thread_number));
+        }
 
         /// Task found.
         if (context.hasTask())
@@ -84,7 +103,8 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// This thread has no tasks to do and is going to wait.
         /// Finish execution if this was the last active thread.
-        if (threads_queue.size() + 1 == use_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
+        chassert(task_queue.empty() && fast_task_queue.empty());
+        if (threads_queue.size() + 1 == use_threads && async_task_queue.empty())
         {
             lock.unlock();
             finish();
@@ -110,17 +130,16 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
+        idle_threads++;
     }
 
     context.wait(finished);
 }
 
-void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
+ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
-    context.setTask(nullptr);
-
     /// Take local task from queue if has one.
-    if (!queue.empty() && !context.hasAsyncTasks()
+    if (!queue.empty() && !has_fast_tasks.load(std::memory_order_relaxed)
         && context.num_scheduled_local_tasks < ExecutionThreadContext::max_scheduled_local_tasks)
     {
         ++context.num_scheduled_local_tasks;
@@ -128,7 +147,10 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
         queue.pop();
     }
     else
+    {
         context.num_scheduled_local_tasks = 0;
+        context.setTask(nullptr);
+    }
 
     if (!queue.empty() || !async_queue.empty())
     {
@@ -150,8 +172,9 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
         }
 
         /// Wake up at least one thread that will wake up other threads if required
-        tryWakeUpAnyOtherThreadWithTasks(context, lock);
+        return tryWakeUpAnyOtherThreadWithTasks(context, lock);
     }
+    return DO_NOT_SPAWN; // No new tasks -- no need for new threads
 }
 
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
@@ -160,6 +183,7 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
     use_threads = use_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
+    fast_task_queue.init(num_threads);
 
     {
         std::lock_guard guard(executor_contexts_mutex);
@@ -170,11 +194,27 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
     }
 }
 
-void ExecutorTasks::fill(Queue & queue)
+void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 {
     std::lock_guard lock(mutex);
 
     size_t next_thread = 0;
+#if defined(OS_LINUX)
+    while (!async_queue.empty())
+    {
+        int fd = async_queue.front()->processor->schedule();
+        async_task_queue.addTask(next_thread, async_queue.front(), fd);
+        async_queue.pop();
+
+        ++next_thread;
+
+        /// It is important to keep queues empty for threads that are not started yet.
+        /// Otherwise that thread can be selected by `tryWakeUpAnyOtherThreadWithTasks()`, leading to deadlock.
+        if (next_thread >= use_threads)
+            next_thread = 0;
+    }
+#endif
+
     while (!queue.empty())
     {
         task_queue.push(queue.front(), next_thread);
@@ -189,10 +229,11 @@ void ExecutorTasks::fill(Queue & queue)
     }
 }
 
-void ExecutorTasks::upscale(size_t use_threads_)
+ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t use_threads_)
 {
     std::lock_guard lock(mutex);
     use_threads = std::max(use_threads, use_threads_);
+    return idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
 }
 
 void ExecutorTasks::processAsyncTasks()
@@ -206,13 +247,25 @@ void ExecutorTasks::processAsyncTasks()
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
             node->processor->onAsyncJobReady();
 
-            executor_contexts[task.thread_num]->pushAsyncTask(node);
-            ++num_waiting_async_tasks;
+            if (fast_task_queue.empty())
+                has_fast_tasks = true;
+            fast_task_queue.push(node, task.thread_num);
 
-            if (threads_queue.has(task.thread_num))
+            /// Wake up a thread to process the task, preferably thread that should process this task
+            if (!threads_queue.empty() && !finished)
             {
-                threads_queue.pop(task.thread_num);
-                executor_contexts[task.thread_num]->wakeUp();
+                auto thread_to_wake = fast_task_queue.getAnyThreadWithTasks(task.thread_num);
+
+                if (threads_queue.has(thread_to_wake))
+                    threads_queue.pop(thread_to_wake);
+                else
+                    thread_to_wake = threads_queue.popAny();
+
+                idle_threads--;
+                if (thread_to_wake >= use_threads)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
+
+                executor_contexts[thread_to_wake]->wakeUp();
             }
         }
     }

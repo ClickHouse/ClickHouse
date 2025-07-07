@@ -172,23 +172,15 @@ private:
                 value
             );
         }
-        else if (std::isnan(base) || !std::isfinite(base))
+        if (std::isnan(base) || !std::isfinite(base))
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid expression for function {} - Invalid numeric component: {}",
-                getName(),
-                base
-            );
+                ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Invalid numeric component: {}", getName(), base);
         }
-        else if (base < 0)
+        if (base < 0)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid expression for function {} - Negative sizes are not allowed ({})",
-                getName(),
-                base
-            );
+                ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {} - Negative sizes are not allowed ({})", getName(), base);
         }
 
         skipWhitespaceIfAny(buf);
@@ -206,14 +198,13 @@ private:
                 unit
             );
         }
-        else if (!buf.eof())
+        if (!buf.eof())
         {
             throw Exception(
                 ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
                 "Invalid expression for function {} - Found trailing characters after readable size string (\"{}\")",
                 getName(),
-                value
-            );
+                value);
         }
 
         Float64 num_bytes_with_decimals = base * iter->second;
@@ -257,8 +248,8 @@ using FunctionParseReadableSizeOrZero = FunctionParseReadable<NameParseReadableS
 FunctionDocumentation parseReadableSize_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it throws an exception.",
     .syntax = "parseReadableSize(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}},
-    .returned_value = "Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md))",
+    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}},
+    .returned_value = {"Number of bytes, rounded up to the nearest integer", {"UInt64"}},
     .examples = {
         {
             "basic",
@@ -272,14 +263,14 @@ FunctionDocumentation parseReadableSize_documentation {
 └────────────────┴─────────┘)"
         },
     },
-    .categories = {"OtherFunctions"},
+    .category = FunctionDocumentation::Category::Other,
 };
 
 FunctionDocumentation parseReadableSizeOrNull_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `NULL`",
     .syntax = "parseReadableSizeOrNull(x)",
     .arguments = {{"x", "Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}},
-    .returned_value = "Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md)))",
+    .returned_value = {"Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input", {"Nullable(UInt64)"}},
     .examples = {
         {
             "basic",
@@ -294,14 +285,14 @@ FunctionDocumentation parseReadableSizeOrNull_documentation {
 └────────────────┴─────────┘)"
         },
     },
-    .categories = {"OtherFunctions"},
+    .category = FunctionDocumentation::Category::Other,
 };
 
 FunctionDocumentation parseReadableSizeOrZero_documentation {
     .description = "Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes. If the function is unable to parse the input value, it returns `0`",
     .syntax = "parseReadableSizeOrZero(x)",
-    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md))"}},
-    .returned_value = "Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md))",
+    .arguments = {{"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}},
+    .returned_value = {"Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input.", {"UInt64"}},
     .examples = {
         {
             "basic",
@@ -316,7 +307,7 @@ FunctionDocumentation parseReadableSizeOrZero_documentation {
 └────────────────┴─────────┘)",
         },
     },
-    .categories = {"OtherFunctions"},
+    .category = FunctionDocumentation::Category::Other,
 };
 
 REGISTER_FUNCTION(ParseReadableSize)

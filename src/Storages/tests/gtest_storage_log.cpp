@@ -5,6 +5,7 @@
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/StorageLog.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
@@ -122,8 +123,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context))));
+        QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context))));
 
     Block sample;
     {

@@ -37,7 +37,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss-data-acc|oss|eos)([.\-][a-z0-9\-.:]+))");
 
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -47,7 +47,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// Case when bucket name and key represented in the path of S3 URL.
     /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-    static const RE2 path_style_pattern("^/([^/]*)/(.*)");
+    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
 
     if (allow_archive_path_syntax)
         std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
@@ -99,7 +99,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
     /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.find('?') != String::npos)
+    if (!has_version_id && uri_.contains('?'))
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
@@ -115,8 +115,15 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
         is_virtual_hosted_style = true;
-        endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-        validateBucket(bucket, uri);
+        if (name == "oss-data-acc")
+        {
+            bucket = bucket.substr(0, bucket.find('.'));
+            endpoint = uri.getScheme() + "://" + uri.getHost().substr(bucket.length() + 1);
+        }
+        else
+        {
+            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+        }
 
         if (!uri.getPath().empty())
         {
@@ -134,7 +141,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     {
         is_virtual_hosted_style = false;
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        validateBucket(bucket, uri);
     }
     else
     {
@@ -147,6 +153,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         if (!uri.getPath().empty())
             key = uri.getPath().substr(1);
     }
+
+    validateBucket(bucket, uri);
+    validateKey(key, uri);
 }
 
 void URI::addRegionToURI(const std::string &region)
@@ -167,38 +176,37 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
             !uri.empty() ? " (" + uri.toString() + ")" : "");
 }
 
-std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(const std::string & source)
+void URI::validateKey(const String & key, const Poco::URI & uri)
 {
-    size_t pos = source.find("::");
-    if (pos == String::npos)
-        return {source, std::nullopt};
-
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    bool contains_spaces_around_operator = false;
-    while (path_to_archive_view.ends_with(' '))
+    auto onError = [&]()
     {
-        contains_spaces_around_operator = true;
-        path_to_archive_view.remove_suffix(1);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid S3 key: {}{}",
+            quoteString(key),
+            !uri.empty() ? " (" + uri.toString() + ")" : "");
+    };
+
+
+    // this shouldn't happen ever because the regex should not catch this
+    if (key.size() == 1 && key[0] == '/')
+    {
+       onError();
     }
 
-    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
-    while (archive_pattern_view.starts_with(' '))
+    // the current regex impl allows something like "bucket-name/////".
+    // bucket: bucket-name
+    // key: ////
+    // throw exception in case such thing is found
+    for (size_t i = 1; i < key.size(); i++)
     {
-        contains_spaces_around_operator = true;
-        archive_pattern_view.remove_prefix(1);
+        if (key[i - 1] == '/' && key[i] == '/')
+        {
+            onError();
+        }
     }
-
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported extension
-    /// - it contains spaces after or before :: (URI cannot contain spaces)
-    /// - it contains characters that could mean glob expression
-    if (archive_pattern_view.empty() || path_to_archive_view.empty()
-        || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
-            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
-        return {source, std::nullopt};
-
-    return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
 }
+
 }
 
 }

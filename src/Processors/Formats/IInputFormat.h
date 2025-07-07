@@ -2,10 +2,10 @@
 
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Core/BlockMissingValues.h>
 
 
 namespace DB
@@ -21,6 +21,10 @@ class IInputFormat : public SourceWithKeyCondition
 {
 protected:
 
+    /// Note: implementations should prefer to drain this ReadBuffer to the end if it's not seekable
+    /// (unless it would cause too much extra IO). That's because `in` may be reading HTTP POST data
+    /// from the socket, and if not all data is read then the connection can't be reused for later
+    /// HTTP requests (keepalive).
     ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:
@@ -43,11 +47,7 @@ public:
     virtual void setReadBuffer(ReadBuffer & in_);
     virtual void resetReadBuffer() { in = nullptr; }
 
-    virtual const BlockMissingValues & getMissingValues() const
-    {
-        static const BlockMissingValues none;
-        return none;
-    }
+    virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
     /// Must be called from ParallelParsingInputFormat after readSuffix
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
@@ -57,6 +57,10 @@ public:
     /// Set the number of rows that was already read in
     /// parallel parsing before creating this parser.
     virtual void setRowsReadBefore(size_t /*rows*/) {}
+
+    /// Sets the serialization hints for the columns. It allows to create columns
+    /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
+    virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 

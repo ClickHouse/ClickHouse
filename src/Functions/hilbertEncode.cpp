@@ -1,8 +1,6 @@
-#include <limits>
 #include <optional>
 #include <Functions/FunctionFactory.h>
-#include <Common/BitHelpers.h>
-#include "hilbertEncode2DLUT.h"
+#include <Functions/hilbertEncode2DLUT.h>
 
 
 namespace DB
@@ -142,7 +140,7 @@ All overflow will be clamped to zero
             {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
         },
-        .categories {"Hilbert coding", "Hilbert Curve"}
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

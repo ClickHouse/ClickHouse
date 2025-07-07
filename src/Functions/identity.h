@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 

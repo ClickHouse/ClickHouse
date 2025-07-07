@@ -1,6 +1,7 @@
-#include "XDBCDictionarySource.h"
+#include <Dictionaries/XDBCDictionarySource.h>
 
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
@@ -11,10 +12,9 @@
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "readInvalidateQuery.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -28,6 +28,9 @@ namespace Setting
 {
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsBool odbc_bridge_use_connection_pooling;
+
+    /// Cloud only
+    extern const SettingsBool cloud_mode;
 }
 
 namespace ErrorCodes
@@ -84,7 +87,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
@@ -118,11 +121,9 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-    else
-    {
-        update_time = std::chrono::system_clock::now();
-        return load_all_query;
-    }
+
+    update_time = std::chrono::system_clock::now();
+    return load_all_query;
 }
 
 
@@ -237,14 +238,18 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
                                    ContextPtr global_context,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
-#if USE_ODBC
+
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
+
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             global_context,
             global_context->getSettingsRef()[Setting::http_receive_timeout],
@@ -267,15 +272,6 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
-#else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
-        (void)global_context;
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.");
-#endif
     };
     factory.registerSource("odbc", create_table_source);
 }
@@ -283,7 +279,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & /* dict_struct */,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & /* dict_struct */,
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,

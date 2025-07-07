@@ -36,11 +36,9 @@ namespace
                         input_rows_count,
                         Array{nested_type->getDefault()});
                 }
-                else
-                    return arguments[0].column;
+                return arguments[0].column;
             }
-            else
-                return nullptr;
+            return nullptr;
         }
 
         template <typename T, bool nullable>
@@ -97,8 +95,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 
@@ -164,8 +161,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 
@@ -260,8 +256,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 
@@ -397,7 +392,34 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
 
 REGISTER_FUNCTION(EmptyArrayToSingle)
 {
-    factory.registerFunction<FunctionEmptyArrayToSingle>();
+    FunctionDocumentation::Description description = R"(
+Accepts an empty array and returns a one-element array that is equal to the default value.
+    )";
+    FunctionDocumentation::Syntax syntax = "emptyArrayToSingle(arr)";
+    FunctionDocumentation::Arguments arguments = {{"arr", "An empty array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"An array with a single value of the Array's default type.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Basic example", R"(
+CREATE TABLE test (
+  a Array(Int32),
+  b Array(String),
+  c Array(DateTime)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test VALUES ([], [], []);
+
+SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
+)", R"(
+┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
+│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+└───────────────────────┴───────────────────────┴─────────────────────────┘
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }
 
 }

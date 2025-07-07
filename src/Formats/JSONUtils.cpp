@@ -12,6 +12,7 @@
 #include <Common/assert_cast.h>
 
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
 
@@ -56,7 +57,7 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
                 if (*pos == '\\')
@@ -77,10 +78,10 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
-                else if (*pos == opening_bracket)
+                if (*pos == opening_bracket)
                 {
                     ++balance;
                     ++pos;
@@ -136,7 +137,7 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
                 if (*in.position() == '\\')
@@ -158,10 +159,10 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
-                else if (*in.position() == opening_bracket)
+                if (*in.position() == opening_bracket)
                 {
                     ++balance;
                     ++in.position();
@@ -299,8 +300,7 @@ namespace JSONUtils
 
             if (format_settings.json.empty_as_default)
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
-            else
-                return deserialize(column, in);
+            return deserialize(column, in);
         }
         catch (Exception & e)
         {
@@ -326,12 +326,12 @@ namespace JSONUtils
         writeCString(after_delimiter, out);
     }
 
-    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
     {
-        writeChar(' ', indent * 4, out);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
         writeCString(title, out);
-        writeCString("\": ", out);
+        writeCString("\":", out);
         writeCString(after_delimiter, out);
     }
 
@@ -404,7 +404,7 @@ namespace JSONUtils
         {
             if (pretty_json)
             {
-                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
+                writeTitlePretty(name->data(), out, settings, indent, title_after_delimiter);
             }
             else
             {

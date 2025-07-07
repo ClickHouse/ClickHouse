@@ -48,6 +48,7 @@ struct SchedulerNodeInfo
 {
     double weight = 1.0; /// Weight of this node among it's siblings
     Priority priority; /// Priority of this node among it's siblings (lower value means higher priority)
+    Int64 queue_size = std::numeric_limits<Int64>::max(); /// Size of a workload queue
 
     /// Arbitrary data accessed/stored by parent
     union {
@@ -57,10 +58,17 @@ struct SchedulerNodeInfo
 
     SchedulerNodeInfo() = default;
 
-    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit SchedulerNodeInfo(double weight_, Priority priority_ = {})
+    {
+        setWeight(weight_);
+        setPriority(priority_);
+    }
+
+    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix = {})
     {
         setWeight(config.getDouble(config_prefix + ".weight", weight));
         setPriority(config.getInt64(config_prefix + ".priority", priority));
+        setQueueSize(config.getInt64(config_prefix + ".queue_size", queue_size));
     }
 
     void setWeight(double value)
@@ -68,14 +76,29 @@ struct SchedulerNodeInfo
         if (value <= 0 || !isfinite(value))
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Negative and non-finite node weights are not allowed: {}",
+                "Zero, negative and non-finite node weights are not allowed: {}",
                 value);
         weight = value;
+    }
+
+    void setQueueSize(Int64 value)
+    {
+        if (value <= 0)
+            throw Exception(
+                ErrorCodes::INVALID_SCHEDULER_NODE,
+                "Workload setting `max_waiting_queries` value must be positive, got: {}",
+                value);
+        queue_size = value;
     }
 
     void setPriority(Int64 value)
     {
         priority.value = value;
+    }
+
+    void setPriority(Priority value)
+    {
+        priority = value;
     }
 
     // To check if configuration update required
@@ -123,7 +146,14 @@ public:
         , info(config, config_prefix)
     {}
 
-    virtual ~ISchedulerNode() = default;
+    ISchedulerNode(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : event_queue(event_queue_)
+        , info(info_)
+    {}
+
+    virtual ~ISchedulerNode();
+
+    virtual const String & getTypeName() const = 0;
 
     /// Checks if two nodes configuration is equal
     virtual bool equals(ISchedulerNode * other)
@@ -134,10 +164,11 @@ public:
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
 
-    /// Detach and destroy child
+    /// Detach child
+    /// NOTE: child might be destroyed if the only reference was stored in parent
     virtual void removeChild(ISchedulerNode * child) = 0;
 
-    /// Get attached child by name
+    /// Get attached child by name (for tests only)
     virtual ISchedulerNode * getChild(const String & child_name) = 0;
 
     /// Activation of child due to the first pending request
@@ -147,7 +178,7 @@ public:
     /// Returns true iff node is active
     virtual bool isActive() = 0;
 
-    /// Returns number of active children
+    /// Returns number of active children (for introspection only).
     virtual size_t activeChildren() = 0;
 
     /// Returns the first request to be executed as the first component of resulting pair.
@@ -155,10 +186,10 @@ public:
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
 
     /// Returns full path string using names of every parent
-    String getPath()
+    String getPath() const
     {
         String result;
-        ISchedulerNode * ptr = this;
+        const ISchedulerNode * ptr = this;
         while (ptr->parent)
         {
             result = "/" + ptr->basename + result;
@@ -168,10 +199,7 @@ public:
     }
 
     /// Attach to a parent (used by attachChild)
-    virtual void setParent(ISchedulerNode * parent_)
-    {
-        parent = parent_;
-    }
+    void setParent(ISchedulerNode * parent_);
 
 protected:
     /// Notify parents about the first pending request or constraint becoming satisfied.
@@ -307,6 +335,15 @@ public:
             pending.notify_one();
     }
 
+    /// Removes an activation from queue
+    void cancelActivation(ISchedulerNode * node)
+    {
+        std::unique_lock lock{mutex};
+        if (node->is_linked())
+            activations.erase(activations.iterator_to(*node));
+        node->activation_event_id = 0;
+    }
+
     /// Process single event if it exists
     /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
     /// Returns `true` iff event has been processed
@@ -338,15 +375,13 @@ public:
         }
         if (postponed.empty())
             return false;
-        else
+
+        if (postponed.front().key <= now())
         {
-            if (postponed.front().key <= now())
-            {
-                processPostponed(std::move(lock));
-                return true;
-            }
-            return false;
+            processPostponed(std::move(lock));
+            return true;
         }
+        return false;
     }
 
     /// Wait for single event (if not available) and process it
@@ -360,7 +395,7 @@ public:
                 processQueue(std::move(lock));
                 return;
             }
-            else if (postponed.empty())
+            if (postponed.empty())
             {
                 wait(lock);
             }
@@ -371,20 +406,18 @@ public:
                     processPostponed(std::move(lock));
                     return;
                 }
-                else
-                {
-                    waitUntil(lock, postponed.front().key);
-                }
+
+                waitUntil(lock, postponed.front().key);
             }
         }
     }
 
     TimePoint now()
     {
-        if (auto result = manual_time.load(); likely(result == TimePoint()))
+        auto result = manual_time.load();
+        if (likely(result == TimePoint()))
             return std::chrono::system_clock::now();
-        else
-            return result;
+        return result;
     }
 
     /// For testing only
@@ -474,6 +507,20 @@ private:
 
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 };
+
+inline ISchedulerNode::~ISchedulerNode()
+{
+    // Make sure there is no dangling reference in activations queue
+    event_queue->cancelActivation(this);
+}
+
+inline void ISchedulerNode::setParent(ISchedulerNode * parent_)
+{
+    parent = parent_;
+    // Avoid activation of a detached node
+    if (parent == nullptr)
+        event_queue->cancelActivation(this);
+}
 
 inline void ISchedulerNode::scheduleActivation()
 {

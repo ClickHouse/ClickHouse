@@ -1,17 +1,10 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
-#include <list>
-#include <mutex>
 #include <optional>
-#include <variant>
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Joins.h>
-#include <base/sort.h>
+#include <Core/TypeId.h>
 #include <Common/Arena.h>
 
 
@@ -25,12 +18,12 @@ struct RowRef
 {
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
-    const Block * block = nullptr;
+    const Columns * columns = nullptr;
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const Block * block_, size_t row_num_)
-        : block(block_)
+    RowRef(const Columns * columns_, size_t row_num_)
+        : columns(columns_)
         , row_num(static_cast<SizeT>(row_num_))
     {}
 };
@@ -122,10 +115,18 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
-    RowRefList(const Block * block_, size_t row_start_, size_t rows_) : RowRef(block_, row_start_), rows(static_cast<SizeT>(rows_)) {}
+    RowRefList(const Columns * columns_, size_t row_num_) : RowRef(columns_, row_num_), rows(1) {}
+    RowRefList(const Columns * columns_, size_t row_start_, size_t rows_) : RowRef(columns_, row_start_), rows(static_cast<SizeT>(rows_)) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
+
+    /// Check that RowRefList represent a range of consecutive rows
+    /// In this case there must be no next element
+    void assertIsRange() const
+    {
+        chassert(rows >= 1, "RowRefList should have at least one row");
+        chassert(next == nullptr, "When RowRefList represent range, it should not have next element");
+    }
 
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
@@ -159,7 +160,7 @@ struct SortedLookupVectorBase
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    virtual void insert(const IColumn &, const Block *, size_t) = 0;
+    virtual void insert(const IColumn &, const Columns *, size_t) = 0;
 
     // This needs to be synchronized internally
     virtual RowRef * findAsof(const IColumn &, size_t) = 0;

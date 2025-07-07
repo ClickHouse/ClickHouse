@@ -20,6 +20,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_json_type;
     extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool allow_experimental_time_time64_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -41,11 +42,12 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
     , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
-    , allow_experimental_variant_type(settings[Setting::allow_experimental_variant_type])
+    , enable_variant_type(settings[Setting::allow_experimental_variant_type])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , allow_experimental_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
-    , allow_experimental_json_type(settings[Setting::allow_experimental_json_type])
+    , enable_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
+    , enable_json_type(settings[Setting::allow_experimental_json_type])
+    , enable_time_time64_type(settings[Setting::allow_experimental_time_time64_type])
 {
 }
 
@@ -58,11 +60,16 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
             {
-                if (!isStringOrFixedString(*removeNullable(lc_type->getDictionaryType())))
+                auto unwrapped = removeNullable(lc_type->getDictionaryType());
+
+                /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
+                /// and their relatively large size provides opportunity for better performance.
+
+                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
-                        "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting",
+                        "It can be enabled with the `allow_suspicious_low_cardinality_types` setting",
                         lc_type->getName());
             }
         }
@@ -93,14 +100,14 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_variant_type)
+        if (!settings.enable_variant_type)
         {
             if (isVariant(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental Variant type is not allowed. "
-                    "Set setting allow_experimental_variant_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because Variant type is not allowed. "
+                    "Set setting enable_variant_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
@@ -137,27 +144,47 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_dynamic_type)
+        if (!settings.enable_dynamic_type)
         {
             if (isDynamic(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental Dynamic type is not allowed. "
-                    "Set setting allow_experimental_dynamic_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because Dynamic type is not allowed. "
+                    "Set setting enable_dynamic_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
 
-        if (!settings.allow_experimental_json_type)
+        if (!settings.enable_json_type)
         {
             const auto * object_type = typeid_cast<const DataTypeObject *>(&data_type);
             if (object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental JSON type is not allowed. "
-                    "Set setting allow_experimental_json_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because JSON type is not allowed. "
+                    "Set setting enable_json_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+        }
+
+        if (!settings.enable_time_time64_type)
+        {
+            if (isTime(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because Time type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+            if (isTime64(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because Time64 type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
                     data_type.getName());
             }
         }

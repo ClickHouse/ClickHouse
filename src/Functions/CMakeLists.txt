@@ -7,6 +7,8 @@ add_headers_and_sources(clickhouse_functions .)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
+    FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
@@ -16,6 +18,11 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
+    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
+    FunctionsConversion_impl0.cpp
+    FunctionsConversion_impl1.cpp
+    FunctionsConversion_impl2.cpp
+    FunctionsConversion_impl3.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
@@ -52,17 +59,10 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
-        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
 )
-
-if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
-endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
@@ -79,6 +79,10 @@ endif ()
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()
+
+if (TARGET ch_contrib::bech32)
+    list (APPEND PRIVATE_LIBS ch_contrib::bech32)
+endif()
 
 if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
@@ -141,7 +145,6 @@ add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
 add_subdirectory(keyvaluepair)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

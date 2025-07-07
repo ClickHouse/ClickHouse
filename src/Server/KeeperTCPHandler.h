@@ -6,7 +6,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/MultiVersion.h>
-#include "IServer.h"
+#include <Server/IServer.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -24,7 +24,7 @@ namespace DB
 {
 
 struct SocketInterruptablePollWrapper;
-using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+using SocketInterruptablePollWrapperPtr = std::shared_ptr<SocketInterruptablePollWrapper>;
 
 struct RequestWithResponse
 {
@@ -84,6 +84,7 @@ private:
     ThreadSafeResponseQueuePtr responses;
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
+    bool use_xid_64 = false;
 
     /// Streams for reading/writing from/to client connection socket.
     std::optional<ReadBufferFromPocoSocket> in;
@@ -97,6 +98,8 @@ private:
 
     WriteBuffer & getWriteBuffer();
     void flushWriteBuffer();
+    void finalizeWriteBuffer();
+    void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
     void sendHandshake(bool has_leader, bool & use_compression);

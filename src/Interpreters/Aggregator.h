@@ -1,41 +1,23 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <type_traits>
 #include <variant>
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 
-#include <base/StringRef.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/HashTable/StringHashMap.h>
-#include <Common/HashTable/TwoLevelStringHashMap.h>
-
-#include <Common/ThreadPool.h>
-#include <Common/ColumnsHashing.h>
-#include <Common/assert_cast.h>
-#include <Common/filesystemHelpers.h>
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
-
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 
 #include <Parsers/IAST_fwd.h>
 
@@ -89,59 +71,53 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class Aggregator final
 {
 public:
+    using AggregateFunctionContainer = PaddedPODArray<AggregateDataPtr>;
     using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateColumnsData = std::vector<AggregateFunctionContainer *>;
+    using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     struct Params
     {
         /// What to count.
-        const Names keys;
+        Names keys;
+        size_t keys_size = 0;
         const AggregateDescriptions aggregates;
-        const size_t keys_size;
-        const size_t aggregates_size;
+        const size_t aggregates_size = 0;
 
+        ///
         /// The settings of approximate calculation of GROUP BY.
-        const bool overflow_row;    /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
-        const size_t max_rows_to_group_by;
-        const OverflowMode group_by_overflow_mode;
+        ///
+        /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
+        const bool overflow_row = false;
+        const size_t max_rows_to_group_by = 0;
+        const OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
         /// Two-level aggregation settings (used for a large number of keys).
-        /** With how many keys or the size of the aggregation state in bytes,
-          *  two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
-          * 0 - the corresponding threshold is not specified.
-          */
-        size_t group_by_two_level_threshold;
-        size_t group_by_two_level_threshold_bytes;
+        /// With how many keys or the size of the aggregation state in bytes,
+        /// two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
+        /// 0 - the corresponding threshold is not specified.
+        size_t group_by_two_level_threshold = 0;
+        size_t group_by_two_level_threshold_bytes = 0;
 
         /// Settings to flush temporary data to the filesystem (external aggregation).
-        const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
-
+        /// 0 - do not use external aggregation.
+        size_t max_bytes_before_external_group_by = 0;
         /// Return empty result when aggregating without keys on empty set.
-        bool empty_result_for_aggregation_by_empty_set;
-
+        bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
-
-        /// Settings is used to determine cache size. No threads are created.
-        size_t max_threads;
-
-        const size_t min_free_disk_space;
-
-        bool compile_aggregate_expressions;
-        size_t min_count_to_compile_aggregate_expression;
-
-        size_t max_block_size;
-
-        bool only_merge;
-
-        bool enable_prefetch;
-
-        bool optimize_group_by_constant_keys;
-
-        const double min_hit_rate_to_use_consecutive_keys_optimization;
-
+        size_t max_threads = 0;
+        const size_t min_free_disk_space = 0;
+        bool compile_aggregate_expressions = false;
+        size_t min_count_to_compile_aggregate_expression = 0;
+        size_t max_block_size = 0;
+        bool only_merge = false;
+        bool enable_prefetch = false;
+        bool optimize_group_by_constant_keys = false;
+        const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
+
+        static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
             const Names & keys_,
@@ -162,38 +138,25 @@ public:
             bool enable_prefetch_,
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
-            double min_hit_rate_to_use_consecutive_keys_optimization_,
-            const StatsCollectingParams & stats_collecting_params_)
-            : keys(keys_)
-            , aggregates(aggregates_)
-            , keys_size(keys.size())
-            , aggregates_size(aggregates.size())
-            , overflow_row(overflow_row_)
-            , max_rows_to_group_by(max_rows_to_group_by_)
-            , group_by_overflow_mode(group_by_overflow_mode_)
-            , group_by_two_level_threshold(group_by_two_level_threshold_)
-            , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-            , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
-            , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-            , tmp_data_scope(std::move(tmp_data_scope_))
-            , max_threads(max_threads_)
-            , min_free_disk_space(min_free_disk_space_)
-            , compile_aggregate_expressions(compile_aggregate_expressions_)
-            , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
-            , max_block_size(max_block_size_)
-            , only_merge(only_merge_)
-            , enable_prefetch(enable_prefetch_)
-            , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
-            , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
-            , stats_collecting_params(stats_collecting_params_)
-        {
-        }
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
+            const StatsCollectingParams & stats_collecting_params_);
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
-            : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
+        Params(
+            const Names & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            size_t max_threads_,
+            size_t max_block_size_,
+            float min_hit_rate_to_use_consecutive_keys_optimization_);
+
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
+            Params new_params = *this;
+            new_params.keys = keys_;
+            new_params.keys_size = keys_.size();
+            new_params.only_merge = only_merge_;
+            return new_params;
         }
 
         static Block
@@ -287,13 +250,13 @@ public:
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
       */
-    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final) const;
 
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
 
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
-    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled);
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
@@ -309,9 +272,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
+    bool hasTemporaryData() const;
 
-    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
+    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -352,10 +315,19 @@ private:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
+    /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
+    ///
+    /// If true, we can apply an important performance optimization:
+    /// - The aggregation logic can be inlined, meaning each row is aggregated immediately during hash table probing.
+    /// - There's no need to allocate and maintain full aggregation state.
+    bool is_simple_count = false;
+
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    mutable std::mutex tmp_files_mutex;
+    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -364,6 +336,8 @@ private:
 #endif
 
     std::vector<bool> is_aggregate_function_compiled;
+
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
@@ -456,7 +430,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryFileStream & out) const;
+        TemporaryBlockStreamHolder & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -467,7 +441,9 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
+    void mergeDataImpl(
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
+        const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -544,17 +520,13 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
+    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <bool return_single_block>
     ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
-    BlocksList prepareBlocksAndFillTwoLevelImpl(
-        AggregatedDataVariants & data_variants,
-        Method & method,
-        bool final,
-        ThreadPool * thread_pool) const;
+    BlocksList prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
     template <typename State, typename Table>
     void mergeStreamsImplCase(
@@ -566,6 +538,7 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
@@ -579,6 +552,7 @@ private:
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
     template <typename Method, typename Table>
@@ -593,6 +567,7 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
@@ -669,6 +644,7 @@ private:
         Arena * arena);
 };
 
+/// NOTE: For non-Analyzer it does not include the database name
 UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */

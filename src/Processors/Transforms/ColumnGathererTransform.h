@@ -84,12 +84,7 @@ private:
         size_t pos = 0;
         size_t size = 0;
 
-        void update(ColumnPtr column_)
-        {
-            column = std::move(column_);
-            size = column->size();
-            pos = 0;
-        }
+        void update(ColumnPtr column_);
     };
 
     MutableColumnPtr result_column;
@@ -190,7 +185,7 @@ void ColumnGathererStream::gather(Column & column_res)
                 source_to_fully_copy = &source;
                 return;
             }
-            else if (len == 1)
+            if (len == 1)
                 column_res.insertFrom(*source.column, source.pos);
             else
                 column_res.insertRangeFrom(*source.column, source.pos, len);

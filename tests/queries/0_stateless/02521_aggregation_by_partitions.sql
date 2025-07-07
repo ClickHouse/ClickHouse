@@ -57,7 +57,7 @@ select count() from (select throwIf(count() != 2) from t3 group by a);
 select throwIf(count() != 4) from remote('127.0.0.{1,2}', currentDatabase(), t3) group by a format Null;
 
 -- if we happened to switch to external aggregation at some point, merging will happen as usual
-select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki';
+select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki', max_bytes_ratio_before_external_group_by = 0;
 
 drop table t3;
 

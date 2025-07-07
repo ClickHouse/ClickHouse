@@ -2,7 +2,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
 #include <filesystem>
 #include <boost/core/noncopyable.hpp>
 #include <fmt/format.h>
@@ -166,8 +165,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
             throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in getting initial credentials: {}", fmtError(ret));
-        else
-            LOG_TRACE(log,"Got initial credentials");
+        LOG_TRACE(log, "Got initial credentials");
     }
     else
     {

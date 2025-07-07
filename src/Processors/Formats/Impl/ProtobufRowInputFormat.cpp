@@ -1,6 +1,7 @@
-#include "ProtobufRowInputFormat.h"
+#include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
 
 #if USE_PROTOBUF
+#   include <Columns/IColumn.h>
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
 #   include <Formats/ProtobufReader.h>
@@ -19,7 +20,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool flatten_google_wrappers_,
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
-    , message_descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+    , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
           schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, google_protos_path))
     , with_length_delimiter(with_length_delimiter_)
     , flatten_google_wrappers(flatten_google_wrappers_)
@@ -33,7 +34,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
         getPort().getHeader().getNames(),
         getPort().getHeader().getDataTypes(),
         missing_column_indices,
-        *message_descriptor,
+        descriptor,
         with_length_delimiter,
         /* with_envelope = */ false,
         flatten_google_wrappers,
@@ -124,7 +125,13 @@ void registerInputFormatProtobuf(FormatFactory & factory)
 
 ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_settings)
     : schema_info(
-        format_settings.schema.format_schema, "Protobuf", true, format_settings.schema.is_server, format_settings.schema.format_schema_path)
+          /*format_schema_source=*/format_settings.schema.format_schema_source,
+          /*format_schema=*/format_settings.schema.format_schema,
+          /*format_schema_message_name=*/format_settings.schema.format_schema_message_name,
+          /*format=*/"Protobuf",
+          /*require_message=*/true,
+          /*is_server=*/format_settings.schema.is_server,
+          /*format_schema_path=*/format_settings.schema.format_schema_path)
     , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
     , google_protos_path(format_settings.protobuf.google_protos_path)
 {
@@ -132,9 +139,9 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
 
 NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
-    const auto * message_descriptor
-        = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No, google_protos_path);
-    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
+    auto descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+        schema_info, ProtobufSchemas::WithEnvelope::No, google_protos_path);
+    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)

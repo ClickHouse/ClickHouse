@@ -1,7 +1,6 @@
-#include "CachedOnDiskWriteBufferFromFile.h"
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 
 #include <Common/logger_useful.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -196,7 +195,7 @@ void FileSegmentRangeWriter::completeFileSegment()
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
 
-    file_segment.complete();
+    file_segment.complete(false);
     appendFilesystemCacheLog(file_segment);
 }
 
@@ -210,7 +209,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
         if (position < current_write_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
 
-        file_segment.complete();
+        file_segment.complete(false);
         file_segments.reset();
     }
     expected_write_offset = position;

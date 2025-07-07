@@ -44,10 +44,9 @@ private:
         {
             if (is_literal)
                 return executeLiteral(format);
-            else if (isColumnConst(*input.column))
+            if (isColumnConst(*input.column))
                 return executeConstant(input);
-            else
-                return executeNonconstant(input);
+            return executeNonconstant(input);
         }
 
     private:
@@ -143,19 +142,17 @@ private:
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else if (
-                which.isStringOrFixedString()
+            if (which.isStringOrFixedString()
                 && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
                     || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The argument type of function {} is {}, but native numeric or string type is expected",
-                    FunctionPrintf::name,
-                    arg.type->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument type of function {} is {}, but native numeric or string type is expected",
+                FunctionPrintf::name,
+                arg.type->getName());
         }
     };
 
@@ -226,7 +223,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v9::format_error & e)
+            catch (const fmt::v11::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(
@@ -235,18 +232,17 @@ public:
                         instruction.format,
                         getName(),
                         e.what());
-                else
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Bad format {} in function {} with {} as input argument, reason: {}",
-                        instructions[i].format,
-                        getName(),
-                        instruction.input.dumpStructure(),
-                        e.what());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Bad format {} in function {} with {} as input argument, reason: {}",
+                    instructions[i].format,
+                    getName(),
+                    instruction.input.dumpStructure(),
+                    e.what());
             }
         }
 
-        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
+        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count, /* dry_run = */ false);
         return res;
     }
 
@@ -354,7 +350,7 @@ REGISTER_FUNCTION(Printf)
 The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .categories{"String"}
+Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .category = FunctionDocumentation::Category::StringReplacement
 });
 
 }

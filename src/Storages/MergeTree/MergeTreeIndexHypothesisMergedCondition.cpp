@@ -59,8 +59,8 @@ void MergeTreeIndexhypothesisMergedCondition::addIndex(const MergeTreeIndexPtr &
         if (group.size() == 1)
         {
             hypotheses_data.push_back(group);
-            CNFQuery::AtomicFormula atomic_formula = *group.begin();
-            CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+            CNFQueryAtomicFormula atomic_formula = *group.begin();
+            CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
             pushNotIn(atom);
             assert(!atom.negative);
 
@@ -79,7 +79,7 @@ void MergeTreeIndexhypothesisMergedCondition::addConstraints(const ConstraintsDe
     auto atomic_constraints_data = constraints_description.getAtomicConstraintData();
     for (const auto & atomic_formula : atomic_constraints_data)
     {
-        CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+        CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
         atomic_constraints.push_back(atom.ast);
     }
@@ -116,7 +116,7 @@ bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
         {
             for (const auto & atomic_formula : or_group)
             {
-                CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+                CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
                 pushNotIn(atom);
 
                 const auto * func = atom.ast->as<ASTFunction>();
@@ -165,7 +165,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
 
             for (const auto & atomic_formula : or_group)
             {
-                CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+                CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
                 pushNotIn(atom);
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)

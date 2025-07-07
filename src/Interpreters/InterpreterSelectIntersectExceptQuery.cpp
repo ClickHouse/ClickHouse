@@ -108,13 +108,13 @@ std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options);
 
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options);
 
     if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, SelectQueryOptions());
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
@@ -128,29 +128,29 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
 
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    DataStreams data_streams(num_plans);
+    Headers headers(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-        if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+        if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
         {
             auto actions_dag = ActionsDAG::makeConvertingActions(
-                    plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                    plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
                     result_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Position);
-            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));
         }
 
-        data_streams[i] = plans[i]->getCurrentDataStream();
+        headers[i] = plans[i]->getCurrentHeader();
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, settings[Setting::max_threads]);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -161,12 +161,11 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
         auto distinct_step = std::make_unique<DistinctStep>(
-            query_plan.getCurrentDataStream(),
+            query_plan.getCurrentHeader(),
             limits,
             0,
             result_header.getNames(),
-            false,
-            settings[Setting::optimize_distinct_in_order]);
+            false);
 
         query_plan.addStep(std::move(distinct_step));
     }
@@ -182,9 +181,7 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 

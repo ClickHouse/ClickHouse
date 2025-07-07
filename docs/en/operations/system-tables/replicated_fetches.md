@@ -1,7 +1,16 @@
 ---
-slug: /en/operations/system-tables/replicated_fetches
+description: 'System table containing information about currently running background
+  fetches.'
+keywords: ['system table', 'replicated_fetches']
+slug: /operations/system-tables/replicated_fetches
+title: 'system.replicated_fetches'
 ---
-# replicated_fetches
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.replicated_fetches
+
+<SystemTableCloud/>
 
 Contains information about currently running background fetches.
 
@@ -41,11 +50,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.replicated_fetches LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

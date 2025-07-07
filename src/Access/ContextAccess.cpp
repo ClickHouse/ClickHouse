@@ -38,21 +38,24 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
-        {AccessType::FILE, "File"},
-        {AccessType::URL, "URL"},
-        {AccessType::REMOTE, "Distributed"},
-        {AccessType::MONGO, "MongoDB"},
-        {AccessType::REDIS, "Redis"},
-        {AccessType::MYSQL, "MySQL"},
-        {AccessType::POSTGRES, "PostgreSQL"},
-        {AccessType::SQLITE, "SQLite"},
-        {AccessType::ODBC, "ODBC"},
-        {AccessType::JDBC, "JDBC"},
-        {AccessType::HDFS, "HDFS"},
-        {AccessType::S3, "S3"},
-        {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"}
+    const std::vector<String> source_table_engines = {
+        "File",
+        "URL",
+        "Distributed",
+        "MongoDB",
+        "Redis",
+        "MySQL",
+        "PostgreSQL",
+        "SQLite",
+        "ODBC",
+        "JDBC",
+        "HDFS",
+        "S3",
+        "Hive",
+        "AzureBlobStorage",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
     };
 
 
@@ -60,196 +63,6 @@ namespace
     {
         AccessRights res = user.access;
         res.makeUnion(roles_info.access);
-        return res;
-    }
-
-
-    AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
-    {
-        AccessFlags max_flags;
-
-        auto modifier = [&](const AccessFlags & flags,
-                            const AccessFlags & min_flags_with_children,
-                            const AccessFlags & max_flags_with_children,
-                            const size_t level,
-                            bool /* grant_option */) -> AccessFlags
-        {
-            AccessFlags res = flags;
-
-            /// CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
-            static const AccessFlags create_table = AccessType::CREATE_TABLE;
-            static const AccessFlags create_view = AccessType::CREATE_VIEW;
-            static const AccessFlags drop_table = AccessType::DROP_TABLE;
-            static const AccessFlags drop_view = AccessType::DROP_VIEW;
-            static const AccessFlags alter_table = AccessType::ALTER_TABLE;
-            static const AccessFlags alter_view = AccessType::ALTER_VIEW;
-
-            if (res & create_table)
-                res |= create_view;
-
-            if (res & drop_table)
-                res |= drop_view;
-
-            if (res & alter_table)
-                res |= alter_view;
-
-            /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
-            static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
-            if ((level == 0) && (max_flags_with_children & create_table))
-                res |= create_temporary_table;
-
-            /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
-            static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
-            if ((level == 0) && (max_flags_with_children & create_table))
-                res |= create_arbitrary_temporary_table;
-
-            /// ALTER_TTL => ALTER_MATERIALIZE_TTL
-            static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
-            static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
-            if (res & alter_ttl)
-                res |= alter_materialize_ttl;
-
-            /// RELOAD_DICTIONARY (global) => RELOAD_EMBEDDED_DICTIONARIES (global)
-            static const AccessFlags reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
-            static const AccessFlags reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
-            if ((level == 0) && (min_flags_with_children & reload_dictionary))
-                res |= reload_embedded_dictionaries;
-
-            /// any column flag => SHOW_COLUMNS => SHOW_TABLES => SHOW_DATABASES
-            ///                  any table flag => SHOW_TABLES => SHOW_DATABASES
-            ///       any dictionary flag => SHOW_DICTIONARIES => SHOW_DATABASES
-            ///                              any database flag => SHOW_DATABASES
-            static const AccessFlags show_columns = AccessType::SHOW_COLUMNS;
-            static const AccessFlags show_tables = AccessType::SHOW_TABLES;
-            static const AccessFlags show_dictionaries = AccessType::SHOW_DICTIONARIES;
-            static const AccessFlags show_tables_or_dictionaries = show_tables | show_dictionaries;
-            static const AccessFlags show_databases = AccessType::SHOW_DATABASES;
-
-            if (res & AccessFlags::allColumnFlags())
-                res |= show_columns;
-
-            if ((res & AccessFlags::allTableFlags())
-                || (level <= 2 && (res & show_columns))
-                || (level == 2 && (max_flags_with_children & show_columns)))
-            {
-                res |= show_tables;
-            }
-
-            if (res & AccessFlags::allDictionaryFlags())
-                res |= show_dictionaries;
-
-            if ((res & AccessFlags::allDatabaseFlags())
-                || (level <= 1 && (res & show_tables_or_dictionaries))
-                || (level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
-            {
-                res |= show_databases;
-            }
-
-            max_flags |= res;
-
-            return res;
-        };
-
-        AccessRights res = access;
-        res.modifyFlags(modifier);
-
-        /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
-        if (access_control.doesSelectFromSystemDatabaseRequireGrant())
-        {
-            const char * always_accessible_tables[] = {
-                /// Constant tables
-                "one",
-
-                /// "numbers", "numbers_mt", "zeros", "zeros_mt" were excluded because they can generate lots of values and
-                /// that can decrease performance in some cases.
-
-                "contributors",
-                "licenses",
-                "time_zones",
-                "collations",
-
-                "formats",
-                "privileges",
-                "data_type_families",
-                "database_engines",
-                "table_engines",
-                "table_functions",
-                "aggregate_function_combinators",
-
-                "functions", /// Can contain user-defined functions
-
-                /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
-                "databases",
-                "tables",
-                "columns",
-
-                /// Specific to the current session
-                "settings",
-                "current_roles",
-                "enabled_roles",
-                "quota_usage"
-            };
-
-            for (const auto * table_name : always_accessible_tables)
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
-
-            if (max_flags.contains(AccessType::SHOW_USERS))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
-
-            if (max_flags.contains(AccessType::SHOW_ROLES))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
-
-            if (max_flags.contains(AccessType::SHOW_ROW_POLICIES))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "row_policies");
-
-            if (max_flags.contains(AccessType::SHOW_SETTINGS_PROFILES))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "settings_profiles");
-
-            if (max_flags.contains(AccessType::SHOW_QUOTAS))
-                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
-        }
-        else
-        {
-            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        }
-
-        /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
-        if (!access_control.doesSelectFromInformationSchemaRequireGrant())
-        {
-            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
-        }
-
-        /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
-
-        /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
-        if (access_control.doesTableEnginesRequireGrant())
-        {
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & source = std::get<0>(source_and_table_engine);
-                if (res.isGranted(source))
-                {
-                    const auto & table_engine = std::get<1>(source_and_table_engine);
-                    res.grant(AccessType::TABLE_ENGINE, table_engine);
-                }
-            }
-        }
-        else
-        {
-            /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
-            res.grant(AccessType::TABLE_ENGINE);
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & source = std::get<0>(source_and_table_engine);
-                if (!res.isGranted(source))
-                {
-                    const auto & table_engine = std::get<1>(source_and_table_engine);
-                    res.revoke(AccessType::TABLE_ENGINE, table_engine);
-                }
-            }
-        }
-
         return res;
     }
 
@@ -266,11 +79,194 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
+}
 
-    std::string_view getTableEngine() { return {}; }
 
-    template <typename... OtherArgs>
-    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
+{
+    AccessFlags max_flags;
+
+    auto modifier = [&](const AccessFlags & flags,
+                        const AccessFlags & min_flags_with_children,
+                        const AccessFlags & max_flags_with_children,
+                        const size_t level,
+                        bool /* grant_option */,
+                        bool leaf_or_wildcard) -> AccessFlags
+    {
+        AccessFlags res = flags;
+
+        /// CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
+        static const AccessFlags create_table = AccessType::CREATE_TABLE;
+        static const AccessFlags create_view = AccessType::CREATE_VIEW;
+        static const AccessFlags drop_table = AccessType::DROP_TABLE;
+        static const AccessFlags drop_view = AccessType::DROP_VIEW;
+        static const AccessFlags alter_table = AccessType::ALTER_TABLE;
+        static const AccessFlags alter_view = AccessType::ALTER_VIEW;
+
+        if (res & create_table)
+            res |= create_view;
+
+        if (res & drop_table)
+            res |= drop_view;
+
+        if (res & alter_table)
+            res |= alter_view;
+
+        /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
+        static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
+        if ((level == 0) && (max_flags_with_children & create_table))
+            res |= create_temporary_table;
+
+        /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
+        static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
+        if ((level == 0) && (max_flags_with_children & create_table))
+            res |= create_arbitrary_temporary_table;
+
+        /// ALTER_TTL => ALTER_MATERIALIZE_TTL
+        static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
+        static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
+        if (res & alter_ttl)
+            res |= alter_materialize_ttl;
+
+        /// RELOAD_DICTIONARY (global) => RELOAD_EMBEDDED_DICTIONARIES (global)
+        static const AccessFlags reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
+        static const AccessFlags reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
+        if ((level == 0) && (min_flags_with_children & reload_dictionary))
+            res |= reload_embedded_dictionaries;
+
+        /// any column flag => SHOW_COLUMNS => SHOW_TABLES => SHOW_DATABASES
+        ///                  any table flag => SHOW_TABLES => SHOW_DATABASES
+        ///       any dictionary flag => SHOW_DICTIONARIES => SHOW_DATABASES
+        ///                              any database flag => SHOW_DATABASES
+        static const AccessFlags show_columns = AccessType::SHOW_COLUMNS;
+        static const AccessFlags show_tables = AccessType::SHOW_TABLES;
+        static const AccessFlags show_dictionaries = AccessType::SHOW_DICTIONARIES;
+        static const AccessFlags show_tables_or_dictionaries = show_tables | show_dictionaries;
+        static const AccessFlags show_databases = AccessType::SHOW_DATABASES;
+
+        if (res & AccessFlags::allColumnFlags())
+            res |= show_columns;
+
+        if ((res & AccessFlags::allTableFlags())
+            || (level <= 2 && (res & show_columns))
+            /// GRANT SELECT(x) ON y => GRANT SELECT(x) ON y, GRANT SHOW_TABLES ON y
+            || (leaf_or_wildcard && level == 2 && (max_flags_with_children & show_columns)))
+        {
+            res |= show_tables;
+        }
+
+        if (res & AccessFlags::allDictionaryFlags())
+            res |= show_dictionaries;
+
+        if ((res & AccessFlags::allDatabaseFlags())
+            || (level <= 1 && (res & show_tables_or_dictionaries))
+            || (leaf_or_wildcard && level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
+        {
+            res |= show_databases;
+        }
+
+        static const AccessFlags alter_delete = AccessType::ALTER_DELETE;
+        static const AccessFlags select = AccessType::SELECT;
+        static const AccessFlags move_partition = AccessType::ALTER_MOVE_PARTITION;
+        if ((res & alter_delete) && (res & select) && level <= 2)
+            res |= move_partition;
+
+        max_flags |= res;
+
+        return res;
+    };
+
+    AccessRights res = access;
+    res.modifyFlags(modifier);
+
+    /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
+    if (access_control.doesSelectFromSystemDatabaseRequireGrant())
+    {
+        const char * always_accessible_tables[] = {
+            /// Constant tables
+            "one",
+
+            /// "numbers", "numbers_mt", "zeros", "zeros_mt" were excluded because they can generate lots of values and
+            /// that can decrease performance in some cases.
+
+            "contributors",
+            "licenses",
+            "time_zones",
+            "collations",
+
+            "formats",
+            "privileges",
+            "data_type_families",
+            "database_engines",
+            "table_engines",
+            "table_functions",
+            "aggregate_function_combinators",
+
+            "functions", /// Can contain user-defined functions
+
+            /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
+            "databases",
+            "tables",
+            "columns",
+
+            /// Specific to the current session
+            "settings",
+            "current_roles",
+            "enabled_roles",
+            "quota_usage"
+        };
+
+        for (const auto * table_name : always_accessible_tables)
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+
+        if (max_flags.contains(AccessType::SHOW_USERS))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
+
+        if (max_flags.contains(AccessType::SHOW_ROLES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
+
+        if (max_flags.contains(AccessType::SHOW_ROW_POLICIES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "row_policies");
+
+        if (max_flags.contains(AccessType::SHOW_SETTINGS_PROFILES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "settings_profiles");
+
+        if (max_flags.contains(AccessType::SHOW_QUOTAS))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+    }
+    else
+    {
+        res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+    }
+
+    /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
+    if (!access_control.doesSelectFromInformationSchemaRequireGrant())
+    {
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+    }
+
+    /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+    if (access_control.doesTableEnginesRequireGrant())
+    {
+        for (const auto & table_engine : source_table_engines)
+        {
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.grant(AccessType::TABLE_ENGINE, table_engine);
+        }
+    }
+    else
+    {
+        /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
+        res.grant(AccessType::TABLE_ENGINE);
+        for (const auto & table_engine : source_table_engines)
+        {
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+                res.revoke(AccessType::TABLE_ENGINE, table_engine);
+        }
+    }
+
+    return res;
 }
 
 
@@ -351,7 +347,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = getLogger("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         current_roles = user->granted_roles.findGranted(user->default_roles);
@@ -361,6 +358,13 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         current_roles = user->granted_roles.findGranted(*params.current_roles);
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.current_roles);
+    }
+
+    if (params.external_roles && !params.external_roles->empty())
+    {
+        current_roles.insert(current_roles.end(), params.external_roles->begin(), params.external_roles->end());
+        auto new_granted_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.external_roles);
+        current_roles_with_admin_option.insert(current_roles_with_admin_option.end(), new_granted_with_admin_option.begin(), new_granted_with_admin_option.end());
     }
 
     subscription_for_roles_changes.reset();
@@ -499,8 +503,7 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
         }
         else
         {
-            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
-            return unlimited_quota;
+            return nullptr;
         }
     }
 
@@ -512,7 +515,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     return getQuota()->getUsage();
 }
-
 
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
@@ -645,45 +647,26 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
-        };
+            AccessRights difference;
+            difference.grant(flags, fmt_args...);
+            AccessRights original_rights = difference;
+            difference.makeDifference(*getAccessRights());
 
-        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
-        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
-        if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
-        {
-            AccessFlags new_flags;
-
-            String table_engine_name{getTableEngine(args...)};
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
-                if (table_engine != table_engine_name) continue;
-                const auto & source = std::get<0>(source_and_table_engine);
-                /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
-                new_flags = source;
-                break;
-            }
-
-            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
-            if (new_flags.isEmpty())
-                return access_denied_no_grant(flags, args...);
-
-            if (grant_option && acs->isGranted(flags, args...))
+            if (difference == original_rights)
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. "
-                    "The required privileges have been granted, but without grant option. "
-                    "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{new_flags}.toStringForAccessTypeSource());
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
             }
 
+
             return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{new_flags}.toStringForAccessTypeSource() + (grant_option ? " WITH GRANT OPTION" : ""));
-        }
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                "(Missing permissions: {}){}",
+                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                difference.getElements().toStringWithoutOptions(),
+                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
+        };
 
         return access_denied_no_grant(flags, args...);
     }
@@ -696,15 +679,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
+        const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
+        const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;
@@ -723,8 +708,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     "For queries over HTTP, method GET implies readonly. "
                     "You should use method POST for modifying queries");
             }
-            else
-                return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
+            return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
         }
     }
 
@@ -765,17 +749,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const Acce
     {
         if (element.anyParameter())
             return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags);
-        else
-            return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.parameter);
+
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.parameter);
     }
-    else if (element.anyDatabase())
+    if (element.anyDatabase())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags);
-    else if (element.anyTable())
+    if (element.anyTable())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database);
-    else if (element.anyColumn())
+    if (element.anyColumn())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table);
-    else
-        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table, element.columns);
+
+    return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table, element.columns);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -785,16 +769,14 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessRigh
     {
         if (element.grant_option)
             return checkAccessImplHelper<throw_if_denied, true, true>(context, element);
-        else
-            return checkAccessImplHelper<throw_if_denied, grant_option, true>(context, element);
+
+        return checkAccessImplHelper<throw_if_denied, grant_option, true>(context, element);
     }
-    else
-    {
-        if (element.grant_option)
-            return checkAccessImplHelper<throw_if_denied, true, wildcard>(context, element);
-        else
-            return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, element);
-    }
+
+    if (element.grant_option)
+        return checkAccessImplHelper<throw_if_denied, true, wildcard>(context, element);
+
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, element);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>

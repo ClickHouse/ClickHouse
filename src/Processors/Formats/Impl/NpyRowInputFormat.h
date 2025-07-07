@@ -1,14 +1,13 @@
 #pragma once
 
-#include <vector>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatSettings.h>
-#include <Columns/IColumn.h>
-#include <Core/Field.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Formats/NumpyDataTypes.h>
+
+#include <vector>
 
 namespace DB
 {

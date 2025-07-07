@@ -1,10 +1,16 @@
 #pragma once
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/defines.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <variant>
 
 namespace rocksdb
 {
@@ -22,8 +28,6 @@ using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 class DiskSelector;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-
-class WriteBufferFromOwnString;
 
 class KeeperContext
 {
@@ -46,6 +50,7 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+    bool digestEnabledOnCommit() const;
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
@@ -92,8 +97,16 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
-    const CoordinationSettingsPtr & getCoordinationSettings() const;
+    const CoordinationSettings & getCoordinationSettings() const;
 
+    int64_t getPrecommitSleepMillisecondsForTesting() const;
+
+    double getPrecommitSleepProbabilityForTesting() const;
+
+    bool shouldBlockACL() const;
+    void setBlockACL(bool block_acl_);
+
+    bool isOperationSupported(Coordination::OpNum operation) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -120,6 +133,7 @@ private:
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
+    bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
@@ -151,7 +165,12 @@ private:
     std::mutex last_committed_log_idx_cv_mutex;
     std::condition_variable last_committed_log_idx_cv;
 
+    int64_t precommit_sleep_ms_for_testing = 0;
+    double precommit_sleep_probability_for_testing = 0.0;
+
     CoordinationSettingsPtr coordination_settings;
+
+    bool block_acl = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

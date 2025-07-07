@@ -1,18 +1,35 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
+struct RefreshSettingsImpl;
+class SettingsChanges;
 
-#define LIST_OF_REFRESH_SETTINGS(M, ALIAS) \
-    M(Int64, refresh_retries, 0, "How many times to retry refresh query if it fails. If all attempts fail, wait for the next refresh time according to schedule. 0 to disable retries. -1 for infinite retries.", 0) \
-    M(UInt64, refresh_retry_initial_backoff_ms, 100, "Delay before the first retry if refresh query fails (if refresh_retries setting is not zero). Each subsequent retry doubles the delay, up to refresh_retry_max_backoff_ms.", 0) \
-    M(UInt64, refresh_retry_max_backoff_ms, 60'000, "Limit on the exponential growth of delay between refresh attempts, if they keep failing and refresh_retries is positive.", 0) \
+/// List of available types supported in RabbitMQSettings object
+#define REFRESH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, Int64) \
+    M(CLASS_NAME, UInt64)
 
+REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_TRAIT)
 
-DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
+struct RefreshSettings
+{
+    RefreshSettings();
+    RefreshSettings(const RefreshSettings & settings);
+    RefreshSettings(RefreshSettings && settings) noexcept;
+    ~RefreshSettings();
 
-struct RefreshSettings : public BaseSettings<RefreshSettingsTraits> {};
+    RefreshSettings & operator=(const RefreshSettings & other);
 
+    REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+
+    void applyChanges(const SettingsChanges & changes);
+
+private:
+    std::unique_ptr<RefreshSettingsImpl> impl;
+};
 }

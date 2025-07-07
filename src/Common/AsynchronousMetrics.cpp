@@ -1,23 +1,21 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
+#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
-#include <base/errnoToString.h>
 #include <base/find_symbols.h>
-#include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
-#include <Common/filesystemHelpers.h>
+#include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/ServerSettings.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <chrono>
 #include <string_view>
 
 #include "config.h"
@@ -26,9 +24,18 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if defined(OS_LINUX)
+#    include <netinet/tcp.h>
+#endif
+
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+}
 
 namespace ErrorCodes
 {
@@ -71,17 +78,21 @@ AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
-    bool update_rss_)
+    bool update_rss_,
+    const ContextPtr & context_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , update_jemalloc_epoch(update_jemalloc_epoch_)
     , update_rss(update_rss_)
+    , context(context_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
+    openFileIfExists("/proc/net/tcp", net_tcp);
+    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
@@ -103,18 +114,15 @@ AsynchronousMetrics::AsynchronousMetrics(
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
-    if (!cgroupcpu_stat && !cgroupcpuacct_stat)
-    {
-        /// The following metrics are not cgroup-aware and we've found cgroup-specific metric files for the similar metrics,
-        /// so we're better not reporting them at all to avoid confusion
-        openFileIfExists("/proc/loadavg", loadavg);
-        openFileIfExists("/proc/stat", proc_stat);
-        openFileIfExists("/proc/uptime", uptime);
-    }
+    openFileIfExists("/proc/loadavg", loadavg);
+    openFileIfExists("/proc/stat", proc_stat);
+    openFileIfExists("/proc/uptime", uptime);
 
-    /// The same story for memory metrics
-    if (!cgroupmem_limit_in_bytes)
-        openFileIfExists("/proc/meminfo", meminfo);
+    openFileIfExists("/proc/meminfo", meminfo);
+
+    openFileIfExists("/proc/pressure/memory", memory_pressure);
+    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+    openFileIfExists("/proc/pressure/io", io_pressure);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -141,8 +149,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
             /// Sometimes indices are from zero sometimes from one.
             if (thermal_device_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         file->rewind();
@@ -210,8 +217,7 @@ void AsynchronousMetrics::openEDAC() TSA_REQUIRES(data_mutex)
         {
             if (edac_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         edac.emplace_back();
@@ -236,8 +242,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
         {
             if (hwmon_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         String hwmon_name;
@@ -258,8 +263,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             {
                 if (sensor_index == 0)
                     continue;
-                else
-                    break;
+                break;
             }
 
             std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(sensor_value_file);
@@ -335,8 +339,14 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock(data_mutex);
+    SharedLockGuard lock(values_mutex);
     return values;
+}
+
+auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
+{
+    const auto it = metric_values.find(metric);
+    return it != metric_values.end() ? it->second.value : default_value;
 }
 
 namespace
@@ -736,7 +746,89 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+void readPressureFile(
+    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
+    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
+{
+    in.rewind();
+    /// The shape of this file is:
+    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+    /// We need the first field to capture whether it's a partial or total stall.
+    /// We also ignore the time averages as well. Recording the counter (the last field)
+    /// lets us recreate any average, with better identification of any short spikes
+    while (!in.eof())
+    {
+        String stall_type;
+        readStringUntilWhitespace(stall_type, in);
+
+        String skip;
+        // skip avg10=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg60=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg300=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip total=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+
+        uint64_t counter;
+        readText(counter, in);
+
+        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
+
+        if (!first_run)
+        {
+            uint64_t prev = prev_pressure_vals[metric_key];
+
+                uint64_t delta = counter - prev;
+            new_values[metric_key] = AsynchronousMetricValue(delta,
+                "Microseconds of stall time since last measurement."
+                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
+        }
+
+        prev_pressure_vals[metric_key] = counter;
+        skipToNextLineOrEOF(in);
+    }
+}
 #endif
+
+// Warnings for pending mutations
+void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
+{
+    // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
+    // Warnings for part mutations
+    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
+    auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
+
+    if (num_pending_mutations > max_pending_mutations_to_warn)
+    {
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+            PreformattedMessage::create("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
+    }
+    if (num_pending_mutations <= max_pending_mutations_to_warn)
+        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
+
+    if (auto num_pending_mutations_over_execution_time = tryGetMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
+        num_pending_mutations_over_execution_time > 0)
+    {
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
+            PreformattedMessage::create(
+                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
+                num_pending_mutations_over_execution_time));
+    }
+    else
+    {
+        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
+    }
+}
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
@@ -806,6 +898,22 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             " The large values of this metric are totally normal, and makes only technical sense."};
         new_values["MemoryResident"] = { data.resident,
             "The amount of physical memory used by the server process, in bytes." };
+
+        UInt64 page_cache_bytes = 0;
+        if (context && context->getPageCache())
+            page_cache_bytes = context->getPageCache()->sizeInBytes();
+
+        UInt64 resident_without_page_cache = (data.resident > page_cache_bytes)
+                                          ? (data.resident - page_cache_bytes)
+                                          : 0;
+
+        new_values["MemoryResidentWithoutPageCache"] = {
+            resident_without_page_cache,
+            "The amount of physical memory used by the server process, excluding userspace page cache, in bytes. "
+            "This provides a more accurate view of actual memory usage when userspace page cache is utilized. "
+            "When userspace page cache is disabled, this value equals MemoryResident."
+        };
+
 #if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
@@ -969,7 +1077,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    if (cgroupcpu_stat || cgroupcpuacct_stat)
+    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
+    if (cgroup_cpu_metrics_present)
     {
         try
         {
@@ -1007,8 +1116,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 {
                     if (auto hz = sysconf(_SC_CLK_TCK); hz != -1)
                         return hz;
-                    else
-                        throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+                    throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
                 };
                 const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : get_clock_ticks();
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
@@ -1030,7 +1138,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
         }
     }
-    else if (proc_stat)
+    if (proc_stat)
     {
         try
         {
@@ -1054,6 +1162,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
+                    if (cgroup_cpu_metrics_present)
+                    {
+                        /// Skip the CPU metrics if we already have them from cgroup
+                        ProcStatValuesCPU current_values{};
+                        current_values.read(*proc_stat);
+                        continue;
+                    }
+
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1140,7 +1256,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0)
+                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
@@ -1174,7 +1290,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    else if (meminfo)
+    if (meminfo)
     {
         try
         {
@@ -1317,6 +1433,46 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+
+    if (cpu_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/cpu", memory_pressure);
+        }
+    }
+
+    if (memory_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/memory", memory_pressure);
+        }
+    }
+
+    if (io_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/io", io_pressure);
+        }
+    }
+
     if (file_nr)
     {
         try
@@ -1370,7 +1526,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-6;
+            static constexpr double time_multiplier = 1e-3;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1566,6 +1722,132 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
         }
+    }
+
+    if (net_tcp || net_tcp6)
+    {
+        UInt64 total_sockets = 0;
+        UInt64 sockets_by_state[16] = {};
+        UInt64 transmit_queue_size = 0;
+        UInt64 receive_queue_size = 0;
+        UInt64 unrecovered_retransmits = 0;
+        std::unordered_set<std::string> remote_addresses;
+
+        auto process_net = [&](const char * path, auto & file)
+        {
+            try
+            {
+                file->rewind();
+                /// Header
+                skipToNextLineOrEOF(*file);
+
+                while (!file->eof())
+                {
+                    /// Line number
+                    skipWhitespaceIfAny(*file, true);
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Local address and port
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Remote address and port
+                    String remote_address_and_port;
+                    readStringUntilWhitespace(remote_address_and_port, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
+                        remote_address_and_port.resize(pos);
+                    remote_addresses.emplace(remote_address_and_port);
+
+                    /// Socket state
+                    UInt8 state = 0;
+                    char state_hex[2]{};
+                    readPODBinary(state_hex, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    state = unhex2(state_hex);
+                    if (state < 16)
+                        ++sockets_by_state[state];
+
+                    /// tx_queue:rx_queue
+                    String tx_rx_queue;
+                    readStringUntilWhitespace(tx_rx_queue, *file);
+                    skipWhitespaceIfAny(*file, true);
+                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
+                    {
+                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
+                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
+
+                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
+                        {
+                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
+                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
+
+                            transmit_queue_size += tx_queue_size;
+                            receive_queue_size += rx_queue_size;
+                        }
+                    }
+
+                    /// tr:when
+                    skipStringUntilWhitespace(*file);
+                    skipWhitespaceIfAny(*file, true);
+
+                    /// Retransmits
+                    String retransmits_str;
+                    readStringUntilWhitespace(retransmits_str, *file);
+                    if (retransmits_str.size() == 8)
+                    {
+                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
+                        unrecovered_retransmits += retransmits;
+                    }
+
+                    skipToNextLineOrEOF(*file);
+                    ++total_sockets;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                openFileIfExists(path, file);
+            }
+        };
+
+        if (net_tcp)
+            process_net("/proc/net/tcp", net_tcp);
+
+        if (net_tcp6)
+            process_net("/proc/net/tcp6", net_tcp6);
+
+        new_values["NetworkTCPSockets"] = { total_sockets,
+            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
+
+        auto process_socket_state = [&](UInt8 state, const char * description)
+        {
+            if (state < 16 && sockets_by_state[state])
+                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
+                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
+        };
+
+        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
+        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
+        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
+        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
+        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
+        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
+        process_socket_state(TCP_CLOSE, "CLOSE");
+        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
+        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
+        process_socket_state(TCP_LISTEN, "LISTEN");
+        process_socket_state(TCP_CLOSING, "CLOSING");
+
+        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
+            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
+            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
+            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
+        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
+            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
     }
 
     if (vm_max_map_count)
@@ -1764,8 +2046,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             auto it = metric_map.find(name);
             if (it == metric_map.end())
                 return { nullptr, nullptr };
-            else
-                return it->second;
+            return it->second;
         };
 
         auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
@@ -1788,8 +2069,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             auto it = metric_map.find(name);
             if (it == metric_map.end())
                 return { nullptr, nullptr };
-            else
-                return it->second;
+            return it->second;
         };
 
         const auto server_metrics = protocol_server_metrics_func();
@@ -1803,6 +2083,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+
     /// Add more metrics as you wish.
 
     updateImpl(update_time, current_time, force_update, first_run, new_values);
@@ -1813,8 +2095,15 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     first_run = false;
 
-    // Finally, update the current metrics.
-    values = new_values;
+    // Finally, update the current metrics and warnings
+    {
+        std::lock_guard values_lock(values_mutex);
+        values.swap(new_values);
+
+        // These methods look at Asynchronous metrics and add,update or remove warnings
+        // which later get inserted into the system.warnings table:
+        processWarningForMutationStats(new_values);
+    }
 }
 
 }

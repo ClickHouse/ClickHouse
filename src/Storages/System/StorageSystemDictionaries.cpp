@@ -15,7 +15,8 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <base/map.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -93,8 +94,9 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"lifetime_max", std::make_shared<DataTypeUInt64>(), "Maximum lifetime of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if invalidate_query is set, then only if it has changed). Set in seconds."},
         {"loading_start_time", std::make_shared<DataTypeDateTime>(), "Start time for loading the dictionary."},
         {"last_successful_update_time", std::make_shared<DataTypeDateTime>(), "End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes."},
+        {"error_count", std::make_shared<DataTypeUInt64>(), "Number of errors since last successful loading. Helps to monitor some troubles with dictionary sources and investigate the causes."},
         {"loading_duration", std::make_shared<DataTypeFloat32>(), "Duration of a dictionary loading."},
-        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created."},
+        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created."},
         {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
     };
 }
@@ -136,15 +138,19 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         if (dict_structure)
         {
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->getKeysNames(), [](auto & name) { return name; }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->getKeysNames() | std::views::transform([](auto & name) { return name; })});
 
             if (dict_structure->id)
                 res_columns[i++]->insert(Array({"UInt64"}));
             else
-                res_columns[i++]->insert(collections::map<Array>(*dict_structure->key, [](auto & attr) { return attr.type->getName(); }));
+                res_columns[i++]->insert(Array{
+                    std::from_range_t{}, *dict_structure->key | std::views::transform([](auto & attr) { return attr.type->getName(); })});
 
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.name; }));
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.name; })});
+            res_columns[i++]->insert(Array{
+                std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.type->getName(); })});
         }
         else
         {
@@ -177,6 +183,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.last_successful_update_time)));
+        res_columns[i++]->insert(load_result.error_count);
         res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
 
         if (last_exception)

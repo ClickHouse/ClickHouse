@@ -35,11 +35,24 @@ namespace
                 return false;
 
             String maybe_new_name;
-            if (!parseUserName(pos, expected, maybe_new_name))
+            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
                 return false;
 
             new_name.emplace(std::move(maybe_new_name));
             return true;
+        });
+    }
+
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
         });
     }
 
@@ -106,6 +119,11 @@ namespace
                     type = AuthenticationType::SHA256_PASSWORD;
                     expect_hash = true;
                 }
+                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::SCRAM_SHA256_PASSWORD;
+                    expect_hash = true;
+                }
                 else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
                 {
                     type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
@@ -140,7 +158,7 @@ namespace
                 if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
 
-                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
+                if (expect_hash && (type == AuthenticationType::SHA256_PASSWORD || type == AuthenticationType::SCRAM_SHA256_PASSWORD))
                 {
                     if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
                     {
@@ -223,6 +241,8 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
+            parseValidUntil(pos, expected, auth_data->valid_until);
+
             return true;
         });
     }
@@ -282,6 +302,8 @@ namespace
             {
                 authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
+
+                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
 
                 return true;
             }
@@ -410,20 +432,31 @@ namespace
     }
 
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
-                return false;
-
-            ASTPtr new_settings_ast;
+            ASTPtr ast;
             ParserSettingsProfileElements elements_p;
             elements_p.useIDMode(id_mode);
-            if (!elements_p.parse(pos, new_settings_ast, expected))
+            if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
+            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
+            return true;
+        });
+    }
+
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            ParserAlterSettingsProfileElements elements_p;
+            if (!elements_p.parse(pos, ast, expected))
+                return false;
+
+            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
             return true;
         });
     }
@@ -468,19 +501,6 @@ namespace
 
             default_database = typeid_cast<std::shared_ptr<ASTDatabaseOrNone>>(ast);
             return true;
-        });
-    }
-
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-                return false;
-
-            ParserStringAndSubstitution until_p;
-
-            return until_p.parse(pos, valid_until, expected);
         });
     }
 
@@ -540,10 +560,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     ASTPtr names_ast;
-    if (!ParserUserNamesWithHost{}.parse(pos, names_ast, expected))
+    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
         return false;
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
-    auto names_ref = names->names;
+
+    auto pos_after_parsing_names = pos;
 
     std::optional<String> new_name;
     std::optional<AllowedClientHosts> hosts;
@@ -552,9 +573,10 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
-    ASTPtr valid_until;
+    ASTPtr global_valid_until;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -568,20 +590,27 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
 
-            if (!parsed_identified_with && alter)
+            if (parsed_identified_with)
+            {
+                continue;
+            }
+            else if (alter)
             {
                 parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
+                if (parsed_add_identified_with)
+                {
+                    continue;
+                }
             }
         }
 
         if (!reset_authentication_methods_to_new && alter && auth_data.empty())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
-        }
-
-        if (!valid_until)
-        {
-            parseValidUntil(pos, expected, valid_until);
+            if (reset_authentication_methods_to_new)
+            {
+                continue;
+            }
         }
 
         AllowedClientHosts new_hosts;
@@ -593,14 +622,27 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
         }
 
-        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
-        if (parseSettings(pos, expected, attach_mode, new_settings))
+        if (alter)
         {
-            if (!settings)
-                settings = std::make_shared<ASTSettingsProfileElements>();
-
-            insertAtEnd(settings->elements, std::move(new_settings));
-            continue;
+            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            if (parseAlterSettings(pos, expected, new_alter_settings))
+            {
+                if (!alter_settings)
+                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
+                alter_settings->add(std::move(*new_alter_settings));
+                continue;
+            }
+        }
+        else
+        {
+            std::shared_ptr<ASTSettingsProfileElements> new_settings;
+            if (parseSettings(pos, expected, attach_mode, new_settings))
+            {
+                if (!settings)
+                    settings = std::make_shared<ASTSettingsProfileElements>();
+                settings->add(std::move(*new_settings));
+                continue;
+            }
         }
 
         if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
@@ -640,6 +682,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
+        if (auth_data.empty() && !global_valid_until)
+        {
+            if (parseValidUntil(pos, expected, global_valid_until))
+            {
+                continue;
+            }
+        }
+
         break;
     }
 
@@ -647,13 +697,15 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         String common_host_pattern;
         if (names->getHostPatternIfCommon(common_host_pattern) && !common_host_pattern.empty())
-        {
             hosts.emplace().addLikePattern(common_host_pattern);
-            names->concatParts();
-        }
     }
-    else if (alter)
-        names->concatParts();
+
+    bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
+
+    if (alter_query_with_no_changes)
+    {
+        return false;
+    }
 
     auto query = std::make_shared<ASTCreateUserQuery>();
     node = query;
@@ -672,9 +724,10 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
+    query->alter_settings = std::move(alter_settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
-    query->valid_until = std::move(valid_until);
+    query->global_valid_until = std::move(global_valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -685,8 +738,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(authentication_method);
     }
 
-    if (query->valid_until)
-        query->children.push_back(query->valid_until);
+    if (query->global_valid_until)
+        query->children.push_back(query->global_valid_until);
 
     return true;
 }

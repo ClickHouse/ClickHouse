@@ -125,7 +125,7 @@ protected:
     virtual void logRevision() const;
 
     /// thread safe
-    virtual void handleSignal(int signal_id);
+    void handleSignal(int signal_id);
 
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
@@ -134,8 +134,6 @@ protected:
     void setupWatchdog();
 
     void waitForTerminationRequest() override;
-    /// thread safe
-    virtual void onInterruptSignals(int signal_id);
 
     template <class Daemon>
     static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();
@@ -187,8 +185,7 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 
     if (ptr)
         return std::optional<std::reference_wrapper<Daemon>>(*ptr);
-    else
-        return {};
+    return {};
 }
 
 #if defined(OS_LINUX)

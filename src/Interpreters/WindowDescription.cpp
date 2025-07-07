@@ -4,7 +4,7 @@
 #include <Interpreters/WindowDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 
 namespace DB
@@ -159,7 +159,7 @@ void WindowFrame::checkValid() const
         if (begin_preceding && end_preceding)
         {
             /// we can't compare Fields using operator<= if fields have different types
-            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), end_offset, begin_offset);
+            begin_less_equal_end = accurateLessOrEqual(end_offset, begin_offset);
         }
         else if (begin_preceding && !end_preceding)
         {
@@ -171,7 +171,7 @@ void WindowFrame::checkValid() const
         }
         else /* if (!begin_preceding && !end_preceding) */
         {
-            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), begin_offset, end_offset);
+            begin_less_equal_end = accurateLessOrEqual(begin_offset, end_offset);
         }
 
         if (!begin_less_equal_end)

@@ -84,7 +84,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
-            else if (parseUserNames(pos, expected, names))
+            else if (parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             {
             }
             else if (plural)
@@ -107,7 +107,8 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         case AccessEntityType::ROW_POLICY:
         {
             ASTPtr ast;
-            String database, table_name;
+            String database;
+            String table_name;
             bool wildcard = false;
             bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))

@@ -7,11 +7,13 @@ using namespace DB;
 
 TEST(Common, makeRegexpPatternFromGlobs)
 {
-
     EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/*"), "/[^/]*");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{123}"), "(123)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{test}"), "(test)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{test.tar.gz}"), "(test\\.tar\\.gz)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*_{{a,b,c,d}}/?.csv"), "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv");
     /* Regex Parsing for {..} can have three possible cases
        1) The left range width == the right range width

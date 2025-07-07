@@ -1,12 +1,12 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
-#include <variant>
-#include <cstdint>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
@@ -60,6 +60,8 @@ protected:
             /// Note: std::variant can be used. But move constructor for it can't be inlined.
             Chunk chunk;
             std::exception_ptr exception;
+
+            bool isEmpty() const { return chunk.empty() && !exception; }
         };
 
     private:

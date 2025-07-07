@@ -2,7 +2,6 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
@@ -43,8 +42,8 @@ namespace
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            /// Grants with grant option after other grants.
-            /// Revoke grant option after normal revokes.
+            /// Grants with a grant option after other grants.
+            /// Revoke the grant option after normal revokes.
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
@@ -253,7 +252,7 @@ namespace
   * node3: GRANT ON db.table*  (matches db.table, db.table1)
   * node4: GRANT ON db.table   (matches db.table)
   *
-  * If too paths have the same prefix, the tree splits in between:
+  * If two paths have the same prefix, the tree splits in between:
   *
   * GRANT ON team.*
   * GRANT ON test.table
@@ -559,7 +558,7 @@ public:
 
     void makeUnion(const Node & other)
     {
-        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
+        /// We need these tmp nodes because union/intersect operations use the `getLeaf` function, which can't be made const.
         /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
         ///
         /// Tree1:
@@ -591,6 +590,14 @@ public:
         makeIntersectionRec(result, rhs);
         children = std::move(result.children);
         flags &= other.flags;
+        optimizeTree();
+    }
+
+    void makeDifference(const Node & other)
+    {
+        Node rhs = other;
+        makeDifferenceRec(*this, rhs);
+        flags -= other.flags;
         optimizeTree();
     }
 
@@ -1109,6 +1116,32 @@ private:
         result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
+    void makeDifferenceRec(Node & result, Node & rhs)
+    {
+        if (rhs.children)
+        {
+            for (auto & rhs_child : *rhs.children)
+            {
+                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        if (children)
+        {
+            for (auto & lhs_child : *children)
+            {
+                auto & result_child = result.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                auto & rhs_child = rhs.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        result.flags = flags - rhs.flags;
+        result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
+    }
+
     void modifyFlagsRec(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed)
     {
         if (children)
@@ -1121,10 +1154,13 @@ private:
 
         calculateMinMaxFlags();
 
-        if (!isLeaf())
-            return;
-
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {
@@ -1152,6 +1188,9 @@ AccessRights::AccessRights(const AccessRights & src)
 
 AccessRights & AccessRights::operator =(const AccessRights & src)
 {
+    if (&src == this)
+        return *this;
+
     if (src.root)
         root = std::make_unique<Node>(*src.root);
     else
@@ -1178,7 +1217,13 @@ AccessRights::AccessRights(const AccessRightsElement & element)
 
 AccessRights::AccessRights(const AccessRightsElements & elements)
 {
-    grant(elements);
+    for (const auto & element : elements)
+    {
+        if (element.is_partial_revoke)
+            revoke(element);
+        else
+            grant(element);
+    }
 }
 
 
@@ -1426,18 +1471,18 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 template <bool grant_option>
 bool AccessRights::containsImpl(const AccessRights & other) const
 {
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    auto helper = [&](const std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node) -> bool
     {
         if (!root_node)
-            return !other.root;
-        if (!other.root)
+            return !other_root_node;
+        if (!other_root_node)
             return true;
-        return root_node->contains(*other.root);
+        return root_node->contains(*other_root_node);
     };
     if constexpr (grant_option)
-        return helper(root_with_grant_option);
+        return helper(root_with_grant_option, other.root);
     else
-        return helper(root);
+        return helper(root, other.root) && helper(root_with_grant_option, other.root_with_grant_option);
 }
 
 
@@ -1449,17 +1494,17 @@ bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) cons
     {
         if (element.anyParameter())
             return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-        else
-            return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
+
+        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
     }
-    else if (element.anyDatabase())
+    if (element.anyDatabase())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-    else if (element.anyTable())
+    if (element.anyTable())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database);
-    else if (element.anyColumn())
+    if (element.anyColumn())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table);
-    else
-        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+
+    return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1469,16 +1514,14 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
     {
         if (element.grant_option)
             return isGrantedImplHelper<true, true>(element);
-        else
-            return isGrantedImplHelper<grant_option, true>(element);
+
+        return isGrantedImplHelper<grant_option, true>(element);
     }
-    else
-    {
-        if (element.grant_option)
-            return isGrantedImplHelper<true, wildcard>(element);
-        else
-            return isGrantedImplHelper<grant_option, wildcard>(element);
-    }
+
+    if (element.grant_option)
+        return isGrantedImplHelper<true, wildcard>(element);
+
+    return isGrantedImplHelper<grant_option, wildcard>(element);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1581,12 +1624,29 @@ void AccessRights::makeIntersection(const AccessRights & other)
 }
 
 
+void AccessRights::makeDifference(const AccessRights & other)
+{
+    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
+    {
+        if (!root_node || !other_root_node)
+            return;
+
+        root_node->makeDifference(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
+    };
+    helper(root, other.root);
+    helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
 void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
 {
     if (!root)
         return;
 
-    bool flags_added, flags_removed;
+    bool flags_added;
+    bool flags_removed;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);

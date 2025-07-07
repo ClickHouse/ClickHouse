@@ -1,23 +1,36 @@
-#include "ICompressionCodec.h"
+#include <Compression/ICompressionCodec.h>
 
 #include <cassert>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
 #include <Common/Exception.h>
-#include <Parsers/queryToString.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Compression/CompressionCodecMultiple.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric Compressing;
+    extern const Metric Decompressing;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
+void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
+{
+    if (!needsVectorDimensionUpfront())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
+}
 
 void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
 {
@@ -65,8 +78,8 @@ ASTPtr ICompressionCodec::getCodecDesc() const
     /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
         return arguments->children[0];
-    else  /// Otherwise we have multiple codecs and return them as expression list
-        return arguments;
+    /// Otherwise we have multiple codecs and return them as expression list
+    return arguments;
 }
 
 UInt64 ICompressionCodec::getHash() const
@@ -80,6 +93,8 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 {
     assert(source != nullptr && dest != nullptr);
 
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
+
     dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
     /// Write data from header_size
@@ -92,6 +107,8 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
     assert(source != nullptr && dest != nullptr);
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::Decompressing);
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)

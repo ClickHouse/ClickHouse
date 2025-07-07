@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -17,6 +19,8 @@ public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
     PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
+
+    ~PartitionedSink() override;
 
     String getName() const override { return "PartitionedSink"; }
 

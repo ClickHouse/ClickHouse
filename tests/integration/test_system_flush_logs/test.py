@@ -3,8 +3,9 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -26,16 +27,18 @@ def test_system_logs_exists():
     system_logs = [
         ("system.text_log", 1),
         ("system.query_log", 1),
+        ("system.query_metric_log", 1),
         ("system.query_thread_log", 1),
         ("system.part_log", 1),
         ("system.trace_log", 1),
         ("system.metric_log", 1),
         ("system.error_log", 1),
+        ("system.latency_log", 1),
     ]
 
-    node.query("SYSTEM FLUSH LOGS")
     for table, exists in system_logs:
-        q = "SELECT * FROM {}".format(table)
+        node.query(f"SYSTEM FLUSH LOGS {table}")
+        q = f"SELECT * FROM {table}"
         if exists:
             node.query(q)
         else:
@@ -178,3 +181,11 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
     node.exec_in_container(
         ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
+
+
+def test_system_warnings(start_cluster):
+    if node.is_debug_build():
+        assert node.query("SELECT count() > 1 FROM system.warnings") == "1\n"
+
+    node.query("TRUNCATE TABLE system.warnings")
+    assert node.query("SELECT count() FROM system.warnings") == "0\n"

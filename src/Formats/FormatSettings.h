@@ -21,10 +21,6 @@ namespace DB
   */
 struct FormatSettings
 {
-    /// Format will be used for streaming. Not every formats support it
-    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
-    bool enable_streaming = false;
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
@@ -49,6 +45,10 @@ struct FormatSettings
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
+
+    inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
+    inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
+    inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
 
     enum class DateTimeInputFormat : uint8_t
     {
@@ -78,6 +78,7 @@ struct FormatSettings
     };
 
     UInt64 schema_inference_make_columns_nullable = 1;
+    bool schema_inference_make_json_columns_nullable = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -87,10 +88,7 @@ struct FormatSettings
         Numeric
     };
 
-    struct
-    {
-        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
-    } interval{};
+    IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
 
     enum class DateTimeOverflowBehavior : uint8_t
     {
@@ -98,6 +96,8 @@ struct FormatSettings
         Throw,
         Saturate
     };
+
+    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
@@ -113,6 +113,8 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
+    size_t max_block_size_bytes = 0;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -126,6 +128,9 @@ struct FormatSettings
         UInt64 max_binary_array_size = 1_GiB;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
+        bool read_json_as_string = false;
+        bool write_json_as_string = false;
+        bool read_bool_field_as_int = false;
     } binary{};
 
     struct
@@ -154,6 +159,8 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
+    bool allow_special_bool_values = true;
+    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {
@@ -216,7 +223,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = false;
+        bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
@@ -239,6 +246,9 @@ struct FormatSettings
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
+        bool pretty_print = true;
+        char pretty_print_indent = ' ';
+        size_t pretty_print_indent_multiplier = 4;
     } json{};
 
     struct
@@ -272,38 +282,62 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
+        bool bloom_filter_push_down = true;
         bool use_native_reader = false;
-        std::unordered_set<int> skip_row_groups = {};
+        bool enable_json_parsing = true;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
+        bool output_compliant_nested_types = true;
+        bool write_page_index = false;
+        bool write_bloom_filter = false;
+        bool enable_row_group_prefetch = true;
+        std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
-        ParquetVersion output_version;
+        ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
-        bool output_compliant_nested_types = true;
+        uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
-        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
+        double bloom_filter_bits_per_value = 10.5;
+        size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
+        bool allow_geoparquet_parser = true;
+        bool write_geometadata = true;
     } parquet{};
 
     struct Pretty
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_column_name_width_cut_to = 24;
+        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
+        bool highlight_trailing_spaces = true;
+        bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 
-        bool output_format_pretty_row_numbers = false;
-        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_footer_column_names = 1;
-        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
+        bool row_numbers = false;
+        UInt64 single_large_number_tip_threshold = 1'000'000;
+        UInt64 display_footer_column_names = 1;
+        UInt64 display_footer_column_names_min_rows = 50;
+
+        UInt64 squash_consecutive_ms = 50;
+        UInt64 squash_max_wait_ms = 1000;
+        /// Set to 2 for auto
+        UInt64 glue_chunks = 2;
+
+        bool fallback_to_vertical = true;
+        UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
+        UInt64 fallback_to_vertical_min_columns = 5;
+        UInt64 fallback_to_vertical_min_table_width = 250;
 
         enum class Charset : uint8_t
         {
@@ -355,7 +389,9 @@ struct FormatSettings
 
     struct
     {
+        std::string format_schema_source = FORMAT_SCHEMA_SOURCE_FILE;
         std::string format_schema;
+        std::string format_schema_message_name;
         std::string format_schema_path;
         bool is_server = false;
         std::string output_format_schema;
@@ -415,6 +451,8 @@ struct FormatSettings
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
+        bool dictionary_as_low_cardinality = true;
+        String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
@@ -473,6 +511,8 @@ struct FormatSettings
         bool allow_types_conversion = true;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
+        bool write_json_as_string = false;
+        bool use_flattened_dynamic_and_json_serialization = false;
     } native{};
 
     struct

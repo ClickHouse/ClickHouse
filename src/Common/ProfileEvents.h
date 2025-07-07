@@ -2,6 +2,7 @@
 
 #include <Common/VariableContext.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
 #include <Poco/Message.h>
@@ -38,6 +39,9 @@ namespace ProfileEvents
         };
         Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
+        Timer(Timer && other) noexcept
+            : counters(other.counters), timer_event(std::move(other.timer_event)), watch(std::move(other.watch)), resolution(std::move(other.resolution))
+            {}
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
         void restart() { watch.restart(); }
@@ -57,8 +61,10 @@ namespace ProfileEvents
         Counter * counters = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
-        Counters * parent = nullptr;
+        std::atomic<Counters *> parent = {};
         bool trace_profile_events = false;
+        Counter prev_cpu_wait_microseconds = 0;
+        Counter prev_cpu_virtual_time_microseconds = 0;
 
     public:
 
@@ -71,6 +77,8 @@ namespace ProfileEvents
         explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
+        Counters(Counters && src) noexcept;
+
         Counter & operator[] (Event event)
         {
             return counters[event];
@@ -80,6 +88,8 @@ namespace ProfileEvents
         {
             return counters[event];
         }
+
+        double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
 
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
@@ -111,13 +121,13 @@ namespace ProfileEvents
         /// Get parent (thread unsafe)
         Counters * getParent()
         {
-            return parent;
+            return parent.load(std::memory_order_relaxed);
         }
 
         /// Set parent (thread unsafe)
         void setParent(Counters * parent_)
         {
-            parent = parent_;
+            parent.store(parent_, std::memory_order_relaxed);
         }
 
         void setTraceProfileEvents(bool value)
@@ -149,6 +159,15 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
+    enum class ValueType : uint8_t
+    {
+        Number,
+        Bytes,
+        Milliseconds,
+        Microseconds,
+        Nanoseconds,
+    };
+
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -159,14 +178,24 @@ namespace ProfileEvents
     /// Increment a counter for log messages.
     void incrementForLogMessage(Poco::Message::Priority priority);
 
+    /// Increment time consumed by logging.
+    void incrementLoggerElapsedNanoseconds(UInt64 ns);
+
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
 
+    /// Get value type of event by identifier. Returns enum value.
+    ValueType getValueType(Event event);
+
     /// Get index just after last event identifier.
     Event end();
+
+    /// Check CPU overload. If should_throw parameter is set, the method will throw when the server is overloaded.
+    /// Otherwise, this method will return true if the server is overloaded.
+    bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw);
 
     struct CountersIncrement
     {

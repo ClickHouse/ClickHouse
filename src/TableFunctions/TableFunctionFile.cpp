@@ -2,7 +2,7 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -65,8 +65,7 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-    else
-        return FormatFactory::instance().tryGetFormatFromFileName(filename);
+    return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
 StoragePtr TableFunctionFile::getStorage(
@@ -75,7 +74,8 @@ StoragePtr TableFunctionFile::getStorage(
     const ColumnsDescription & columns,
     ContextPtr global_context,
     const std::string & table_name,
-    const std::string & compression_method_) const
+    const std::string & compression_method_,
+    bool /*is_insert_query*/) const
 {
     // For `file` table function, we are going to use format settings from the
     // query context.

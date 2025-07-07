@@ -99,7 +99,7 @@ public:
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
-    void resize(size_t num_streams, bool force = false, bool strict = false);
+    void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
     /// Concat some ports to have no more then size outputs.
     /// This method is needed for Merge table engine in case of reading from many tables.
@@ -109,9 +109,9 @@ public:
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
-        std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
-        size_t max_threads_limit = 0,
-        Processors * collected_processors = nullptr);
+            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+            size_t max_threads_limit = 0,
+            Processors * collected_processors = nullptr);
 
     static QueryPipelineBuilderPtr mergePipelines(
         QueryPipelineBuilderPtr left,
@@ -128,12 +128,30 @@ public:
         JoinPtr join,
         const Block & output_header,
         size_t max_block_size,
+        size_t min_block_size_rows,
+        size_t min_block_size_bytes,
         size_t max_streams,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr join,
+        const Block & output_header,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
     /// Join two independent pipelines, processing them simultaneously.
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShaped(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr table_join,
+        const Block & out_header,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr table_join,

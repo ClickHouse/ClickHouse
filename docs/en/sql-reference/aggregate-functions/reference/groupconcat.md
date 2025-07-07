@@ -1,26 +1,35 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupconcat
+description: 'Calculates a concatenated string from a group of strings, optionally
+  separated by a delimiter, and optionally limited by a maximum number of elements.'
+sidebar_label: 'groupConcat'
 sidebar_position: 363
-sidebar_label: groupConcat
-title: groupConcat
+slug: /sql-reference/aggregate-functions/reference/groupconcat
+title: 'groupConcat'
 ---
 
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
 
 **Syntax**
 
-``` sql
+```sql
 groupConcat[(delimiter [, limit])](expression);
 ```
 
 **Arguments**
 
-- `expression` — The expression or column name that outputs strings to be concatenated..
+- `expression` — The expression or column name that outputs strings to be concatenated.
+- `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.
+
+
+**Parameters**
+
 - `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string if not specified.
 - `limit` — A positive [integer](../../../sql-reference/data-types/int-uint.md) specifying the maximum number of elements to concatenate. If more elements are present, excess elements are ignored. This parameter is optional.
 
 :::note
 If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
+
+Also, if different delimiters are specified as parameters and arguments, the delimiter from arguments will be used only.
 :::
 
 **Returned value**
@@ -31,25 +40,25 @@ If delimiter is specified without limit, it must be the first parameter. If both
 
 Input table:
 
-``` text
+```text
 ┌─id─┬─name─┐
-│ 1  │  John│
-│ 2  │  Jane│
-│ 3  │   Bob│
+│  1 │ John │
+│  2 │ Jane │
+│  3 │ Bob  │
 └────┴──────┘
 ```
 
-1.	Basic usage without a delimiter:
+1.    Basic usage without a delimiter:
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(Name) FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 JohnJaneBob
 ```
 
@@ -60,13 +69,19 @@ This concatenates all names into one continuous string without any separator.
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(', ')(Name)  FROM Employees;
+```
+
+or
+
+```sql
+SELECT groupConcat(Name, ', ')  FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 John, Jane, Bob
 ```
 
@@ -77,13 +92,13 @@ This output shows the names separated by a comma followed by a space.
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(', ', 2)(Name) FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 John, Jane
 ```
 

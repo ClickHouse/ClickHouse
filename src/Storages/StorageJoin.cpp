@@ -4,6 +4,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
@@ -156,7 +157,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -217,8 +218,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         std::vector<std::string> files;
@@ -231,9 +231,14 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
         disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
+    else
+    {
+        compressed_backup_buf.cancel();
+        backup_buf->cancel();
+    }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -298,11 +303,20 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
         right_sample_block.insert(getRightSampleBlock().getByName(name));
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, acquire_timeout);
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 
     return join_clone;
+}
+
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+
+    return getJoinLocked(analyzed_join, query_id, acquire_timeout, required_columns_names);
 }
 
 void StorageJoin::insertBlock(const Block & block, ContextPtr context)
@@ -324,14 +338,16 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalRows(const Settings &settings) const
+std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
+    const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalBytes(const Settings &settings) const
+std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
 {
+    const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalByteCount();
 }
@@ -359,6 +375,20 @@ void StorageJoin::convertRightBlock(Block & block) const
 
 void registerStorageJoin(StorageFactory & factory)
 {
+    auto has_builtin_fn = [](std::string_view name)
+    {
+        static const std::unordered_set<std::string_view> valid_settings
+            = {"join_use_nulls",
+               "max_rows_in_join",
+               "max_bytes_in_join",
+               "join_overflow_mode",
+               "join_any_take_last_row",
+               "any_join_distinct_right_table_keys",
+               "disk",
+               "persistent"};
+        return valid_settings.contains(name);
+    };
+
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
@@ -486,7 +516,13 @@ void registerStorageJoin(StorageFactory & factory)
             persistent);
     };
 
-    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "Join",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .has_builtin_setting_fn = has_builtin_fn,
+        });
 }
 
 template <typename T>
@@ -552,7 +588,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->blocks.empty())
+        if (join->data->columns.empty())
             return {};
 
         Chunk chunk;
@@ -691,7 +727,7 @@ private:
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*it->getMapped().block->getByPosition(column_indices[j]).column.get(), it->getMapped().row_num);
+                columns[j]->insertFrom(*(*it->getMapped().columns)[column_indices[j]], it->getMapped().row_num);
         ++rows_added;
     }
 
@@ -705,7 +741,7 @@ private:
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
+                    columns[j]->insertFrom(*(*ref_it->columns)[column_indices[j]], ref_it->row_num);
             ++rows_added;
         }
     }

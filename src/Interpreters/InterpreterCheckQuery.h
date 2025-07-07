@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 

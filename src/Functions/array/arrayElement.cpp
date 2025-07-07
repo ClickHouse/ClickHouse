@@ -5,7 +5,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1101,8 +1100,8 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
 
     if (col_nullable)
         return ColumnArray::create(ColumnNullable::create(std::move(res_string), std::move(res_string_null_map)), std::move(res_offsets));
-    else
-        return ColumnArray::create(std::move(res_string), std::move(res_offsets));
+
+    return ColumnArray::create(std::move(res_string), std::move(res_offsets));
 }
 
 template <ArrayElementExceptionMode mode>
@@ -1408,8 +1407,8 @@ ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & c
         /// To keep return type consistency, we need to unwrap the Nullable column returned by ArrayElementOrNull(T1) and ArrayElementOrNull(T2)
         return nullable_column->getNestedColumnPtr();
     }
-    else
-        return column;
+
+    return column;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -1804,7 +1803,7 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
             using DataColumn = std::decay_t<decltype(data_column)>;
             if (index.getType() != Field::Types::String)
                 return false;
-            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<const String &>()};
+            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
         });
@@ -2055,55 +2054,53 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
         if (builder && res->canBeInsideNullable())
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
-        else
-            return res;
+
+        return res;
+    }
+
+    /// Perform initializations.
+    ArrayImpl::NullMapBuilder<mode> builder;
+    ColumnsWithTypeAndName source_columns;
+
+    const DataTypePtr & input_type
+        = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
+              .getNestedType();
+
+    DataTypePtr tmp_ret_type = removeNullable(result_type);
+
+    if (col_array)
+    {
+        const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
+        const auto & nested_col = nullable_col.getNestedColumnPtr();
+
+        /// Put nested_col inside a ColumnArray.
+        source_columns = {
+            {ColumnArray::create(nested_col, col_array->getOffsetsPtr()), std::make_shared<DataTypeArray>(input_type), ""},
+            arguments[1],
+        };
+
+        builder.initSource(nullable_col.getNullMapData().data());
     }
     else
     {
-        /// Perform initializations.
-        ArrayImpl::NullMapBuilder<mode> builder;
-        ColumnsWithTypeAndName source_columns;
+        /// ColumnConst(ColumnArray(ColumnNullable(...)))
+        const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
+        const auto & nested_col = nullable_col.getNestedColumnPtr();
 
-        const DataTypePtr & input_type
-            = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
-                  .getNestedType();
+        source_columns = {
+            {ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), input_rows_count),
+             std::make_shared<DataTypeArray>(input_type),
+             ""},
+            arguments[1],
+        };
 
-        DataTypePtr tmp_ret_type = removeNullable(result_type);
-
-        if (col_array)
-        {
-            const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumnPtr();
-
-            /// Put nested_col inside a ColumnArray.
-            source_columns = {
-                {ColumnArray::create(nested_col, col_array->getOffsetsPtr()), std::make_shared<DataTypeArray>(input_type), ""},
-                arguments[1],
-            };
-
-            builder.initSource(nullable_col.getNullMapData().data());
-        }
-        else
-        {
-            /// ColumnConst(ColumnArray(ColumnNullable(...)))
-            const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumnPtr();
-
-            source_columns = {
-                {ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), input_rows_count),
-                 std::make_shared<DataTypeArray>(input_type),
-                 ""},
-                arguments[1],
-            };
-
-            builder.initSource(nullable_col.getNullMapData().data());
-        }
-
-        auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
-
-        /// Store the result.
-        return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+        builder.initSource(nullable_col.getNullMapData().data());
     }
+
+    auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
+
+    /// Store the result.
+    return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2116,9 +2113,9 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     ColumnPtr res;
     if ((res = executeTuple(arguments, input_rows_count)))
         return res;
-    else if ((res = executeMap2(arguments, input_rows_count)))
+    if ((res = executeMap2(arguments, input_rows_count)))
         return res;
-    else if (!isColumnConst(*arguments[1].column))
+    if (!isColumnConst(*arguments[1].column))
     {
         if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
               || (res = executeArgument<UInt16>(arguments, result_type, builder, input_rows_count))
@@ -2205,23 +2202,61 @@ ColumnPtr FunctionArrayElement<mode>::perform(
 
 REGISTER_FUNCTION(ArrayElement)
 {
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(FunctionDocumentation{
-        .description = R"(
-Get the element with the index `n` from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
+    FunctionDocumentation::Description description = R"(
+Gets the element of the provided array with index `n` where `n` can be any integer type.
+If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
+except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
+
+Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
+
+Operator `[n]` provides the same functionality.
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
+        {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
+        {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
+        {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
+
+    FunctionDocumentation::Description description_null = R"(
+Gets the element of the provided array with index `n` where `n` can be any integer type.
+If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
+
+:::note
+Arrays in ClickHouse are one-indexed.
+:::
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+)";
+    FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arrays)";
+    FunctionDocumentation::Arguments arguments_null = {
+        {"arrays", "Arbitrary number of array arguments.", {"Array"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_null = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_null = {
+        {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
+        {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
+    FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, returned_value_null, examples_null, introduced_in_null, category_null};
 
-If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
-        )",
-        .categories{"Array"}});
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(FunctionDocumentation{
-        .description = R"(
-Get the element with the index `n`from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
-
-Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
-
-If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
-        )",
-        .categories{"Array"}});
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }
 }

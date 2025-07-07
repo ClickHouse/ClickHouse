@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include <Common/SipHash.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -39,6 +40,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
         case QueryTreeNodeType::QUERY: return "QUERY";
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
+        case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
     }
@@ -127,9 +129,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_child && !rhs_child)
                 continue;
-            else if (lhs_child && !rhs_child)
+            if (lhs_child && !rhs_child)
                 return false;
-            else if (!lhs_child && rhs_child)
+            if (!lhs_child && rhs_child)
                 return false;
 
             nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
@@ -150,9 +152,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_strong_pointer && !rhs_strong_pointer)
                 continue;
-            else if (lhs_strong_pointer && !rhs_strong_pointer)
+            if (lhs_strong_pointer && !rhs_strong_pointer)
                 return false;
-            else if (!lhs_strong_pointer && rhs_strong_pointer)
+            if (!lhs_strong_pointer && rhs_strong_pointer)
                 return false;
 
             nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
@@ -336,7 +338,7 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
 
     return converted_node;
@@ -373,6 +375,23 @@ void IQueryTreeNode::dumpTree(WriteBuffer & buffer) const
 {
     FormatState state;
     dumpTreeImpl(buffer, state, 0);
+}
+
+void IQueryTreeNode::updateHashForType(HashState & hash_state, const DataTypePtr & type)
+{
+    if (type->hasDynamicSubcolumnsDeprecated())
+    {
+        auto name = type->getName();
+        hash_state.update(name.size());
+        hash_state.update(name);
+        return;
+    }
+
+    WriteBufferFromOwnString buf;
+    encodeDataType(type, buf);
+    buf.finalize();
+    hash_state.update(buf.str().size());
+    hash_state.update(buf.str());
 }
 
 }

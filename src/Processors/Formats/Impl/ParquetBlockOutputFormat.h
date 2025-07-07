@@ -35,8 +35,6 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
-    String getContentType() const override { return "application/octet-stream"; }
-
 private:
     struct MemoryToken
     {
@@ -137,9 +135,8 @@ private:
 
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
-    std::vector<parquet::format::RowGroup> row_groups_complete;
-    size_t base_offset = 0;
-
+    Parquet::FileWriteState file_state;
+    size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
     std::condition_variable condvar; // wakes up consume()

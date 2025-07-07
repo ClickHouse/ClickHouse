@@ -1,5 +1,4 @@
 #include <Access/UsersConfigAccessStorage.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -28,6 +27,7 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -120,12 +120,14 @@ namespace
         bool allow_no_password,
         bool allow_plaintext_password)
     {
+        const bool validate = true;
         auto user = std::make_shared<User>();
         user->setName(user_name);
         String user_config = "users." + user_name;
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
+        bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
@@ -140,7 +142,7 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
@@ -156,17 +158,22 @@ namespace
         if (has_password_plaintext)
         {
             user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"));
+            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), validate);
         }
         else if (has_password_sha256_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
+        }
+        else if (has_scram_password_sha256_hex)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
         }
         else if (has_password_double_sha1_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
         }
         else if (has_ldap)
         {
@@ -190,6 +197,7 @@ namespace
         }
         else if (has_certificates)
         {
+#if USE_SSL
             user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
 
             /// Fill list of allowed certificates.
@@ -200,18 +208,21 @@ namespace
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
+                    user->authentication_methods.back().addSSLCertificateSubject(X509Certificate::Subjects::Type::CN, std::move(value));
                 }
                 else if (key.starts_with("subject_alt_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
                     if (value.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ssl_certificates.subject_alt_name to not be empty");
-                    user->authentication_methods.back().addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
+                    user->authentication_methods.back().addSSLCertificateSubject(X509Certificate::Subjects::Type::SAN, std::move(value));
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else if (has_ssh_keys)
         {
@@ -226,7 +237,8 @@ namespace
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
                 if (entry.starts_with("ssh_key"))
                 {
-                    String type, base64_key;
+                    String type;
+                    String base64_key;
                     if (config.has(conf_pref + "type"))
                     {
                         type = config.getString(conf_pref + "type");
@@ -648,8 +660,7 @@ namespace
                 {
                     if (users_without_row_policies_can_read_rows)
                         continue;
-                    else
-                        filter = "1";
+                    filter = "1";
                 }
 
                 auto policy = std::make_shared<RowPolicy>();
@@ -688,6 +699,19 @@ namespace
                     profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                /// When the xml config is parsed, the first constraint_type is parsed as `disallowed` and the subsequent ones are parsed as
+                /// disallowed[1], disallowed[2] and so on. So, both `disallowed` and `disallowed[` should be considered as valid constraint types.
+                /// Example:
+                ///   <constraints>
+                ///     <max_execution_time>
+                ///         <max>50</max>
+                ///         <disallowed>3</disallowed>
+                ///         <disallowed>4</disallowed>
+                ///         <disallowed>5</disallowed>
+                ///     </max_execution_time>
+                /// </constraints>
+                else if (constraint_type == "disallowed" || constraint_type.starts_with("disallowed["))
+                    profile_element.disallowed_values.push_back(settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type)));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
                     writability_count++;

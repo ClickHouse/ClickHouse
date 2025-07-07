@@ -4,6 +4,7 @@ import string
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
@@ -61,7 +62,7 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_METADATA_VERSION
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + 1
 )
 
 
@@ -92,7 +93,7 @@ def create_table(cluster, additional_settings=None):
         create_table_statement += ","
         create_table_statement += additional_settings
 
-    list(cluster.instances.values())[0].query(create_table_statement)
+    list(cluster.instances.values())[0].query_with_retry(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
@@ -115,7 +116,7 @@ def drop_table(cluster):
 def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
     create_table(
         cluster,
-        additional_settings="min_rows_for_wide_part={}".format(min_rows_for_wide_part),
+        additional_settings="min_rows_for_wide_part={}, write_marks_for_substreams_in_compact_parts={}".format(min_rows_for_wide_part, 1),
     )
 
     all_values = ""
@@ -201,17 +202,18 @@ def test_drop_table(cluster):
         node.query("drop table test_drop_table")
 
         # It should not be possible to create a replica with the same path until the previous one is completely dropped
-        for i in range(0, 100):
+        for i in range(0, 50):
             node.query_and_get_answer_with_error(
                 "create table if not exists test_drop_table (n int) "
                 "engine=ReplicatedMergeTree('/test/drop_table', '1') "
                 "order by n partition by n % 99 settings storage_policy='s3'"
+                "settings keeper_max_retries=3, keeper_retry_max_backoff_ms=500"
             )
             time.sleep(0.2)
 
     # Wait for drop to actually finish
     node.wait_for_log_line(
-        "Removing metadata /var/lib/clickhouse/metadata_dropped/default.test_drop_table",
+        "Removing metadata metadata_dropped/default.test_drop_table",
         timeout=60,
         look_behind_lines=1000000,
     )

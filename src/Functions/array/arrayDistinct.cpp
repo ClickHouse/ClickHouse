@@ -289,7 +289,18 @@ void FunctionArrayDistinct::executeHashed(
 
 REGISTER_FUNCTION(ArrayDistinct)
 {
-    factory.registerFunction<FunctionArrayDistinct>();
+    FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array.";
+    FunctionDocumentation::Syntax syntax = "arrayDistinct(arr)";
+    FunctionDocumentation::Arguments argument = {
+        {"arr", "Array for which to extract distinct elements.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array containing the distinct elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayDistinct([1, 2, 2, 3, 1]);", "[1,2,3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDistinct>(documentation);
 }
 
 }

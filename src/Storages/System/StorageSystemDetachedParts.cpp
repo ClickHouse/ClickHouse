@@ -29,7 +29,7 @@ namespace
 void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UInt64 & total_size)
 {
     /// Files or directories of detached part may not exist. Only count the size of existing files.
-    if (disk->isFile(from))
+    if (disk->existsFile(from))
     {
         total_size += disk->getFileSize(from);
     }
@@ -211,7 +211,7 @@ private:
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(current_info.table);
             if (columns_mask[src_index++])
-                new_columns[res_index++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[res_index++]->insert(p.valid_name ? p.getPartitionId() : Field());
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.dir_name);
             if (columns_mask[src_index++])
@@ -288,7 +288,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -365,7 +365,7 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(getOutputHeader(), state, columns_mask, max_block_size);
         pipe.addSource(std::move(source));
     }
 

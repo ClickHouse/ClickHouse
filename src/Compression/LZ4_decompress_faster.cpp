@@ -1,4 +1,4 @@
-#include "LZ4_decompress_faster.h"
+#include <Compression/LZ4_decompress_faster.h>
 
 #include <cstring>
 #include <iostream>
@@ -680,10 +680,8 @@ bool decompress(
 
         return success;
     }
-    else
-    {
-        return decompressImpl<8, false>(source, dest, source_size, dest_size);
-    }
+
+    return decompressImpl<8, false>(source, dest, source_size, dest_size);
 }
 
 

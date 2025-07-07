@@ -29,6 +29,8 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
 
+    /** Check if identifier is a parameter */
+    bool isParam() const;
     /** Get the query param out of a non-compound identifier. */
     ASTPtr getParam() const;
 
@@ -58,7 +60,7 @@ public:
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:

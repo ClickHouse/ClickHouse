@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/SipHash.h>
 
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
@@ -24,6 +23,7 @@ namespace DB
 {
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer2
 {
@@ -46,13 +46,7 @@ public:
 
     struct OnlyTopicNameAndPartitionIdHash
     {
-        std::size_t operator()(const TopicPartition & tp) const
-        {
-            SipHash s;
-            s.update(tp.topic);
-            s.update(tp.partition_id);
-            return s.get64();
-        }
+        std::size_t operator()(const TopicPartition & tp) const;
     };
 
     struct OnlyTopicNameAndPartitionIdEquality
@@ -91,13 +85,6 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
-    // Returns the topic partitions that the consumer got from rebalancing the consumer group. If the consumer received
-    // no topic partitions or all of them were revoked, it returns a null pointer.
-    TopicPartitions const * getKafkaAssignment() const;
-
-    // As the main source of offsets is not Kafka, the offsets needs to be pushed to the consumer from outside
-    // Returns true if it received new assignment and internal state should be updated by updateOffsets
-    bool needsOffsetUpdate() const { return needs_offset_update; }
     void updateOffsets(const TopicPartitions & topic_partitions);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
@@ -115,7 +102,8 @@ public:
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
 
-    void subscribeIfNotSubscribedYet();
+    // Build the full list of partitions for our subscribed topics.
+    TopicPartitions getAllTopicPartitions() const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -138,20 +126,16 @@ private:
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
     const std::atomic<bool> & stopped;
-    bool is_subscribed = false;
 
     // order is important, need to be destructed before consumer
     Messages messages;
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    std::optional<TopicPartitions> assignment;
-    bool needs_offset_update{false};
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
-    void drainConsumerQueue();
     void resetIfStopped();
     void filterMessageErrors();
     ReadBufferPtr getNextMessage();

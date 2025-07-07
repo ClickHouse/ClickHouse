@@ -2,10 +2,15 @@
 
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
+
 #include "config.h"
+
 
 namespace DB
 {
@@ -61,11 +66,75 @@ struct LocalDefinition
     static constexpr auto storage_type_name = "Local";
 };
 
-template <typename Definition, typename Configuration>
+struct IcebergDefinition
+{
+    static constexpr auto name = "iceberg";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct IcebergS3Definition
+{
+    static constexpr auto name = "icebergS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct IcebergAzureDefinition
+{
+    static constexpr auto name = "icebergAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+struct IcebergLocalDefinition
+{
+    static constexpr auto name = "icebergLocal";
+    static constexpr auto storage_type_name = "Local";
+};
+
+struct IcebergHDFSDefinition
+{
+    static constexpr auto name = "icebergHDFS";
+    static constexpr auto storage_type_name = "HDFS";
+};
+
+struct DeltaLakeDefinition
+{
+    static constexpr auto name = "deltaLake";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct DeltaLakeS3Definition
+{
+    static constexpr auto name = "deltaLakeS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct DeltaLakeAzureDefinition
+{
+    static constexpr auto name = "deltaLakeAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+struct DeltaLakeLocalDefinition // New definition for local Delta Lake
+{
+    static constexpr auto name = "deltaLakeLocal";
+    static constexpr auto storage_type_name = "Local";
+};
+
+struct HudiDefinition
+{
+    static constexpr auto name = "hudi";
+    static constexpr auto storage_type_name = "S3";
+};
+
+template <typename Definition, typename Configuration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction
 {
 public:
     static constexpr auto name = Definition::name;
+    using Settings = typename std::conditional_t<
+        is_data_lake,
+        DataLakeStorageSettings,
+        StorageObjectStorageSettings>;
 
     String getName() const override { return name; }
 
@@ -96,7 +165,16 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context);
+        if constexpr (is_data_lake)
+        {
+            Configuration configuration(createEmptySettings());
+            if (configuration.format == "auto")
+                configuration.format = "Parquet"; /// Default format of data lakes.
+
+            configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
+        }
+        else
+            Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
 protected:
@@ -117,9 +195,12 @@ protected:
     ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
     ConfigurationPtr getConfiguration() const;
 
+    static std::shared_ptr<Settings> createEmptySettings();
+
     mutable ConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
+    std::shared_ptr<Settings> settings;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
@@ -137,4 +218,33 @@ using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFS
 #endif
 
 using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
+
+
+#if USE_AVRO
+#    if USE_AWS_S3
+using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration, true>;
+using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration, true>;
+#    endif
+#    if USE_AZURE_BLOB_STORAGE
+using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureIcebergConfiguration, true>;
+#    endif
+#    if USE_HDFS
+using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration, true>;
+#    endif
+using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration, true>;
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_AWS_S3
+using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration, true>;
+using TableFunctionDeltaLakeS3 = TableFunctionObjectStorage<DeltaLakeS3Definition, StorageS3DeltaLakeConfiguration, true>;
+#endif
+#if USE_AZURE_BLOB_STORAGE
+using TableFunctionDeltaLakeAzure = TableFunctionObjectStorage<DeltaLakeAzureDefinition, StorageAzureDeltaLakeConfiguration, true>;
+#endif
+// New alias for local Delta Lake table function
+using TableFunctionDeltaLakeLocal = TableFunctionObjectStorage<DeltaLakeLocalDefinition, StorageLocalDeltaLakeConfiguration, true>;
+#endif
+#if USE_AWS_S3
+using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration, true>;
+#endif
 }

@@ -6,6 +6,8 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -28,7 +30,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -47,18 +48,23 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -74,6 +80,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_window_view_fire_signal_timeout;
     extern const SettingsSeconds window_view_clean_interval;
     extern const SettingsSeconds window_view_heartbeat_interval;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
 }
 
 namespace ErrorCodes
@@ -91,6 +98,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -125,14 +133,14 @@ namespace
                     if (!data.window_function)
                     {
                         if (data.check_duplicate_window)
-                            data.serialized_window_function = serializeAST(*temp_node);
+                            data.serialized_window_function = temp_node->formatWithSecretsOneLine();
                         t->name = "windowID";
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
                     }
                     else
                     {
-                        if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
+                        if (data.check_duplicate_window && temp_node->formatWithSecretsOneLine() != data.serialized_window_function)
                             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
                         t->name = "windowID";
                     }
@@ -235,12 +243,10 @@ namespace
                 /// tuple(windowID(timestamp, toIntervalSecond('5')))
                 return;
             }
-            else
-            {
-                /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
-                /// and other...
-                node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
-            }
+
+            /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
+            /// and other...
+            node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
         }
 
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
@@ -409,13 +415,11 @@ UInt32 StorageWindowView::getCleanupBound()
         return 0;
     if (is_proctime)
         return max_fired_watermark;
-    else
-    {
-        auto w_bound = max_fired_watermark;
-        if (allowed_lateness)
-            w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
-        return getWindowLowerBound(w_bound);
-    }
+
+    auto w_bound = max_fired_watermark;
+    if (allowed_lateness)
+        w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+    return getWindowLowerBound(w_bound);
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -495,8 +499,6 @@ void StorageWindowView::alter(
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -595,7 +597,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
     auto adding_column_actions
-        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings::fromContext(getContext()));
+        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings(getContext()));
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, adding_column_actions);
@@ -609,7 +611,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+        std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -661,6 +663,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(getContext()->getSettingsRef()[Setting::use_concurrency_control]);
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
 
@@ -736,7 +739,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -806,7 +809,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
     auto inner_query_normalized = inner_query->clone();
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
@@ -926,12 +929,9 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     { \
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
-        else \
-        {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-            UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
-        }\
+        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+        return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -1171,13 +1171,13 @@ void StorageWindowView::read(
     if (query_plan.isInitialized())
     {
         auto wv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
+        auto target_header = query_plan.getCurrentHeader();
 
         if (!blocksHaveEqualStructure(wv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
                 target_header.getColumnsWithTypeAndName(), wv_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
         }
@@ -1375,10 +1375,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
                         "TIME WINDOW FUNCTION is not specified for {}", getName());
 
     is_tumble = query_info_data.is_tumble;
+    size_t required_args = is_tumble ? 2 : 3;
 
     // Parse time window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
+
+    if (arguments.size() < required_args)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too few arguments for function {}: expected at least {}, got {}", window_function.name, required_args, arguments.size());
     extractWindowArgument(
         arguments.at(1), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
@@ -1556,7 +1560,7 @@ void StorageWindowView::writeIntoWindowView(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(local_context));
+                ExpressionActionsSettings(local_context));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -1592,17 +1596,21 @@ void StorageWindowView::writeIntoWindowView(
         return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
     });
 
-    String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
-    builder.addSimpleTransform([&](const Block & stream_header)
+    bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+    if (!disable_deduplication_for_children)
     {
-        return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
-    });
-    builder.addSimpleTransform([&](const Block & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-    });
+        String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
+        });
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+        });
+    }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
@@ -1649,7 +1657,7 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
@@ -1669,12 +1677,12 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);
@@ -1697,8 +1705,6 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
-
-    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

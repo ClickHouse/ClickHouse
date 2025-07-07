@@ -58,6 +58,11 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
@@ -170,7 +175,7 @@ FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transfo
 
 **Syntax**
 
-``` sql
+```sql
 seriesPeriodDetectFFT(series);
 ```
 
@@ -189,31 +194,31 @@ Type: [Float64](../../sql-reference/data-types/float.md).
 
 Query:
 
-``` sql
+```sql
 SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌───────────print_0──────┐
 │                      3 │
 └────────────────────────┘
 ```
 
-``` sql
+```sql
 SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
 ```
 
 Result:
 
-``` text
+```text
 ┌─print_0─┐
 │       6 │
 └─────────┘
 ```
 )",
-        .categories{"Time series analysis"}});
+        .category = FunctionDocumentation::Category::TimeSeries});
 }
 }
 #endif

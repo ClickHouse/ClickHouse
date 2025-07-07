@@ -15,6 +15,7 @@ namespace
 struct MultiplyDecimalsImpl
 {
     static constexpr auto name = "multiplyDecimal";
+    static constexpr auto suitable_for_short_circuit = false;
 
     template <typename FirstType, typename SecondType>
     static Decimal256
@@ -58,58 +59,33 @@ struct MultiplyDecimalsImpl
 
 REGISTER_FUNCTION(MultiplyDecimals)
 {
-    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(FunctionDocumentation{
-        .description=R"(
-Performs multiplication on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+    FunctionDocumentation::Description description = R"(
+Performs multiplication on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note
 These functions work significantly slower than usual `multiply`.
 In case you don't really need controlled precision and/or need fast computation, consider using [multiply](#multiply)
 :::
-
-**Syntax**
-
-```sql
-multiplyDecimal(a, b[, result_scale])
-```
-
-**Arguments**
-
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   The result of multiplication with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
-
-**Example**
-
-```text
-┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
-│                                                           25.2 │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Difference from regular multiplication:**
-```sql
-SELECT toDecimal64(-12.647, 3) * toDecimal32(2.1239, 4);
-SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);
-```
-
-```text
+    )";
+    FunctionDocumentation::Syntax syntax = "multiplyDecimal(a, b[, result_scale])";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "First value.", {"Decimal"}},
+        {"b", "Second value.", {"Decimal"}},
+        {"result_scale", "Scale of result.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The result of multiplication with the given scale. Type:", {"Decimal256"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"},
+        {"Difference with regular multiplication", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", R"(
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
 └───────────────────────────────────────────────────────────┘
 ┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                                         -26.8609 │
 └──────────────────────────────────────────────────────────────────┘
-```
-
-```sql
+        )"},
+        {"Decimal overflow", R"(
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -118,17 +94,20 @@ SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     a * b;
-```
-
-```text
+        )", R"(
 ┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
 │ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
 └───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
 Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
-```
-)"});
+Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
+While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
 
+    factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(documentation);
 }
 
 }

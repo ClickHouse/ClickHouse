@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReader.h>
 
@@ -9,10 +8,10 @@
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
 
-#include "ParquetColumnReader.h"
-
 namespace DB
 {
+
+struct FormatSettings;
 
 class ParquetRecordReader
 {

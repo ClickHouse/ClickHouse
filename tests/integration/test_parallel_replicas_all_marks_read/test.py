@@ -1,8 +1,9 @@
 import json
+from random import randint
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from random import randint
 
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas_with_unavailable_nodes"
@@ -70,6 +71,7 @@ def _get_result_with_parallel_replicas(
             "cluster_for_parallel_replicas": f"{cluster_name}",
             "parallel_replicas_mark_segment_size": parallel_replicas_mark_segment_size,
             "query_id": query_id,
+            "parallel_replicas_index_analysis_only_on_coordinator": False,
         },
     )
 

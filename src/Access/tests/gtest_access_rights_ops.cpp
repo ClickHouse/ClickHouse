@@ -3,8 +3,6 @@
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
 #include <IO/WriteBufferFromString.h>
 
-#include <list>
-
 using namespace DB;
 
 TEST(AccessRights, Radix)
@@ -239,7 +237,8 @@ TEST(AccessRights, GrantWildcard)
 
 TEST(AccessRights, Union)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeUnion(rhs);
@@ -275,23 +274,6 @@ TEST(AccessRights, Union)
 
     lhs = {};
     rhs = {};
-    lhs.grant(AccessType::INSERT);
-    rhs.grant(AccessType::ALL, "db1");
-    lhs.makeUnion(rhs);
-    ASSERT_EQ(lhs.toString(),
-              "GRANT INSERT ON *.*, "
-              "GRANT SHOW, SELECT, ALTER, CREATE DATABASE, CREATE TABLE, CREATE VIEW, "
-              "CREATE DICTIONARY, DROP DATABASE, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, "
-              "TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, "
-              "SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, "
-              "SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, "
-              "SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, "
-              "SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM SYNC DATABASE REPLICA, SYSTEM FLUSH DISTRIBUTED, "
-              "SYSTEM UNLOAD PRIMARY KEY, dictGet ON db1.*, GRANT TABLE ENGINE ON db1, "
-              "GRANT SET DEFINER ON db1, GRANT NAMED COLLECTION ADMIN ON db1");
-
-    lhs = {};
-    rhs = {};
     lhs.grant(AccessType::SELECT, "db1", "tb1", Strings{"col1", "col2", "test"});
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     lhs.makeUnion(rhs);
@@ -323,7 +305,8 @@ TEST(AccessRights, Union)
 
 TEST(AccessRights, Intersection)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeIntersection(rhs);
@@ -445,9 +428,53 @@ TEST(AccessRights, Intersection)
     ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster.*");
 }
 
+TEST(AccessRights, Difference)
+{
+    AccessRights lhs;
+    AccessRights rhs;
+    lhs.grant(AccessType::SELECT);
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "system");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON system.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "toaster");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON toaster.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "toast");
+    lhs.grant(AccessType::CREATE_TABLE, "jam");
+    auto lhs_old = lhs;
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs, lhs_old);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT, "toast");
+    rhs.grant(AccessType::CREATE_TABLE, "jam");
+    lhs_old = lhs;
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs, lhs_old);
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::ALL);
+    rhs.grant(AccessType::ALL);
+    rhs.revoke(AccessType::SELECT, "system");
+    lhs.makeDifference(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON system.*");
+}
+
 TEST(AccessRights, Contains)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::SELECT, "db1");
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     ASSERT_EQ(lhs.contains(rhs), true);

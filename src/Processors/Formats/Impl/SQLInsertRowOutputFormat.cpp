@@ -1,6 +1,8 @@
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -100,6 +102,8 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     {
         return std::make_shared<SQLInsertRowOutputFormat>(buf, sample, settings);
     });
+
+    factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 }
 
 

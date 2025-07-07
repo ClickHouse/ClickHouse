@@ -79,20 +79,30 @@ struct AccessRightsElement
         return (grant_option == other.grant_option) && (is_partial_revoke == other.is_partial_revoke);
     }
 
+    /// Returns only those flags which can be granted.
+    AccessFlags getGrantableFlags() const;
+
+    /// Throws an exception if some flags can't be granted.
+    void throwIfNotGrantable() const;
+
     /// Resets flags which cannot be granted.
-    void eraseNonGrantable();
+    void eraseNotGrantable();
 
     bool isEmptyDatabase() const { return database.empty() and !anyDatabase(); }
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
+    /// Checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
+
+    void makeBackwardCompatible();
+
     bool isGlobalWithParameter() const { return access_flags.isGlobalWithParameter(); }
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    String toStringForAccessTypeSource() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
     void formatONClause(WriteBuffer & buffer, bool hilite = false) const;
@@ -111,8 +121,14 @@ public:
     bool sameDatabaseAndTable() const;
     bool sameOptions() const;
 
+    /// Throws an exception if some flags can't be granted.
+    void throwIfNotGrantable() const;
+
     /// Resets flags which cannot be granted.
-    void eraseNonGrantable();
+    void eraseNotGrantable();
+
+    /// For each element checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
@@ -120,6 +136,7 @@ public:
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
+    void formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const;
 };
 
 }

@@ -4,10 +4,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
-
-#include <Analyzer/IQueryTreeNode.h>
 
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -31,6 +28,10 @@ struct FiltersForTableExpression
 
 using FiltersForTableExpressionMap = std::map<QueryTreeNodePtr, FiltersForTableExpression>;
 
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
+using RawTableExpressionDataMap = std::unordered_map<QueryTreeNodePtr, TableExpressionData *>;
 
 class GlobalPlannerContext
 {
@@ -60,6 +61,13 @@ public:
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
+    void collectTableExpressionDataForCorrelatedColumns(
+      const QueryTreeNodePtr & table_expression_node,
+      const PlannerContextPtr & planner_context);
+
+    RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
+    const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
+
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
@@ -71,12 +79,12 @@ public:
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
+
+    /// Table expression node to data map for correlated columns sources
+    RawTableExpressionDataMap shared_table_expression_data;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
-
-class PlannerContext;
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 class PlannerContext
 {
@@ -179,6 +187,11 @@ public:
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
 private:
+
+    RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
+
+    const RawTableExpressionDataMap & getSharedTableExpressionDataMap() const noexcept { return global_planner_context->getTableExpressionDataMap(); }
+
     /// Query context
     ContextMutablePtr query_context;
 

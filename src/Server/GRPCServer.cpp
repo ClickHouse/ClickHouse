@@ -1,4 +1,4 @@
-#include "GRPCServer.h"
+#include <Server/GRPCServer.h>
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -45,6 +46,13 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
+
+#include <absl/base/log_severity.h>
+#include <absl/log/globals.h>
+#include <absl/log/initialize.h>
+#include <absl/log/log_sink_registry.h>
+
+#include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -71,6 +79,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -88,34 +97,68 @@ namespace ErrorCodes
 namespace
 {
     /// Make grpc to pass logging messages to ClickHouse logging system.
+    class GrpcLogSink : public absl::LogSink
+    {
+    public:
+        void Send(const absl::LogEntry & entry) override
+        {
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            const auto msg = std::string(entry.text_message());
+            const auto file = entry.source_filename();
+            int line = entry.source_line();
+
+            switch (entry.log_severity())
+            {
+                case absl::LogSeverity::kInfo:
+                    LOG_INFO(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kWarning:
+                    LOG_WARNING(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kError:
+                    LOG_ERROR(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kFatal:
+                    LOG_ERROR(logger, "FATAL: {} ({}:{})", msg, file, line);
+                    break;
+            }
+        }
+    };
+    GrpcLogSink grpc_log_sink;
+
+    /// See also contrib/grpc/src/core/util/log.cc
     void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
     {
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerRawPtr logger = getRawLogger("grpc");
-            gpr_set_log_function([](gpr_log_func_args* args)
-            {
-                if (args->severity == GPR_LOG_SEVERITY_DEBUG)
-                    LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
-                else if (args->severity == GPR_LOG_SEVERITY_INFO)
-                    LOG_INFO(logger, "{} ({}:{})", args->message, args->file, args->line);
-                else if (args->severity == GPR_LOG_SEVERITY_ERROR)
-                    LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
-            });
+            absl::AddLogSink(&grpc_log_sink);
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+            absl::InitializeLog();
 
-            if (config.getBool("grpc.verbose_logs", false))
-            {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+
+            const bool verbose = config.getBool("grpc.verbose_logs", false);
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            if (verbose)
                 grpc_tracer_set_enabled("all", true);
-            }
-            else if (logger->is(Poco::Message::PRIO_DEBUG))
+
+            if (logger->is(Poco::Message::PRIO_DEBUG))
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", 2);
             }
             else if (logger->is(Poco::Message::PRIO_INFORMATION))
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", -1);
+            }
+            else
+            {
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kWarning);
+                absl::SetVLogLevel("*grpc*/*", -1);
             }
         });
     }
@@ -935,9 +978,9 @@ namespace
         /// Choose output format.
         query_context->setDefaultFormat(query_info.output_format());
         if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            ast_query_with_output && ast_query_with_output->format)
+            ast_query_with_output && ast_query_with_output->format_ast)
         {
-            output_format = getIdentifierName(ast_query_with_output->format);
+            output_format = getIdentifierName(ast_query_with_output->format_ast);
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
@@ -1005,14 +1048,12 @@ namespace
         {
             if (!insert_query)
                 throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "Query requires data to insert, but it is not an INSERT query");
-            else
-            {
-                const auto & settings = query_context->getSettingsRef();
-                if (settings[Setting::throw_if_no_data_to_insert])
-                    throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-                else
-                    return;
-            }
+
+            const auto & settings = query_context->getSettingsRef();
+            if (settings[Setting::throw_if_no_data_to_insert])
+                throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+
+            return;
         }
 
         /// This is significant, because parallel parsing may be used.
@@ -1246,6 +1287,7 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())
@@ -1486,8 +1528,7 @@ namespace
         {
             if (initial_query_info_read)
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo");
-            else
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
         }
     }
 

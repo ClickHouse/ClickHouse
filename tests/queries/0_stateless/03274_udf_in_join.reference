@@ -1,0 +1,4 @@
+SELECT 1
+FROM v0
+ALL INNER JOIN v0 AS vx ON default_equals(v0.c0, vx.c0)
+1

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import pytest
-import time
 import ast
 import random
+import time
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -187,7 +188,7 @@ def test_lost_part_mutation(start_cluster):
             node.query(
                 f"CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{node.name}') ORDER BY tuple() "
                 "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0,"
-                "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000"
+                "merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=1000, max_postpone_time_for_failed_mutations_ms = 0"
             )
 
         node1.query("SYSTEM STOP MERGES mt2")

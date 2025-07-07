@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -247,15 +248,15 @@ class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        const String & uri,
-        const String & format,
+        String uri_,
+        String format_,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         const ContextPtr & context,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers = {},
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
+        const CompressionMethod & compression_method,
+        HTTPHeaderEntries headers = {},
+        String method = Poco::Net::HTTPRequest::HTTP_POST);
 
     ~StorageURLSink() override;
 
@@ -267,6 +268,16 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    void initBuffers();
+
+    String uri;
+    String format;
+    std::optional<FormatSettings> format_settings;
+    ContextPtr context;
+    ConnectionTimeouts timeouts;
+    CompressionMethod compression_method;
+    HTTPHeaderEntries headers;
+    String http_method;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
@@ -305,6 +316,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
+
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     struct Configuration : public StatelessTableEngineConfiguration
@@ -320,7 +333,7 @@ public:
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
     /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context);
+    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };

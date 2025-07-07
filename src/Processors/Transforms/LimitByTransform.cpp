@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
@@ -62,6 +63,9 @@ void LimitByTransform::transform(Chunk & chunk)
             else
                 column = column->filter(filter, inserted_count);
     }
+
+    if (rows_before_limit_at_least)
+        rows_before_limit_at_least->add(inserted_count);
 
     chunk.setColumns(std::move(columns), inserted_count);
 }

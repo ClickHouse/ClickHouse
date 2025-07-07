@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Common/isLocalAddress.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -353,7 +354,7 @@ void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const 
 }
 
 
-const String & DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
+String DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
 {
     auto it = old_to_new_database_names.find(old_database_name);
     if (it != old_to_new_database_names.end())

@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTIdentifier.h>
@@ -32,7 +33,7 @@ namespace ErrorCodes
  *
  *  This function generates a new AST with the transformed relation.
  */
-ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const std::pair<Field, Field>& range)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
 {
     const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -65,45 +66,31 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
                                             )
                                 );
     }
-    else if (comparator == "notEquals")
+    if (comparator == "notEquals")
     {
-        return makeASTFunction("or",
-                                makeASTFunction("less",
-                                            std::make_shared<ASTIdentifier>(column_name),
-                                            std::make_shared<ASTLiteral>(start_date_or_date_time)
-                                            ),
-                                makeASTFunction("greaterOrEquals",
-                                            std::make_shared<ASTIdentifier>(column_name),
-                                            std::make_shared<ASTLiteral>(end_date_or_date_time)
-                                            )
-                                );
+        return makeASTFunction(
+            "or",
+            makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
+            makeASTFunction(
+                "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time)));
     }
-    else if (comparator == "greater")
+    if (comparator == "greater")
     {
-        return makeASTFunction("greaterOrEquals",
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(end_date_or_date_time)
-                    );
+        return makeASTFunction(
+            "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
-    else if (comparator == "lessOrEquals")
+    if (comparator == "lessOrEquals")
     {
-        return makeASTFunction("less",
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(end_date_or_date_time)
-                    );
+        return makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
-    else if (comparator == "less" || comparator == "greaterOrEquals")
+    if (comparator == "less" || comparator == "greaterOrEquals")
     {
-        return makeASTFunction(comparator,
-                    std::make_shared<ASTIdentifier>(column_name),
-                    std::make_shared<ASTLiteral>(start_date_or_date_time)
-                    );
+        return makeASTFunction(
+            comparator, std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time));
     }
-    else [[unlikely]]
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",
-            comparator);
+    [[unlikely]] {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}", comparator);
     }
 }
 
@@ -127,7 +114,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     size_t func_id = function.arguments->children.size();
 
     for (size_t i = 0; i < function.arguments->children.size(); i++)
-        if (const auto * func = function.arguments->children[i]->as<ASTFunction>())
+        if (const auto * /*func*/ _ = function.arguments->children[i]->as<ASTFunction>())
             func_id = i;
 
     if (func_id == function.arguments->children.size())

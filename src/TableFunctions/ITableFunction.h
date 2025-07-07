@@ -78,14 +78,16 @@ public:
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
+    virtual bool canBeUsedToCreateTable() const { return true; }
+
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual AccessType getSourceAccessType() const;
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
 private:
     virtual StoragePtr executeImpl(

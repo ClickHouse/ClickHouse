@@ -4,6 +4,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -105,11 +106,9 @@ public:
             vector(src_data, res_data);
             return res_column;
         }
-        else
-        {
-            /// Since no element is nullable, return a constant one.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
-        }
+
+        /// Since no element is nullable, return a constant one.
+        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
 
 private:

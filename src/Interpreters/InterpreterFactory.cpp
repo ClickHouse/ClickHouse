@@ -3,13 +3,18 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -31,6 +36,7 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -40,6 +46,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
@@ -55,6 +62,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTExternalDDLQuery.h>
@@ -227,7 +235,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTExplainQuery>())
     {
         const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
+        if (kind == ASTExplainQuery::ParsedAST)
             context->setSetting("allow_experimental_analyzer", false);
 
         interpreter_name = "InterpreterExplainQuery";
@@ -304,6 +312,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterShowGrantsQuery";
     }
+    else if (query->as<ASTCheckGrantQuery>())
+    {
+        interpreter_name = "InterpreterCheckGrantQuery";
+    }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {
         interpreter_name = "InterpreterShowAccessEntitiesQuery";
@@ -332,6 +344,22 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropFunctionQuery";
     }
+    else if (query->as<ASTCreateWorkloadQuery>())
+    {
+        interpreter_name = "InterpreterCreateWorkloadQuery";
+    }
+    else if (query->as<ASTDropWorkloadQuery>())
+    {
+        interpreter_name = "InterpreterDropWorkloadQuery";
+    }
+    else if (query->as<ASTCreateResourceQuery>())
+    {
+        interpreter_name = "InterpreterCreateResourceQuery";
+    }
+    else if (query->as<ASTDropResourceQuery>())
+    {
+        interpreter_name = "InterpreterDropResourceQuery";
+    }
     else if (query->as<ASTCreateIndexQuery>())
     {
         interpreter_name = "InterpreterCreateIndexQuery";
@@ -351,6 +379,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTUpdateQuery>())
+    {
+        interpreter_name = "InterpreterUpdateQuery";
+    }
+    else if (query->as<ASTParallelWithQuery>())
+    {
+        interpreter_name = "InterpreterParallelWithQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

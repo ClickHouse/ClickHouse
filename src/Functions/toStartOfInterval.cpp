@@ -1,3 +1,4 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
@@ -225,8 +226,17 @@ public:
         if (overload == Overload::Origin)
             origin_column = arguments[2];
 
-        const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
-        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
+        const DateLUTImpl * time_zone_tmp;
+
+        if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
+        {
+            const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
+        }
+        else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
+            time_zone_tmp = &DateLUT::instance("UTC");
+
+        const DateLUTImpl & time_zone = *time_zone_tmp;
 
         ColumnPtr result_column;
         if (isDate(result_type))
@@ -379,11 +389,11 @@ private:
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
-            UInt64 origin = origin_column.column->get64(0);
+            Int64 origin = origin_column.column->getInt(0);
             for (size_t i = 0; i != size; ++i)
             {
-                UInt64 time_arg = time_data[i];
-                if (origin > static_cast<size_t>(time_arg))
+                Int64 time_arg = time_data[i];
+                if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
                 if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
@@ -420,6 +430,8 @@ private:
 REGISTER_FUNCTION(ToStartOfInterval)
 {
     factory.registerFunction<FunctionToStartOfInterval>();
+    factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }
 
 }

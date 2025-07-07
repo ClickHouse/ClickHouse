@@ -17,10 +17,10 @@ REGISTER_FUNCTION(Sin)
         FunctionDocumentation{
             .description = "Returns the sine of the argument.",
             .syntax = "sin(x)",
-            .arguments = {{"x", "The number whose sine will be returned. (U)Int*, Float* or Decimal*."}},
-            .returned_value = "The sine of x.",
+            .arguments = {{"x", "The number whose sine will be returned.", {"(U)Int*", "Float*", "Decimal*"}}},
+            .returned_value = {"Returns the sine of x."},
             .examples = {{.name = "simple", .query = "SELECT sin(1.23)", .result = "0.9424888019316975"}},
-            .categories{"Mathematical", "Trigonometric"}},
+            .category = FunctionDocumentation::Category::Mathematical},
         FunctionFactory::Case::Insensitive);
 }
 

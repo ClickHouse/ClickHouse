@@ -23,6 +23,7 @@ limitations under the License. */
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
 }
 
 namespace ErrorCodes
@@ -135,7 +137,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 
             break;
         }
-        else if (auto subquery = extractTableExpression(*inner_select_query, 0))
+        if (auto subquery = extractTableExpression(*inner_select_query, 0))
         {
             inner_query = subquery;
         }
@@ -240,8 +242,6 @@ StorageLiveView::StorageLiveView(
 
     auto select_query_clone = query.select->clone();
     select_query_description = buildSelectQueryDescription(select_query_clone, getContext());
-
-    DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
@@ -435,15 +435,19 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
             return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
         });
 
-        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const Block & stream_header)
+        bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+        if (!disable_deduplication_for_children)
         {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
+            String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+            });
+            builder.addSimpleTransform([&](const Block & stream_header)
+            {
+                return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+            });
+        }
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {
@@ -452,6 +456,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingAsyncPipelineExecutor executor(pipeline);
+        pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -588,6 +593,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
     Block this_block;
 
     while (executor.pull(this_block))
@@ -694,6 +700,7 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {

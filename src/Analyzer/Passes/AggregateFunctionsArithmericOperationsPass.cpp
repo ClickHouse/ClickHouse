@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -118,10 +117,9 @@ public:
         {
             if (aggregate_function_name == "min")
                 return "max";
-            else if (aggregate_function_name == "max")
+            if (aggregate_function_name == "max")
                 return "min";
-            else
-                return aggregate_function_name;
+            return aggregate_function_name;
         };
 
         size_t arithmetic_function_argument_index = 0;

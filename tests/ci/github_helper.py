@@ -173,8 +173,9 @@ class GitHub(github.Github):
                     raise
                 self.sleep_on_rate_limit()
         logger.debug("Caching PR #%s from API in %s", number, cache_file)
-        with open(cache_file, "wb") as prfd:
-            self.dump(pr, prfd)  # type: ignore
+        if self.cache_path.is_dir():
+            with open(cache_file, "wb") as prfd:
+                self.dump(pr, prfd)  # type: ignore
         return pr
 
     def get_user_cached(
@@ -197,8 +198,9 @@ class GitHub(github.Github):
                     raise
                 self.sleep_on_rate_limit()
         logger.debug("Caching user %s from API in %s", login, cache_file)
-        with open(cache_file, "wb") as prfd:
-            self.dump(user, prfd)  # type: ignore
+        if self.cache_path.is_dir():
+            with open(cache_file, "wb") as prfd:
+                self.dump(user, prfd)  # type: ignore
         return user
 
     def _get_cached(self, path: Path):  # type: ignore
@@ -253,7 +255,7 @@ class GitHub(github.Github):
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, value: str) -> None:
+    def cache_path(self, value: Union[str, Path]) -> None:
         self._cache_path = Path(value)
         if self._cache_path.exists():
             assert self._cache_path.is_dir()

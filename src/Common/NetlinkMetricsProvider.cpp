@@ -1,4 +1,4 @@
-#include "NetlinkMetricsProvider.h"
+#include <Common/NetlinkMetricsProvider.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -7,7 +7,7 @@
 
 #if defined(OS_LINUX)
 
-#include "hasLinuxCapability.h"
+#include <Common/hasLinuxCapability.h>
 #include <base/unaligned.h>
 #include <base/getThreadId.h>
 #include <Common/logger_useful.h>
@@ -114,8 +114,7 @@ struct NetlinkMessage
             {
                 if (bytes_sent < 0 && errno == EAGAIN)
                     continue;
-                else
-                    throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
+                throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
             }
 
             if (bytes_sent > request_size)
@@ -283,7 +282,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
     {
         if (netlink_socket_fd >= 0)
         {
-            int err = close(netlink_socket_fd);
+            [[maybe_unused]] int err = close(netlink_socket_fd);
             chassert(!err || errno == EINTR);
         }
         throw;
@@ -320,7 +319,7 @@ NetlinkMetricsProvider::~NetlinkMetricsProvider()
 {
     if (netlink_socket_fd >= 0)
     {
-        int err = close(netlink_socket_fd);
+        [[maybe_unused]] int err = close(netlink_socket_fd);
         chassert(!err || errno == EINTR);
     }
 }

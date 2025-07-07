@@ -1,14 +1,20 @@
-#include "LibraryBridgeHelper.h"
+#include <BridgeHelper/LibraryBridgeHelper.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsSeconds http_receive_timeout;
+}
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
 }
 
 LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
@@ -18,14 +24,14 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
     , http_timeout(context_->getGlobalContext()->getSettingsRef()[Setting::http_receive_timeout].value)
     , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
     , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
-    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
+    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
 }
 
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    getContext()->addBridgeCommand(std::move(cmd));
+    ShellCommandsHolder::instance().addCommand(std::move(cmd));
 }
 
 

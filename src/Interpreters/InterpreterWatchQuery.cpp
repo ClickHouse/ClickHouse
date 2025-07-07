@@ -28,7 +28,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_live_view;
     extern const SettingsBool allow_experimental_window_view;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
@@ -80,7 +80,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     if (storage_name == "LiveView" && !getContext()->getSettingsRef()[Setting::allow_experimental_live_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
-    else if (storage_name == "WindowView" && !getContext()->getSettingsRef()[Setting::allow_experimental_window_view])
+    if (storage_name == "WindowView" && !getContext()->getSettingsRef()[Setting::allow_experimental_window_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 

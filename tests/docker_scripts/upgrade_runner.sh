@@ -22,11 +22,12 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
+PACKAGES_DIR=/repo/tests/ci/tmp/packages
 # shellcheck disable=SC2016
-previous_release_tag=$(dpkg-deb --showformat='${Version}' --show package_folder/clickhouse-client*.deb | get_previous_release_tag)
+previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -63,7 +64,13 @@ install_packages previous_release_package_folder
 function save_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+}
+
+function save_mergetree_settings_clean()
+{
+  local out=$1 && shift
+  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.merge_tree_settings into outfile '$out'\"" --log-out /dev/null
 }
 
 # We save the (numeric) version of the old server to compare setting changes between the 2
@@ -76,6 +83,7 @@ function save_major_version()
 }
 
 save_settings_clean 'old_settings.native'
+save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
 
 # Initial run without S3 to create system.*_log on local file system to make it
@@ -123,7 +131,7 @@ stop 300 false
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # Install and start new server
-install_packages package_folder
+install_packages $PACKAGES_DIR
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
@@ -135,10 +143,13 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
+  save_mergetree_settings_clean 'new_merge_tree_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
+  CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
   CREATE TABLE old_version AS file('old_version.native');
   CREATE TABLE new_settings AS file('new_settings.native');
+  CREATE TABLE new_merge_tree_settings AS file('new_merge_tree_settings.native');
 
   SELECT
       name,
@@ -146,18 +157,36 @@ then
       old_settings.value AS old_value
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
-  WHERE (new_value != old_value)
-      AND NOT (startsWith(new_value, 'auto(') AND old_value LIKE '%auto(%')
+  WHERE (old_value IS NULL OR new_value != old_value)
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
   SETTINGS join_use_nulls = 1
   INTO OUTFILE 'changed_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+
+  SELECT
+      name,
+      new_merge_tree_settings.value AS new_value,
+      old_merge_tree_settings.value AS old_value
+  FROM new_merge_tree_settings
+  LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
+  WHERE (old_value IS NULL OR new_value != old_value)
+      AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM
+      (
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'MergeTree'
+      )
+      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
+  ))
+  SETTINGS join_use_nulls = 1
+  INTO OUTFILE 'changed_merge_tree_settings.txt'
   FORMAT PrettyCompactNoEscapes;
 
   SELECT name
@@ -169,11 +198,27 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
   INTO OUTFILE 'new_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+
+  SELECT name
+  FROM new_merge_tree_settings
+  WHERE (name NOT IN (
+      SELECT name
+      FROM old_merge_tree_settings
+  )) AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM
+      (
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'MergeTree'
+      )
+      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
+  ))
+  INTO OUTFILE 'new_merge_tree_settings.txt'
   FORMAT PrettyCompactNoEscapes;
   "
 
@@ -185,6 +230,14 @@ then
       echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
 
+  if [ -s changed_merge_tree_settings.txt ]
+  then
+      mv changed_merge_tree_settings.txt /test_output/
+      echo -e "Changed MergeTree settings are not reflected in the settings changes history (see changed_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/changed_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no changed MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
+  fi
+
   if [ -s new_settings.txt ]
   then
       mv new_settings.txt /test_output/
@@ -192,6 +245,15 @@ then
   else
       echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
+
+  if [ -s new_merge_tree_settings.txt ]
+  then
+      mv new_merge_tree_settings.txt /test_output/
+      echo -e "New MergeTree settings are not reflected in settings changes history (see new_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/new_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no new MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
+  fi
+
 fi
 
 # Just in case previous version left some garbage in zk
