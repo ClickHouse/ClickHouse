@@ -19,6 +19,7 @@
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <expected>
 #include <optional>
 
 
@@ -250,6 +251,9 @@ public:
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
+
+    /// Returns true if storage can execute lightweight update.
+    virtual std::expected<void, PreformattedMessage> supportsLightweightUpdate() const;
 
     /// Return true if storage has any projection.
     virtual bool hasProjection() const { return false; }
@@ -531,6 +535,9 @@ public:
         const Names & /* deduplicate_by_columns */,
         bool /*cleanup*/,
         ContextPtr /*context*/);
+
+    /// Executes update query. More lightweight than mutation.
+    virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
