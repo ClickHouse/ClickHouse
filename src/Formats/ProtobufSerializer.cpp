@@ -2000,9 +2000,6 @@ namespace
                     cols.push_back(columns[i]->getPtr());
                 }
             }
-
-            LOG_DEBUG(getLogger("ProtobufSerializerOneOf"), "passing {} columns further out of {}", cols.size(), num_columns);
-
             nested_serializer->setColumns(cols.data(), cols.size());
         }
 
@@ -2018,6 +2015,10 @@ namespace
         void writeRow([[maybe_unused]] size_t row_num) override
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "OneOf is not inplemented for writes");
+            // Should be as simple as
+            //   if (static_cast<int>(presence_column->getInt(row_num)) == field_tag)
+            //       nested_serializer->writeRow(row_num);
+            // but disabled so far
         }
 
         void readRow(size_t row_num) override
@@ -2642,7 +2643,6 @@ namespace
 
                     for (auto & info : field_infos)
                     {
-                        LOG_DEBUG(getLogger("ProtobufSerializer"), "top of for loop readRow for tag {} ({})", field_tag, info.field_descriptor ? info.field_descriptor->name() : "No descriptor");
                         if (!info.field_descriptor)
                             continue;
 
@@ -3155,15 +3155,6 @@ namespace
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
             ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
-            for (const auto & an_index : used_column_indices_sorted)
-            {
-                LOG_DEBUG(
-                    getLogger("ProtobufSerializer"),
-                    "build_message_serializer: used_column_indices_sorted {}", an_index);
-            }
-
-
-
             boost::range::set_difference(collections::range(column_names.size()), used_column_indices_sorted,
                                          std::back_inserter(missing_column_indices));
 
@@ -3256,15 +3247,12 @@ namespace
             bool google_wrappers_special_treatment)
         {
             out_field_descriptors_with_suffixes.clear();
-            LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName {} for column:{}", message_descriptor.full_name(), column_name);
-
 
             /// Find all fields which have the same name as column's name (case-insensitively); i.e. we're checking
             /// field_name == column_name.
             for (int i : collections::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
-                LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName: field_descriptor.name() {}", field_descriptor.name());
 
                 if (columnNameEqualsToFieldName(column_name, field_descriptor))
                 {
@@ -3273,14 +3261,12 @@ namespace
                         ? googleWrapperColumnName(field_descriptor)
                         : "";
                     out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, suffix);
-                    LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName returns :{} {} (simple case)", field_descriptor.name(), suffix);
                     break;
                 }
             }
 
             if (!out_field_descriptors_with_suffixes.empty())
             {
-                LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName: exact match");
                 return true; /// We have an exact match, no need to compare prefixes.
             }
 
@@ -3293,7 +3279,6 @@ namespace
                 if (columnNameStartsWithFieldName(column_name, field_descriptor, suffix))
                 {
                     out_field_descriptors_with_suffixes.emplace_back(&field_descriptor, suffix);
-                    LOG_DEBUG(getLogger("ProtobufSerializer"), "findFieldsByColumnName adding :{} {} (simple case)", field_descriptor.name(), suffix);
                 }
             }
 
@@ -3431,29 +3416,12 @@ namespace
                             used_column_indices.push_back(an_index);
                         }
                     }
-                    ::sort(used_column_indices.begin(), used_column_indices.end());
                 }
                 else
                 {
                     used_column_indices.insert(used_column_indices.end(), column_indices_.begin(), column_indices_.end());
                     used_column_indices_sorted.insert(column_indices_.begin(), column_indices_.end());
                 }
-
-                for (const auto & an_index : used_column_indices)
-                {
-                    LOG_DEBUG(
-                        getLogger("ProtobufSerializer"),
-                        "add_field_serializer: used_column_indices {}", an_index);
-                }
-
-                for (const auto & an_index : used_column_indices_sorted)
-                {
-                    LOG_DEBUG(
-                        getLogger("ProtobufSerializer"),
-                        "add_field_serializer: used_column_indices_sorted {}", an_index);
-                }
-
-
 
                 auto column_indices_to_pass_to_message_serializer = std::move(column_indices_);
                 if (columns_are_reordered_outside && !oneof_presence)
@@ -3477,34 +3445,17 @@ namespace
                 if (oneof_presence && serializer_ptr_ref && oneof_descriptor)
                 {
                     auto expected_name = oneof_descriptor->name();
-                    LOG_DEBUG(
-                        getLogger("ProtobufSerializer"),
-                        "maybe_add_oneof_wrapper: expected name {}", expected_name);
 
                     for (size_t idx : collections::range(num_columns_))
                     {
                         auto name = column_names_[idx];
                         auto data_type_id = data_types_[idx]->getTypeId();
 
-                        LOG_DEBUG(
-                            getLogger("ProtobufSerializer"), "maybe_add_oneof_wrapper: expected name {} vs name {}", expected_name, name);
-
                         if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name) && (data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8 || data_type_id == TypeIndex::Int16))
                         {
 
                             serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
 
-
-                            if (!used_column_indices_sorted.contains(idx))
-                            {
-                                used_column_indices_sorted.insert(idx);
-                                used_column_indices.push_back(idx);
-
-                                field_descs.push_back({{idx}, nullptr, nullptr});
-
-                                field_descriptors_in_use.emplace(nullptr, expected_name);
-
-                            }
                             used_columns_for_field.push_back(idx);
                             return;
                         }
@@ -3574,8 +3525,6 @@ namespace
                             continue;
                         nested_column_indices.push_back(j);
                         nested_column_names.push_back(other_suffix);
-                        // nested_column_names.push_back(column_names[j]);
-                        LOG_DEBUG(getLogger("ProtobufSerializer"), "buildMessageSerializerImpl: adding nested column {} ({})", other_suffix, column_names[j]);
                     }
 
                     DataTypes nested_data_types;
@@ -3689,12 +3638,10 @@ namespace
                     {
                         if (auto serializer = attempt_build_serializer(nested_data_types))
                         {
-                            LOG_DEBUG(getLogger("ProtobufSerializer"), "buildMessageSerializerImpl: created inner message serializer");
                             transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
                             add_field_serializer(column_name, std::move(used_column_indices_in_nested), *field_descriptor, std::move(serializer));
                             break;
                         }
-                        LOG_DEBUG(getLogger("ProtobufSerializer"), "buildMessageSerializerImpl: failed to create inner message serializer");
                     }
 
                     catch (Exception & e)
@@ -3735,15 +3682,14 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                // top_level_message = true;
-
                 if (top_level_message)
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
                 else
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+                if (columns_are_reordered_outside && oneof_presence)
+                    ::sort(used_column_indices.begin(), used_column_indices.end());
             }
 
-            LOG_DEBUG(getLogger("ProtobufSerializer"), "buildMessageSerializerImpl: created message serializer");
             return std::make_unique<ProtobufSerializerMessage>(
                 std::move(field_descs),
                 parent_field_descriptor,

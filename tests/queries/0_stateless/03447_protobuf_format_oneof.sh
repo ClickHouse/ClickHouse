@@ -8,6 +8,8 @@ SCHEMADIR=$CURDIR/format_schemas
 
 set -eo pipefail
 
+# string1: "string1"
+# string2: "string2"
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS string_or_string_3447;
@@ -18,6 +20,16 @@ INSERT INTO string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String2' SE
 SELECT * FROM string_or_string_3447 ORDER BY string1 Format pretty;
 EOF
 
+
+# outer_string: "outer_string1"
+# inner {
+#   string1: "string1"
+# }
+
+# outer_string: "outer_string2"
+# inner {
+#   string2: "string2"
+# }
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS inner_string_or_string_3447;
@@ -29,6 +41,27 @@ INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/Strin
 SELECT * FROM inner_string_or_string_3447 ORDER BY \`outer.string\` Format pretty;
 EOF
 
+# date: "10.10.2025"
+# buy {
+#   payment {
+#     cash_value: 10.0
+#   }
+#   vendor_name: "dell"
+#   items_bought: 1
+# }
+
+# date: "10.10.2025"
+# sell {
+#   payment {
+#     cash_value: 10.0
+#   }
+#   customer_name: "bas&friends"
+#   items_sold: 2
+# }
+
+# date: "2024-06-01"
+# sell {
+# }
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS transaction_3447;
@@ -53,4 +86,22 @@ INSERT INTO transaction_3447 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS f
 INSERT INTO transaction_3447 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
 INSERT INTO transaction_3447 from INFILE '$CURDIR/data_protobuf/temptysell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
 SELECT * FROM transaction_3447 ORDER BY date, buy_payment_cash_value Format Vertical;
+EOF
+
+# items: { name: "item1" int_value: 10 }
+# items: { name: "item2" string_value: "foo" }
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=true;
+DROP TABLE IF EXISTS oneof_repeated_3447;
+SELECT '>> oneof_repeated';
+CREATE TABLE oneof_repeated_3447
+(
+    \`items.name\` Array(String),
+    \`items.int_value\` Array(Int32),
+    \`items.string_value\` Array(String),
+    \`items.value\` Array(Enum8('omitted' = 0, 'int_value' = 2, 'string_value' = 3))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO oneof_repeated_3447 from INFILE '$CURDIR/data_protobuf/OneofRepeated' SETTINGS format_schema='$SCHEMADIR/03447_oneof_repeated.proto:TestOneOfRepeated' FORMAT ProtobufSingle;
+SELECT * FROM oneof_repeated_3447 FORMAT Vertical;
 EOF

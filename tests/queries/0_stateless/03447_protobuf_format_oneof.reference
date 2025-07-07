@@ -61,3 +61,10 @@ sell_items_sold:         0
 payment_details:         sell
 buy_payment_value:       ommited
 sell_payment_value:      ommited
+>> oneof_repeated
+Row 1:
+──────
+items.name:         ['item1','item2']
+items.int_value:    [10,0]
+items.string_value: ['','foo']
+items.value:        ['int_value','string_value']
