@@ -205,27 +205,16 @@ std::string RestCatalog::retrieveAccessToken() const
     Poco::URI url;
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (oauth_server_uri.empty())
-    {
         url = Poco::URI(base_url / oauth_tokens_endpoint);
-
-        Poco::URI::QueryParameters params = {
-            {"grant_type", "client_credentials"},
-            {"scope", auth_scope},
-            {"client_id", client_id},
-            {"client_secret", client_secret},
-        };
-        url.setQueryParameters(params);
-    }
     else
-    {
         url = Poco::URI(oauth_server_uri);
-        out_stream_callback = [&](std::ostream & os)
-        {
-            os << fmt::format(
-                "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-                auth_scope, client_id, client_secret);
-        };
-    }
+
+    out_stream_callback = [&](std::ostream & os)
+    {
+        os << fmt::format(
+            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
+            auth_scope, client_id, client_secret);
+    };
 
     const auto & context = getContext();
     auto wb = DB::BuilderRWBufferFromHTTP(url)
@@ -435,6 +424,12 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     {
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(json_str);
+        if (json.type() == typeid(Poco::JSON::Object::Ptr))
+        {
+            Poco::JSON::Object::Ptr obj = json.extract<Poco::JSON::Object::Ptr>();
+            if (obj->size() == 0)
+                return {};
+        }
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
         auto namespaces_object = object->get("namespaces").extract<Poco::JSON::Array::Ptr>();
