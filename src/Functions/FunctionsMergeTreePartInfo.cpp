@@ -39,12 +39,17 @@ std::optional<MergeTreePartInfo> tryParseMergeTreePartInfo(std::string_view data
     return MergeTreePartInfo::tryParsePartName(data, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 }
 
+[[noreturn]] void throwInvalidPartName(std::string_view data)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MergeTree part name: '{}'.", data);
+}
+
 MergeTreePartInfo constructPartInfo(std::string_view data)
 {
     if (auto info = tryParseMergeTreePartInfo(data))
         return std::move(info.value());
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MergeTree Part Name.");
+    throwInvalidPartName(data);
 }
 
 /// Tries to parse part name format: "<prefix>_<part_name>_<tryN>".
@@ -60,7 +65,7 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     size_t number_of_segments = std::ranges::count(data, '_') + 1;
 
     if (number_of_segments < 4)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MergeTree Part Name: '{}'", data);
+        throwInvalidPartName(data);
 
     /// Process suffix first because it can be easily determined.
     if (data.substr(last_delimiter + 1).starts_with("try"))
@@ -95,7 +100,7 @@ UnpackedPartSegments unpackPartName(std::string_view data)
             break;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid MergeTree Part Name: '{}'", data);
+        throwInvalidPartName(data);
     }
     case 4: /// partition_min_max_level
     {
@@ -103,7 +108,7 @@ UnpackedPartSegments unpackPartName(std::string_view data)
         break;
     }
     default:
-        UNREACHABLE();
+        throwInvalidPartName(data);
     }
 
     return unpacked;
