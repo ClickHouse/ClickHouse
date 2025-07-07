@@ -332,7 +332,7 @@ public:
         if (!write_batch)
             return;
 
-        auto status = rocksdb_ptr->Write(write_options, write_batch->GetWriteBatch());
+        auto status = rocksdb_ptr->Write(write_options, &write_batch.value());
         write_batch.reset();
 
         if (!status.ok())
@@ -340,6 +340,14 @@ public:
         
         counter += batch_counter;
         batch_counter = 0;
+    }
+
+    void updateStats()
+    {
+        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            ++counter;
+        }
     }
 
     template<bool need_get = true>
@@ -350,16 +358,16 @@ public:
 
         if (write_batch)
         {
-            if constexpr (need_get)
-            {
-                std::string existing_value;
-                status = write_batch->GetFromBatchAndDB(rocksdb_ptr.get(), rocksdb::ReadOptions{}, key, &existing_value);
+            // if constexpr (need_get)
+            // {
+            //     std::string existing_value;
+            //     status = write_batch->GetFromBatchAndDB(rocksdb_ptr.get(), rocksdb::ReadOptions{}, key, &existing_value);
 
-                if (status.IsNotFound())
-                    ++batch_counter;
-                else if (!status.ok())
-                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
-            }
+            //     if (status.IsNotFound())
+            //         ++batch_counter;
+            //     else if (!status.ok())
+            //         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during get. The error message is {}.", status.ToString());
+            // }
 
             write_batch->Put(key, value.getEncodedString());
             return;
@@ -490,7 +498,7 @@ private:
     size_t snapshot_size{0};
     size_t counter{0};
 
-    std::optional<rocksdb::WriteBatchWithIndex> write_batch;
+    std::optional<rocksdb::WriteBatch> write_batch;
     size_t batch_counter = 0;
 
 };

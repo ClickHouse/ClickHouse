@@ -399,8 +399,15 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
+    auto batch_load_size = keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size];
     if constexpr (use_rocksdb)
-        storage.container.startBatch();
+    {
+        if (batch_load_size != 0)
+        {
+            storage.container.startBatch();
+        }
+    }
+
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         if (nodes_read % 100000 == 0)
@@ -471,14 +478,20 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
 
-        if constexpr (!use_rocksdb)
+        if constexpr (use_rocksdb)
         {
-            if (nodes_read % keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size] == 0)
+            if (batch_load_size && nodes_read % keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size] == 0)
             {
                 storage.container.commitBatch();
                 storage.container.startBatch();
             }
         }
+    }
+
+    if constexpr (use_rocksdb)
+    {
+        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");
+        storage.container.updateStats();
     }
 
     LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
