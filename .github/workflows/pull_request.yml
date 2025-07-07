@@ -4,7 +4,7 @@ name: PR
 
 on:
   pull_request:
-    branches: ['master']
+    branches: ['master', 'divanik/fix_test_base_branch']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
