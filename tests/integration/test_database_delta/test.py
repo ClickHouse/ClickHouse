@@ -243,9 +243,9 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists {table_name_src}")
 
-    schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
+    schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
-    table_name = f"table_with_timestamp_{use_delta_kernel}"
+    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
     create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
     execute_spark_query(node1, create_query, ignore_exit_code=True)
