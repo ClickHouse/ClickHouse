@@ -1463,6 +1463,24 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return true;
 }
 
+bool ReadFromMergeTree::allPartitionsHaveSinglePart() const
+{
+    std::unordered_set<String> seen_partitions;
+
+    for (const auto & part : prepared_parts)
+    {
+        const auto partition_id = part.data_part->info.getPartitionId();
+
+        if (seen_partitions.contains(partition_id))
+            return false;
+        else
+            seen_partitions.insert(partition_id);
+    }
+
+    return true;
+}
+
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection)
 {
@@ -1521,13 +1539,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
 
-        bool no_merging_final = do_not_merge_across_partitions_select_final &&
-            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 && !reader_settings.read_in_order;
+        bool no_merging_final = do_not_merge_across_partitions_select_final
+            && std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1
+            && parts_to_merge_ranges[range_index]->data_part->info.level > 0
+            && !reader_settings.read_in_order;
 
         /// if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
         /// there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
-        if (no_merging_final && !data.merging_params.is_deleted_column.empty())
+        if (no_merging_final && allPartitionsHaveSinglePart() && !data.merging_params.is_deleted_column.empty())
         {
             if (!prewhere_info)
                 prewhere_info = std::make_shared<PrewhereInfo>();
