@@ -19,16 +19,13 @@ struct YTsaurusTableSourceOptions
     const String cypress_path;
     YTsaurusSettings settings;
     std::optional<Block> lookup_input_block = std::nullopt;
-
-    bool force_read_table = false;
-    bool skip_unknown_columns = true;
 };
 
 class YTsaurusTableSourceStaticTable final : public ISource
 {
 public:
     YTsaurusTableSourceStaticTable(
-        YTsaurusClientPtr client_, const String & cypress_path, const Block & sample_block_, const UInt64 & max_block_size_, bool skip_unknown_columns = true);
+        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_);
     ~YTsaurusTableSourceStaticTable() override = default;
 
     String getName() const override { return "YTsaurusTableSourceStaticTable"; }

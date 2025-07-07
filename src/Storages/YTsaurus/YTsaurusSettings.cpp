@@ -19,6 +19,8 @@ namespace ErrorCodes
 
 #define LIST_OF_YTSAURUS_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility", 0) \
+    DECLARE(Bool, skip_unknown_columns, true, "Skip columns with unknown type", 0) \
+    DECLARE(Bool, force_read_table, false, "", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
@@ -57,6 +59,12 @@ void YTsaurusSettings::loadFromQuery(const ASTSetQuery & settings_def)
     impl->applyChanges(settings_def.changes);
 }
 
+YTsaurusSettings YTsaurusSettings::createFromQuery(const ASTSetQuery & settings_def) {
+    YTsaurusSettings settings;
+    settings.loadFromQuery(settings_def);
+    return settings;
+}
+
 void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
@@ -72,6 +80,12 @@ void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
             throw;
         }
     }
+}
+
+YTsaurusSettings YTsaurusSettings::createFromQuery(ASTStorage & storage_def) {
+    YTsaurusSettings settings;
+    settings.loadFromQuery(storage_def);
+    return settings;
 }
 
 std::vector<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
@@ -90,6 +104,11 @@ void YTsaurusSettings::loadFromNamedCollection(const NamedCollection & named_col
         if (named_collection.has(setting_name))
             impl->set(setting_name, named_collection.get<String>(setting_name));
     }
+}
+
+void YTsaurusSettings::set(const std::string & name, const std::string & value)
+{
+    impl->set(name, value);
 }
 
 bool YTsaurusSettings::hasBuiltin(std::string_view name)

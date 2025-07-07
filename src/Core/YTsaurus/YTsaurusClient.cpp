@@ -111,6 +111,8 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
 
             DB::HTTPHeaderEntries http_headers{
                 /// Always use json format for input and output.
+                {"Accept", "application/json"},
+                {"Content-Type", "application/json"},
                 {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
                 {"X-YT-Header-Format", "<format=text>yson"},
                 {"X-YT-Output-Format", "<uuid_mode=text_yql>json"}

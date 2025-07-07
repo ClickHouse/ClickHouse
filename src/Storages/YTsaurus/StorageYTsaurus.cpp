@@ -75,13 +75,9 @@ Pipe StorageYTsaurus::read(
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, ASTStorage * storage_def, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings , ContextPtr context)
 {
-    YTsaurusStorageConfiguration configuration;
-    if (storage_def)
-    {
-        configuration.settings.loadFromQuery(*storage_def);
-    }
+    YTsaurusStorageConfiguration configuration{.settings = settings};
     for (auto & engine_arg : engine_args)
     {
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
@@ -107,7 +103,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, args.storage_def, args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);

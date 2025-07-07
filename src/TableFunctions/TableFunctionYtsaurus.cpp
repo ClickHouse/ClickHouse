@@ -9,6 +9,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ColumnsDescription.h>
@@ -89,11 +90,24 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
 
     ASTs & args = func_args.arguments->children;
 
+    YTsaurusSettings yt_settings;
+
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            yt_settings.loadFromQuery(*settings_ast);
+            args.erase(it);
+            break;
+        }
+    }
+
 
     if (args.size() == 4)
     {
         ASTs main_arguments(args.begin(), args.begin() + 3);
-        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, nullptr, context));
+        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
         structure = checkAndGetLiteralArgument<String>(args[3], "structure");
     }
     else

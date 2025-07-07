@@ -1,5 +1,4 @@
 import pytest
-import time
 from helpers.cluster import ClickHouseCluster
 
 from .yt_helpers import YT_DEFAULT_TOKEN, YT_HOST, YT_PORT, YT_URI, YTsaurusCLI
@@ -461,7 +460,7 @@ def test_ytsaurus_dynamic_table(started_cluster):
     )
 
     instance.query(
-        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/dynamic_table', '{YT_DEFAULT_TOKEN}')"
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/dynamic_table', '{YT_DEFAULT_TOKEN}') SETTINGS check_table_schema = 0"
     )
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
     instance.query("DROP TABLE yt_test SYNC")

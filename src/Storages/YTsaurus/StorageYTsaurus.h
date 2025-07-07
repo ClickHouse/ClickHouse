@@ -14,10 +14,10 @@ namespace DB
 
 struct YTsaurusStorageConfiguration
 {
-    std::vector<String> http_proxy_urls;
-    String cypress_path;
-    String oauth_token;
     YTsaurusSettings settings;
+    std::vector<String> http_proxy_urls{};
+    String cypress_path{};
+    String oauth_token{};
 };
 
 /**
@@ -27,7 +27,7 @@ struct YTsaurusStorageConfiguration
 class StorageYTsaurus final : public IStorage
 {
 public:
-    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, ASTStorage * storage_def, ContextPtr context);
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context);
 
     StorageYTsaurus(
         const StorageID & table_id_,

@@ -46,7 +46,7 @@ def test_yt_dictionary_id(started_cluster, dynamic_table, layout):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0)) LAYOUT({layout}()) LIFETIME(MIN 0 MAX 1000)"
     )
     assert (
         instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3)")
@@ -111,7 +111,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
         dynamic=dynamic_table,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0)) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
     if dynamic_table:
         assert (
@@ -183,7 +183,7 @@ def test_yt_dictionary_multiple_enpoints(started_cluster):
         dynamic=False,
     )
     instance.query(
-        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls 'http://incorrect_endpoint|{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
+        f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls 'http://incorrect_endpoint|{YT_URI}' cypress_path '{path}' oauth_token '{YT_DEFAULT_TOKEN}' check_table_schema 0)) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000);"
     )
     assert (
         instance.query(

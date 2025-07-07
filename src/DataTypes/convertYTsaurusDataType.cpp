@@ -95,7 +95,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "date32")
     {
-        data_type_ptr = DataTypeFactory::instance().get("Date");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"date32\"");
     }
     else if (data_type == "datetime64")
     {
@@ -111,7 +111,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "date")
     {
-        data_type_ptr = DataTypeFactory::instance().get("Date");
+         throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"date\"");
     }
     else if (data_type == "datetime")
     {

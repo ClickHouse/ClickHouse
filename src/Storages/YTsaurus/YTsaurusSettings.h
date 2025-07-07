@@ -34,7 +34,10 @@ struct YTsaurusSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
+    void set(const std::string & name, const std::string & value);
 
+    static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
+    static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
 
 private:
