@@ -10,10 +10,12 @@ REQUIRED_STATELESS_TESTS_JOB_NAMES = [
 ]
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
+BASE_TEST_BRANCH = "divanik/fix_test_base_branch"
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH],
+    base_branches=[BASE_BRANCH, BASE_TEST_BRANCH],
     jobs=[
         *[job for job in JobConfigs.build_jobs if "amd_release" in job.name],
         *JobConfigs.integration_tests_for_divanik,
