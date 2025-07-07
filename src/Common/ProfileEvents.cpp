@@ -926,6 +926,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
     M(DistrCacheServerReusedS3CachedClients, "Distributed Cache server event. The number of reused cached s3 clients", ValueType::Number) \
     M(DistrCacheServerCredentialsRefresh, "Distributed Cache server event. The number of expired credentials were refreshed", ValueType::Number) \
+    M(DistrCacheServerCachedReadBufferCacheHits, "Distributed Cache server event. The number of times distributed cache hit the cache while reading from filesystem cache", ValueType::Number) \
+    M(DistrCacheServerCachedReadBufferCacheMisses, "Distributed Cache server event. The number of times distributed cache missed the cache while reading from filesystem cache", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \

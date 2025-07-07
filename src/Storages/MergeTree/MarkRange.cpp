@@ -34,7 +34,7 @@ bool MarkRange::operator<(const MarkRange & rhs) const
     /// We allow only consecutive non-intersecting ranges
     /// Here we check whether a beginning of one range lies inside another range
     /// (ranges are intersect)
-    if (this != &rhs)
+    if (*this != rhs)
     {
         const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
             (rhs.begin <= begin && begin < rhs.end);

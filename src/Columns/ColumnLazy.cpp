@@ -386,6 +386,16 @@ ColumnPtr ColumnLazy::compress(bool) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compress is not supported for {}", getName());
 }
 
+ColumnPtr ColumnLazy::updateFrom(const Patch &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for {}", getName());
+}
+
+void ColumnLazy::updateInplaceFrom(const Patch &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for {}", getName());
+}
+
 double ColumnLazy::getRatioOfDefaultRows(double) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
