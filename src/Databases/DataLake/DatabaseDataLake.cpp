@@ -438,7 +438,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        lightweight ? nullptr : configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,

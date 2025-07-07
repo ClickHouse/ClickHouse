@@ -155,17 +155,26 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 2 || engine_args.size() > getMaxNumberOfArguments(with_structure))
+    if (engine_args.size() < 1 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 2 to {} arguments. All supported signatures:\n{}",
+            "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+    /// This is only for lightweight loading of tables, so does not contain credentials
+    /// for listing tables of Unity Catalog
+    if (engine_args.size() == 1)
+    {
+        String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        connection_params.endpoint.container_already_exists = true;
+        return;
+    }
 
     if (engine_args.size() == 2)
     {
