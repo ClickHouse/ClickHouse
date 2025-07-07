@@ -155,7 +155,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 1 || engine_args.size() > getMaxNumberOfArguments(with_structure))
+    if (engine_args.empty() || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -171,7 +171,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     /// for listing tables of Unity Catalog
     if (engine_args.size() == 1)
     {
-        String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        connection_params.endpoint.storage_account_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
         connection_params.endpoint.container_already_exists = true;
         return;
     }
