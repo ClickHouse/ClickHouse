@@ -891,12 +891,37 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
             DB::ErrorCodes::LOGICAL_ERROR,
             "Context is required with non-empty filter_dag to implement partition pruning for Iceberg table");
     }
+
     std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA)
         ? cached_unprunned_files_for_last_processed_snapshot
         : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
     bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+
+    LOG_DEBUG(
+        log,
+        "Getting {} files for Iceberg table `{}` with snapshot id `{}` and schema id `{}`, use partition pruning: {}, cached files "
+        "exists: {}, cached files size: {}",
+        file_content_type == FileContentType::DATA ? "data" : "position delete",
+        configuration.lock()->getPath(),
+        relevant_snapshot_id,
+        relevant_snapshot_schema_id,
+        use_partition_pruning,
+        cached_files.has_value(),
+        cached_files.has_value() ? cached_files->size() : 0);
+
+
     if (!use_partition_pruning && cached_files.has_value())
+    {
+        LOG_DEBUG(
+            log,
+            "Returning {} cached {} files for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
+            cached_files->size(),
+            file_content_type == FileContentType::DATA ? "data" : "position delete",
+            configuration.lock()->getPath(),
+            relevant_snapshot_id,
+            relevant_snapshot_schema_id);
         return cached_files.value();
+    }
 
     std::vector<Iceberg::ManifestFileEntry> files;
     for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
@@ -914,17 +939,68 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
                 {
                     if (!pruner.canBePruned(manifest_file_entry))
                     {
+                        LOG_DEBUG(
+                            log,
+                            "File {} with status {} is not pruned by partition or minmax pruning for Iceberg table `{}` with snapshot id "
+                            "`{}` and "
+                            "schema "
+                            "id `{}`",
+                            manifest_file_entry.file_path,
+                            manifest_file_entry.status,
+                            configuration.lock()->getPath(),
+                            relevant_snapshot_id,
+                            relevant_snapshot_schema_id);
                         files.push_back(manifest_file_entry);
+                    }
+                    else
+                    {
+                        LOG_DEBUG(
+                            log,
+                            "File {} with status {} is pruned by partition or minmax pruning for Iceberg table `{}` with snapshot id `{}` "
+                            "and schema "
+                            "id `{}`",
+                            manifest_file_entry.file_path,
+                            manifest_file_entry.status,
+                            configuration.lock()->getPath(),
+                            relevant_snapshot_id,
+                            relevant_snapshot_schema_id);
                     }
                 }
         }
     }
+
+    LOG_DEBUG(
+        log,
+        "Found {} files with content type {} for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
+        files.size(),
+        file_content_type == FileContentType::DATA ? "data" : "position delete",
+        configuration.lock()->getPath(),
+        relevant_snapshot_id,
+        relevant_snapshot_schema_id);
 
     std::sort(files.begin(), files.end());
 
     schema_id_by_data_file_initialized = true;
     if (!use_partition_pruning)
     {
+        LOG_DEBUG(
+            log,
+            "Caching {} files with content type {} for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
+            files.size(),
+            file_content_type == FileContentType::DATA ? "data" : "position delete",
+            configuration.lock()->getPath(),
+            relevant_snapshot_id,
+            relevant_snapshot_schema_id);
+        if (cached_files.has_value())
+        {
+            chassert(cached_files.value().size() == files.size());
+            for (size_t i = 0; i < files.size(); ++i)
+            {
+                chassert(cached_files.value()[i].file_path == files[i].file_path);
+                chassert(cached_files.value()[i].added_sequence_number == files[i].added_sequence_number);
+                chassert(cached_files.value()[i].status == files[i].status);
+            }
+        }
         cached_files = files;
         return cached_files.value();
     }
@@ -1107,6 +1183,20 @@ IcebergKeysIterator::IcebergKeysIterator(
     , object_storage(object_storage_)
     , callback(callback_)
 {
+    LOG_DEBUG(
+        iceberg_metadata.log,
+        "Creating IcebergKeysIterator for {} data files and {} position deletes files",
+        data_files.size(),
+        position_deletes_files.size());
+    for (const auto & file : data_files)
+    {
+        LOG_DEBUG(iceberg_metadata.log, "Data file path: {}, data file path_key: {}, ", file.file_path, file.file_path_key);
+    }
+    for (const auto & file : position_deletes_files)
+    {
+        LOG_DEBUG(
+            iceberg_metadata.log, "Position delete file path: {}, position delete file path_key: {}, ", file.file_path, file.file_path_key);
+    }
 }
 
 
@@ -1114,6 +1204,7 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
 {
     while (true)
     {
+        LOG_DEBUG("Taken index: {}", index.load());
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= data_files.size())
             return nullptr;
