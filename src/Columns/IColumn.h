@@ -571,7 +571,7 @@ public:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
     /// `blocks` and `row_nums` must have same size
@@ -815,7 +815,7 @@ private:
 
     /// Fills column values from RowRefList
     /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
     /// `columns` and `row_nums` must have same size

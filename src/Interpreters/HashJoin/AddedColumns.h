@@ -44,10 +44,6 @@ struct LazyOutput
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
-    MutableColumns columns;
-    IColumn::Offsets offsets_to_replicate;
-    IColumn::Filter filter;
-
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
 
@@ -79,16 +75,16 @@ struct LazyOutput
         ++row_count;
     }
 
-    void buildOutput();
-    void buildJoinGetOutput();
+    void buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end);
+    void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end);
 
     /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
      *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
      */
     template<bool from_row_list>
-    void buildOutputFromBlocks();
+    void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end);
 
-    void buildOutputFromRowRefLists();
+    void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end);
 };
 
 template <bool lazy>
@@ -123,7 +119,7 @@ public:
             lazy_output.reserve(rows_to_add);
         }
 
-        lazy_output.columns.reserve(num_columns_to_add);
+        columns.reserve(num_columns_to_add);
         lazy_output.type_name.reserve(num_columns_to_add);
         lazy_output.right_indexes.reserve(num_columns_to_add);
 
@@ -159,16 +155,16 @@ public:
               * even if right column is not nullable in storage (saved_block_sample).
               */
             const auto & saved_column = saved_block_sample.getByPosition(lazy_output.right_indexes[j]).column;
-            if (lazy_output.columns[j]->isNullable() && !saved_column->isNullable())
-                nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(lazy_output.columns[j].get());
+            if (columns[j]->isNullable() && !saved_column->isNullable())
+                nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
     }
 
-    size_t size() const { return lazy_output.columns.size(); }
+    size_t size() const { return columns.size(); }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
-        return ColumnWithTypeAndName(std::move(lazy_output.columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
+        return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
     void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
@@ -191,6 +187,10 @@ public:
     size_t rows_to_add;
     bool need_filter = false;
 
+    MutableColumns columns;
+    IColumn::Offsets offsets_to_replicate;
+    IColumn::Filter filter;
+
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
@@ -209,7 +209,7 @@ public:
             /// Reserve 10% more space for columns, because some rows can be repeated
             reserve_size = static_cast<size_t>(1.1 * reserve_size);
 
-        for (auto & column : lazy_output.columns)
+        for (auto & column : columns)
             column->reserve(reserve_size);
     }
 
@@ -220,7 +220,7 @@ private:
         for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
             const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
-            const auto * dest_column = lazy_output.columns[j].get();
+            const auto * dest_column = columns[j].get();
             if (auto * nullable_col = nullable_column_ptrs[j])
             {
                 if (!is_join_get)
@@ -252,8 +252,8 @@ private:
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {
-        lazy_output.columns.push_back(src_column.column->cloneEmpty());
-        lazy_output.columns.back()->reserve(rows_to_add);
+        columns.push_back(src_column.column->cloneEmpty());
+        columns.back()->reserve(rows_to_add);
         lazy_output.type_name.emplace_back(src_column.name, src_column.type);
     }
 };

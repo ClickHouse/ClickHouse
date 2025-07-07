@@ -7,28 +7,12 @@ namespace DB
 
 class HashJoinResult : public IJoinResult
 {
-    LazyOutput lazy_output;
-
-    const HashJoin * join;
-
-    bool need_filter;
-    bool is_join_get;
-    bool is_asof_join;
-    std::optional<ScatteredBlock> scattered_block;
-
-    static void appendRightColumns(
-        Block & block,
-        const HashJoin * join,
-        MutableColumns columns,
-        const NamesAndTypes & type_name,
-        IColumn::Filter filter,
-        IColumn::Offsets offsets_to_replicate,
-        bool need_filter,
-        bool is_asof_join);
-
 public:
     HashJoinResult(
         LazyOutput && lazy_output_,
+        MutableColumns columns_,
+        IColumn::Offsets offsets_to_replicate_,
+        IColumn::Filter filter_,
         bool need_filter_,
         bool is_join_get_,
         bool is_asof_join_,
@@ -36,6 +20,29 @@ public:
         const HashJoin * join_);
 
     JoinResultBlock next() override;
+
+    struct Data
+    {
+        MutableColumns columns;
+        IColumn::Offsets offsets_to_replicate;
+        IColumn::Filter filter;
+    };
+
+private:
+    LazyOutput lazy_output;
+
+    std::optional<ScatteredBlock> scattered_block;
+
+    Data data;
+    size_t next_row = 0;
+    size_t next_row_ref = 0;
+    size_t num_rows_to_join = 0;
+
+    const HashJoin * join;
+
+    bool need_filter;
+    bool is_join_get;
+    bool is_asof_join;
 };
 
 }

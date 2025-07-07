@@ -453,13 +453,13 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
 /// Fills column values from RowRefList
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs)
+static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
 {
-    for (UInt64 row_ref_i : row_refs)
+    for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
-        if (row_ref_i)
+        if (*row_ref)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
             if constexpr (row_refs_are_ranges)
             {
                 row_ref_list->assertIsRange();
@@ -477,23 +477,23 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
 }
 
 /// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
+void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
 {
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs);
+        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
     else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs);
+        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
 }
 
 /// Fills column values from RowRefsList
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
 {
     auto & self = static_cast<Derived &>(*this);
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs);
+        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
     else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs);
+        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
 }
 
 /// Fills column values from list of blocks and row numbers

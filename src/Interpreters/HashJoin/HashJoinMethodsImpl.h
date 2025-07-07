@@ -113,6 +113,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     return std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
+        std::move(added_columns.columns),
+        std::move(added_columns.offsets_to_replicate),
+        std::move(added_columns.filter),
         join_features.need_filter,
         is_join_get,
         join_features.is_asof_join,
@@ -365,7 +368,7 @@ void processMatch(
         auto row_ref = mapped->findAsof(left_asof_key, ind);
         if (row_ref && row_ref->columns)
         {
-            setUsed<need_filter>(added_columns.lazy_output.filter, i);
+            setUsed<need_filter>(added_columns.filter, i);
             if constexpr (flag_per_row)
                 used_flags.template setUsed<join_features.need_flags, flag_per_row>(row_ref->columns, row_ref->row_num, 0);
             else
@@ -378,7 +381,7 @@ void processMatch(
     }
     else if constexpr (join_features.is_all_join)
     {
-        setUsed<need_filter>(added_columns.lazy_output.filter, i);
+        setUsed<need_filter>(added_columns.filter, i);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
         auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
         addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
@@ -390,7 +393,7 @@ void processMatch(
         if (used_once)
         {
             auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-            setUsed<need_filter>(added_columns.lazy_output.filter, i);
+            setUsed<need_filter>(added_columns.filter, i);
             addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
         }
     }
@@ -401,7 +404,7 @@ void processMatch(
         /// Use first appeared left key only
         if (used_once)
         {
-            setUsed<need_filter>(added_columns.lazy_output.filter, i);
+            setUsed<need_filter>(added_columns.filter, i);
             added_columns.appendFromBlock(&mapped, join_features.add_missing);
         }
     }
@@ -416,7 +419,7 @@ void processMatch(
     }
     else /// ANY LEFT, SEMI LEFT, old ANY (RightAny)
     {
-        setUsed<need_filter>(added_columns.lazy_output.filter, i);
+        setUsed<need_filter>(added_columns.filter, i);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
         added_columns.appendFromBlock(&mapped, join_features.add_missing);
     }
@@ -441,14 +444,14 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     size_t rows = ScatteredBlock::Selector::size(selector);
     if constexpr (need_filter)
-        added_columns.lazy_output.filter = IColumn::Filter(rows, 0);
+        added_columns.filter = IColumn::Filter(rows, 0);
     if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
         added_columns.lazy_output.output_by_row_list = true;
 
     Arena pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.lazy_output.offsets_to_replicate = IColumn::Offsets(rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
     IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
@@ -490,13 +493,13 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         if (!right_row_found)
         {
             if constexpr (join_features.is_anti_join && join_features.left)
-                setUsed<need_filter>(added_columns.lazy_output.filter, i);
+                setUsed<need_filter>(added_columns.filter, i);
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
         }
 
         if constexpr (join_features.need_replication)
         {
-            added_columns.lazy_output.offsets_to_replicate[i] = current_offset;
+            added_columns.offsets_to_replicate[i] = current_offset;
         }
     }
 
@@ -537,14 +540,14 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     size_t rows = ScatteredBlock::Selector::size(selector);
     if constexpr (need_filter)
-        added_columns.lazy_output.filter = IColumn::Filter(rows, 0);
+        added_columns.filter = IColumn::Filter(rows, 0);
     if constexpr (!flag_per_row && (STRICTNESS == JoinStrictness::All || (STRICTNESS == JoinStrictness::Semi && KIND == JoinKind::Right)))
         added_columns.lazy_output.output_by_row_list = true;
 
     Arena pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.lazy_output.offsets_to_replicate = IColumn::Offsets(rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
     IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
@@ -581,13 +584,13 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         if (!right_row_found)
         {
             if constexpr (join_features.is_anti_join && join_features.left)
-                setUsed<need_filter>(added_columns.lazy_output.filter, i);
+                setUsed<need_filter>(added_columns.filter, i);
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
         }
 
         if constexpr (join_features.need_replication)
         {
-            added_columns.lazy_output.offsets_to_replicate[i] = current_offset;
+            added_columns.offsets_to_replicate[i] = current_offset;
         }
     }
 
@@ -726,12 +729,12 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     const size_t left_block_rows = selector.size();
     if (need_filter)
-        added_columns.lazy_output.filter = IColumn::Filter(left_block_rows, 0);
+        added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
     std::unique_ptr<Arena> pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.lazy_output.offsets_to_replicate = IColumn::Offsets(left_block_rows);
+        added_columns.offsets_to_replicate = IColumn::Offsets(left_block_rows);
 
     std::vector<size_t> row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
@@ -892,7 +895,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                 {
                     if constexpr (join_features.left)
                         if (need_filter)
-                            setUsed<true>(added_columns.lazy_output.filter, i);
+                            setUsed<true>(added_columns.filter, i);
                     addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
                 }
             }
@@ -907,7 +910,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                     if (!flag_per_row)
                         used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
-                        setUsed<true>(added_columns.lazy_output.filter, i);
+                        setUsed<true>(added_columns.filter, i);
                     if constexpr (join_features.add_missing)
                         added_columns.applyLazyDefaults();
                 }
@@ -916,7 +919,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
 
             if constexpr (join_features.need_replication)
             {
-                added_columns.lazy_output.offsets_to_replicate[i] = total_added_rows;
+                added_columns.offsets_to_replicate[i] = total_added_rows;
             }
             prev_replicated_row = row_replicate_offset[i];
         }
@@ -924,8 +927,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
 
     if constexpr (join_features.need_replication)
     {
-        added_columns.lazy_output.offsets_to_replicate.resize_assume_reserved(left_block_rows);
-        added_columns.lazy_output.filter.resize_assume_reserved(left_block_rows);
+        added_columns.offsets_to_replicate.resize_assume_reserved(left_block_rows);
+        added_columns.filter.resize_assume_reserved(left_block_rows);
     }
     added_columns.applyLazyDefaults();
 }
