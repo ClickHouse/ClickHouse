@@ -1,9 +1,8 @@
 import logging
+import helpers.s3_url_proxy_tests_util as proxy_util
 import os
 
 import pytest
-
-import helpers.s3_url_proxy_tests_util as proxy_util
 from helpers.cluster import ClickHouseCluster
 
 
@@ -13,7 +12,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
 
         # minio_certs_dir is set only once and used by all instances
-        # Disable `with_remote_database_disk` as the test uses proxy, which might not work with the default configs of the remote database disk
+
         cluster.add_instance(
             "remote_proxy_node",
             main_configs=[
@@ -22,7 +21,6 @@ def cluster():
             ],
             with_minio=True,
             minio_certs_dir="minio_certs",
-            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -32,7 +30,6 @@ def cluster():
                 "configs/config.d/ssl.xml",
             ],
             with_minio=True,
-            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -42,7 +39,6 @@ def cluster():
                 "configs/config.d/ssl.xml",
             ],
             with_minio=True,
-            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -52,7 +48,6 @@ def cluster():
                 "configs/config.d/ssl.xml",
             ],
             with_minio=True,
-            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -65,7 +60,6 @@ def cluster():
                 "https_proxy": "https://proxy1",
             },
             instance_env_variables=True,
-            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -79,7 +73,6 @@ def cluster():
                 "no_proxy": "not_important_host,,  minio1  ,",
             },
             instance_env_variables=True,
-            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")

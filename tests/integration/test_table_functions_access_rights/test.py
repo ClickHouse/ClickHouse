@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -40,8 +39,13 @@ def test_merge():
     assert instance.query(select_query) == "1\n2\n"
 
     instance.query("CREATE USER A")
+    assert (
+        "it's necessary to have the grant CREATE TEMPORARY TABLE ON *.*"
+        in instance.query_and_get_error(select_query, user="A")
+    )
 
-    assert "no tables satisfied provided regexp" in instance.query_and_get_error(
+    instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
+    assert "no tables in database matches" in instance.query_and_get_error(
         select_query, user="A"
     )
 

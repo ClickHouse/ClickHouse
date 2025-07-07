@@ -1,12 +1,10 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-class BackgroundSchedulePool;
 
 /// Add a task to BackgroundProcessingPool that resolves all hosts and updates cache with constant period.
 class DNSCacheUpdater : WithContext

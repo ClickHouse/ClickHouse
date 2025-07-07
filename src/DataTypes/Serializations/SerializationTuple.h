@@ -12,8 +12,8 @@ public:
     using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
-    SerializationTuple(const ElementSerializations & elems_, bool has_explicit_names_)
-        : elems(elems_), has_explicit_names(has_explicit_names_)
+    SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
+        : elems(elems_), have_explicit_names(have_explicit_names_)
     {
     }
 
@@ -65,7 +65,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
             ColumnPtr & column,
-            size_t rows_offset,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -75,17 +74,14 @@ public:
 
 private:
     ElementSerializations elems;
-    bool has_explicit_names;
+    bool have_explicit_names;
 
     size_t getPositionByName(const String & name) const;
 
     template <typename ReturnType = void>
     ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const;
 
-    template <typename ReturnType>
-    ReturnType deserializeTupleJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const;
-
-    template <typename ReturnType>
+    template <typename ReturnType = void>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
     template <typename ReturnType = void>

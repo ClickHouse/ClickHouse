@@ -15,11 +15,6 @@ namespace DB
 class ISchedulerNode;
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
 
-struct ClassifierSettings
-{
-    bool throw_on_unknown_workload = false;
-};
-
 /*
  * Instance of derived class holds everything required for resource consumption,
  * including resources currently registered at `SchedulerRoot`. This is required to avoid
@@ -30,9 +25,6 @@ class IClassifier : private boost::noncopyable
 {
 public:
     virtual ~IClassifier() = default;
-
-    /// Returns true iff resource access is allowed by this classifier
-    virtual bool has(const String & resource_name) = 0;
 
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
@@ -54,20 +46,12 @@ public:
     /// Initialize or reconfigure manager.
     virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
 
-    /// Returns true iff given resource is controlled through this manager.
-    virtual bool hasResource(const String & resource_name) const = 0;
-
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.
-    virtual ClassifierPtr acquire(const String & classifier_name, const ClassifierSettings & settings) = 0;
-
-    ClassifierPtr acquire(const String & classifier_name)
-    {
-        return acquire(classifier_name, {});
-    }
+    virtual ClassifierPtr acquire(const String & classifier_name) = 0;
 
     /// For introspection, see `system.scheduler` table
-    using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;
+    using VisitorFunc = std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)>;
     virtual void forEachNode(VisitorFunc visitor) = 0;
 };
 

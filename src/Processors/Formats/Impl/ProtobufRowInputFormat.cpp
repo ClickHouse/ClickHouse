@@ -1,7 +1,6 @@
 #include "ProtobufRowInputFormat.h"
 
 #if USE_PROTOBUF
-#   include <Columns/IColumn.h>
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
 #   include <Formats/ProtobufReader.h>
@@ -125,13 +124,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
 
 ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_settings)
     : schema_info(
-          /*format_schema_source=*/format_settings.schema.format_schema_source,
-          /*format_schema=*/format_settings.schema.format_schema,
-          /*format_schema_message_name=*/format_settings.schema.format_schema_message_name,
-          /*format=*/"Protobuf",
-          /*require_message=*/true,
-          /*is_server=*/format_settings.schema.is_server,
-          /*format_schema_path=*/format_settings.schema.format_schema_path)
+        format_settings.schema.format_schema, "Protobuf", true, format_settings.schema.is_server, format_settings.schema.format_schema_path)
     , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
     , google_protos_path(format_settings.protobuf.google_protos_path)
 {

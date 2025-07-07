@@ -40,8 +40,4 @@ String getDiskName(ASTStorage & storage_def, ContextPtr context)
     return "default";
 }
 
-bool StorageLogSettings::hasBuiltin(std::string_view name)
-{
-    return name == "disk" || name == "storage_policy";
-}
 }

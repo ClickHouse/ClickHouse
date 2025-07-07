@@ -71,32 +71,29 @@ public:
 
             return message_descriptor;
         }
+        else
+        {
+            const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
+            if (!envelope_descriptor)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'",
+                    schema_path);
 
-        const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
-        if (!envelope_descriptor)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'", schema_path);
+            const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(message_name); // silly protobuf API disallows a restricting the field type to messages
+            if (!message_descriptor)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
+                    message_name, schema_path);
 
-        const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(
-            message_name); // silly protobuf API disallows a restricting the field type to messages
-        if (!message_descriptor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'", message_name, schema_path);
-
-        return message_descriptor;
+            return message_descriptor;
+        }
     }
 
 private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
-    void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override
+    void AddError(const String & filename, int line, int column, const String & message) override
     {
         /// Protobuf library code is not exception safe, we should
         /// remember the error and throw it later from our side.
-        error = ErrorInfo{
-            std::string(filename),
-            line,
-            column,
-            std::string(message),
-        };
+        error = ErrorInfo{filename, line, column, message};
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;

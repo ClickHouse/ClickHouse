@@ -3,8 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
@@ -12,6 +10,7 @@
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -86,6 +85,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
+    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
     query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
     return query;
 }
@@ -93,17 +93,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
-    loading_thread = std::thread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
-        /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;
-        std::optional<CurrentThread::QueryScope> query_scope;
-        /// LocalConnection creates QueryScope for each query
-        if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
-            query_scope.emplace(my_context);
-
-        setThreadName("Suggest");
-
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
@@ -123,7 +115,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-                if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
                 {
                     /// We should not use std::cerr here, because this method works concurrently with the main thread.
                     /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
@@ -132,7 +124,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                     /// suggestions using the main connection later.
                     WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                     out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                    out.finalize();
+                    out.next();
                 }
             }
             catch (...)
@@ -140,7 +132,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = getCurrentExceptionCode();
                 WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                 out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.finalize();
+                out.next();
             }
 
             break;
@@ -172,7 +164,7 @@ void Suggest::load(IServerConnection & connection,
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {} /* external_roles*/, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {});
 
     while (true)
     {

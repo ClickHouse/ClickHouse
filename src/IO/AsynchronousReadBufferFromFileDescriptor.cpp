@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
@@ -15,6 +16,8 @@ namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
     extern const Event SynchronousReadWaitMicroseconds;
+    extern const Event LocalReadThrottlerBytes;
+    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -102,7 +105,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     file_offset_of_buffer_end += result.size;
 
     if (throttler)
-        throttler->add(result.size);
+        throttler->add(result.size, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
     if (bytes_read)
     {
@@ -193,7 +196,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             return new_pos;
         }
-        if (prefetch_future.valid())
+        else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
             if (nextImpl())

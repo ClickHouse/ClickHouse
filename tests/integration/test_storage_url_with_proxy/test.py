@@ -1,14 +1,12 @@
-import base64
-import hashlib
-import hmac
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+import hmac
+import hashlib
+import base64
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 
 
 @pytest.fixture(scope="module")
@@ -57,19 +55,18 @@ def test_s3_with_proxy_list(cluster):
 
     # insert into function url uses POST and minio expects PUT
     node.query(
-        f"""
+        """
         INSERT INTO FUNCTION
-        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', '{minio_secret_key}', 'CSV', 'key String, value String')
-        SETTINGS s3_truncate_on_insert=1
+        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV', 'key String, value String')
         VALUES ('color','red'),('size','10')
         """
     )
 
     content_type = "application/zstd"
-    date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
+    date = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
     resource = "/root/data/ch-proxy-test/test.csv"
     get_sig_string = f"GET\n\n{content_type}\n{date}\n{resource}"
-    password = "ClickHouse_Minio_P@ssw0rd"
+    password = "minio123"
 
     get_digest = hmac.new(
         password.encode("utf-8"), get_sig_string.encode("utf-8"), hashlib.sha1

@@ -1,18 +1,16 @@
-#include <Keeper.h>
+#include "Keeper.h"
 
 #include <Common/ClickHouseRevision.h>
-#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
 #include <filesystem>
+#include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
-#include <Common/DateLUT.h>
-#include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -43,7 +41,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include <Core/Defines.h>
+#include "Core/Defines.h"
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"
@@ -68,8 +66,6 @@
 /// A minimal file used when the keeper is run without installation
 INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
-extern const char * GIT_HASH;
-
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
     DB::Keeper app;
@@ -82,7 +78,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return code ? code : 1;
     }
 }
 
@@ -312,6 +308,8 @@ try
 #endif
     Poco::Logger * log = &logger();
 
+    UseSSL use_ssl;
+
     MainThreadStatus::getInstance();
 
     if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
@@ -362,7 +360,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path, [&](const PreformattedMessage & message){ LOG_WARNING(log, fmt::runtime(message.text)); });
+    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 
@@ -384,17 +382,13 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(
-        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
-    memory_worker.start();
-
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
@@ -429,9 +423,8 @@ try
             for (const auto & server : *servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
-        },
-        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
-        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
+        }
+    );
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -590,7 +583,6 @@ try
 
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
-            CertificateReloader::instance().tryLoadClient(*config);
 #endif
         });
 
@@ -661,6 +653,7 @@ try
     GWPAsan::initFinished();
 #endif
 
+
     LOG_INFO(log, "Ready for connections.");
 
     waitForTerminationRequest();
@@ -672,7 +665,7 @@ catch (...)
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
     auto code = getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : -1;
+    return code ? code : -1;
 }
 
 
@@ -682,7 +675,7 @@ void Keeper::logRevision() const
         "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
         VERSION_STRING,
         ClickHouseRevision::getVersionRevision(),
-        GIT_HASH,
+        git_hash.empty() ? "<unknown>" : git_hash,
         build_id.empty() ? "<unknown>" : build_id,
         getpid());
 }

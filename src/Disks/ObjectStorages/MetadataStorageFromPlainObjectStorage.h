@@ -14,11 +14,10 @@
 #include <unordered_set>
 #include <Poco/Timestamp.h>
 
-
 namespace DB
 {
 
-class InMemoryDirectoryPathMap;
+struct InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -47,7 +46,6 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
-    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -62,9 +60,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
     std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
@@ -76,7 +76,6 @@ public:
     DiskPtr getDisk() const { return {}; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
@@ -88,7 +87,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
 protected:
     /// Get the object storage prefix for storing metadata files.
@@ -100,10 +98,9 @@ protected:
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
-
-class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
 {
-protected:
+private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 
@@ -119,16 +116,10 @@ public:
 
     void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
     {
-        /// Noop
+        // Noop
     }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
-    {
-        /// Noop
-    }
-
-    /// Required for MergeTree backups.
-    void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
     }
@@ -146,18 +137,10 @@ public:
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
 
-    /// Hard links are simulated using server-side copying.
-    void createHardLink(const std::string & path_from, const std::string & path_to) override;
-
-    void moveFile(const std::string & path_from, const std::string & path_to) override;
-
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void commit() override;
 
     bool supportsChmod() const override { return false; }
 };
-
 }

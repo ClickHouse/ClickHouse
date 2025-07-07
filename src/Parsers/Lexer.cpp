@@ -1,18 +1,8 @@
-#if !defined(LEXER_STANDALONE_BUILD)
-
-#include <Parsers/Lexer.h>
+#include <cassert>
 #include <base/defines.h>
+#include <Parsers/Lexer.h>
 #include <Common/StringUtils.h>
-#include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
-
-#else /// This allows building Lexer without any dependencies or includes for WebAssembly or Emscripten.
-
-#include "LexerStandalone.h"
-#include "Lexer.h"
-
-#endif
-
 
 namespace DB
 {
@@ -84,7 +74,7 @@ Token quotedHexOrBinString(const char *& pos, const char * const token_begin, co
 {
     constexpr char quote = '\'';
 
-    chassert(pos[1] == quote);
+    assert(pos[1] == quote);
 
     bool hex = (*pos == 'x' || *pos == 'X');
 
@@ -351,32 +341,34 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                     return comment_until_end_of_line();
                 }
-
-                ++pos;
-
-                /// Nested multiline comments are supported according to the SQL standard.
-                size_t nesting_level = 1;
-
-                while (pos + 2 <= end)
+                else
                 {
-                    if (pos[0] == '/' && pos[1] == '*')
-                    {
-                        pos += 2;
-                        ++nesting_level;
-                    }
-                    else if (pos[0] == '*' && pos[1] == '/')
-                    {
-                        pos += 2;
-                        --nesting_level;
+                    ++pos;
 
-                        if (nesting_level == 0)
-                            return Token(TokenType::Comment, token_begin, pos);
+                    /// Nested multiline comments are supported according to the SQL standard.
+                    size_t nesting_level = 1;
+
+                    while (pos + 2 <= end)
+                    {
+                        if (pos[0] == '/' && pos[1] == '*')
+                        {
+                            pos += 2;
+                            ++nesting_level;
+                        }
+                        else if (pos[0] == '*' && pos[1] == '/')
+                        {
+                            pos += 2;
+                            --nesting_level;
+
+                            if (nesting_level == 0)
+                                return Token(TokenType::Comment, token_begin, pos);
+                        }
+                        else
+                            ++pos;
                     }
-                    else
-                        ++pos;
+                    pos = end;
+                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
                 }
-                pos = end;
-                return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
@@ -523,21 +515,18 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
-
-            /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-            pos = skipWhitespacesUTF8(pos, end);
-            if (pos > token_begin)
-                return Token(TokenType::Whitespace, token_begin, pos);
-
-            ++pos;
-            while (pos < end && UTF8::isContinuationOctet(*pos))
-                ++pos;
-
-            return Token(TokenType::Error, token_begin, pos);
+            else
+            {
+                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+                pos = skipWhitespacesUTF8(pos, end);
+                if (pos > token_begin)
+                    return Token(TokenType::Whitespace, token_begin, pos);
+                else
+                    return Token(TokenType::Error, token_begin, ++pos);
+            }
     }
 }
 
-#if !defined(LEXER_STANDALONE_BUILD)
 
 const char * getTokenName(TokenType type)
 {
@@ -572,49 +561,10 @@ const char * getErrorTokenDescription(TokenType type)
         case TokenType::ErrorWrongNumber:
             return "Wrong number";
         case TokenType::ErrorMaxQuerySizeExceeded:
-            return "Max query size exceeded (can be increased with the `max_query_size` setting)";
+            return "Max query size exceeded";
         default:
             return "Not an error";
     }
 }
-
-#else
-
-extern "C"
-{
-
-size_t clickhouse_lexer_size = sizeof(Lexer);
-
-void clickhouse_lexer_create(void * ptr, const char * begin, const char * end, size_t max_query_size)
-{
-    new(ptr) Lexer(begin, end, max_query_size);
-}
-
-unsigned char clickhouse_lexer_next_token(void * ptr, const char ** out_token_begin, const char ** out_token_end)
-{
-    Token res = reinterpret_cast<Lexer *>(ptr)->nextToken();
-    *out_token_begin = res.begin;
-    *out_token_end = res.end;
-    return static_cast<unsigned char>(res.type);
-}
-
-int clickhouse_lexer_token_is_significant(unsigned char token)
-{
-    return token != static_cast<unsigned char>(TokenType::Whitespace) && token != static_cast<unsigned char>(TokenType::Comment);
-}
-
-int clickhouse_lexer_token_is_error(unsigned char token)
-{
-    return token > static_cast<unsigned char>(TokenType::EndOfStream);
-}
-
-int clickhouse_lexer_token_is_end(unsigned char token)
-{
-    return token == static_cast<unsigned char>(TokenType::EndOfStream);
-}
-
-}
-
-#endif
 
 }

@@ -2,10 +2,9 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
-
-#include <base/scope_guard.h>
 
 #include "config.h"
 
@@ -27,6 +26,7 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
+friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
@@ -58,9 +58,9 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
-    bool existsFile(const String & path) const override;
-    bool existsDirectory(const String & path) const override;
-    bool existsFileOrDirectory(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -68,11 +68,9 @@ public:
 
     void moveFile(const String & from_path, const String & to_path) override;
 
+    void moveFile(const String & from_path, const String & to_path, bool should_send_metadata);
+
     void replaceFile(const String & from_path, const String & to_path) override;
-
-    void renameExchange(const std::string & old_path, const std::string & new_path) override;
-
-    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
@@ -80,15 +78,11 @@ public:
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
 
-    void removeRecursiveWithLimit(const String & path) override { removeSharedRecursiveWithLimit(path, false, {}); }
-
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-
-    void removeSharedRecursiveWithLimit(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
@@ -108,10 +102,13 @@ public:
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+    void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     void setReadOnly(const String & path) override;
+
+    bool isDirectory(const String & path) const override;
 
     void createDirectory(const String & path) override;
 
@@ -123,11 +120,7 @@ public:
 
     void removeDirectory(const String & path) override;
 
-    void removeDirectoryIfExists(const String & path) override;
-
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
-
-    bool isDirectoryEmpty(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -139,22 +132,11 @@ public:
 
     void shutdown() override;
 
-    void startupImpl() override;
-
-    void refresh(UInt64 not_sooner_than_milliseconds) override
-    {
-        metadata_storage->refresh(not_sooner_than_milliseconds);
-    }
+    void startupImpl(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
@@ -167,19 +149,26 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
-    bool areBlobPathsRandom() const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void copyFile( /// NOLINT
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = {},
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {}
         ) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
+
+    void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+
+    void onFreeze(const String & path) override;
+
+    void syncRevision(UInt64 revision) override;
+
+    UInt64 getRevision() const override;
 
     ObjectStoragePtr getObjectStorage() override;
 
@@ -192,8 +181,6 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    bool isPlain() const override;
-
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
     /// does support BACKUP to this disk, but does not support INSERT into
@@ -201,8 +188,6 @@ public:
     bool isWriteOnce() const override;
 
     bool supportsHardLinks() const override;
-
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
@@ -239,8 +224,6 @@ private:
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
-    String getReadResourceNameNoLock() const;
-    String getWriteResourceNameNoLock() const;
 
     const String object_key_prefix;
     LoggerPtr log;
@@ -256,16 +239,13 @@ private:
     bool tryReserve(UInt64 bytes);
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
-    mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
-    String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
-    String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
-    String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
-    String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
-    scope_guard resource_changes_subscription;
+    const bool send_metadata;
 
-    UInt64 remove_shared_recursive_file_limit;
+    mutable std::mutex resource_mutex;
+    String read_resource_name;
+    String write_resource_name;
+
+    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
 
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;

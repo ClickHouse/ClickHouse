@@ -7,8 +7,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/Regexps.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -162,11 +164,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         String delimiter;
@@ -199,22 +196,7 @@ public:
 
 REGISTER_FUNCTION(ArrayStringConcat)
 {
-    FunctionDocumentation::Description description = "Concatenates the elements of an array of strings into a single string, using the specified delimiter between elements.";
-    FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, delimiter])";
-    FunctionDocumentation::Arguments arguments = {
-        {"arr", "The source array of strings.", {"Array(String)"}},
-        {"delimiter", "Optional.The delimiter to insert between elements. Defaults to empty string if not specified.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"A string consisting of the array elements joined by the delimiter.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayStringConcat(['a', 'b', 'c']);", "'abc'"},
-        {"With delimiter", "SELECT arrayStringConcat(['a', 'b', 'c'], ',');", "a, b, c"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayStringConcat>(documentation);
+    factory.registerFunction<FunctionArrayStringConcat>();
 }
 
 }

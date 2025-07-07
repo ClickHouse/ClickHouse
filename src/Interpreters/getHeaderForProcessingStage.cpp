@@ -6,7 +6,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
@@ -17,10 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -146,7 +141,7 @@ Block getHeaderForProcessingStage(
 
             Block result;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (context->getSettingsRef().allow_experimental_analyzer)
             {
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),
@@ -163,8 +158,6 @@ Block getHeaderForProcessingStage(
 
             return result;
         }
-        case QueryProcessingStage::QueryPlan:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get header for QueryPlan stage.");
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }

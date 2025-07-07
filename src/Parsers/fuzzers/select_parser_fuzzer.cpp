@@ -3,6 +3,7 @@
 
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
@@ -23,7 +24,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         const UInt64 max_ast_elements = 50000;
         ast->checkSize(max_ast_elements);
 
-        std::cerr << ast->formatWithSecretsOneLine() << std::endl;
+        DB::WriteBufferFromOwnString wb;
+        DB::formatAST(*ast, wb);
+
+        std::cerr << wb.str() << std::endl;
     }
     catch (...)
     {

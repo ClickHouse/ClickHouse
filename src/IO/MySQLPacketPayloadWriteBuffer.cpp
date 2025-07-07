@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <IO/MySQLPacketPayloadWriteBuffer.h>
 
 namespace DB

@@ -1,6 +1,7 @@
 #include "WithFileSize.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/PeekableReadBuffer.h>
 
@@ -43,7 +44,7 @@ std::optional<size_t> tryGetFileSizeFromReadBuffer(ReadBuffer & in)
 {
     if (auto * delegate = dynamic_cast<ReadBufferFromFileDecorator *>(&in))
         return tryGetFileSize(delegate->getWrappedReadBuffer());
-    if (auto * compressed = dynamic_cast<CompressedReadBufferWrapper *>(&in))
+    else if (auto * compressed = dynamic_cast<CompressedReadBufferWrapper *>(&in))
         return tryGetFileSize(compressed->getWrappedReadBuffer());
     return tryGetFileSize(in);
 }
@@ -62,7 +63,7 @@ bool isBufferWithFileSize(const ReadBuffer & in)
     {
         return delegate->isWithFileSize();
     }
-    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    else if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
     {
         return isBufferWithFileSize(compressed->getWrappedReadBuffer());
     }
@@ -76,11 +77,11 @@ size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
     {
         return getDataOffsetMaybeCompressed(delegate->getWrappedReadBuffer());
     }
-    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    else if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
     {
         return getDataOffsetMaybeCompressed(compressed->getWrappedReadBuffer());
     }
-    if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
+    else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
     {
         return getDataOffsetMaybeCompressed(peekable->getSubBuffer());
     }

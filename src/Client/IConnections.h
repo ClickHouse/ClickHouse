@@ -5,7 +5,6 @@
 
 namespace DB
 {
-struct ClusterFunctionReadTaskResponse;
 
 /// Base class for working with multiple replicas (connections)
 /// from one shard within a single thread
@@ -24,12 +23,9 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data,
-        const std::vector<String> & external_roles) = 0;
+        bool with_pending_data) = 0;
 
-    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
-
-    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
+    virtual void sendReadTaskResponse(const String &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     /// Get packet from any replica.
@@ -37,8 +33,6 @@ public:
 
     /// Version of `receivePacket` function without locking.
     virtual Packet receivePacketUnlocked(AsyncCallback async_callback) = 0;
-
-    virtual UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) = 0;
 
     /// Break all active connections.
     virtual void disconnect() = 0;

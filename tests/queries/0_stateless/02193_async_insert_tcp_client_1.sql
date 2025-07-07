@@ -17,7 +17,7 @@ INSERT INTO t_async_insert_02193_1 FORMAT JSONEachRow {"id": 4, "s": "ddd"};
 
 SELECT * FROM t_async_insert_02193_1 ORDER BY id;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT count(), sum(ProfileEvents['AsyncInsertQuery']) FROM system.query_log
 WHERE

@@ -117,7 +117,7 @@ TEST_P(FileEncryptionCipherTest, Encryption)
     {
         WriteBufferFromOwnString buf;
         encryptor.setOffset(base_offset);
-        encryptor.encrypt(input.data(), i, buf);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        encryptor.encrypt(input.data(), i, buf);
         ASSERT_EQ(expected.substr(0, i), buf.str());
     }
 }
@@ -151,7 +151,7 @@ TEST_P(FileEncryptionCipherTest, Decryption)
     for (size_t i = 0; i <= expected.size(); ++i)
     {
         encryptor.setOffset(base_offset);
-        encryptor.decrypt(input.data(), i, buf.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        encryptor.decrypt(input.data(), i, buf.data());
         ASSERT_EQ(expected.substr(0, i), buf.substr(0, i));
     }
 }
@@ -236,7 +236,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     wb.finalize();
 
     auto lrb = std::make_unique<ReadBufferFromFile>(tmp_path);
-    ReadBufferFromEncryptedFile rb(tmp_path, 10, std::move(lrb), key, header);
+    ReadBufferFromEncryptedFile rb(10, std::move(lrb), key, header);
     rb.ignore(5);
     rb.ignore(5);
     rb.ignore(5);

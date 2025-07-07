@@ -2,7 +2,6 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -38,7 +37,7 @@ def test_exception_message(started_cluster):
     try:
         assert (
             node2.query(
-                "select number from remote('node1', 'default', 'nums') settings serialize_query_plan=0", user="good"
+                "select number from remote('node1', 'default', 'nums')", user="good"
             )
             == "0\n1\n"
         )
