@@ -1219,8 +1219,11 @@ class FunctionBinaryArithmetic : public IFunction
         return column_to;
     }
 
-    ColumnPtr executeTimeAndDateTimeOperation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-                                              size_t input_row_count, bool should_subtract = false) const
+    ColumnPtr executeTimeAndDateTimeOperation(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_row_count,
+        bool should_subtract = false) const
     {
         bool left_is_time = WhichDataType(arguments[0].type).isTimeOrTime64();
         const ColumnWithTypeAndName & time_arg = left_is_time ? arguments[0] : arguments[1];
@@ -1271,7 +1274,7 @@ class FunctionBinaryArithmetic : public IFunction
             if (datetime_is_const && time_is_const)
             {
                 /// both arguments are constants
-                UInt32 result = should_subtract ? 
+                UInt32 result = should_subtract ?
                     datetime_const_val - time_const_val :
                     datetime_const_val + time_const_val;
                     
@@ -1284,7 +1287,7 @@ class FunctionBinaryArithmetic : public IFunction
                 const auto & time_data = static_cast<const ColumnInt32 *>(time_col_ptr)->getData();
 
                 for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ? 
+                    result_data[i] = should_subtract ?
                         datetime_const_val - time_data[i] :
                         datetime_const_val + time_data[i];
             }
@@ -1294,7 +1297,7 @@ class FunctionBinaryArithmetic : public IFunction
                 const auto & datetime_data = static_cast<const ColumnUInt32 *>(datetime_col_ptr)->getData();
 
                 for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ? 
+                    result_data[i] = should_subtract ?
                         datetime_data[i] - time_const_val :
                         datetime_data[i] + time_const_val;
             }
@@ -1305,7 +1308,7 @@ class FunctionBinaryArithmetic : public IFunction
                 const auto & time_data = static_cast<const ColumnInt32 *>(time_col_ptr)->getData();
 
                 for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ? 
+                    result_data[i] = should_subtract ?
                         datetime_data[i] - time_data[i] :
                         datetime_data[i] + time_data[i];
             }
@@ -1316,7 +1319,7 @@ class FunctionBinaryArithmetic : public IFunction
         {
             /// handle high precision DateTime64 and/or Time64
             const auto * result_type_ptr = checkAndGetDataType<DataTypeDateTime64>(result_type.get());
-            UInt32 scale = result_type_ptr ? result_type_ptr->getScale() : 0;
+            UInt8 scale = result_type_ptr ? result_type_ptr->getScale() : 0;
 
             auto result_column = ColumnDecimal<DateTime64>::create(input_row_count, scale);
             auto & result_data = result_column->getData();
@@ -1336,8 +1339,11 @@ class FunctionBinaryArithmetic : public IFunction
                     const auto * datetime64_type = checkAndGetDataType<DataTypeDateTime64>(datetime_arg.type.get());
                     datetime_scale = datetime64_type->getScale();
 
-                    try { datetime_const_val = datetime_field.safeGet<Decimal64>(); }
-                    catch (...) { datetime_const_val.value = static_cast<Int64>(datetime_field.safeGet<UInt64>()); }
+                    DecimalField<Decimal64> decimal_field;
+                    if (datetime_field.tryGet(decimal_field))
+                        datetime_const_val = decimal_field.getValue();
+                    else
+                        datetime_const_val.value = static_cast<Int64>(datetime_field.safeGet<UInt64>());
                 }
                 else
                 {
@@ -1382,8 +1388,11 @@ class FunctionBinaryArithmetic : public IFunction
                     const auto * time64_type = checkAndGetDataType<DataTypeTime64>(time_arg.type.get());
                     time_scale = time64_type->getScale();
 
-                    try { time_const_val = time_field.safeGet<Decimal64>(); }
-                    catch (...) { time_const_val.value = static_cast<Int64>(time_field.safeGet<UInt64>()); }
+                    DecimalField<Decimal64> decimal_field;
+                    if (time_field.tryGet(decimal_field))
+                        time_const_val = decimal_field.getValue();
+                    else
+                        time_const_val.value = static_cast<Int64>(time_field.safeGet<UInt64>());
                 }
                 else
                 {
@@ -1413,10 +1422,10 @@ class FunctionBinaryArithmetic : public IFunction
             }
 
             /// calculate scale factors for adjustments
-            const Int64 datetime_scale_factor = (datetime_scale != scale) ? 
+            const Int64 datetime_scale_factor = (datetime_scale != scale) ?
                 static_cast<Int64>(std::pow(10, scale - datetime_scale)) : 1;
 
-            const Int64 time_scale_factor = (time_scale != scale) ? 
+            const Int64 time_scale_factor = (time_scale != scale) ?
                 static_cast<Int64>(std::pow(10, scale - time_scale)) : 1;
 
             if (datetime_is_const && time_is_const)
@@ -1428,7 +1437,7 @@ class FunctionBinaryArithmetic : public IFunction
                 scaled_time.value *= time_scale_factor;
 
                 Decimal64 result;
-                result.value = should_subtract ? 
+                result.value = should_subtract ?
                     scaled_datetime.value - scaled_time.value :
                     scaled_datetime.value + scaled_time.value;
 
@@ -1448,7 +1457,7 @@ class FunctionBinaryArithmetic : public IFunction
                     Decimal64 scaled_time = time_data[i];
                     scaled_time.value *= time_scale_factor;
 
-                    result_data[i].value = should_subtract ? 
+                    result_data[i].value = should_subtract ?
                         scaled_datetime.value - scaled_time.value :
                         scaled_datetime.value + scaled_time.value;
                 }
@@ -1466,7 +1475,7 @@ class FunctionBinaryArithmetic : public IFunction
                     Decimal64 scaled_datetime = datetime_data[i];
                     scaled_datetime.value *= datetime_scale_factor;
 
-                    result_data[i].value = should_subtract ? 
+                    result_data[i].value = should_subtract ?
                         scaled_datetime.value - scaled_time.value :
                         scaled_datetime.value + scaled_time.value;
                 }
@@ -1485,7 +1494,7 @@ class FunctionBinaryArithmetic : public IFunction
                     scaled_datetime.value *= datetime_scale_factor;
                     scaled_time.value *= time_scale_factor;
 
-                    result_data[i].value = should_subtract ? 
+                    result_data[i].value = should_subtract ?
                         scaled_datetime.value - scaled_time.value :
                         scaled_datetime.value + scaled_time.value;
                 }
