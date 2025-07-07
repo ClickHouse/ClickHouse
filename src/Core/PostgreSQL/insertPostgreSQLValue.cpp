@@ -1,4 +1,4 @@
-#include <Core/PostgreSQL/insertPostgreSQLValue.h>
+#include "insertPostgreSQLValue.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>

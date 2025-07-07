@@ -128,7 +128,6 @@ void MergeTreeDataPartWriterWide::addStreams(
     const ColumnPtr & column,
     const ASTPtr & effective_codec_desc)
 {
-    std::optional<String> prev_stream_name;
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
@@ -164,12 +163,6 @@ void MergeTreeDataPartWriterWide::addStreams(
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
-
-        /// If previous stream is not null it means it was Array offsets stream.
-        /// Can't apply lossy compression for offsets.
-        if (prev_stream_name && column_streams[*prev_stream_name]->compressor.getCodec()->isLossyCompression())
-            column_streams[*prev_stream_name]->compressor.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
-        prev_stream_name = stream_name;
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -233,7 +226,6 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
-
 
         return &column_streams.at(stream_name)->compressed_hashing;
     };
@@ -454,12 +446,6 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
             return;
-
-        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
-        /// require specifying the array dimensions before compression starts.
-        /// For 1D arrays, it's simply the length.
-        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
-        setVectorDimensionsIfNeeded(compression_codec, &column);
 
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());

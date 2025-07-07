@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 #include <base/defines.h>
-#include <Common/JSONParsers/ElementTypes.h>
+#include "ElementTypes.h"
 
 
 namespace DB

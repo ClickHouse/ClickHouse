@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_SSL
-#include <Common/OpenSSLHelpers.h>
+#include "OpenSSLHelpers.h"
 #include <base/scope_guard.h>
 
 #include <openssl/err.h>

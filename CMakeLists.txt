@@ -229,8 +229,6 @@ if (SPLIT_DEBUG_SYMBOLS)
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
-option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
-
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
@@ -578,9 +576,6 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
-if (LEXER_STANDALONE_BUILD)
-    add_subdirectory(tests/lexer)
-endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 

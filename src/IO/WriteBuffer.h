@@ -128,6 +128,7 @@ protected:
     virtual void cancelImpl() noexcept { }
 
     bool finalized = false;
+    bool canceled = false;
 
     /// The number of bytes to preserve from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),

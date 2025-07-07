@@ -1,4 +1,4 @@
-#include <Interpreters/ExternalLoader.h>
+#include "ExternalLoader.h"
 
 #include <mutex>
 #include <unordered_set>

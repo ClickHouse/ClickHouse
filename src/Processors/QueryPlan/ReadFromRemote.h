@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
@@ -10,8 +11,8 @@
 
 namespace DB
 {
-class IThrottler;
-using ThrottlerPtr = std::shared_ptr<IThrottler>;
+class Throttler;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

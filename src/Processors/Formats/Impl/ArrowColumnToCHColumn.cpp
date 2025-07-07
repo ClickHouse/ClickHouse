@@ -1,5 +1,5 @@
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Common/Exception.h>
+#include "ArrowColumnToCHColumn.h"
+#include "Common/Exception.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -1182,7 +1182,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
-                    if (tuple_type_hint->hasExplicitNames() && !is_map_nested_column)
+                    if (tuple_type_hint->haveExplicitNames() && !is_map_nested_column)
                     {
                         auto pos = tuple_type_hint->tryGetPositionByName(field_name, settings.case_insensitive_matching);
                         if (pos)

@@ -927,13 +927,6 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     return ColumnNullable::create(new_values, new_null_map);
 }
 
-void ColumnNullable::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
-{
-    const auto & src_nullable = assert_cast<const ColumnNullable &>(src);
-    nested_column->updateAt(src_nullable.getNestedColumn(), dst_pos, src_pos);
-    null_map->updateAt(src_nullable.getNullMapColumn(), dst_pos, src_pos);
-}
-
 ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
 {
     auto res = nested_column->cloneEmpty();

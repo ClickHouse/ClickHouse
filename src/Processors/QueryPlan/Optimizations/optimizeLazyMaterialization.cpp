@@ -269,23 +269,12 @@ bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
     if (reading_step->getAllColumnNames().size() == lazily_read_info->lazily_read_columns.size())
         return false;
 
-    auto storage_snapshot = reading_step->getStorageSnapshot();
-
-    /// Snapshot data may be missed, for example, in EXPLAIN query.
-    if (storage_snapshot->data)
-    {
-        auto mutations_snapshot = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).mutations_snapshot;
-        /// Applying patches in MergeTreeLazilyReader is not implemented.
-        if (mutations_snapshot->hasPatchParts())
-            return false;
-    }
-
     lazily_read_info->data_part_infos = std::make_shared<DataPartInfoByIndex>();
 
     auto lazy_column_reader = std::make_unique<MergeTreeLazilyReader>(
         sorting_step->getOutputHeader(),
         reading_step->getMergeTreeData(),
-        storage_snapshot,
+        reading_step->getStorageSnapshot(),
         lazily_read_info,
         reading_step->getContext(),
         alias_index);

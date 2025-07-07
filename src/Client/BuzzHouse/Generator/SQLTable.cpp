@@ -7,9 +7,9 @@
 namespace BuzzHouse
 {
 
-String StatementGenerator::nextComment(RandomGenerator & rg) const
+String StatementGenerator::nextComment(RandomGenerator & rg)
 {
-    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextStrlen());
+    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
 }
 
 void collectColumnPaths(
@@ -78,18 +78,7 @@ void collectColumnPaths(
     {
         for (const auto & entry : ntp->subtypes)
         {
-            const String nsub = "c" + std::to_string(entry.cname);
-
-            collectColumnPaths(nsub, entry.subtype, flags, next, paths);
-            if ((flags & collect_generated) != 0)
-            {
-                /// The size entry also exists for nested cols
-                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype));
-                next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
-                paths.push_back(next);
-                next.path.pop_back();
-                next.path.pop_back();
-            }
+            collectColumnPaths("c" + std::to_string(entry.cname), entry.subtype, flags, next, paths);
         }
     }
     else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
@@ -165,7 +154,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
@@ -218,20 +206,20 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const size_t ncols)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
 {
     SQLRelation rel(rel_name);
 
-    for (size_t i = 0; i < ncols; i++)
+    for (const auto & entry : v.cols)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
     }
     return rel;
 }
 
 void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
 {
-    const SQLRelation rel = createViewRelation(rel_name, v.cols.size());
+    const SQLRelation rel = createViewRelation(rel_name, v);
 
     if (rel_name.empty())
     {
@@ -577,6 +565,22 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
 
         col->set_column(entry.path[i].cname);
     }
+}
+
+String StatementGenerator::columnPathRef(const ColumnPathChain & entry) const
+{
+    String res = "`";
+
+    for (size_t i = 0; i < entry.path.size(); i++)
+    {
+        if (i != 0)
+        {
+            res += ".";
+        }
+        res += entry.path[i].cname;
+    }
+    res += "`";
+    return res;
 }
 
 void StatementGenerator::colRefOrExpression(
@@ -1184,7 +1188,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_num(rg.nextRandomUInt64());
         if (rg.nextBool())
         {
-            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             te->add_params()->set_num(string_length_dist(rg.generator));
@@ -1247,7 +1251,7 @@ void StatementGenerator::generateEngineDetails(
         SettingValues * svs = nullptr;
         const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!engineSettings.empty() && rg.nextBool())
+        if (!engineSettings.empty() && rg.nextSmallNumber() < 5)
         {
             /// Add table engine settings
             svs = svs ? svs : te->mutable_setting_values();
@@ -1259,32 +1263,36 @@ void StatementGenerator::generateEngineDetails(
             svs = svs ? svs : te->mutable_setting_values();
             generateSettingValues(rg, serverSettings, svs);
         }
-        if (b.isAnyS3Engine())
+        if (b.isAnyS3Engine() || (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared))
         {
             svs = svs ? svs : te->mutable_setting_values();
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            if (b.isAnyS3Engine())
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-            sv->set_property("input_format_with_names_use_header");
-            sv->set_value("0");
-        }
-        else if (
-            b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
-            && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
-            && (!svs
-                || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
-                    && (!svs->other_values_size()
-                        || std::find_if(
-                               svs->other_values().begin(),
-                               svs->other_values().end(),
-                               [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
-                            == svs->other_values().end()))))
-        {
-            svs = svs ? svs : te->mutable_setting_values();
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
+                sv->set_property("input_format_with_names_use_header");
+                sv->set_value("0");
+            }
+            else if (
+                b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+                && (!fc.storage_policies.empty() || !fc.keeper_disks.empty()))
+            {
+                /// Requires storage setting
+                const auto & ovals = svs->other_values();
 
-            sv->set_property(pick);
-            sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
+                if (std::find_if(
+                        ovals.begin(),
+                        ovals.end(),
+                        [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
+                    == ovals.end())
+                {
+                    SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+                    const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
+
+                    sv->set_property(pick);
+                    sv->set_value("'" + rg.pickRandomly(pick == "storage_policy" ? fc.storage_policies : fc.keeper_disks) + "'");
+                }
+            }
         }
     }
     setClusterInfo(rg, b);
@@ -1552,38 +1560,18 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
-        case IndexType::IDX_text: {
-            static const DB::Strings & tokenizerVals = {"default", "ngram", "split", "no_op"};
-            const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
+        case IndexType::IDX_text:
+            if (rg.nextBool())
+            {
+                static const DB::Strings & tokenizerVals = {"default", "ngram", "noop"};
 
-            idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
+                idef->add_params()->set_unescaped_sval("tokenizer = '" + rg.pickRandomly(tokenizerVals) + "'");
+            }
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
                 idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
-            }
-            if (next_tokenizer == "split" && rg.nextBool())
-            {
-                String buf;
-                DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
-                std::uniform_int_distribution<size_t> next_dist(UINT32_C(0), separators.size());
-
-                std::shuffle(separators.begin(), separators.end(), rg.generator);
-                const size_t nlen = next_dist(rg.generator);
-                buf += "separators = [";
-                for (size_t i = 0; i < nlen; i++)
-                {
-                    if (i != 0)
-                    {
-                        buf += ", ";
-                    }
-                    buf += "'";
-                    buf += separators[i];
-                    buf += "'";
-                }
-                buf += "]";
-                idef->add_params()->set_unescaped_sval(std::move(buf));
             }
             if (rg.nextBool())
             {
@@ -1592,8 +1580,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 idef->add_params()->set_unescaped_sval(
                     "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
             }
-        }
-        break;
+            break;
         case IndexType::IDX_vector_similarity:
             idef->add_params()->set_sval("hnsw");
             idef->add_params()->set_sval(rg.nextBool() ? "cosineDistance" : "L2Distance");
@@ -1703,12 +1690,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
 
-    if (noption < 3)
+    if (noption < 4)
     {
         b.teng = MergeTree;
         return;
     }
-    if (noption < 6)
+    if (noption < 9)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, VersionedCollapsingMergeTree);
         b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));
@@ -1875,10 +1862,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_version = 0;
         const uint32_t to_addcols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
         const uint32_t to_addidxs
-            = ((rg.nextMediumNumber() % 4) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+            = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
-            = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
-        const uint32_t to_addconsts = ((rg.nextMediumNumber() % 3) + UINT32_C(1)) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+            = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
         const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
@@ -2034,7 +2021,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 break;
             }
         }
-        if (has_date_cols || rg.nextSmallNumber() < 7)
+        if (has_date_cols || rg.nextMediumNumber() < 6)
         {
             generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
@@ -2057,6 +2044,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     /// Range requires 2 cols for min and max
     const uint32_t dictionary_ncols = std::max((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1), isRange ? UINT32_C(2) : UINT32_C(1));
     SettingValues * svs = nullptr;
+    DictionarySource * source = cd->mutable_source();
     DictionaryLayout * layout = cd->mutable_layout();
     const uint32_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
@@ -2090,24 +2078,20 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         = [&next](const SQLTable & t) { return t.isAttached() && (t.is_deterministic || !next.is_deterministic); };
     const auto & dictionary_view_lambda
         = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
-    const auto & dictionary_dictionary_lambda
-        = [&next](const SQLDictionary & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool has_table = collectionHas<SQLTable>(dictionary_table_lambda);
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
-    const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!systemTables.empty() && !next.is_deterministic);
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
-    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
     const uint32_t null_src = 2;
-    const uint32_t prob_space = dict_table + dict_system_table + dict_view + dict_dict + null_src;
+    const uint32_t prob_space = dict_table + dict_system_table + dict_view + null_src;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
     if (dict_table && nopt < (dict_table + 1))
     {
-        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+        DictionarySourceDetails * dsd = source->mutable_source();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
         if (t.isPostgreSQLEngine() && rg.nextSmallNumber() < 8)
@@ -2117,7 +2101,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.server_hostname);
+            dsd->set_host(sc.hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2130,7 +2114,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.server_hostname);
+            dsd->set_host(sc.hostname);
             dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2143,7 +2127,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.server_hostname);
+            dsd->set_host(sc.hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2153,7 +2137,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         {
             const ServerCredentials & sc = fc.redis_server.value();
 
-            dsd->set_host(sc.server_hostname);
+            dsd->set_host(sc.hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2173,7 +2157,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_system_table && nopt < (dict_table + dict_system_table + 1))
     {
-        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+        DictionarySourceDetails * dsd = source->mutable_source();
         ExprSchemaTable * est = dsd->mutable_est();
 
         est->mutable_database()->set_database("system");
@@ -2182,23 +2166,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else if (dict_view && nopt < (dict_table + dict_system_table + dict_view + 1))
     {
-        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+        DictionarySourceDetails * dsd = source->mutable_source();
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(dictionary_view_lambda));
 
         v.setName(dsd->mutable_est(), false);
         dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
     }
-    else if (dict_dict && nopt < (dict_table + dict_system_table + dict_view + dict_dict + 1))
+    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + null_src + 1))
     {
-        DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(dictionary_dictionary_lambda));
-
-        d.setName(dsd->mutable_est(), false);
-        dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
-    }
-    else if (null_src && nopt < (dict_table + dict_system_table + dict_view + dict_dict + null_src + 1))
-    {
-        cd->mutable_source()->set_null_src(true);
+        source->set_null_src(true);
     }
     else
     {
@@ -2276,7 +2252,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         sv->set_property("SIZE_IN_CELLS");
         sv->set_value(
-            std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+            std::to_string(
+                rg.thresholdGenerator<uint32_t>(0.25, 0.25, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key

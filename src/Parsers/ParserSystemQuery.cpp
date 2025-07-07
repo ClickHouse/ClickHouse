@@ -528,7 +528,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (parser.parse(pos, ast, expected))
             {
-                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+                res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
             else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
             {

@@ -49,8 +49,6 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    void updateHashImpl(SipHash & hash) const override;
-
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }

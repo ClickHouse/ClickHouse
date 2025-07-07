@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/Parquet/ParquetDataValuesReader.h>
+#include "ParquetDataValuesReader.h"
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>

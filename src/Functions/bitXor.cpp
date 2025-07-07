@@ -46,10 +46,10 @@ REGISTER_FUNCTION(BitXor)
     FunctionDocumentation::Description description = "Performs bitwise ""exclusive or"" (XOR) operation between two values.";
     FunctionDocumentation::Syntax syntax = "bitXor(a, b)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "First value.", {"(U)Int*", "Float*"}},
-        {"b", "Second value.", {"(U)Int*", "Float*"}},
+        {"a", "First value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
+        {"b", "Second value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of bitwise operation `a XOR b`"};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of bitwise operation `a XOR b`";
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 CREATE TABLE bits

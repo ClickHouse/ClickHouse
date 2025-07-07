@@ -27,7 +27,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -1199,12 +1198,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
+            [callback = context->getReadTaskCallback(), max_addresses]()
             {
-                auto task = callback();
-                if (!task || task->isEmpty())
+                String next_uri = callback();
+                if (next_uri.empty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(task->path, max_addresses);
+                return getFailoverOptions(next_uri, max_addresses);
             });
     }
     else if (is_url_with_globs)
@@ -1661,7 +1660,7 @@ void registerStorageURL(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::URL,
+            .source_access_type = AccessType::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }

@@ -951,17 +951,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
     else
     {
-        /// the last case is a regular table
-        /// at the first iteration it is the init_table_id most likely
-        /// the following iterations will be for inner tables of materialized views
-
         if (init_context->hasQueryContext())
             init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
         {
-            /// set root_view to `{}`/`StorageID::createEmpty()` and dependent_views[{}] to the init_table_id
-            set_defaults_for_root_view({}, init_table_id);
+            set_defaults_for_root_view({}, current);
             output_headers[{}] = metadata->getSampleBlock();
             view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
             return true;

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <IO/S3/Credentials.h>
+#include "IO/S3/Credentials.h"
 #include "config.h"
 
 #if USE_AWS_S3
