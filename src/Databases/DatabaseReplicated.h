@@ -41,7 +41,7 @@ class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
-    static constexpr auto REPLICA_UNSYNCED_MARKER = "UNSYNCED";
+    static constexpr auto REPLICA_UNSYNCED_MARKER = "\tUNSYNCED";
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,

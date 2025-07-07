@@ -152,6 +152,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             return active_id == actual_content.substr(0, actual_content.size() - strlen(DatabaseReplicated::REPLICA_UNSYNCED_MARKER));
         return active_id == actual_content;
     });
+    bool first_initialization = active_node_holder == nullptr;
     if (active_node_holder)
         active_node_holder->setAlreadyRemoved();
     active_node_holder.reset();
@@ -217,8 +218,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
-    bool first_initialization = active_node_holder == nullptr;
-    if (is_new_replica || lost_according_to_log_ptr || first_initialization)
+    if (is_new_replica || first_initialization)
     {
         /// The current max_log_ptr might increase significantly while we were executing recoverLostReplica.
         /// If it exceeds max_replication_lag_to_enqueue - this replica will refuse to accept other queries.
