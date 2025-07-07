@@ -87,10 +87,14 @@ CONV_FN(Function, func)
     ret += func.function();
 }
 
-CONV_FN(Cluster, clust)
+void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-    ret += " ON CLUSTER '";
-    ret += clust.cluster();
+    if (clause)
+    {
+        ret += " ON CLUSTER ";
+    }
+    ret += "'";
+    ret += cl.cluster();
     ret += "'";
 }
 
@@ -404,6 +408,227 @@ CONV_FN(IntLiteral, int_val)
     }
 }
 
+CONV_FN(SpecialVal, val)
+{
+    if (val.paren())
+    {
+        ret += "(";
+    }
+    switch (val.val())
+    {
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL:
+            ret += "NULL";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE:
+            ret += "TRUE";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FALSE:
+            ret += "FALSE";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO:
+            ret += "0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE:
+            ret += "1";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_ONE:
+            ret += "-1";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_STRING:
+            ret += "''";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_ARRAY:
+            ret += "[]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_TUPLE:
+            ret += "()";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_MAP:
+            if (val.paren())
+            {
+                ret += "map()";
+            }
+            else
+            {
+                ret += "'{}'";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_EMPTY_JSON:
+            ret += "'{}'";
+            if (val.paren())
+            {
+                ret += "::JSON";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_ZERO_FP:
+            ret += "-0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_ZERO_FP:
+            ret += "+0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_FP:
+            ret += "0.0";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_INF:
+            ret += "inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_INF:
+            ret += "+inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_INF:
+            ret += "-inf";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NAN:
+            ret += "nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_PLUS_NAN:
+            ret += "+nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MINUS_NAN:
+            ret += "-nan";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_HAPPY:
+            ret += "'😂'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TEN_HAPPY:
+            ret += "'😂😂😂😂😂😂😂😂😂😂'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT32:
+            ret += std::to_string(std::numeric_limits<int32_t>::min());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT32:
+            ret += std::to_string(std::numeric_limits<int32_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT64:
+            ret += std::to_string(std::numeric_limits<int64_t>::min());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT64:
+            ret += std::to_string(std::numeric_limits<int64_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT128:
+            ret += "-170141183460469231731687303715884105728";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT128:
+            ret += "170141183460469231731687303715884105727";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT256:
+            ret += "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
+            ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
+            ret += std::to_string(std::numeric_limits<uint32_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT64:
+            ret += std::to_string(std::numeric_limits<uint64_t>::max());
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT128:
+            ret += "340282366920938463463374607431768211455";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
+            ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
+            ret += "'1970-01-01'";
+            if (val.paren())
+            {
+                ret += "::Date";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE:
+            ret += "'2149-06-06'";
+            if (val.paren())
+            {
+                ret += "::Date";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
+            ret += "'1900-01-01'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
+            ret += "'2299-12-31'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME:
+            ret += "'-999:59:59'";
+            if (val.paren())
+            {
+                ret += "::Time";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME:
+            ret += "'999:59:59'";
+            if (val.paren())
+            {
+                ret += "::Time";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
+            ret += "'-999:59:59.999999999'";
+            if (val.paren())
+            {
+                ret += "::Time64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
+            ret += "'999:59:59.999999999'";
+            if (val.paren())
+            {
+                ret += "::Time64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME:
+            ret += "'1970-01-01 00:00:00'";
+            if (val.paren())
+            {
+                ret += "::DateTime";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME:
+            ret += "'2106-02-07 06:28:15'";
+            if (val.paren())
+            {
+                ret += "::DateTime";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
+            ret += "'1900-01-01 00:00:00'";
+            if (val.paren())
+            {
+                ret += "::DateTime64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME64:
+            ret += "'2299-12-31 23:59:59.99999999'";
+            if (val.paren())
+            {
+                ret += "::DateTime64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
+            ret += "'\\0'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_DEFAULT:
+            ret += "DEFAULT";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_STAR:
+            ret += "*";
+            break;
+    }
+    if (val.paren())
+    {
+        ret += ")";
+    }
+}
+
 CONV_FN(LiteralValue, lit_val)
 {
     using LitValType = LiteralValue::LitValOneofCase;
@@ -440,151 +665,9 @@ CONV_FN(LiteralValue, lit_val)
             ConvertToSQLString(ret, lit_val.string_lit());
             ret += '\'';
             break;
-        case LitValType::kSpecialVal: {
-            switch (lit_val.special_val())
-            {
-                case SpecialVal::VAL_NULL:
-                    ret += "NULL";
-                    break;
-                case SpecialVal::VAL_TRUE:
-                    ret += "TRUE";
-                    break;
-                case SpecialVal::VAL_FALSE:
-                    ret += "FALSE";
-                    break;
-                case SpecialVal::VAL_ZERO:
-                    ret += "0";
-                    break;
-                case SpecialVal::VAL_ONE:
-                    ret += "1";
-                    break;
-                case SpecialVal::VAL_MINUS_ONE:
-                    ret += "(-1)";
-                    break;
-                case SpecialVal::VAL_EMPTY_STRING:
-                    ret += "''";
-                    break;
-                case SpecialVal::VAL_EMPTY_ARRAY:
-                    ret += "[]";
-                    break;
-                case SpecialVal::VAL_EMPTY_TUPLE:
-                    ret += "()";
-                    break;
-                case SpecialVal::VAL_EMPTY_MAP:
-                    ret += "map()";
-                    break;
-                case SpecialVal::VAL_EMPTY_JSON:
-                    ret += "'{}'::JSON";
-                    break;
-                case SpecialVal::VAL_MINUS_ZERO_FP:
-                    ret += "(-0.0)";
-                    break;
-                case SpecialVal::VAL_PLUS_ZERO_FP:
-                    ret += "+0.0";
-                    break;
-                case SpecialVal::VAL_ZERO_FP:
-                    ret += "0.0";
-                    break;
-                case SpecialVal::VAL_INF:
-                    ret += "inf";
-                    break;
-                case SpecialVal::VAL_PLUS_INF:
-                    ret += "+inf";
-                    break;
-                case SpecialVal::VAL_MINUS_INF:
-                    ret += "(-inf)";
-                    break;
-                case SpecialVal::VAL_NAN:
-                    ret += "nan";
-                    break;
-                case SpecialVal::VAL_PLUS_NAN:
-                    ret += "+nan";
-                    break;
-                case SpecialVal::VAL_MINUS_NAN:
-                    ret += "(-nan)";
-                    break;
-                case SpecialVal::VAL_HAPPY:
-                    ret += "'😂'";
-                    break;
-                case SpecialVal::VAL_TEN_HAPPY:
-                    ret += "'😂😂😂😂😂😂😂😂😂😂'";
-                    break;
-                case SpecialVal::MIN_INT32:
-                    ret += "(";
-                    ret += std::to_string(std::numeric_limits<int32_t>::min());
-                    ret += ")";
-                    break;
-                case SpecialVal::MAX_INT32:
-                    ret += std::to_string(std::numeric_limits<int32_t>::max());
-                    break;
-                case SpecialVal::MIN_INT64:
-                    ret += "(";
-                    ret += std::to_string(std::numeric_limits<int64_t>::min());
-                    ret += ")";
-                    break;
-                case SpecialVal::MAX_INT64:
-                    ret += std::to_string(std::numeric_limits<int64_t>::max());
-                    break;
-                case SpecialVal::MIN_INT128:
-                    ret += "(-170141183460469231731687303715884105728)";
-                    break;
-                case SpecialVal::MAX_INT128:
-                    ret += "170141183460469231731687303715884105727";
-                    break;
-                case SpecialVal::MIN_INT256:
-                    ret += "(-57896044618658097711785492504343953926634992332820282019728792003956564819968)";
-                    break;
-                case SpecialVal::MAX_INT256:
-                    ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
-                    break;
-                case SpecialVal::MAX_UINT32:
-                    ret += std::to_string(std::numeric_limits<uint32_t>::max());
-                    break;
-                case SpecialVal::MAX_UINT64:
-                    ret += std::to_string(std::numeric_limits<uint64_t>::max());
-                    break;
-                case SpecialVal::MAX_UINT128:
-                    ret += "340282366920938463463374607431768211455";
-                    break;
-                case SpecialVal::MAX_UINT256:
-                    ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-                    break;
-                case SpecialVal::MIN_DATE:
-                    ret += "'1970-01-01'::Date";
-                    break;
-                case SpecialVal::MAX_DATE:
-                    ret += "'2149-06-06'::Date";
-                    break;
-                case SpecialVal::MIN_DATE32:
-                    ret += "'1900-01-01'::Date32";
-                    break;
-                case SpecialVal::MAX_DATE32:
-                    ret += "'2299-12-31'::Date32";
-                    break;
-                case SpecialVal::MIN_DATETIME:
-                    ret += "'1970-01-01 00:00:00'::DateTime";
-                    break;
-                case SpecialVal::MAX_DATETIME:
-                    ret += "'2106-02-07 06:28:15'::DateTime";
-                    break;
-                case SpecialVal::MIN_DATETIME64:
-                    ret += "'1900-01-01 00:00:00'::DateTime64";
-                    break;
-                case SpecialVal::MAX_DATETIME64:
-                    ret += "'2299-12-31 23:59:59.99999999'::DateTime64";
-                    break;
-                case SpecialVal::VAL_NULL_CHAR:
-                    ret += "'\\0'";
-                    break;
-                case SpecialVal::VAL_DEFAULT:
-                    ret += "DEFAULT";
-                    break;
-                case SpecialVal::VAL_STAR:
-                    ret += "*";
-                    break;
-            }
-        }
-        break;
+        case LitValType::kSpecialVal:
+            SpecialValToString(ret, lit_val.special_val());
+            break;
         default:
             ret += "1";
     }
@@ -722,6 +805,18 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
         case BottomTypeNameType::kDates:
             ret += Dates_Name(btn.dates());
             break;
+        case BottomTypeNameType::kTimes: {
+            const TimeTp & tt = btn.times();
+
+            ret += Times_Name(tt.type());
+            if (tt.has_precision())
+            {
+                ret += "(";
+                ret += std::to_string(tt.precision() % UINT32_C(10));
+                ret += ")";
+            }
+        }
+        break;
         case BottomTypeNameType::kDatetimes: {
             const DateTimeTp & dt = btn.datetimes();
             const bool has_precision = dt.has_precision();
@@ -1570,6 +1665,10 @@ CONV_FN(ComplicatedExpr, expr)
             ExprListToString(ret, expr.tuple());
             ret += ")";
             break;
+        case ExprType::kTable:
+            TableToString(ret, expr.table());
+            ret += ".*";
+            break;
         default:
             ret += "1";
     }
@@ -1605,11 +1704,6 @@ CONV_FN(ResultColumn, rc)
     {
         ExprColAliasToString(ret, rc.eca());
     }
-    else if (rc.has_table_star())
-    {
-        TableToString(ret, rc.table_star());
-        ret += ".*";
-    }
     else
     {
         ret += "*";
@@ -1618,16 +1712,6 @@ CONV_FN(ResultColumn, rc)
 
 CONV_FN(JoinedQuery, tos);
 CONV_FN(TableOrSubquery, tos);
-
-CONV_FN(ExprColumnList, cl)
-{
-    ExprColumnToString(ret, cl.col());
-    for (int i = 0; i < cl.extra_cols_size(); i++)
-    {
-        ret += ", ";
-        ExprColumnToString(ret, cl.extra_cols(i));
-    }
-}
 
 CONV_FN(JoinConstraint, jc)
 {
@@ -1638,8 +1722,17 @@ CONV_FN(JoinConstraint, jc)
     }
     else if (jc.has_using_expr())
     {
+        const UsingExpr & uexpr = jc.using_expr();
+
         ret += " USING (";
-        ExprColumnListToString(ret, jc.using_expr().col_list());
+        for (int i = 0; i < uexpr.columns_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
+        }
         ret += ")";
     }
     else
@@ -1712,7 +1805,14 @@ CONV_FN(JoinClause, jc)
 
 CONV_FN(FileFunc, ff)
 {
-    ret += "file('";
+    ret += FileFunc_FName_Name(ff.fname());
+    ret += "(";
+    if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
+    {
+        ClusterToString(ret, false, ff.cluster());
+        ret += ", ";
+    }
+    ret += "'";
     ret += ff.path();
     ret += "', '";
     if (ff.has_informat())
@@ -1896,7 +1996,14 @@ CONV_FN(SQLiteFunc, sfunc)
 
 CONV_FN(S3Func, sfunc)
 {
-    ret += "s3('";
+    ret += S3Func_FName_Name(sfunc.fname());
+    ret += "(";
+    if (sfunc.has_cluster() && sfunc.fname() == S3Func_FName_s3Cluster)
+    {
+        ClusterToString(ret, false, sfunc.cluster());
+        ret += ", ";
+    }
+    ret += "'";
     ret += sfunc.resource();
     ret += "', '";
     ret += sfunc.user();
@@ -1911,6 +2018,92 @@ CONV_FN(S3Func, sfunc)
         ret += ", '";
         ret += sfunc.fcomp();
         ret += "'";
+    }
+    ret += ")";
+}
+
+CONV_FN(AzureBlobStorageFunc, azure)
+{
+    ret += AzureBlobStorageFunc_FName_Name(azure.fname());
+    ret += "(";
+    if (azure.has_cluster() && azure.fname() == AzureBlobStorageFunc_FName_azureBlobStorageCluster)
+    {
+        ClusterToString(ret, false, azure.cluster());
+        ret += ", ";
+    }
+    ret += "'";
+    ret += azure.connection_string();
+    ret += "', '";
+    ret += azure.container();
+    ret += "', '";
+    ret += azure.blobpath();
+    ret += "'";
+    if (azure.has_user())
+    {
+        ret += ", '";
+        ret += azure.user();
+        ret += "'";
+    }
+    if (azure.has_password())
+    {
+        ret += ", '";
+        ret += azure.password();
+        ret += "'";
+    }
+    if (azure.has_format())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(azure.format()).substr(6);
+        ret += "'";
+    }
+    if (azure.has_fcomp())
+    {
+        ret += ", '";
+        ret += azure.fcomp();
+        ret += "'";
+    }
+    if (azure.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, azure.structure());
+    }
+    ret += ")";
+}
+
+CONV_FN(URLFunc, url)
+{
+    ret += URLFunc_FName_Name(url.fname());
+    ret += "(";
+    if (url.has_cluster() && url.fname() == URLFunc_FName_urlCluster)
+    {
+        ClusterToString(ret, false, url.cluster());
+        ret += ", ";
+    }
+    ret += "'";
+    ret += url.uurl();
+    ret += "'";
+    if (url.has_informat())
+    {
+        ret += ", '";
+        ret += InFormat_Name(url.informat()).substr(3);
+        ret += "'";
+    }
+    else if (url.has_outformat())
+    {
+        ret += ", '";
+        ret += OutFormat_Name(url.outformat()).substr(4);
+        ret += "'";
+    }
+    else if (url.has_inoutformat())
+    {
+        ret += ", '";
+        ret += InOutFormat_Name(url.inoutformat()).substr(6);
+        ret += "'";
+    }
+    if (url.has_structure())
+    {
+        ret += ", ";
+        ExprToString(ret, url.structure());
     }
     ret += ")";
 }
@@ -1961,10 +2154,14 @@ CONV_FN(ClusterFunc, cluster)
 {
     const TableOrFunction & tof = cluster.tof();
 
-    ret += ClusterFunc_CName_Name(cluster.cname());
-    ret += "('";
-    ret += cluster.ccluster();
-    ret += "', ";
+    ret += "cluster";
+    if (cluster.all_replicas())
+    {
+        ret += "AllReplicas";
+    }
+    ret += "(";
+    ClusterToString(ret, false, cluster.cluster());
+    ret += ", ";
     TableOrFunctionToString(ret, true, tof);
     if (tof.has_est() && cluster.has_sharding_key())
     {
@@ -2082,6 +2279,12 @@ CONV_FN(TableFunction, tf)
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
             break;
+        case TableFunctionType::kAzure:
+            AzureBlobStorageFuncToString(ret, tf.azure());
+            break;
+        case TableFunctionType::kUrl:
+            URLFuncToString(ret, tf.url());
+            break;
         default:
             ret += "numbers(10)";
     }
@@ -2096,6 +2299,19 @@ CONV_FN(JoinedTableOrFunction, jtf)
     {
         ret += " AS ";
         TableToString(ret, jtf.table_alias());
+    }
+    if (jtf.col_aliases_size())
+    {
+        ret += "(";
+        for (int i = 0; i < jtf.col_aliases_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ColumnToString(ret, 1, jtf.col_aliases(i));
+        }
+        ret += ")";
     }
     if (jtf.final())
     {
@@ -2385,8 +2601,11 @@ CONV_FN(SetQuery, setq)
     ExplainQueryToString(ret, setq.sel1());
     ret += ") ";
     ret += SetQuery_SetOp_Name(setq.set_op());
-    ret += " ";
-    ret += AllOrDistinct_Name(setq.s_or_d());
+    if (setq.has_s_or_d())
+    {
+        ret += " ";
+        ret += AllOrDistinct_Name(setq.s_or_d());
+    }
     ret += " (";
     ExplainQueryToString(ret, setq.sel2());
     ret += ")";
@@ -2561,7 +2780,7 @@ CONV_FN(CreateDatabase, create_database)
     DatabaseToString(ret, create_database.database());
     if (create_database.has_cluster())
     {
-        ClusterToString(ret, create_database.cluster());
+        ClusterToString(ret, true, create_database.cluster());
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
@@ -2569,6 +2788,11 @@ CONV_FN(CreateDatabase, create_database)
     {
         ret += " COMMENT ";
         ret += create_database.comment();
+    }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
     }
 }
 
@@ -2578,7 +2802,7 @@ CONV_FN(CreateFunction, create_function)
     FunctionToString(ret, create_function.function());
     if (create_function.has_cluster())
     {
-        ClusterToString(ret, create_function.cluster());
+        ClusterToString(ret, true, create_function.cluster());
     }
     ret += " AS ";
     LambdaExprToString(ret, create_function.lexpr());
@@ -2657,23 +2881,25 @@ CONV_FN(ColumnDef, cdf)
 
 CONV_FN(IndexParam, ip)
 {
-    if (ip.has_ival())
+    using IndexParamType = IndexParam::IndexParamOneofCase;
+    switch (ip.index_param_oneof_case())
     {
-        ret += std::to_string(ip.ival());
-    }
-    else if (ip.has_dval())
-    {
-        ret += std::to_string(ip.dval());
-    }
-    else if (ip.has_sval())
-    {
-        ret += "'";
-        ret += ip.sval();
-        ret += "'";
-    }
-    else
-    {
-        ret += "0";
+        case IndexParamType::kIval:
+            ret += std::to_string(ip.ival());
+            break;
+        case IndexParamType::kDval:
+            ret += std::to_string(ip.dval());
+            break;
+        case IndexParamType::kSval:
+            ret += "'";
+            ret += ip.sval();
+            ret += "'";
+            break;
+        case IndexParamType::kUnescapedSval:
+            ret += ip.unescaped_sval();
+            break;
+        default:
+            ret += "0";
     }
 }
 
@@ -2838,6 +3064,9 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kEst:
             FlatExprSchemaTableToString(ret, tep.est(), ".");
             break;
+        case TableEngineParamType::kExpr:
+            ExprToString(ret, tep.expr());
+            break;
         default:
             ret += "c0";
     }
@@ -2923,14 +3152,16 @@ CONV_FN(TableEngine, te)
 {
     if (te.has_engine())
     {
-        const TableEngineValues tengine = te.engine();
+        const TableEngineValues & teng = te.engine();
 
         ret += " ENGINE = ";
-        if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
+        if (te.has_toption()
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
-        ret += TableEngineValues_Name(tengine);
+        ret += TableEngineValues_Name(teng);
         ret += "(";
         for (int i = 0; i < te.params_size(); i++)
         {
@@ -3027,7 +3258,7 @@ CONV_FN(CreateTable, create_table)
     ExprSchemaTableToString(ret, create_table.est());
     if (create_table.has_cluster())
     {
-        ClusterToString(ret, create_table.cluster());
+        ClusterToString(ret, true, create_table.cluster());
     }
     ret += " ";
     if (create_table.has_table_def())
@@ -3103,7 +3334,7 @@ CONV_FN(Drop, dt)
     }
     if (dt.has_cluster())
     {
-        ClusterToString(ret, dt.cluster());
+        ClusterToString(ret, true, dt.cluster());
     }
     if (dt.sync())
     {
@@ -3229,14 +3460,8 @@ CONV_FN(SinglePartitionExpr, spexpr)
     PartitionExprToString(ret, pexpr);
 }
 
-CONV_FN(LightDelete, del)
+CONV_FN(Delete, del)
 {
-    ret += "DELETE FROM ";
-    ExprSchemaTableToString(ret, del.est());
-    if (del.has_cluster())
-    {
-        ClusterToString(ret, del.cluster());
-    }
     if (del.has_single_partition())
     {
         ret += " IN ";
@@ -3244,10 +3469,62 @@ CONV_FN(LightDelete, del)
     }
     ret += " WHERE ";
     WhereStatementToString(ret, del.where());
+}
+
+CONV_FN(LightDelete, del)
+{
+    ret += "DELETE FROM ";
+    ExprSchemaTableToString(ret, del.est());
+    if (del.has_cluster())
+    {
+        ClusterToString(ret, true, del.cluster());
+    }
+    DeleteToString(ret, del.del());
     if (del.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, del.setting_values());
+    }
+}
+
+CONV_FN(UpdateSet, upt)
+{
+    ColumnPathToString(ret, 0, upt.col());
+    ret += " = ";
+    ExprToString(ret, upt.expr());
+}
+
+CONV_FN(Update, upt)
+{
+    UpdateSetToString(ret, upt.update());
+    for (int i = 0; i < upt.other_updates_size(); i++)
+    {
+        ret += ", ";
+        UpdateSetToString(ret, upt.other_updates(i));
+    }
+    if (upt.has_single_partition())
+    {
+        ret += " IN ";
+        SinglePartitionExprToString(ret, upt.single_partition());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, upt.where());
+}
+
+CONV_FN(LightUpdate, upt)
+{
+    ret += "UPDATE ";
+    ExprSchemaTableToString(ret, upt.est());
+    if (upt.has_cluster())
+    {
+        ClusterToString(ret, true, upt.cluster());
+    }
+    ret += " SET ";
+    UpdateToString(ret, upt.upt());
+    if (upt.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, upt.setting_values());
     }
 }
 
@@ -3273,7 +3550,7 @@ CONV_FN(Truncate, trunc)
     }
     if (trunc.has_cluster())
     {
-        ClusterToString(ret, trunc.cluster());
+        ClusterToString(ret, true, trunc.cluster());
     }
     if (trunc.sync())
     {
@@ -3302,30 +3579,30 @@ CONV_FN(CheckTable, ct)
     }
 }
 
-CONV_FN(DescTable, dt)
+CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
+    using DescType = DescribeStatement::DescOneofCase;
+    switch (ds.desc_oneof_case())
     {
         case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
-            SelectToString(ret, dt.sel());
+            ExplainQueryToString(ret, ds.sel());
             ret += ")";
             break;
         case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
+            SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
     }
-    if (dt.has_setting_values())
+    if (ds.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
+        SettingValuesToString(ret, ds.setting_values());
     }
 }
 
@@ -3354,7 +3631,7 @@ CONV_FN(OptimizeTable, ot)
     ExprSchemaTableToString(ret, ot.est());
     if (ot.has_cluster())
     {
-        ClusterToString(ret, ot.cluster());
+        ClusterToString(ret, true, ot.cluster());
     }
     if (ot.has_single_partition())
     {
@@ -3412,37 +3689,13 @@ CONV_FN(Exchange, et)
     SQLObjectNameToString(ret, et.object2());
     if (et.has_cluster())
     {
-        ClusterToString(ret, et.cluster());
+        ClusterToString(ret, true, et.cluster());
     }
     if (et.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, et.setting_values());
     }
-}
-
-CONV_FN(UpdateSet, upt)
-{
-    ColumnPathToString(ret, 0, upt.col());
-    ret += " = ";
-    ExprToString(ret, upt.expr());
-}
-
-CONV_FN(Update, upt)
-{
-    UpdateSetToString(ret, upt.update());
-    for (int i = 0; i < upt.other_updates_size(); i++)
-    {
-        ret += ", ";
-        UpdateSetToString(ret, upt.other_updates(i));
-    }
-    if (upt.has_single_partition())
-    {
-        ret += " IN ";
-        SinglePartitionExprToString(ret, upt.single_partition());
-    }
-    ret += " WHERE ";
-    WhereStatementToString(ret, upt.where());
 }
 
 CONV_FN(RefreshInterval, ri)
@@ -3499,7 +3752,7 @@ CONV_FN(CreateView, create_view)
     ExprSchemaTableToString(ret, create_view.est());
     if (create_view.has_cluster())
     {
-        ClusterToString(ret, create_view.cluster());
+        ClusterToString(ret, true, create_view.cluster());
     }
     if (materialized)
     {
@@ -3575,16 +3828,85 @@ CONV_FN(DictionaryColumn, dc)
     }
 }
 
+CONV_FN(DictionarySourceDetails, dsd)
+{
+    bool has_something = false;
+
+    ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
+    ret += "(";
+    if (dsd.has_est())
+    {
+        const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
+
+        ret += "DB ";
+        FlatExprSchemaTableToString(ret, dsd.est(), separator);
+        has_something = true;
+    }
+    if (dsd.has_host())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "HOST '";
+        ret += dsd.host();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_port())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PORT '";
+        ret += dsd.port();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_user())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "USER '";
+        ret += dsd.user();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.has_password())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PASSWORD '";
+        ret += dsd.password();
+        ret += "'";
+        has_something = true;
+    }
+    if (dsd.source() == DictionarySourceDetails::REDIS && dsd.has_redis_storage())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "STORAGE_TYPE '";
+        ret += DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage());
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(DictionarySource, ds)
 {
     ret += " SOURCE(";
     using DictionarySourceType = DictionarySource::DictionarySourceOneofCase;
     switch (ds.dictionary_source_oneof_case())
     {
-        case DictionarySourceType::kEst:
-            ret += "CLICKHOUSE(DB ";
-            FlatExprSchemaTableToString(ret, ds.est(), "' TABLE '");
-            ret += ")";
+        case DictionarySourceType::kSource:
+            DictionarySourceDetailsToString(ret, ds.source());
             break;
         default:
             ret += "NULL()";
@@ -3655,7 +3977,7 @@ CONV_FN(CreateDictionary, create_dictionary)
     ExprSchemaTableToString(ret, create_dictionary.est());
     if (create_dictionary.has_cluster())
     {
-        ClusterToString(ret, create_dictionary.cluster());
+        ClusterToString(ret, true, create_dictionary.cluster());
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -3666,7 +3988,10 @@ CONV_FN(CreateDictionary, create_dictionary)
     }
     ret += ") PRIMARY KEY ";
     TableKeyToString(ret, create_dictionary.primary_key());
-    DictionarySourceToString(ret, create_dictionary.source());
+    if (create_dictionary.has_source())
+    {
+        DictionarySourceToString(ret, create_dictionary.source());
+    }
     DictionaryLayoutToString(ret, create_dictionary.layout());
     if (create_dictionary.has_range())
     {
@@ -3757,18 +4082,6 @@ CONV_FN(RemoveColumnSetting, rcp)
     SettingListToString(ret, rcp.setting_values());
 }
 
-CONV_FN(HeavyDelete, hdel)
-{
-    if (hdel.has_single_partition())
-    {
-        ret += "IN ";
-        SinglePartitionExprToString(ret, hdel.single_partition());
-        ret += " ";
-    }
-    ret += "WHERE ";
-    WhereStatementToString(ret, hdel.del());
-}
-
 CONV_FN(AlterItem, alter)
 {
     ret += "(";
@@ -3776,8 +4089,8 @@ CONV_FN(AlterItem, alter)
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
-            HeavyDeleteToString(ret, alter.del());
+            ret += "DELETE";
+            DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
             ret += "UPDATE ";
@@ -4054,7 +4367,7 @@ CONV_FN(Alter, alter)
     SQLObjectNameToString(ret, alter.object());
     if (alter.has_cluster())
     {
-        ClusterToString(ret, alter.cluster());
+        ClusterToString(ret, true, alter.cluster());
     }
     ret += " ";
     AlterItemToString(ret, alter.alter());
@@ -4078,7 +4391,7 @@ CONV_FN(Attach, at)
     SQLObjectNameToString(ret, at.object());
     if (at.has_cluster())
     {
-        ClusterToString(ret, at.cluster());
+        ClusterToString(ret, true, at.cluster());
     }
     if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
     {
@@ -4101,7 +4414,7 @@ CONV_FN(Detach, dt)
     SQLObjectNameToString(ret, dt.object());
     if (dt.has_cluster())
     {
-        ClusterToString(ret, dt.cluster());
+        ClusterToString(ret, true, dt.cluster());
     }
     if (dt.permanently())
     {
@@ -4165,7 +4478,7 @@ static void SystemCommandOnCluster(String & ret, const String & desc, const Syst
     ret += desc;
     if (cmd.has_cluster())
     {
-        ClusterToString(ret, cmd.cluster());
+        ClusterToString(ret, true, cmd.cluster());
     }
     ret += " ";
     ExprSchemaTableToString(ret, est);
@@ -4199,7 +4512,7 @@ CONV_FN(SystemCommand, cmd)
             ret += "RELOAD FUNCTION";
             if (cmd.has_cluster())
             {
-                ClusterToString(ret, cmd.cluster());
+                ClusterToString(ret, true, cmd.cluster());
             }
             ret += " ";
             FunctionToString(ret, cmd.reload_function());
@@ -4301,7 +4614,7 @@ CONV_FN(SystemCommand, cmd)
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
             {
-                ClusterToString(ret, cmd.cluster());
+                ClusterToString(ret, true, cmd.cluster());
             }
             ret += " ";
             DatabaseToString(ret, cmd.sync_replicated_database());
@@ -4438,7 +4751,7 @@ CONV_FN(SystemCommand, cmd)
     }
     if (can_set_cluster && cmd.has_cluster())
     {
-        ClusterToString(ret, cmd.cluster());
+        ClusterToString(ret, true, cmd.cluster());
     }
 }
 
@@ -4480,9 +4793,6 @@ CONV_FN(BackupRestoreElement, backup)
         case BackupType::kBobject:
             BackupRestoreObjectToString(ret, backup.bobject());
             break;
-        case BackupType::kAllTemporary:
-            ret += "ALL TEMPORARY TABLES";
-            break;
         default:
             ret += "ALL";
             break;
@@ -4518,7 +4828,7 @@ CONV_FN(BackupRestore, backup)
     }
     if (backup.has_cluster())
     {
-        ClusterToString(ret, backup.cluster());
+        ClusterToString(ret, true, backup.cluster());
     }
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
@@ -4539,19 +4849,25 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
-    if (backup.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(backup.format()).substr(4);
-    }
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, backup.setting_values());
     }
-    if (backup.async())
+    if (backup.has_sync())
     {
-        ret += " ASYNC";
+        ret += " ";
+        ret += BackupRestore_SyncOrAsync_Name(backup.sync());
+    }
+    if (backup.has_informat())
+    {
+        ret += " FORMAT ";
+        ret += InFormat_Name(backup.informat()).substr(3);
+    }
+    else if (backup.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(backup.outformat()).substr(4);
     }
 }
 
@@ -4565,12 +4881,44 @@ CONV_FN(Rename, ren)
     SQLObjectNameToString(ret, ren.new_object());
     if (ren.has_cluster())
     {
-        ClusterToString(ret, ren.cluster());
+        ClusterToString(ret, true, ren.cluster());
     }
     if (ren.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ren.setting_values());
+    }
+}
+
+CONV_FN(Kill, kil)
+{
+    ret += "KILL ";
+    ret += Kill_KillEnum_Name(kil.command());
+    if (kil.has_cluster())
+    {
+        ClusterToString(ret, true, kil.cluster());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, kil.where());
+    if (kil.has_option())
+    {
+        ret += " ";
+        ret += Kill_KillOption_Name(kil.option());
+    }
+    if (kil.has_informat())
+    {
+        ret += " FORMAT ";
+        ret += InFormat_Name(kil.informat()).substr(3);
+    }
+    else if (kil.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(kil.outformat()).substr(4);
+    }
+    if (kil.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, kil.setting_values());
     }
 }
 
@@ -4594,6 +4942,9 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kDel:
             LightDeleteToString(ret, query.del());
             break;
+        case QueryType::kUpt:
+            LightUpdateToString(ret, query.upt());
+            break;
         case QueryType::kTrunc:
             TruncateToString(ret, query.trunc());
             break;
@@ -4604,7 +4955,7 @@ CONV_FN(SQLQueryInner, query)
             CheckTableToString(ret, query.check());
             break;
         case QueryType::kDesc:
-            DescTableToString(ret, query.desc());
+            DescribeStatementToString(ret, query.desc());
             break;
         case QueryType::kExchange:
             ExchangeToString(ret, query.exchange());
@@ -4642,6 +4993,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kRename:
             RenameToString(ret, query.rename());
+            break;
+        case QueryType::kKill:
+            KillToString(ret, query.kill());
             break;
         default:
             ret += "SELECT 1";

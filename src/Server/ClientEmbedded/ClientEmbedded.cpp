@@ -5,9 +5,10 @@
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Context.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <Common/setThreadName.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <iomanip>
 
@@ -182,7 +183,7 @@ try
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
-    global_context->setSettings(cmd_settings);
+    global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:
@@ -214,8 +215,8 @@ try
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
     initKeystrokeInterceptor();
 
-    client_context = session->sessionContext();
-    initClientContext();
+    initClientContext(session->sessionContext());
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {

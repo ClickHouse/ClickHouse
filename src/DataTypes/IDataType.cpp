@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <DataTypes/Serializations/SerializationDetached.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto column = createColumn();
-    if (serialization.getKind() == ISerialization::Kind::SPARSE)
+    if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return ColumnSparse::create(std::move(column));
 
     return column;
@@ -247,6 +248,7 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
 {
+    column.reserve(column.size() + n);
     for (size_t i = 0; i < n; ++i)
         insertDefaultInto(column);
 }
@@ -291,6 +293,13 @@ SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
+
+    if (kind == ISerialization::Kind::DETACHED)
+        return std::make_shared<SerializationDetached>(getDefaultSerialization());
+
+    if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
+        return std::make_shared<SerializationDetached>(
+            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
 
     return getDefaultSerialization();
 }

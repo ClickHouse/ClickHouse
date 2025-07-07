@@ -563,6 +563,13 @@
     </storage_configuration>
     -->
 
+    <!-- Default database disk storing metadata files: -->
+    <!--
+    <database_disk>
+        <disk>default</disk>
+    </database_disk>
+    -->
+
     <!-- Path to temporary data for processing heavy queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
@@ -1334,10 +1341,7 @@
         <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events.
-
-        Note: session log has known security issues and should not be used in production.
-    -->
+    <!-- Session log. Stores user log in (successful or not) and log out events. -->
     <!-- <session_log>
         <database>system</database>
         <table>session_log</table>

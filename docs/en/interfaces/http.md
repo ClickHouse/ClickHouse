@@ -198,6 +198,14 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
+You can use POST method with parameterized queries. The parameters are specified using curly braces with the parameter name and type, like `{name:Type}`. The parameter values are passed with the `param_name`:
+
+```bash
+$ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
+
+7
+```
+
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
 The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
@@ -943,6 +951,41 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
+```
+
+## HTTP Response Headers {#http-response-headers}
+
+ClickHouse allows you to configure custom HTTP response headers that can be applied to any kind of handler that can be configured. These headers can be set using the `http_response_headers` setting, which accepts key-value pairs representing header names and their values. This feature is particularly useful for implementing custom security headers, CORS policies, or any other HTTP header requirements across your ClickHouse HTTP interface.
+
+For example, you can configure headers for:
+- Regular query endpoints
+- Web UI
+- Health check.
+
+It is also possible to specify `common_http_response_headers`. These will be applied to all http handlers defined in the configuration.
+
+The headers will be included in the HTTP response for every configured handler.
+
+In the example below, every server response will contain two custom headers: `X-My-Common-Header` and `X-My-Custom-Header`.
+
+```xml
+<clickhouse>
+    <http_handlers>
+        <common_http_response_headers>
+            <X-My-Common-Header>Common header</X-My-Common-Header>
+        </common_http_response_headers>
+        <rule>
+            <methods>GET</methods>
+            <url>/ping</url>
+            <handler>
+                <type>ping</type>
+                <http_response_headers>
+                    <X-My-Custom-Header>Custom indeed</X-My-Custom-Header>
+                </http_response_headers>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
 ```
 
 ## Valid JSON/XML response on exception during HTTP streaming {#valid-output-on-exception-http-streaming}

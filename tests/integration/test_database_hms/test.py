@@ -28,6 +28,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.catalog.hive import HiveCatalog
 
+from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
@@ -65,7 +66,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-hms/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -82,8 +83,8 @@ def load_catalog_impl(started_cluster):
             "uri": "thrift://0.0.0.0:9083",
             "type": "hive",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 
@@ -98,7 +99,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3a://warehouse/data",
+        location=f"s3a://warehouse-hms/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -120,7 +121,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "hive",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse",
+        "storage_endpoint": "http://minio:9000/warehouse-hms",
     }
 
     settings.update(additional_settings)
@@ -128,7 +129,7 @@ def create_clickhouse_iceberg_database(
             f"""
     DROP DATABASE IF EXISTS {name};
     SET allow_experimental_database_hms_catalog=true;
-    CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
+    CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
         )

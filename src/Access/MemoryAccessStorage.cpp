@@ -52,7 +52,7 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return nullptr;
     }
@@ -85,7 +85,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     {
         if (throw_if_exists)
         {
-            throwNameCollisionCannotInsert(type, name);
+            throwNameCollisionCannotInsert(type, name, getStorageName());
         }
         else
         {
@@ -102,7 +102,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
         const auto & existing_entry = it_by_id->second;
         if (throw_if_exists)
         {
-            throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName(), getStorageName());
         }
         else
         {
@@ -164,7 +164,7 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -197,7 +197,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -219,7 +219,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
         auto it2 = entries_by_name.find(new_entity->getName());
         if (it2 != entries_by_name.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
+            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName(), getStorageName());
 
         entries_by_name.erase(old_entity->getName());
         entries_by_name[new_entity->getName()] = &entry;

@@ -84,6 +84,7 @@ macro(clickhouse_program_add_library name)
         target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
     endif()
 
+    target_include_directories (clickhouse-${name}-lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
     if (_include)
         target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})
@@ -103,10 +104,12 @@ add_subdirectory (compressor)
 add_subdirectory (disks)
 add_subdirectory (extract-from-config)
 add_subdirectory (format)
+add_subdirectory (fst-dump-tree)
 add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
 add_subdirectory (keeper-data-dumper)
+add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
 add_subdirectory (server)
@@ -152,21 +155,41 @@ if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
 endif()
 clickhouse_target_link_split_lib(clickhouse install)
 
+macro(clickhouse_program_alias alias)
+    message(STATUS "Adding alias ${alias}")
+    add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
+    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+endmacro()
+
 set (CLICKHOUSE_BUNDLE)
-macro(clickhouse_program_install name lib_name)
+function(clickhouse_program_install name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     foreach(alias ${ARGN})
-        message(STATUS "Adding alias ${alias} for ${name}")
-        add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_program_alias(${alias})
     endforeach()
-endmacro()
+endfunction()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
+endif ()
+
+if (TARGET ch_rust::chdig)
+    clickhouse_program_alias(clickhouse-chdig)
+    clickhouse_program_alias(chdig)
+else()
+    message(STATUS "Adding dummy chdig targets (for nfpm)")
+    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
+        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+        install(FILES ${chdig_path}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                        GROUP_READ GROUP_EXECUTE
+                        WORLD_READ WORLD_EXECUTE
+        )
+    endforeach()
 endif ()
 
 clickhouse_program_install(clickhouse-benchmark benchmark)
@@ -177,6 +200,7 @@ clickhouse_program_install(clickhouse-compressor compressor)
 clickhouse_program_install(clickhouse-disks disks)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
+clickhouse_program_install(clickhouse-fst-dump-tree fst-dump-tree)
 clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
@@ -188,6 +212,7 @@ clickhouse_program_install(clickhouse-zookeeper-remove-by-list zookeeper-remove-
 
 if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
+    clickhouse_program_install(clickhouse-keeper-utils keeper-utils)
 endif ()
 
 if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
@@ -198,6 +223,7 @@ if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -230,16 +256,16 @@ endif ()
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
 else()
-    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
+    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
-# A target to get stripped binary.
-# Note: this is different to the above (extract debug symbols to a separate place)
-add_custom_target(clickhouse-stripped ALL
-    COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
-    DEPENDS clickhouse
-    COMMENT "Stripping clickhouse binary" VERBATIM)
+if (BUILD_STRIPPED_BINARY)
+    add_custom_target(clickhouse-stripped ALL
+        COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
+        DEPENDS clickhouse
+        COMMENT "Stripping clickhouse binary" VERBATIM)
+endif()
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

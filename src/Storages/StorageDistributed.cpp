@@ -94,6 +94,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -533,6 +534,54 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
+/// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
+/// Will skip merging step in the initial server when the following conditions are met:
+/// 1. Sharding key columns should be a subset of expression columns.
+/// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
+/// 3. If the expression contains non-injective function, return false.
+bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
+    const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
+{
+    ColumnsWithTypeAndName empty_input_columns;
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    // When comparing sharding key expressions, we need to ignore table qualifiers in column names
+    // because the sharding key is defined without table qualifiers, but the query expression
+    // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
+    // makes the DAG builder use plain column names without table qualifiers.
+    auto [expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        expr,
+        empty_input_columns,
+        query_info.planner_context,
+        empty_correlated_columns_set,
+        false /* use_column_identifier_as_action_node_name */);
+
+    correlated_subtrees.assertEmpty("in sharding key expression");
+
+    if (expression_dag.hasArrayJoin() || expression_dag.hasStatefulFunctions() || expression_dag.hasNonDeterministic())
+        return false;
+
+    const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
+
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+
+    for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
+    {
+        if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
+            return false;
+    }
+
+    auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(expression_dag);
+    for (const auto & node : irreducibe_nodes)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !isInjectiveFunction(node))
+        {
+            return false;
+        }
+    }
+    const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
+    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
+}
+
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
@@ -543,32 +592,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
-
-    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (const auto & expr : exprs)
-        {
-            const auto * id = expr->as<const ColumnNode>();
-            if (!id)
-                continue;
-            auto source = id->getColumnSourceOrNull();
-            if (!source)
-                continue;
-
-            if (source.get() != query_info.table_expression.get())
-                continue;
-
-            expr_columns.emplace(id->getColumnName());
-        }
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
 
     // GROUP BY qualifiers
     // - TODO: WITH TOTALS can be implemented
@@ -586,21 +609,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), query_info))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), query_info))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), query_info))
             return {};
     }
 
@@ -1278,14 +1301,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
-    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context, number_of_replicas);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
     for (const auto & replicas : cluster->getShardsInfo())
     {
         /// Skip unavailable hosts if necessary
-        auto try_results = replicas.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
+        auto try_results = replicas.pool->getMany(
+            timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
 
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & try_result : try_results)
@@ -1304,8 +1329,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 nullptr,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
 
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
-                remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
+            Pipe pipe{std::make_shared<RemoteSource>(
+                remote_query_executor,
+                false,
+                settings[Setting::async_socket_for_remote],
+                settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            QueryPipeline remote_pipeline{std::move(pipe)};
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
@@ -2111,7 +2141,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::REMOTE,
+        .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }

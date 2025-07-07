@@ -24,7 +24,9 @@ Internally, Time64 stores data as an Int64 number of ticks since the start of th
 
 Unlike DateTime64, Time64 does not store a date component, meaning that it only represents time. See details in [Time](../../sql-reference/data-types/time.md).
 
-Supported range of values: \[000:00:00, 999:59:59.99999999\]
+Supported range of values: \[-999:59:59.999999999, 999:59:59.999999999\]
+
+The number of digits after the decimal point depends on the precision parameter.
 
 ## Examples {#examples}
 
@@ -50,8 +52,8 @@ SELECT * FROM t64;
 
 ``` text
    ┌─────timestamp─┬─event_id─┐
-1. │ 004:17:43.123 │        1 │
-2. │ 042:56:40.123 │        2 │
+1. │  04:17:43.123 │        1 │
+2. │  42:56:40.123 │        2 │
 3. │ 100:00:00.000 │        3 │
    └───────────────┴──────────┘
 ```
@@ -76,7 +78,7 @@ SELECT * FROM t64 WHERE timestamp = toTime64(154600.123, 3);
 
 ``` text
    ┌─────timestamp─┬─event_id─┐
-1. │ 042:56:40.123 │        2 │
+1. │  42:56:40.123 │        2 │
    └───────────────┴──────────┘
 ```
 
@@ -91,7 +93,7 @@ SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
 
 ``` text
    ┌────────column─┬─x─────────┐
-1. │ 019:14:16.000 │ Time64(3) │
+1. │  19:14:16.000 │ Time64(3) │
    └───────────────┴───────────┘
 ```
 

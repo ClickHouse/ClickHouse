@@ -296,6 +296,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
+                if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
+                    res->if_exists = true;
+
                 if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))
@@ -525,7 +528,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (parser.parse(pos, ast, expected))
             {
-                res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
             else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
             {
@@ -579,7 +582,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
                     res->schema_cache_format = toStringView(Keyword::PROTOBUF);
-
+                else if (ParserKeyword{Keyword::FILES}.ignore(pos, expected))
+                    res->schema_cache_format = toStringView(Keyword::FILES);
                 else
                     return false;
             }

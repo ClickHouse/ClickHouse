@@ -1,5 +1,5 @@
 #include <Interpreters/Context.h>
-#include "ICommand.h"
+#include <ICommand.h>
 
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>

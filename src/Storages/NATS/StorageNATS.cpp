@@ -249,6 +249,7 @@ void StorageNATS::initializeConsumersFunc()
     }
     catch (...)
     {
+        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -782,7 +783,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::NATS,
+            .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }
