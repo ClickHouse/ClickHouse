@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int NO_ZOOKEEPER;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -168,9 +169,11 @@ DDLWorker::~DDLWorker()
 }
 
 
-ZooKeeperPtr DDLWorker::tryGetZooKeeper() const
+ZooKeeperPtr DDLWorker::getZooKeeper() const
 {
     std::lock_guard lock(zookeeper_mutex);
+    if (!current_zookeeper)
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Unable to get zookeeper");
     return current_zookeeper;
 }
 
@@ -275,7 +278,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
-    auto zookeeper = tryGetZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
     /// We have some unfinished tasks.
@@ -1161,6 +1164,7 @@ void DDLWorker::runMainThread()
 {
     auto mark_reinitializing = [&]()
     {
+        LOG_INFO(log, "Marking reinitializing");
         initialized = false;
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
@@ -1214,7 +1218,6 @@ void DDLWorker::runMainThread()
             subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            auto zookeeper = getAndSetZooKeeper();
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
@@ -1267,7 +1270,7 @@ void DDLWorker::runMainThread()
 
 void DDLWorker::initializeReplication()
 {
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     zookeeper->createAncestors(fs::path(replicas_dir) / "");
 
@@ -1291,7 +1294,7 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
-    auto zookeeper = getAndSetZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     if (reinitialized)
     {
@@ -1399,7 +1402,7 @@ void DDLWorker::runCleanupThread()
             }
 
             /// ZooKeeper connection is recovered by main thread. We will wait for it on cleanup_event.
-            auto zookeeper = tryGetZooKeeper();
+            auto zookeeper = getZooKeeper();
             if (zookeeper->expired())
                 continue;
 
