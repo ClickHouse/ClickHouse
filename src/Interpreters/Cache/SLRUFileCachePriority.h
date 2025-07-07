@@ -27,6 +27,7 @@ public:
     size_t getSize(const CachePriorityGuard::WriteLock & lock) const override;
 
     size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override;
+    size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override;
 
     size_t getSizeApprox() const override;
 
@@ -67,7 +68,10 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::ReadLock &) override;
 
-    void iterate(IterateFunc func, const CachePriorityGuard::ReadLock &) override;
+    void iterate(
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock &) override;
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 

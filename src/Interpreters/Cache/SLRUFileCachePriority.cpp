@@ -88,6 +88,11 @@ size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::WriteLo
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
 
+size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::ReadLock & lock) const
+{
+    return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
+}
+
 size_t SLRUFileCachePriority::getSizeApprox() const
 {
     return protected_queue.getSizeApprox() + probationary_queue.getSizeApprox();
@@ -160,10 +165,13 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     return iterator;
 }
 
-void SLRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::ReadLock & lock)
+void SLRUFileCachePriority::iterate(
+    IterateFunc func,
+    FileCacheReserveStat & stat,
+    const CachePriorityGuard::ReadLock & lock)
 {
-    protected_queue.iterate(func, lock);
-    probationary_queue.iterate(func, lock);
+    protected_queue.iterate(func, stat, lock);
+    probationary_queue.iterate(func, stat, lock);
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(

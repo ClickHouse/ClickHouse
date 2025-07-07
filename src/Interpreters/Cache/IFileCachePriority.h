@@ -144,6 +144,7 @@ public:
     virtual double getSLRUSizeRatio() const { return 0; }
 
     virtual size_t getElementsCount(const CachePriorityGuard::WriteLock &) const = 0;
+    virtual size_t getElementsCount(const CachePriorityGuard::ReadLock &) const = 0;
 
     virtual size_t getElementsCountApprox() const = 0;
 
@@ -159,7 +160,10 @@ public:
     };
 
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-    virtual void iterate(IterateFunc func, const CachePriorityGuard::ReadLock &) = 0;
+    virtual void iterate(
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock &) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT

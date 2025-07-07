@@ -37,12 +37,17 @@ struct FileCacheReserveStat
         size_t non_releasable_size = 0;
         size_t non_releasable_count = 0;
 
+        size_t evicting_count = 0;
+        size_t invalidated_count = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
             releasable_count += other.releasable_count;
             non_releasable_size += other.non_releasable_size;
             non_releasable_count += other.non_releasable_count;
+            evicting_count += other.evicting_count;
+            invalidated_count += other.invalidated_count;
             return *this;
         }
     };
@@ -50,7 +55,14 @@ struct FileCacheReserveStat
     Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
-    void update(size_t size, FileSegmentKind kind, bool releasable);
+    enum class State
+    {
+        Releasable,
+        NonReleasable,
+        Evicting,
+        Invalidated,
+    };
+    void update(size_t size, FileSegmentKind kind, State state);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {

@@ -88,24 +88,41 @@ namespace
     }
 }
 
-void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releasable)
+void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
 {
     auto & local_stat = stat_by_kind[kind];
-    if (releasable)
+    switch (state)
     {
-        total_stat.releasable_size += size;
-        ++total_stat.releasable_count;
+        case State::Releasable:
+        {
+            total_stat.releasable_size += size;
+            ++total_stat.releasable_count;
 
-        local_stat.releasable_size += size;
-        ++local_stat.releasable_count;
-    }
-    else
-    {
-        total_stat.non_releasable_size += size;
-        ++total_stat.non_releasable_count;
+            local_stat.releasable_size += size;
+            ++local_stat.releasable_count;
+            break;
+        }
+        case State::NonReleasable:
+        {
+            total_stat.non_releasable_size += size;
+            ++total_stat.non_releasable_count;
 
-        local_stat.non_releasable_size += size;
-        ++local_stat.non_releasable_count;
+            local_stat.non_releasable_size += size;
+            ++local_stat.non_releasable_count;
+            break;
+        }
+        case State::Evicting:
+        {
+            ++total_stat.evicting_count;
+            ++local_stat.evicting_count;
+            break;
+        }
+        case State::Invalidated:
+        {
+            ++total_stat.invalidated_count;
+            ++local_stat.invalidated_count;
+            break;
+        }
     }
 }
 
@@ -1020,6 +1037,20 @@ bool FileCache::tryReserve(
     {
         auto cache_read_lock = cache_guard.readLock();
 
+        auto on_cannot_evict_enough_space_message = [&](const IFileCachePriority & priority)
+        {
+            const auto & stat = reserve_stat.total_stat;
+            return fmt::format(
+                "cannot evict enough space for query limit "
+                "(non-releasable count: {}, non-releasable size: {}, "
+                "releasable count: {}, releasable size: {}, evicting cound: {}, invalidated count: {}, "
+                "total elements: {}, background download elements: {})",
+                stat.non_releasable_count, stat.non_releasable_size,
+                stat.releasable_count, stat.releasable_size, stat.evicting_count, stat.invalidated_count,
+                priority.getElementsCount(cache_read_lock),
+                CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
+        };
+
         if (query_priority && (query_eviction_info.size_to_evict || query_eviction_info.elements_to_evict))
         {
             if (!query_priority->collectCandidatesForEviction(
@@ -1031,14 +1062,7 @@ bool FileCache::tryReserve(
                     user.user_id,
                     cache_read_lock))
             {
-                const auto & stat = reserve_stat.total_stat;
-                failure_reason = fmt::format(
-                    "cannot evict enough space for query limit "
-                    "(non-releasable count: {}, non-releasable size: {}, "
-                    "releasable count: {}, releasable size: {}, background download elements: {})",
-                    stat.non_releasable_count, stat.non_releasable_size,
-                    stat.releasable_count, stat.releasable_size,
-                    CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
+                failure_reason = on_cannot_evict_enough_space_message(*main_priority);
                 return false;
             }
 
@@ -1061,14 +1085,7 @@ bool FileCache::tryReserve(
                     user.user_id,
                     cache_read_lock))
             {
-                const auto & stat = reserve_stat.total_stat;
-                failure_reason = fmt::format(
-                    "cannot evict enough space "
-                    "(non-releasable count: {}, non-releasable size: {}, "
-                    "releasable count: {}, releasable size: {}, background download elements: {})",
-                    stat.non_releasable_count, stat.non_releasable_size,
-                    stat.releasable_count, stat.releasable_size,
-                    CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
+                failure_reason = on_cannot_evict_enough_space_message(*main_priority);
                 return false;
             }
         }

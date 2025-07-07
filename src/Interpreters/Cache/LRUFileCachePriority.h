@@ -32,6 +32,7 @@ public:
     size_t getSize(const CachePriorityGuard::WriteLock &) const override { return state->current_size; }
 
     size_t getElementsCount(const CachePriorityGuard::WriteLock &) const override { return state->current_elements_num; }
+    size_t getElementsCount(const CachePriorityGuard::ReadLock &) const override { return state->current_elements_num; }
 
     size_t getSizeApprox() const override { return state->current_size; }
 
@@ -108,7 +109,10 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
-    void iterate(IterateFunc func, const CachePriorityGuard::ReadLock &) override;
+    void iterate(
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock &) override;
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::WriteLock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::WriteLock &);

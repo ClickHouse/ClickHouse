@@ -164,8 +164,12 @@ bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) c
     return cache_priority == other.cache_priority && iterator == other.iterator;
 }
 
-void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::ReadLock & /*lock*/)
+void LRUFileCachePriority::iterate(
+    IterateFunc func,
+    FileCacheReserveStat & stat,
+    const CachePriorityGuard::ReadLock & /*lock*/)
 {
+    LOG_TEST(log, "Queue size: {}", queue.size());
     for (auto it = queue.begin(); it != queue.end();)
     {
         const auto & entry = **it;
@@ -175,6 +179,8 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// entry.size == 0 means that queue entry was invalidated,
             /// valid (active) queue entries always have size > 0,
             /// so we can safely remove it.
+            ++it;
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -186,6 +192,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// We threat them the same way as deleted entries.
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
             continue;
         }
 
@@ -196,6 +203,8 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// the file segment of this queue entry no longer exists.
             /// This is normal if the key was removed from metadata,
             /// while queue entries can be removed lazily (with delay).
+            ++it;
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -205,6 +214,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// We threat them the same way as deleted entries.
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Evicting);
             continue;
         }
 
@@ -214,6 +224,8 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::R
             /// Same as explained in comment above, metadata == nullptr,
             /// if file segment was removed from cache metadata,
             /// but queue entry still exists because it is lazily removed.
+            ++it;
+            stat.update(entry.size, FileSegmentKind::Unknown, FileCacheReserveStat::State::Invalidated);
             continue;
         }
 
@@ -310,39 +322,33 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     const UserID &,
     const CachePriorityGuard::ReadLock & lock)
 {
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
     bool success = false;
+    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
-
-        IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+        if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
         {
-            const auto & file_segment = segment_metadata->file_segment;
-            chassert(file_segment->assertCorrectness());
+            success = true;
+            return IterationResult::BREAK;
+        }
 
-            if (segment_metadata->releasable())
-            {
-                res.add(segment_metadata, locked_key);
-                stat.update(segment_metadata->size(), file_segment->getKind(), true);
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-                stat.update(segment_metadata->size(), file_segment->getKind(), false);
-            }
+        const auto & file_segment = segment_metadata->file_segment;
+        chassert(file_segment->assertCorrectness());
 
-            return IterationResult::CONTINUE;
-        };
-
-        iterate([&](LockedKey &, const FileSegmentMetadataPtr &)
+        if (segment_metadata->releasable())
         {
-            if ((!size || stat.total_stat.releasable_size >= size) && (!elements || stat.total_stat.releasable_count >= elements))
-            {
-                success = true;
-                return IterationResult::BREAK;
-            }
-            return IterationResult::CONTINUE;
-        }, lock);
-    }
+            res.add(segment_metadata, locked_key);
+            stat.update(segment_metadata->size(), file_segment->getKind(), FileCacheReserveStat::State::Releasable);
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
+            stat.update(segment_metadata->size(), file_segment->getKind(), FileCacheReserveStat::State::NonReleasable);
+        }
+
+        return IterationResult::CONTINUE;
+    }, stat, lock);
     return success;
 }
 
@@ -384,11 +390,12 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
 IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriorityGuard::ReadLock & lock)
 {
     std::vector<FileSegmentInfo> res;
+    FileCacheReserveStat stat{};
     iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
         res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment));
         return IterationResult::CONTINUE;
-    }, lock);
+    }, stat, lock);
     return std::make_shared<LRUPriorityDump>(res);
 }
 
@@ -544,7 +551,7 @@ void LRUFileCachePriority::holdImpl(
     state->current_size += size;
     state->current_elements_num += elements;
 
-    // LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
@@ -554,7 +561,7 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     state->current_size -= size;
     state->current_elements_num -= elements;
 
-    // LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 }

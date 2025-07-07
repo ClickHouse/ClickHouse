@@ -198,6 +198,11 @@ String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind s
             break;
         case FileSegmentKind::Regular:
             break;
+        case FileSegmentKind::Unknown:
+        {
+            chassert(false);
+            break;
+        }
     }
     return std::to_string(offset) + file_suffix;
 }
