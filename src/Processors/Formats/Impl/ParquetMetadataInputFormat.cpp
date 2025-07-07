@@ -1,4 +1,4 @@
-#include "ParquetMetadataInputFormat.h"
+#include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
 #if USE_PARQUET
 
@@ -20,7 +20,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -508,7 +508,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
             const FormatSettings & settings,
             const ReadSettings &,
             bool /* is_remote_fs */,
-            FormatParserGroupPtr)
+            size_t /* max_download_threads */,
+            size_t /* max_parsing_threads */)
         {
             return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
         });

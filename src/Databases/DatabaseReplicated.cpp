@@ -31,6 +31,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -109,6 +110,8 @@ namespace FailPoints
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
+static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
+static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -2119,7 +2122,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         return false;
     }
 
-    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
+    if (query_ptr->as<const ASTDeleteQuery>() || query_ptr->as<const ASTUpdateQuery>())
     {
         if (is_keeper_map_table(query_ptr))
             return false;

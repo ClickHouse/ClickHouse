@@ -14,7 +14,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -145,8 +145,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
             "Table function '{}' requires a SELECT query with the result columns matching a table function after 'ELSE'. "
             "Currently the result columns of the SELECT query are {}, and the table function after 'ELSE' gives {}",
             getName(),
-            columns.toString(),
-            else_columns.toString());
+            columns.toString(true),
+            else_columns.toString(true));
     }
 
     return true;

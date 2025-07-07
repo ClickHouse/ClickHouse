@@ -1,0 +1,62 @@
+Expression ((Project names + Projection))
+Actions: COLUMN Const(UInt8) -> 1 UInt8 : 0
+Positions: 0
+  Filter (WHERE)
+  Filter column: exists(__table2) (removed)
+  Actions: INPUT :: 0 -> exists(__table2) UInt8 : 0
+           INPUT :: 1 -> __table1.i1 Int64 : 1
+  Positions: 0
+    Expression
+    Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
+             INPUT :: 1 -> exists(__table2) UInt8 : 1
+    Positions: 0 1
+      Join (JOIN to generate result stream)
+      Type: LEFT
+      Strictness: ANY
+      Algorithm: ConcurrentHashJoin
+      Clauses: [(__table1.i1) = (exists(__table2).__table1.i1)]
+        Expression (Change column names to column identifiers)
+        Actions: INPUT : 0 -> i1 Int64 : 0
+                 ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
+        Positions: 1
+          ReadFromMergeTree (default.test)
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression ((Create result for always true EXISTS expression + ))
+        Actions: INPUT :: 0 -> __table4.i1 Int64 : 0
+                 INPUT :: 1 -> __table4.i2 Int64 : 1
+                 INPUT : 2 -> __table1.i1 Int64 : 2
+                 COLUMN Const(UInt8) -> exists(__table2) UInt8 : 3
+                 ALIAS __table1.i1 :: 2 -> exists(__table2).__table1.i1 Int64 : 4
+                 FUNCTION materialize(exists(__table2) :: 3) -> materialize(exists(__table2)) UInt8 : 2
+                 ALIAS materialize(exists(__table2)) :: 2 -> exists(__table2) UInt8 : 3
+        Positions: 4 3
+          Expression
+          Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
+                   INPUT :: 1 -> __table4.i1 Int64 : 1
+                   INPUT :: 2 -> __table4.i2 Int64 : 2
+          Positions: 0 1 2
+            Join (JOIN to evaluate correlated expression)
+            Type: INNER
+            Strictness: ALL
+            Algorithm: HashJoin
+            Clauses: [(__table1.i1) = (__table4.i2)]
+              Expression (( + Change column names to column identifiers))
+              Actions: INPUT : 0 -> i1 Int64 : 0
+                       ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
+              Positions: 1
+                ReadFromMergeTree (default.test)
+                ReadType: Default
+                Parts: 1
+                Granules: 1
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> i1 Int64 : 0
+                       INPUT : 1 -> i2 Int64 : 1
+                       ALIAS i1 :: 0 -> __table4.i1 Int64 : 2
+                       ALIAS i2 :: 1 -> __table4.i2 Int64 : 0
+              Positions: 2 0
+                ReadFromMergeTree (default.test)
+                ReadType: Default
+                Parts: 1
+                Granules: 1

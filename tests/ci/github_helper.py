@@ -255,7 +255,7 @@ class GitHub(github.Github):
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, value: str) -> None:
+    def cache_path(self, value: Union[str, Path]) -> None:
         self._cache_path = Path(value)
         if self._cache_path.exists():
             assert self._cache_path.is_dir()

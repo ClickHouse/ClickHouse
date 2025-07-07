@@ -373,7 +373,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toString()
+        << "columns: " << metadata.columns.toString(true)
         << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
@@ -688,7 +688,7 @@ void ReadFromKeeperMap::applyFilters(ActionDAGNodes added_filter_nodes)
 
     const auto & sample_block = getOutputHeader();
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
 }
 
 template<typename KeyContainerPtr>

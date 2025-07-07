@@ -1,4 +1,4 @@
-#include "CachedObjectStorage.h"
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>

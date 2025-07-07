@@ -138,9 +138,9 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 
@@ -227,7 +227,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
-    UInt64 server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+    UInt64 server_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
@@ -318,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -326,6 +326,7 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
