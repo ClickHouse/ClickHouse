@@ -540,9 +540,9 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        parameter=[f"release, 3/4, {i}" for i in range(20)],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _i in range(20)],
-        requires=[["Build (amd_release)"] for _i in range(20)],
+        parameter=[f"release, 3/4, {i}" for i in range(25)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _i in range(25)],
+        requires=[["Build (amd_release)"] for _i in range(25)],
     )
 
     upgrade_test_jobs = Job.Config(
