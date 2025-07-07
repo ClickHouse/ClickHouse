@@ -6,6 +6,7 @@
 #include <Common/UniqueLock.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
 
@@ -15,8 +16,8 @@ namespace DB
 
 class Context;
 
-class IThrottler;
-using ThrottlerPtr = std::shared_ptr<IThrottler>;
+class Throttler;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -24,15 +25,12 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
-struct ClusterFunctionReadTaskResponse;
-using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+using TaskIterator = std::function<String()>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -79,7 +77,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
@@ -104,7 +101,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
@@ -117,7 +113,6 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -180,9 +175,9 @@ public:
             return fd;
         }
 
-        const Type type;
+        Type type;
         Block block;
-        const int fd{-1};
+        int fd{-1};
     };
 
     /// Read next block of data. Returns empty block if query is finished.
@@ -241,7 +236,6 @@ private:
         const Scalars & scalars_,
         const Tables & external_tables_,
         QueryProcessingStage::Enum stage_,
-        std::shared_ptr<const QueryPlan> query_plan_,
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -254,7 +248,6 @@ private:
     std::unique_ptr<ReadContext> read_context;
 
     const String query;
-    std::shared_ptr<const QueryPlan> query_plan;
     String query_id;
     ContextPtr context;
 
@@ -311,9 +304,7 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
-#if defined(OS_LINUX)
     bool packet_in_progress = false;
-#endif
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

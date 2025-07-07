@@ -1,4 +1,4 @@
-#include <Compression/LZ4_decompress_faster.h>
+#include "LZ4_decompress_faster.h"
 
 #include <cstring>
 #include <iostream>

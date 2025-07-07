@@ -15,7 +15,7 @@
 
 #include <Common/randomSeed.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

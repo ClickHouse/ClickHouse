@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/array/FunctionArrayMapped.h>
+#include "FunctionArrayMapped.h"
 
 
 namespace DB

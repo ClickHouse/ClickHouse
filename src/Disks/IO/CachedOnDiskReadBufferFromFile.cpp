@@ -1,4 +1,4 @@
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include "CachedOnDiskReadBufferFromFile.h"
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -453,12 +453,6 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     chassert(file_segment.range() == range);
     chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
-    /// We set position to the end of file segment end,
-    /// and not to read_until_position, because in case of concurrent queries
-    /// which read the same file segment from different offsets
-    /// (same different threads of the same query), it will allow read buffer to be reused,
-    /// reducing number of s3 requests. This does apply however only to case when
-    /// those different threads hold the file segment at the same time, making its ref count > 2.
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
     switch (read_type)
@@ -1112,47 +1106,18 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
         auto cache_file_path = getFileNameFromReadBuffer(*implementation_buffer);
 
-        std::string download_finished_time;
-        if (file_segment.isDownloaded())
-        {
-            WriteBufferFromString buf{download_finished_time};
-            writeDateTimeText(file_segment.getFinishedDownloadTime(), buf);
-        }
-        else
-            download_finished_time = "None";
-
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: "
-            "result: {}, "
-            "file offset: {}, "
-            "read bytes: {}, "
-            "initial read offset: {}, "
-            "nextimpl working buffer offset: {},"
-            "reading until: {}, "
-            "read type: {}, "
-            "working buffer size: {}, "
-            "internal buffer size: {}, "
-            "finished download time: {}, "
-            "cache file size: {}, "
-            "cache file path: {}, "
-            "cache file offset: {}, "
-            "remaining file segments: {}, "
-            "current file segment: {}",
-            result,
+            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, "
+            "reading until: {}, read type: {}, cache file size: {}, cache file path: {}, "
+            "cache file offset: {}, current file segment: {}",
             file_offset_of_buffer_end,
-            size,
             first_offset,
-            nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
-            implementation_buffer->buffer().size(),
-            implementation_buffer->internalBuffer().size(),
-            download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,
             implementation_buffer->getFileOffsetOfBufferEnd(),
-            file_segments->size(),
             file_segment.getInfoForLog());
     }
 

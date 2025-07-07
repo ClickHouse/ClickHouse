@@ -1,4 +1,4 @@
-#include <Interpreters/Cache/FileSegment.h>
+#include "FileSegment.h"
 
 #include <filesystem>
 #include <IO/Operators.h>
@@ -192,12 +192,6 @@ bool FileSegment::isDownloaded() const
 {
     auto lk = lock();
     return download_state == State::DOWNLOADED;
-}
-
-time_t FileSegment::getFinishedDownloadTime() const
-{
-    auto lk = lock();
-    return download_finished_time;
 }
 
 String FileSegment::getCallerId()
@@ -582,8 +576,7 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(
-        *this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -597,7 +590,6 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         return;
 
     download_state = State::DOWNLOADED;
-    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (cache_writer)
     {
@@ -870,9 +862,6 @@ void FileSegment::complete(bool allow_background_download)
     }
 
     LOG_TEST(log, "Completed file segment: {}", getInfoForLogUnlocked(segment_lock));
-
-    if (download_state != State::DETACHED)
-        chassert(assertCorrectnessUnlocked(segment_lock));
 }
 
 String FileSegment::getInfoForLog() const
@@ -1063,7 +1052,6 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .state = file_segment->download_state,
         .size = file_segment->range().size(),
         .downloaded_size = file_segment->downloaded_size,
-        .download_finished_time = file_segment->download_finished_time,
         .cache_hits = file_segment->hits_count,
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,

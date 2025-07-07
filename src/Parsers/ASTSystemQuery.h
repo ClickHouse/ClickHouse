@@ -28,12 +28,11 @@ public:
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
-        DROP_VECTOR_SIMILARITY_INDEX_CACHE,
+        DROP_SKIPPING_INDEX_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
-        DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
         DROP_DISTRIBUTED_CACHE_CONNECTIONS,
@@ -129,7 +128,6 @@ public:
 
     ASTPtr database;
     ASTPtr table;
-    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -152,7 +150,7 @@ public:
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
-    String distributed_cache_server_id;
+    String distributed_cache_servive_id;
     bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;

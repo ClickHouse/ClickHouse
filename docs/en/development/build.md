@@ -29,13 +29,11 @@ The tutorial assumes that you have the ClickHouse repository and all submodules 
 
 ## Install Prerequisites {#install-prerequisites}
 
-First, see the generic [prerequisites documentation](developer-instruction.md).
-
 ClickHouse uses CMake and Ninja for building.
 
 You can optionally install ccache to let the build reuse already compiled object files.
 
-```bash
+``` bash
 sudo apt-get update
 sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
@@ -44,7 +42,7 @@ sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-rel
 
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
-```bash
+``` bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
@@ -100,7 +98,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 Run ninja to build:
 
 ```sh
-ninja clickhouse
+ninja clickhouse-server clickhouse-client
 ```
 
 If you like to build all the binaries (utilities and tests), run ninja without parameters:
@@ -203,18 +201,17 @@ cmake --build build
 
 ### Building in docker {#building-in-docker}
 
-You can run any build locally in an environment similar to CI using:
+We use the docker image `clickhouse/binary-builder` for builds in CI.
+It contains everything necessary to build the binary and packages.
+There is a script `docker/packager/packager` to ease the image usage:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+# define a directory for the output artifacts
+output_dir="build_results"
+# a simplest build
+./docker/packager/packager --package-type=binary --output-dir "$output_dir"
+# build debian packages
+./docker/packager/packager --package-type=deb --output-dir "$output_dir"
+# by default, debian packages use thin LTO, so we can override it to speed up the build
+CMAKE_FLAGS='-DENABLE_THINLTO=' ./docker/packager/packager --package-type=deb --output-dir "./$(git rev-parse --show-cdup)/build_results"
 ```
-where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
-
-This command pulls the appropriate Docker image `clickhouse/binary-builder` with all required dependencies,
-and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
-
-The build output will be placed in `./ci/tmp/`.
-
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
-
-

@@ -545,14 +545,8 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
     {
         /// Read format string from file
         resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(
-                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
-                /*format_schema=*/settings.template_settings.resultset_format,
-                /*format_schema_message_name=*/"",
-                /*format=*/"Template",
-                /*require_message=*/false,
-                /*is_server=*/settings.schema.is_server,
-                /*format_schema_path=*/settings.schema.format_schema_path),
+            FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
+                             settings.schema.is_server, settings.schema.format_schema_path),
             [&](const String & partName) -> std::optional<size_t>
             {
                 if (partName == "data")
@@ -567,15 +561,8 @@ static ParsedTemplateFormatString fillRowFormat(const FormatSettings & settings,
 {
     return ParsedTemplateFormatString(
         FormatSchemaInfo(
-            /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
-            /*format_schema=*/settings.template_settings.row_format,
-            /*format_schema_message_name=*/"",
-            /*format=*/"Template",
-            /*require_message=*/false,
-            /*is_server=*/settings.schema.is_server,
-            /*format_schema_path=*/settings.schema.format_schema_path),
-        idx_getter,
-        allow_indexes);
+            settings.template_settings.row_format, "Template", false, settings.schema.is_server, settings.schema.format_schema_path),
+        idx_getter, allow_indexes);
 }
 
 void registerInputFormatTemplate(FormatFactory & factory)

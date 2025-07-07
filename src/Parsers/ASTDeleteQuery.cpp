@@ -1,5 +1,5 @@
 #include <Parsers/ASTDeleteQuery.h>
-
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -13,12 +13,6 @@ ASTPtr ASTDeleteQuery::clone() const
 {
     auto res = std::make_shared<ASTDeleteQuery>(*this);
     res->children.clear();
-
-    if (partition)
-    {
-        res->partition = partition->clone();
-        res->children.push_back(res->partition);
-    }
 
     if (predicate)
     {

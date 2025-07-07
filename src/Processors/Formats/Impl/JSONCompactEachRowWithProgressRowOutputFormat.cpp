@@ -79,7 +79,7 @@ void JSONCompactEachRowWithProgressRowOutputFormat::writeProgress(const Progress
     if (value.empty())
         return;
     writeCString("{\"progress\":", *ostr);
-    value.writeJSON(*ostr, Progress::DisplayMode::Minimal);
+    value.writeJSON(*ostr);
     writeCString("}\n", *ostr);
 }
 
@@ -117,8 +117,6 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
         return std::make_shared<JSONCompactEachRowWithProgressRowOutputFormat>(buf, sample, settings, false, false);
     });
 
-    factory.setContentType("JSONCompactEachRowWithProgress", "application/json; charset=UTF-8");
-
     factory.registerOutputFormat("JSONCompactStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
@@ -128,8 +126,6 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
         settings.json.serialize_as_strings = true;
         return std::make_shared<JSONCompactEachRowWithProgressRowOutputFormat>(buf, sample, settings, false, false);
     });
-
-    factory.setContentType("JSONCompactStringsEachRowWithProgress", "application/json; charset=UTF-8");
 }
 
 }

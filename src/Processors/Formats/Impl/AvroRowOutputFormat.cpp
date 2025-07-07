@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include "AvroRowOutputFormat.h"
 #if USE_AVRO
 
 #include <Core/Field.h>
@@ -637,7 +637,6 @@ void registerOutputFormatAvro(FormatFactory & factory)
     });
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");
-    factory.setContentType("Avro", "application/octet-stream");
 }
 
 }

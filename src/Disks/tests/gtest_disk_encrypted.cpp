@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
-#include <Core/Field.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>
@@ -453,7 +452,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 {
     getContext().context->setServerSetting("storage_metadata_write_full_object_key", true);
 
-    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(fs::path{getDirectory()} / "local_blobs", false));
+    auto object_storage = std::make_shared<LocalObjectStorage>(fs::path{getDirectory()} / "local_blobs");
     auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
     auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/");
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());

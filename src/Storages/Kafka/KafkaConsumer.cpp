@@ -145,7 +145,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-        setExceptionInfo(err, /* with_stacktrace = */ true);
+        setExceptionInfo(err);
     });
 }
 
@@ -155,8 +155,7 @@ ConsumerPtr && KafkaConsumer::moveConsumer()
     cleanUnprocessed();
     assignment.reset();
 
-    StorageKafkaUtils::consumerGracefulStop(
-        *consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 
     return std::move(consumer);
 }
@@ -169,8 +168,7 @@ KafkaConsumer::~KafkaConsumer()
     cleanUnprocessed();
     assignment.reset();
 
-    StorageKafkaUtils::consumerGracefulStop(
-        *consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
 
 
@@ -243,7 +241,7 @@ void KafkaConsumer::commit()
                 else
                 {
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
-                    setExceptionInfo(e.what(), /* with_stacktrace = */ true);
+                    setExceptionInfo(e.what());
                 }
             }
             --max_retries;
@@ -316,7 +314,7 @@ void KafkaConsumer::subscribe()
             if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
 
-            setExceptionInfo(e.what(), /* with_stacktrace = */ true);
+            setExceptionInfo(e.what());
             throw;
         }
 
@@ -400,8 +398,7 @@ void KafkaConsumer::doPoll()
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
         // Remove messages with errors and log any exceptions.
-        auto num_errors = StorageKafkaUtils::eraseMessageErrors(
-            new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err, /* with_stacktrace = */ true); });
+        auto num_errors = StorageKafkaUtils::eraseMessageErrors(new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
         num_messages_read += new_messages.size();
 
         resetIfStopped();
@@ -541,8 +538,6 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
 
     if (with_stacktrace)
     {
-        if (!enriched_text.ends_with('\n'))
-            enriched_text.append(1, '\n');
         enriched_text.append(StackTrace().toString());
     }
 

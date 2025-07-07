@@ -1,16 +1,13 @@
-#include <Databases/SQLite/DatabaseSQLite.h>
+#include "DatabaseSQLite.h"
 
 #if USE_SQLITE
 
-#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -181,10 +178,6 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
-}
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {

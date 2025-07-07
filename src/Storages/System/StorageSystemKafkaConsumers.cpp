@@ -18,7 +18,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <base/types.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -89,6 +89,11 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     auto add_row = [&](const DatabaseTablesIteratorPtr & it, StorageKafka * storage_kafka_ptr)
     {
+        if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
+        {
+            return;
+        }
+
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
@@ -148,20 +153,21 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
 
-    auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & db : databases)
+    if (show_tables_granted)
     {
-        for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
+        auto databases = DatabaseCatalog::instance().getDatabases();
+        for (const auto & db : databases)
         {
-            StoragePtr storage = it->table();
-            if (auto * kafka_table = dynamic_cast<StorageKafka *>(storage.get()))
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                if (show_tables_granted || access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
+                StoragePtr storage = iterator->table();
+                if (auto * kafka_table = dynamic_cast<StorageKafka *>(storage.get()))
                 {
-                    add_row(it, kafka_table);
+                    add_row(iterator, kafka_table);
                 }
             }
         }
+
     }
 }
 

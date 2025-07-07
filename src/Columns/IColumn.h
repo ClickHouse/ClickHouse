@@ -28,7 +28,6 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 class IDataType;
-class Block;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -248,7 +247,6 @@ public:
     /// Appends "default value" multiple times.
     virtual void insertManyDefaults(size_t length)
     {
-        reserve(size() + length);
         for (size_t i = 0; i < length; ++i)
             insertDefault();
     }
@@ -470,12 +468,12 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
             new_size += source_column->size();
-        reserve(new_size * factor);
+        reserve(new_size);
     }
 
     /// Requests the removal of unused capacity.
@@ -553,40 +551,6 @@ public:
     /// Used to create full column from sparse.
     [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
 
-    using Version = UInt64;
-    using Versions = PaddedPODArray<Version>;
-
-    struct Patch
-    {
-        struct Source
-        {
-            const IColumn & column;
-            const Versions & versions;
-        };
-
-        std::vector<Source> sources;
-
-        /// Can be omitted in case of one source.
-        const Offsets * src_col_indices = nullptr;
-        const Offsets & src_row_indices;
-        const Offsets & dst_row_indices;
-
-        /// Versions of the values. Value (and dst version) is updated only
-        /// if source version is greater than destination version for the value.
-        Versions & dst_versions;
-    };
-
-    /// Updates value at dst_pos from src[src_pos].
-    /// Implemented only for columns for which isFixedAndContiguous returns true.
-    virtual void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos);
-
-    /// Creates a copy of column with updated values according to patch.
-    virtual Ptr updateFrom(const Patch & patch) const = 0;
-
-    /// Updates values in column inplace according to patch.
-    /// Implementation uses updateAt method.
-    virtual void updateInplaceFrom(const Patch & patch) = 0;
-
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
     /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
@@ -602,14 +566,6 @@ public:
     {
         return getPtr();
     }
-
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
-
-    /// Fills column values from list of blocks and row numbers
-    /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -796,9 +752,6 @@ bool isColumnConst(const IColumn & column);
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
 
-/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
-bool isColumnLazy(const IColumn & column);
-
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
@@ -846,20 +799,6 @@ private:
 
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
-
-    /// Devirtualize insertFrom.
-    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
-
-    /// Devirtualize updateAt.
-    void updateInplaceFrom(const IColumn::Patch & patch) override;
-
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
-
-    /// Fills column values from list of columns and row numbers
-    /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
