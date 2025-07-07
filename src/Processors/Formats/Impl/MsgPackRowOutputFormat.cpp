@@ -310,7 +310,6 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
     factory.markOutputFormatNotTTYFriendly("MsgPack");
-    factory.setContentType("MsgPack", "application/octet-stream");
 }
 
 }

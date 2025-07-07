@@ -70,7 +70,7 @@ String NameAndTypePair::dump() const
     return out.str();
 }
 
-void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
+void NamesAndTypesList::readText(ReadBuffer & buf)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -91,8 +91,7 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
         emplace_back(column_name, data_type_factory.get(type_name));
     }
 
-    if (check_eof)
-        assertEOF(buf);
+    assertEOF(buf);
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const

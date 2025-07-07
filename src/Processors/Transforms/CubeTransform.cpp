@@ -1,7 +1,7 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/Transforms/RollupTransform.h>
+#include "Processors/Transforms/RollupTransform.h"
 
 namespace DB
 {

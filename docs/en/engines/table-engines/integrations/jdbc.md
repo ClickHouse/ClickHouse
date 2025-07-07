@@ -45,8 +45,6 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 
 - `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
-- These parameters can also be passed using [named collections](operations/named-collections.md).
-
 ## Usage Example {#usage-example}
 
 Creating a table in MySQL server by connecting directly with it's console client:

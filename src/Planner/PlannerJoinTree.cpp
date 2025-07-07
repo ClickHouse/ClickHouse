@@ -94,7 +94,7 @@ namespace Setting
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool query_plan_use_new_logical_join_step;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
@@ -118,7 +118,6 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
-    extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
@@ -1106,6 +1105,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             auto result_ptr = reading->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
+                            reading->setAnalyzedResult(std::move(result_ptr));
+
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
@@ -1623,7 +1624,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             right_plan.getCurrentHeader(),
             join_algorithm,
             settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_rows],
             settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
             required_columns_after_join,
@@ -1838,27 +1838,19 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
             auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
-            auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
-            if (!left_inner_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
-                    left_inner_column_node->formatASTForErrorMessage());
+            auto & left_inner_column = left_inner_column_node->as<ColumnNode &>();
 
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
-            auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
-            if (!right_inner_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "JOIN USING clause expected column identifier. Actual {}",
-                    right_inner_column_node->formatASTForErrorMessage());
+            auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
-            if (!left_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
+            if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
                 left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
             }
 
-            if (!right_inner_column->getColumnType()->equals(*join_node_using_column_node_type))
+            if (!right_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
                 const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);

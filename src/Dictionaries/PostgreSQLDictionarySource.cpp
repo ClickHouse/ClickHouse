@@ -1,11 +1,11 @@
-#include <Dictionaries/PostgreSQLDictionarySource.h>
+#include "PostgreSQLDictionarySource.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionarySourceFactory.h"
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Dictionaries/registerDictionaries.h>
+#include "registerDictionaries.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
@@ -13,7 +13,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
-#include <Dictionaries/readInvalidateQuery.h>
+#include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/logger_useful.h>
@@ -203,8 +203,7 @@ static void validateConfigKeys(
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

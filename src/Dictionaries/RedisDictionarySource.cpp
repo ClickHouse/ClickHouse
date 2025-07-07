@@ -1,6 +1,6 @@
-#include <Dictionaries/RedisDictionarySource.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "RedisDictionarySource.h"
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
 
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
@@ -10,7 +10,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Dictionaries/RedisSource.h>
+#include "RedisSource.h"
 
 namespace DB
 {
@@ -23,8 +23,7 @@ namespace DB
 
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
-        auto create_table_source = [=](const String & /*name*/,
-                                    const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,

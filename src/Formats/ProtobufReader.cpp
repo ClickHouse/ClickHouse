@@ -1,4 +1,4 @@
-#include <Formats/ProtobufReader.h>
+#include "ProtobufReader.h"
 
 #if USE_PROTOBUF
 #   include <IO/ReadHelpers.h>

@@ -15,26 +15,24 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](../../engines/table-engines/special/url.md) tables.
 
-## Syntax {#syntax}
+**Syntax**
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-## Parameters {#parameters}
+**Parameters**
 
-| Parameter   | Description                                                                                                                                            |
-|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URL`       | Single quoted HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md). |
-| `format`    | [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).                                                  |
-| `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).     |
-| `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+- `URL` — HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md).
+- `format` — [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
+- `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
+- `headers` - Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.
 
-## Returned value {#returned_value}
+**Returned value**
 
 A table with the specified format and structure and with data from the defined `URL`.
 
-## Examples {#examples}
+**Examples**
 
 Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
 
@@ -72,7 +70,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
+SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
@@ -85,6 +83,6 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _d
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/operations/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
 
 
-## Related {#related}
+**See Also**
 
 - [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)
