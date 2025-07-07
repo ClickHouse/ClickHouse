@@ -384,7 +384,6 @@ policy_properties = {
 
 all_disks_properties = {
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "perform_ttl_move_on_insert": true_false_lambda,
 }
 
 
@@ -679,6 +678,7 @@ def add_single_disk(
                     "min_bytes_for_seek": threshold_generator(
                         0.2, 0.2, 0, 10 * 1024 * 1024
                     ),
+                    "perform_ttl_move_on_insert": true_false_lambda,
                     "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
                     "skip_access_check": true_false_lambda,
                 }
