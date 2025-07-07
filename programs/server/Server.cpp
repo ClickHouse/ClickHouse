@@ -340,8 +340,6 @@ namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
-    extern const Metric MemoryTracking;
-    extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
@@ -1926,8 +1924,6 @@ try
             }
 
             total_memory_tracker.setHardLimit(max_server_memory_usage);
-            total_memory_tracker.setDescription("(total)");
-            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
@@ -1954,8 +1950,6 @@ try
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
                 formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
             background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
-            background_memory_tracker.setDescription("(background)");
-            background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);

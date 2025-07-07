@@ -83,7 +83,7 @@ private:
     std::atomic<MemoryTracker *> parent {};
 
     /// You could specify custom metric to track memory usage.
-    std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
+    std::atomic<CurrentMetrics::Metric> metric;
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
@@ -118,9 +118,9 @@ public:
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
     static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
-    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
-    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
+    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread, CurrentMetrics::Metric metric_ = CurrentMetrics::end(), const char * description = nullptr);
+    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread, CurrentMetrics::Metric metric_ = CurrentMetrics::end(), const char * description = nullptr);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_, CurrentMetrics::Metric metric_ = CurrentMetrics::end(), const char * description = nullptr);
 
     ~MemoryTracker();
 
@@ -213,12 +213,6 @@ public:
     MemoryTracker * getParent()
     {
         return parent.load(std::memory_order_relaxed);
-    }
-
-    /// The memory consumption could be shown in realtime via CurrentMetrics counter
-    void setMetric(CurrentMetrics::Metric metric_)
-    {
-        metric.store(metric_, std::memory_order_relaxed);
     }
 
     CurrentMetrics::Metric getMetric()

@@ -67,11 +67,6 @@
 
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
 namespace DB
 {
 
@@ -783,8 +778,6 @@ void LocalServer::processConfig()
     }
 
     total_memory_tracker.setHardLimit(max_server_memory_usage);
-    total_memory_tracker.setDescription("(total)");
-    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
