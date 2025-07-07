@@ -1243,36 +1243,6 @@ bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
     return false;
 }
 
-bool AlterCommands::hasLegacyGinIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == GIN_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == FULL_TEXT_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == INVERTED_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
 bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
