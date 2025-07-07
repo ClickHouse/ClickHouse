@@ -43,7 +43,7 @@ endif ()
 # - this is what llvm does
 # - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO)
-    if (ARCH_AARCH64)
+    if (ARCH_AARCH64 OR ARCH_RISCV64)
         # aarch64 builds start to often fail with OOMs (reason not yet clear), for now let's limit the concurrency
         message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 1.")
         set (PARALLEL_LINK_JOBS 1)

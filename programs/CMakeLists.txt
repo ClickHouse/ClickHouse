@@ -4,7 +4,11 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-set(MAX_LINKER_MEMORY 3500)
+if (BUILD_FUZZERS)
+    set(MAX_LINKER_MEMORY 5000)
+else()
+    set(MAX_LINKER_MEMORY 3500)
+endif ()
 include(../cmake/limit_jobs.cmake)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
