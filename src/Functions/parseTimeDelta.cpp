@@ -168,7 +168,7 @@ namespace
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid expression for function {}, don't find valid characters, str: \"{}\".",
+                        "Invalid argument of function {}, no valid characters, str: \"{}\".",
                         getName(),
                         String(str));
                 }
@@ -176,7 +176,7 @@ namespace
                 /// last pos character must be character and not be separator or number after ignoring '.' and ' '
                 if (!isalpha(str[last_pos]))
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, str: \"{}\".", getName(), String(str));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, str: \"{}\".", getName(), String(str));
                 }
 
                 /// scan spaces at the beginning
@@ -190,7 +190,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find number failed, str: \"{}\".",
+                            "Invalid argument of function {}, number not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -203,7 +203,7 @@ namespace
                         {
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid expression for function {}, find number after '.' failed, str: \"{}\".",
+                                "Invalid argument of function {}, number not found after '.', str: \"{}\".",
                                 getName(),
                                 String(str));
                         }
@@ -217,7 +217,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, convert string to float64 failed: \"{}\".",
+                            "Invalid argument of function {}, can't convert String to Float64: \"{}\".",
                             getName(),
                             String(base_str));
                     }
@@ -231,7 +231,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find unit failed, str: \"{}\".",
+                            "Invalid argument of function {}, time unit not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -242,7 +242,7 @@ namespace
                     if (iter == time_unit_to_float.end()) /// not find unit
                     {
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
+                            ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, can't parse the unit: \"{}\".", getName(), unit);
                     }
                     result += base * iter->second;
 

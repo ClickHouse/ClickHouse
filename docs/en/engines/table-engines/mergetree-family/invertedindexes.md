@@ -21,18 +21,6 @@ For example, the string cell "I will be a little late" is by default tokenized i
 For example, the result of 3-gram tokenization will be 21 terms "I w", " wi", "wil", "ill", "ll ", "l b", " be" etc.
 The more fine-granular the input strings are tokenized, the bigger but also the more useful the resulting text index will be.
 
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/O_MnyUkrIq8"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
-
 :::note
 Text indexes are experimental and should not be used in production environments yet.
 They may change in the future in backward-incompatible ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
@@ -114,8 +102,6 @@ SELECT * from tab WHERE str LIKE '%Hello%';
 SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
 SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
-
-The text index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.
 
 Like for other secondary indices, each column part has its own text index.
 Furthermore, each text index is internally divided into "segments".
@@ -218,23 +204,6 @@ Example:
 SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb');
 
 SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
-```
-
-#### has {#functions-example-has}
-
-Function `has` is also similar to `equals` in terms of matching the entire value.
-Instead it operates on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
-
-Example how to define a `text` index to use with the `has` function:
-
-```sql
-CREATE TABLE tbl (
-    id UInt64,
-    values Array(String),
-    INDEX idx_values(values) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY id;
 ```
 
 ## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
@@ -359,3 +328,4 @@ For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be
 ## Related Content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+- Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

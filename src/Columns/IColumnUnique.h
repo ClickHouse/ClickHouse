@@ -187,6 +187,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
+    ColumnPtr updateFrom(const IColumn::Patch &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for ColumnUnique.");
+    }
+
+    void updateInplaceFrom(const IColumn::Patch &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for ColumnUnique.");
+    }
+
     /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *

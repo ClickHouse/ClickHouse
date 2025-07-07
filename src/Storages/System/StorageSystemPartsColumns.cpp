@@ -1,4 +1,4 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -135,7 +135,6 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
-
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])

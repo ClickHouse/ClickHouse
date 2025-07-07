@@ -1,5 +1,5 @@
 #pragma once
-#include "StorageObjectStorage.h"
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
