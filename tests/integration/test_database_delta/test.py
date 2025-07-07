@@ -50,7 +50,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def start_test(node):
+def execute_spark_query(node, query_text, ignore_exit_code=False):
     node.exec_in_container(
         [
             "bash",
@@ -59,8 +59,6 @@ def start_test(node):
         ],
     )
 
-
-def execute_spark_query(node, query_text, ignore_exit_code=False):
     return node.exec_in_container(
         [
             "bash",
@@ -91,7 +89,6 @@ def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
 def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
         f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
@@ -136,14 +133,13 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
 def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA test_schema{i}{test_uuid}" for i in range(10)], True
+        node1, [f"CREATE SCHEMA test_schema{test_uuid}{i}" for i in range(10)], True
     )
     execute_multiple_spark_queries(
         node1,
         [
-            f"CREATE TABLE test_schema{i}{test_uuid}.test_table{i}{test_uuid} (col1 int, col2 double) using Delta location '/tmp/test_schema{i}{test_uuid}/test_table{i}'"
+            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'"
             for i in range(10)
         ],
         True,
@@ -151,7 +147,7 @@ def test_multiple_schemes_tables(started_cluster):
     execute_multiple_spark_queries(
         node1,
         [
-            f"INSERT INTO test_schema{i}{test_uuid}.test_table{i}{test_uuid} VALUES ({i}, {i}.0)"
+            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)"
             for i in range(10)
         ],
         True,
@@ -164,7 +160,7 @@ def test_multiple_schemes_tables(started_cluster):
     multi_schema_tables = list(
         sorted(
             node1.query(
-                f"SHOW TABLES FROM multi_schema_test{test_uuid} LIKE 'test_schema%'",
+                f"SHOW TABLES FROM multi_schema_test{test_uuid} LIKE 'test_schema{test_uuid}%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -186,7 +182,6 @@ def test_multiple_schemes_tables(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     schema_name = f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     execute_spark_query(node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True)
     table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
@@ -246,7 +241,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 def test_timestamp_ntz(started_cluster, use_delta_kernel):
     table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query(f"drop database if exists {table_name_src}")
 
     schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
@@ -319,7 +313,6 @@ def test_no_permission_and_list_tables(started_cluster):
     # So this query fails and the test doesn't check anything :(
     pytest.skip("Skipping test because it doesn't check anything")
     node1 = started_cluster.instances["node1"]
-    start_test(node1)
     node1.query("drop database if exists schema_with_permissions")
 
     schema_name = f"schema_with_permissions"
