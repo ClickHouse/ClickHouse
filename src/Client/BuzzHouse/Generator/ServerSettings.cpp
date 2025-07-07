@@ -313,6 +313,24 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_cache_bypass_connection_pool", trueOrFalseSettingNoOracle},
     {"distributed_cache_discard_connection_if_unread_data", trueOrFalseSettingNoOracle},
     {"distributed_cache_fetch_metrics_only_from_current_az", trueOrFalseSettingNoOracle},
+    {"distributed_cache_log_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'nothing'", "'on_error'", "'all'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"distributed_cache_pool_behaviour_on_limit",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'wait'", "'allocate_new_bypassing_pool'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"distributed_cache_read_only_from_current_az", trueOrFalseSettingNoOracle},
     {"distributed_cache_throw_on_error", trueOrFalseSettingNoOracle},
     {"distributed_foreground_insert", trueOrFalseSettingNoOracle},
@@ -987,6 +1005,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry :
          {"aggregation_in_order_max_block_bytes",
           "cross_join_min_bytes_to_compress",
+          "distributed_cache_min_bytes_for_seek",
+          "distributed_cache_read_alignment",
           "filesystem_cache_max_download_size",
           "filesystem_prefetch_max_memory_usage",
           "filesystem_prefetch_min_bytes_for_single_read_task",
