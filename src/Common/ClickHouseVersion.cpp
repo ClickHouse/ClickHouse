@@ -3,8 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <Core/SettingsEnums.h>
-
 #include <boost/algorithm/string.hpp>
 
 #include <fmt/ranges.h>
