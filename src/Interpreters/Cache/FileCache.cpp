@@ -1043,7 +1043,7 @@ bool FileCache::tryReserve(
             return fmt::format(
                 "cannot evict enough space for query limit "
                 "(non-releasable count: {}, non-releasable size: {}, "
-                "releasable count: {}, releasable size: {}, evicting cound: {}, invalidated count: {}, "
+                "releasable count: {}, releasable size: {}, evicting count: {}, invalidated count: {}, "
                 "total elements: {}, background download elements: {})",
                 stat.non_releasable_count, stat.non_releasable_size,
                 stat.releasable_count, stat.releasable_size, stat.evicting_count, stat.invalidated_count,
