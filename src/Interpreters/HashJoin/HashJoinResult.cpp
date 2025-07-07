@@ -270,16 +270,20 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         next_row_ref += num_refs_to_cut;
         row_ref_end = next_row_ref;
 
-        if (row_ref_end > lazy_output.row_refs.size())
+        if (!lazy_output.row_refs.empty() && row_ref_end > lazy_output.row_refs.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "The number of rows {} is less than expected rest number of rows {}",
                 lazy_output.row_refs.size(), row_ref_end);
 
-        if (rows_to_reserve < num_rhs_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The number or joined rows {} is less than expected rest number of rows {}",
-                rows_to_reserve, num_rhs_rows);
-        rows_to_reserve -= num_rhs_rows;
+        if (!lazy_output.row_refs.empty())
+        {
+            if (rows_to_reserve < num_rhs_rows)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The number or joined rows {} is less than expected rest number of rows {}",
+                    rows_to_reserve, num_rhs_rows);
+            num_rows_to_join -= num_rhs_rows;
+            rows_to_reserve = num_rhs_rows;
+        }
 
         current_data.columns.reserve(data.columns.size());
         for (auto & column : data.columns)
