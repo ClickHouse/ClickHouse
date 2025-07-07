@@ -4,6 +4,7 @@
 #include <shared_mutex>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -30,6 +31,8 @@ struct ReadOptions
     bool schema_inference_force_not_nullable = false;
     bool null_as_default = true;
     bool schema_inference_skip_unsupported_columns = false;
+
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
     bool fuzz = false; // TODO [parquet]: Use it.
 

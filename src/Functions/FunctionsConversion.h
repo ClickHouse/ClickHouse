@@ -1541,6 +1541,9 @@ struct ConvertImpl
           * But allows to support frequent case,
           *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
           *  (otherwise such usage would be frequent mistake).
+          *
+          * Same for converting to Date32, but the threshold is 120530 (DATE_LUT_MAX_EXTEND_DAY_NUM)
+          * instead of 65536.
           */
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeUInt32>

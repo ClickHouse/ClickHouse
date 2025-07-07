@@ -616,7 +616,6 @@ void SchemaConverter::processPrimitiveColumn(
                     return false;
                 break;
             case TypeIndex::Date:
-            case TypeIndex::Date32:
                 converter.field_signed = false;
                 break;
             case TypeIndex::DateTime:
@@ -626,6 +625,7 @@ void SchemaConverter::processPrimitiveColumn(
                 break;
             case TypeIndex::Enum8:
             case TypeIndex::Enum16:
+            case TypeIndex::Date32:
                 break;
             /// Not supported: DateTime64, Decimal*, Float*
             /// Not possible (in most cases): String, FixedString
@@ -803,9 +803,26 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for date logical type: {}", thriftToString(element));
 
-        out_inferred_type = std::make_shared<DataTypeDate32>();
+        bool output_plain_int = type_hint && !WhichDataType(type_hint->getTypeId()).isDateOrDate32();
+        if (output_plain_int)
+            out_inferred_type = std::make_shared<DataTypeInt32>();
+        else
+            out_inferred_type = std::make_shared<DataTypeDate32>();
         auto converter = std::make_shared<IntConverter>();
         converter->input_size = 4;
+
+        if (!output_plain_int)
+        {
+            converter->date_overflow_behavior = options.date_time_overflow_behavior;
+
+            /// Prior to introducing `date_time_overflow_behavior`, out parquet reader threw an error
+            /// in case date was out of range.
+            /// In order to leave this behavior as default, we also throw when
+            /// `date_time_overflow_mode == ignore`, as it is the setting's default value
+            /// (As we want to make this backwards compatible, not break any workflows.)
+            if (converter->date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+                converter->date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+        }
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
         out_decoder.fixed_size_converter = std::move(converter);

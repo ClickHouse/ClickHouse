@@ -9,6 +9,7 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -1023,6 +1024,24 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
     {
         memcpyIntoColumn(data.data(), num_values, input_size, col);
     }
+
+    if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+    {
+        auto & values = assert_cast<ColumnInt32 &>(col).getData();
+        for (size_t i = values.size() - num_values; i < values.size(); ++i)
+        {
+            Int32 & days_num = values[i];
+            if (days_num     > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+            {
+                if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                else
+                    throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} is out of allowed Date32 range, which is [{}, {}]",
+                        days_num, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+            }
+        }
+    }
 }
 
 void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
@@ -1075,7 +1094,13 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
         }
     }
     else if (field_signed)
+    {
+        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore &&
+            (Int64(val) > DATE_LUT_MAX_EXTEND_DAY_NUM || Int64(val) < -DAYNUM_OFFSET_EPOCH))
+            return;
+
         out = Field(Int64(val));
+    }
     else
         out = Field(val);
 }

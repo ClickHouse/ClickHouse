@@ -833,7 +833,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
     }
 
-    /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
+    /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
