@@ -8,12 +8,12 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t0"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t0
 (
-    `c0` FixedString(643),
-    `c1` Int8,
-    `c2` Array(Nullable(UInt8)),
-    `c3` Decimal(70),
-    `c4` LowCardinality(UInt256),
-    `c5` DateTime
+    c0 FixedString(643),
+    c1 Int8,
+    c2 Array(Nullable(UInt8)),
+    c3 Decimal(70),
+    c4 LowCardinality(UInt256),
+    c5 DateTime
 )
 ENGINE = Memory
 SETTINGS allow_suspicious_fixed_string_types = 1, allow_suspicious_low_cardinality_types = 1"
