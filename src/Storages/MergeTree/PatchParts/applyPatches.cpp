@@ -205,7 +205,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches)
+[[maybe_unused]] void assertPatchesBlockStructure(const PatchesToApply & patches, const Block & result_block)
 {
     std::vector<Block> headers;
 
@@ -216,7 +216,8 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
         for (const auto & column : patch->patch_block)
         {
             /// System columns may differ because we allow to apply combined patches with different modes.
-            if (isPatchPartSystemColumn(column.name))
+            /// Ignore columns that are not present in result block.
+            if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
                 header.erase(column.name);
         }
 
@@ -502,7 +503,7 @@ void applyPatchesToBlock(
     Stopwatch watch;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    assertPatchesBlockStructure(patches);
+    assertPatchesBlockStructure(patches, result_block);
 #endif
 
     bool can_apply_all_inplace = true;
