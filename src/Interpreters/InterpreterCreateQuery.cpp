@@ -734,7 +734,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && res.getInsertable().empty())
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     return res;
