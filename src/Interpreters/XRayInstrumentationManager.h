@@ -64,12 +64,10 @@ private:
     std::string extractNearestNamespaceAndFunction(std::string_view signature);
     HandlerType getHandlerType(const std::string & handler_name);
 
-    [[clang::xray_never_instrument]] static void dispatchHandler(int32_t FuncId, XRayEntryType Type);
-    [[clang::xray_never_instrument]] static void sleep(int32_t FuncId, XRayEntryType Type);
-    [[clang::xray_never_instrument]] static void log(int32_t FuncId, XRayEntryType Type);
-    [[clang::xray_never_instrument]] static void profile(int32_t FuncId, XRayEntryType Type);
-
-    // TODO: more handlers
+    [[clang::xray_never_instrument]] static void dispatchHandler(int32_t func_id, XRayEntryType entry_type);
+    [[clang::xray_never_instrument]] static void sleep(int32_t func_id, XRayEntryType entry_type);
+    [[clang::xray_never_instrument]] static void log(int32_t func_id, XRayEntryType entry_type);
+    [[clang::xray_never_instrument]] static void profile(int32_t func_id, XRayEntryType entry_type);
 
     mutable std::mutex mutex;
     uint64_t instrumentation_point_id;
@@ -83,6 +81,8 @@ private:
 
     static inline std::mutex log_mutex;
     static inline std::shared_mutex shared_mutex;
+
+    static constexpr const char* UNKNOWN = "<unknown>";
 };
 
 }

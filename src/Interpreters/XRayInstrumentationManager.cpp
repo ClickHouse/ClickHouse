@@ -87,7 +87,7 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
     std::lock_guard lock(mutex);
     auto handler_it = xrayHandlerNameToFunction.find(handler_name);
     if (handler_it == xrayHandlerNameToFunction.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRAY handler: ({})", handler_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     int64_t function_id;
     auto fn_it = functionNameToXRayID.find(function_name);
@@ -118,15 +118,16 @@ void XRayInstrumentationManager::setHandlerAndPatch(const std::string & function
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler of this type is already installed for function ({})", function_name);
     }
+
+    if (handlers_set_it ==  functionIdToHandlers.end() || handlers_set_it->second.empty())
+    {
+        __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
+        __xray_patch_function(function_id);
+    }
+
     instrumented_functions.emplace_front(instrumentation_point_id, function_id, function_name, handler_name, parameters, context);
     functionIdToHandlers[function_id][type] = instrumented_functions.begin();
     instrumentation_point_id++;
-
-    static std::once_flag once;
-    std::call_once(once, [&] {
-        __xray_set_handler(&XRayInstrumentationManager::dispatchHandler);
-        __xray_patch_function(function_id);
-    });
 }
 
 
@@ -152,7 +153,11 @@ void XRayInstrumentationManager::unpatchFunction(const std::string & function_na
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This function was not instrumenented with this handler type, nothing to unpatch: ({}), ({})", function_name, handler_name);
     instrumented_functions.erase(functionIdToHandlers[function_id][type]);
     functionIdToHandlers[function_id].erase(type);
-    __xray_unpatch_function(function_id);
+    if (functionIdToHandlers[function_id].empty())
+    {
+        functionIdToHandlers.erase(function_id);
+        __xray_unpatch_function(function_id);
+    }
 }
 
 
@@ -165,13 +170,13 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
     return it->second;
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandler(int32_t FuncId, XRayEntryType Type)
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::dispatchHandler(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook) return;
     in_hook = true;
     std::shared_lock lock(shared_mutex);
-    auto handlers_set_it = functionIdToHandlers.find(FuncId);
+    auto handlers_set_it = functionIdToHandlers.find(func_id);
     if (handlers_set_it == functionIdToHandlers.end())
     {
         in_hook = false;
@@ -190,7 +195,7 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
         {
             try
             {
-                handler(FuncId, Type);
+                handler(func_id, entry_type);
             }
             catch (const std::exception & e)
             {
@@ -206,13 +211,13 @@ XRayHandlerFunction XRayInstrumentationManager::getHandler(const std::string & n
 }
 
 
-//Takes path to the elf-binary file(that should contain xray_instr_map section),
+// Takes path to the elf-binary file(that should contain xray_instr_map section),
 // and gets mapping of functionIDs to the addresses, then resolves IDs into human-readable names
 void XRayInstrumentationManager::parseXRayInstrumentationMap()
 {
     auto binary_path = std::filesystem::canonical(std::filesystem::path("/proc/self/exe")).string();
 
-    // Load the XRay instrumentation map from the binary
+    /// Load the XRay instrumentation map from the binary
     auto instr_map_or_error = loadInstrumentationMap(binary_path);
     if (!instr_map_or_error)
     {
@@ -220,25 +225,25 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
     auto &instr_map = *instr_map_or_error;
 
-    // Retrieve the mapping of function IDs to addresses
+    /// Retrieve the mapping of function IDs to addresses
     auto function_addresses = instr_map.getFunctionAddresses();
 
-    // Initialize the LLVM symbolizer to resolve function names
+    /// Initialize the LLVM symbolizer to resolve function names
     LLVMSymbolizer symbolizer;
 
 
-    // Iterate over all instrumented functions
-    for (const auto &[FuncID, Addr] : function_addresses)
+    /// Iterate over all instrumented functions
+    for (const auto &[func_id, addr] : function_addresses)
     {
-        // Create a SectionedAddress structure to hold the function address
+        /// Create a SectionedAddress structure to hold the function address
         object::SectionedAddress module_address;
-        module_address.Address = Addr;
+        module_address.Address = addr;
         module_address.SectionIndex = object::SectionedAddress::UndefSection;
 
-        // Default function name if symbolization fails
-        std::string function_name = "<unknown>";
+        /// Default function name if symbolization fails
+        std::string function_name = UNKNOWN;
 
-        // Attempt to symbolize the function address (resolve its name)
+        /// Attempt to symbolize the function address (resolve its name)
         if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
         {
             auto &di = *res_or_err;
@@ -246,40 +251,45 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
                 function_name = di.FunctionName;
         }
 
-        // map function ID to its resolved name and vice versa
-        if (function_name != "<unknown>")
+        /// map function ID to its resolved name and vice versa
+        if (function_name != UNKNOWN)
         {
             auto stripped_function_name = extractNearestNamespaceAndFunction(function_name);
-            strippedFunctionNameToXRayID[stripped_function_name].push_back(FuncID);
-            functionNameToXRayID[function_name] = FuncID;
-            xrayIdToFunctionName[FuncID] = stripped_function_name;
+            strippedFunctionNameToXRayID[stripped_function_name].push_back(func_id);
+            functionNameToXRayID[function_name] = func_id;
+            xrayIdToFunctionName[func_id] = stripped_function_name;
         }
     }
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::sleep(int32_t FuncId, XRayEntryType Type)
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::sleep(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
-    if (in_hook || Type != XRayEntryType::ENTRY)
+    if (in_hook || entry_type != XRayEntryType::ENTRY)
     {
         return;
     }
-
     in_hook = true;
     HandlerType type = HandlerType::Sleep;
-    auto parameters_it = functionIdToHandlers[FuncId].find(type);
-    if (parameters_it == functionIdToHandlers[FuncId].end())
+    auto parameters_it = functionIdToHandlers[func_id].find(type);
+    if (parameters_it == functionIdToHandlers[func_id].end())
     {
+        in_hook = false;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
     }
     auto & params_opt = parameters_it->second->parameters;
     if (!params_opt.has_value())
+    {
+        in_hook = false;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
-
+    }
     const auto & params = params_opt.value();
 
     if (params.size() != 1)
+    {
+        in_hook = false;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
+    }
 
     const auto & param = params[0];
 
@@ -287,36 +297,43 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     {
         Int64 seconds = std::get<Int64>(param);
         if (seconds < 0)
+        {
+            in_hook = false;
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+        }
         std::this_thread::sleep_for(std::chrono::seconds(seconds));
     }
     else if (std::holds_alternative<Float64>(param))
     {
         Float64 seconds = std::get<Float64>(param);
         if (seconds < 0)
+        {
+            in_hook = false;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+        }
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(seconds));
         std::this_thread::sleep_for(duration);
     }
     else
     {
+        in_hook = false;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
     }
     in_hook = false;
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::log(int32_t FuncId, XRayEntryType Type)
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::log(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
-    if (in_hook || Type != XRayEntryType::ENTRY)
+    if (in_hook || entry_type != XRayEntryType::ENTRY)
     {
         return;
     }
 
     in_hook = true;
     HandlerType type = HandlerType::Log;
-    auto parameters_it = functionIdToHandlers[FuncId].find(type);
-    if (parameters_it == functionIdToHandlers[FuncId].end())
+    auto parameters_it = functionIdToHandlers[func_id].find(type);
+    if (parameters_it == functionIdToHandlers[func_id].end())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
     }
@@ -343,7 +360,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     in_hook = false;
 }
 
-[[clang::xray_never_instrument]] void XRayInstrumentationManager::profile(int32_t FuncId, XRayEntryType Type)
+[[clang::xray_never_instrument]] void XRayInstrumentationManager::profile(int32_t func_id, XRayEntryType entry_type)
 {
     static thread_local bool in_hook = false;
     if (in_hook)
@@ -352,13 +369,13 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     }
 
     in_hook = true;
-    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(FuncId));
+    LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(func_id));
     HandlerType type = HandlerType::Profile;
     static thread_local std::unordered_map<int32_t, InstrumentationProfilingLogElement> active_elements;
-    if (Type == XRayEntryType::ENTRY)
+    if (entry_type == XRayEntryType::ENTRY)
     {
-        auto parameters_it = functionIdToHandlers[FuncId].find(type);
-        if (parameters_it == functionIdToHandlers[FuncId].end())
+        auto parameters_it = functionIdToHandlers[func_id].find(type);
+        if (parameters_it == functionIdToHandlers[func_id].end())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing null parameter for profiling instrumentation");
         }
@@ -368,8 +385,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             in_hook = false;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected parameters for profiling instrumentation");
         }
-        auto context_it = functionIdToHandlers[FuncId].find(type);
-        if (context_it == functionIdToHandlers[FuncId].end())
+        auto context_it = functionIdToHandlers[func_id].find(type);
+        if (context_it == functionIdToHandlers[func_id].end())
         {
             in_hook = false;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
@@ -381,7 +398,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
         }
         InstrumentationProfilingLogElement element;
-        element.function_name = xrayIdToFunctionName[FuncId];
+        element.function_name = xrayIdToFunctionName[func_id];
         element.tid = getThreadId();
         using namespace std::chrono;
 
@@ -392,13 +409,13 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
         element.event_time_microseconds = Decimal64(now_us);
 
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
-        element.function_id = FuncId;
+        element.function_id = func_id;
 
-        active_elements[FuncId] = std::move(element);
+        active_elements[func_id] = std::move(element);
     }
-    else if (Type == XRayEntryType::EXIT)
+    else if (entry_type == XRayEntryType::EXIT)
     {
-        auto it = active_elements.find(FuncId);
+        auto it = active_elements.find(func_id);
         if (it != active_elements.end())
         {
             auto & element = it->second;
@@ -408,8 +425,8 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             auto start_us = Int64(element.event_time_microseconds);
             element.duration_microseconds = Decimal64(now_us - start_us);
 
-            auto context_it = functionIdToHandlers[FuncId].find(type);
-            if (context_it == functionIdToHandlers[FuncId].end())
+            auto context_it = functionIdToHandlers[func_id].find(type);
+            if (context_it == functionIdToHandlers[func_id].end())
             {
                 in_hook = false;
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");

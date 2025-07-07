@@ -37,12 +37,9 @@ public:
     InstrumentationProfilingLog(ContextPtr context_,
         const SystemLogSettings & settings_,
         std::shared_ptr<SystemLogQueue<InstrumentationProfilingLogElement>> queue_ = nullptr)
-        : SystemLog<InstrumentationProfilingLogElement>(context_, settings_, queue_),
-        symbolize(settings_.symbolize_traces)
+        : SystemLog<InstrumentationProfilingLogElement>(context_, settings_, queue_)
     {
     }
-
-    bool symbolize;
 };
 
 }

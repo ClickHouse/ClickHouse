@@ -21,7 +21,7 @@ ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
     {
         {"instrumentation_point_id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
         {"function_id", std::make_shared<DataTypeUInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
-        {"function_name", std::make_shared<DataTypeString>(), "Name of theinstrumented function."},
+        {"function_name", std::make_shared<DataTypeString>(), "Name of the instrumented function."},
         {"handler_name", std::make_shared<DataTypeString>(), "Handler that was patched into instrumentation points of the function."},
         {"parameters", std::make_shared<DataTypeDynamic>(), "Parameters for the handler call"},
     };
