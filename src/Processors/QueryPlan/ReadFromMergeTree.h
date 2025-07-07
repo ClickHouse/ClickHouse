@@ -385,6 +385,8 @@ private:
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool supportsSkipIndexesOnDataRead() const;
 
+    bool allPartitionsHaveSinglePart() const;
+
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
