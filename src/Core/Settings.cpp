@@ -6780,11 +6780,8 @@ Allows using statistics to optimize queries
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
-    DECLARE(Bool, allow_experimental_inverted_index, false, R"(
-If it is set to true, allow to use experimental inverted index.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental full-text index.
+If it is set to true, allow to use experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
@@ -6914,6 +6911,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

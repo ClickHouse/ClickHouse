@@ -177,7 +177,6 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_full_text_index;
-    extern const SettingsBool allow_experimental_inverted_index;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
@@ -301,7 +300,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -3941,19 +3939,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
-
-    /// -------------------------------------------------------------------------------------------------------
-    /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
-    if (AlterCommands::hasLegacyFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
-
-    if (AlterCommands::hasLegacyInvertedIndex(new_metadata) && !settings[Setting::allow_experimental_inverted_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
-
-    if (AlterCommands::hasLegacyGinIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
-    /// -------------------------------------------------------------------------------------------------------
+                "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
