@@ -31,6 +31,7 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
 
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
+    , next_type_mask(fc.type_mask)
     , connections(conn)
     , supports_cloud_features(scf)
     , replica_setup(rs)

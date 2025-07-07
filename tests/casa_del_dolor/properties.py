@@ -53,7 +53,7 @@ def threshold_generator(
             and isinstance(min_val, int)
             and isinstance(max_val, int)
         ):
-            return 2**(64 if bits == 64 else 31) - 1
+            return 2 ** (64 if bits == 64 else 31) - 1
 
         if isinstance(min_val, int) and isinstance(max_val, int):
             return random.randint(min_val, max_val)
@@ -62,9 +62,9 @@ def threshold_generator(
     return gen
 
 
-def file_size_value(max_val: int):
+def file_size_value(max_val: int, bits: int = 64):
     def gen():
-        return str(threshold_generator(0.2, 0.2, 1, max_val)()) + random.choice(
+        return str(threshold_generator(0.2, 0.2, 1, max_val, bits)()) + random.choice(
             ["ki", "ki", "Mi", "Gi"]  # Increased probability
         )
 
@@ -357,7 +357,9 @@ cache_storage_properties = {
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "cache_on_write_operations": true_false_lambda,
-    "cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "cache_policy": lambda: random.choice(
+        ["LRU", "LRU_OVERCOMMIT", "SLRU", "SLRU_OVERCOMMIT"]
+    ),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -385,9 +387,7 @@ policy_properties = {
 
 all_disks_properties = {
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
-    "skip_access_check": true_false_lambda,
 }
 
 
@@ -674,10 +674,18 @@ def add_single_disk(
     if random.randint(1, 100) <= 50:
         next_properties = dict(all_disks_properties)
         if disk_type != "cache":
-            next_properties["description"] = lambda: generate_xml_safe_string(
-                random.randint(1, 1024)
+            next_properties.update(
+                {
+                    "description": lambda: generate_xml_safe_string(
+                        random.randint(1, 1024)
+                    ),
+                    "min_bytes_for_seek": threshold_generator(
+                        0.2, 0.2, 0, 10 * 1024 * 1024
+                    ),
+                    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
+                    "skip_access_check": true_false_lambda,
+                }
             )
-            next_properties["readonly"] = lambda: 1 if random.randint(0, 9) < 2 else 0
         apply_properties_recursively(next_disk, next_properties)
     return (prev_disk, final_type)
 
@@ -790,7 +798,7 @@ class DiskPropertiesGroup(PropertiesGroup):
 
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
-    max_size_xml.text = file_size_value(10)()
+    max_size_xml.text = file_size_value(10, 32)()
     path_xml = ET.SubElement(next_cache, "path")
     path_xml.text = f"/var/lib/clickhouse/fcache{i}/"
 
@@ -871,10 +879,14 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
     ):
         number_clusters = 0
         shared_settings = {
-            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+            "delay_before_drop_intention_seconds": threshold_generator(
+                0.2, 0.2, 0, 60, 32
+            ),
             "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
             "drop_local_thread_pool_size": threads_lambda,
-            "drop_ignore_inactive_replica_after_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+            "drop_ignore_inactive_replica_after_seconds": threshold_generator(
+                0.2, 0.2, 0, 60, 32
+            ),
             "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
             "drop_zookeeper_thread_pool_size": threads_lambda,
             # "migration_from_database_replicated": true_false_lambda, not suitable for testing
