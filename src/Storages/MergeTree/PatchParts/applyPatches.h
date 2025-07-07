@@ -41,6 +41,10 @@ struct PatchMergeSharedData : public PatchSharedData
 {
 };
 
+/// We use two-level hash map (_block_number -> (_block_offset -> row_number)).
+/// Block number are usually the same for the large ranges of consecutive rows.
+/// Therefore we switch between hash maps for blocks rarely.
+/// It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> row_number).
 using OffsetsHashMap = absl::flat_hash_map<UInt64, UInt64, HashCRC32<UInt64>>;
 using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
 

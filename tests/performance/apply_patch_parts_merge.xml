@@ -28,7 +28,7 @@
 
     <fill_query>SYSTEM STOP MERGES test_lwu_merge</fill_query>
 
-    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 100 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 0</fill_query>
     <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 100</fill_query>
     <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 200</fill_query>
     <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 300</fill_query>
