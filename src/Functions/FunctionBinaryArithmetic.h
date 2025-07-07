@@ -1277,7 +1277,7 @@ class FunctionBinaryArithmetic : public IFunction
                 UInt32 result = should_subtract ?
                     datetime_const_val - time_const_val :
                     datetime_const_val + time_const_val;
-                    
+
                 for (size_t i = 0; i < input_row_count; ++i)
                     result_data[i] = result;
             }
