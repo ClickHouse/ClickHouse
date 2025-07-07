@@ -2164,7 +2164,7 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
 
-            if (mutation_version > max_mutation_version_to_include)
+            if (mutation_version >= max_mutation_version_to_include)
                 continue;
 
             auto alter_version = status->entry->alter_version;
