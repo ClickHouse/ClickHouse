@@ -1,4 +1,4 @@
-#include <Processors/Sources/SQLiteSource.h>
+#include "SQLiteSource.h"
 
 #if USE_SQLITE
 #include <base/range.h>
@@ -65,19 +65,16 @@ Chunk SQLiteSource::generate()
         {
             continue;
         }
-        if (status == SQLITE_DONE)
+        else if (status == SQLITE_DONE)
         {
             compiled_statement.reset();
             break;
         }
-        if (status != SQLITE_ROW)
+        else if (status != SQLITE_ROW)
         {
-            throw Exception(
-                ErrorCodes::SQLITE_ENGINE_ERROR,
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                 "Expected SQLITE_ROW status, but got status {}. Error: {}, Message: {}",
-                status,
-                sqlite3_errstr(status),
-                sqlite3_errmsg(sqlite_db.get()));
+                status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
         }
 
         int column_count = sqlite3_column_count(compiled_statement.get());

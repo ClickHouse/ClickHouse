@@ -1,5 +1,6 @@
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -22,12 +23,9 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
-#if USE_MONGODB
     registerTableFunctionMongoDB(factory);
-#endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
-    registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
@@ -64,7 +62,6 @@ void registerTableFunctions()
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
-    registerDataLakeClusterTableFunctions(factory);
 }
 
 }

@@ -53,7 +53,7 @@ String Macros::expand(const String & s,
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
     assert(info.level == 0 || !info.expand_special_macros_only);
 
-    if (!s.contains('{'))
+    if (s.find('{') == String::npos)
         return s;
 
     if (info.level && s.size() > 65536)
@@ -77,9 +77,10 @@ String Macros::expand(const String & s,
             res.append(s, pos, String::npos);
             break;
         }
-
-        res.append(s, pos, begin - pos);
-
+        else
+        {
+            res.append(s, pos, begin - pos);
+        }
 
         ++begin;
         size_t end = s.find('}', begin);
@@ -108,8 +109,8 @@ String Macros::expand(const String & s,
         else if (macro_name == "uuid" && !info.expand_special_macros_only)
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' in engine arguments is only supported when the UUID is explicitly specified, "
-                    "used within an ON CLUSTER query, or when using the Replicated database engine");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' and empty arguments of ReplicatedMergeTree "
+                                "are supported only for ON CLUSTER queries with Atomic database engine");
             /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
             /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
             /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
@@ -118,7 +119,7 @@ String Macros::expand(const String & s,
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
         }
-        else if (macro_name == "server_uuid" && !info.expand_special_macros_only)
+        else if (macro_name == "server_uuid")
         {
             auto uuid = ServerUUID::get();
             if (UUIDHelpers::Nil == uuid)

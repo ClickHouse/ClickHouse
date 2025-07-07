@@ -1,7 +1,6 @@
 import pytest
-
-from helpers.cluster import ClickHouseCluster
 from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
@@ -118,7 +117,6 @@ def check_tables(converted):
 
 
 def test_modify_engine_on_restart_with_materialized_view(started_cluster):
-    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
     ch1.query(f"CREATE DATABASE {database_name}")
 
     create_tables()
@@ -132,5 +130,3 @@ def test_modify_engine_on_restart_with_materialized_view(started_cluster):
     check_flags_deleted(ch1, database_name, ["hourly_data", "monthly_aggregated_data"])
 
     check_tables(True)
-
-    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

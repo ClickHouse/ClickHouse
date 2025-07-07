@@ -1,8 +1,6 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
-
-#include <absl/container/inlined_vector.h>
+#include "AggregateFunctionCombinatorFactory.h"
+#include "AggregateFunctionIf.h"
+#include "AggregateFunctionNull.h"
 
 namespace DB
 {
@@ -271,7 +269,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -290,10 +288,10 @@ public:
                 nested_columns[i] = columns[i];
         }
 
-        if (singleFilter(nested_columns.data(), row_num, number_of_arguments))
+        if (singleFilter(nested_columns, row_num, number_of_arguments))
         {
             this->setFlag(place);
-            this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
+            this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
         }
     }
 
@@ -315,7 +313,7 @@ public:
 
             for (size_t i = row_begin; i < row_end; i++)
             {
-                final_null_flags[i] = (!!filter_null_map[i]) | !filter_values[i];
+                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
             }
         }
         else
@@ -326,7 +324,7 @@ public:
                 final_null_flags[i] = !filter_values[i];
         }
 
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
         for (size_t arg = 0; arg < number_of_arguments; arg++)
         {
             if (is_nullable[arg])
@@ -337,7 +335,9 @@ public:
                     const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
                     const UInt8 * col_null_map = nullmap_column.getData().data();
                     for (size_t r = row_begin; r < row_end; r++)
-                        final_null_flags[r] |= !!col_null_map[r];
+                    {
+                        final_null_flags[r] |= col_null_map[r];
+                    }
                 }
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
@@ -345,12 +345,21 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = !memoryIsByte(final_null_flags.get(), row_begin, row_end, 1);
+        bool at_least_one = false;
+        for (size_t i = row_begin; i < row_end; i++)
+        {
+            if (!final_null_flags[i])
+            {
+                at_least_one = true;
+                break;
+            }
+        }
+
         if (at_least_one)
         {
             this->setFlag(place);
             this->nested_function->addBatchSinglePlaceNotNull(
-                row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_null_flags.get(), arena, -1);
+                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
         }
     }
 
@@ -464,20 +473,28 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         {
             return std::make_shared<AggregateFunctionIfNullUnary<true, true>>(nested_function->getName(), nested_func, arguments, params);
         }
-
-        if (need_to_serialize_flag)
-            return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
-        return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
+        else
+        {
+            if (need_to_serialize_flag)
+                return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
+            else
+                return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
+        }
     }
-
-    if (return_type_is_nullable)
+    else
     {
-        return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
+        if (return_type_is_nullable)
+        {
+            return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
+        }
+        else
+        {
+            if (need_to_serialize_flag)
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
+            else
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
+        }
     }
-
-    if (need_to_serialize_flag)
-        return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
-    return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)

@@ -1,8 +1,9 @@
+#include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+
 #include <IO/WriteHelpers.h>
-#include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
-#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -76,7 +77,6 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
-    factory.setContentType("JSONCompact", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
@@ -87,7 +87,6 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
-    factory.setContentType("JSONCompactStrings", "application/json; charset=UTF-8");
 }
 
 }

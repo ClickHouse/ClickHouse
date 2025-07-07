@@ -1,15 +1,9 @@
 #include "config.h"
 
-#include <Core/FormatFactorySettings.h>
-#include <Core/Settings.h>
-#include <Common/Macros.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Formats/FormatFactory.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
-#include <Storages/StorageFactory.h>
-#include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -28,11 +22,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString s3queue_default_zookeeper_path;
-}
-
 template <typename Configuration>
 StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 {
@@ -48,49 +37,29 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     // session and user are ignored.
     std::optional<FormatSettings> format_settings;
 
-    const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
-
-    if (!is_attach)
-    {
-        if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
-        {
-            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
-            const String database_engine = database ? database->getEngineName() : "";
-
-            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-                database_engine == "Replicated";
-
-            /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
-            /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
-            bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
-
-            String path = path_setting->safeGet<String>();
-
-            Macros::MacroExpansionInfo info;
-            info.table_id = args.table_id;
-            if (!allow_uuid_macro)
-                info.table_id.uuid = UUIDHelpers::Nil;
-
-            /// Make sure that {uuid} macro is allowed, if present.
-            args.getContext()->getMacros()->expand(path, info);
-
-            /// Actually expand all the macros except {uuid} macro.
-            info.expand_special_macros_only = true;
-            path = args.getContext()->getMacros()->expand(path, info);
-
-            args.storage_def->settings->changes.setSetting("keeper_path", Field(path));
-        }
-    }
-
     auto queue_settings = std::make_unique<ObjectStorageQueueSettings>();
     if (args.storage_def->settings)
     {
-        queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
+        queue_settings->loadFromQuery(*args.storage_def);
+        FormatFactorySettings user_format_settings;
 
-        Settings settings = args.getContext()->getSettingsCopy();
-        settings.applyChanges(args.storage_def->settings->changes);
-        format_settings = getFormatSettings(args.getContext(), settings);
+        // Apply changed settings from global context, but ignore the
+        // unknown ones, because we only have the format settings here.
+        const auto & changes = args.getContext()->getSettingsRef().changes();
+        for (const auto & change : changes)
+        {
+            if (user_format_settings.has(change.name))
+                user_format_settings.set(change.name, change.value);
+
+            args.storage_def->settings->changes.removeSetting(change.name);
+        }
+
+        for (const auto & change : args.storage_def->settings->changes)
+        {
+            if (user_format_settings.has(change.name))
+                user_format_settings.applyChange(change);
+        }
+        format_settings = getFormatSettings(args.getContext(), user_format_settings);
     }
     else
     {
@@ -107,8 +76,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.getContext(),
         format_settings,
         args.storage_def,
-        args.mode,
-        /* keep_data_in_keeper */ false);
+        args.mode);
 }
 
 #if USE_AWS_S3
@@ -123,8 +91,7 @@ void registerStorageS3Queue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
         });
 }
 #endif
@@ -141,8 +108,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::AZURE,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .source_access_type = AccessType::AZURE,
         });
 }
 #endif

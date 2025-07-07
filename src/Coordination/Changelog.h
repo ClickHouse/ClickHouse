@@ -3,15 +3,12 @@
 #include <libnuraft/ptr.hxx>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/SharedMutex.h>
 
 #include <map>
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
 #include <future>
-#include <vector>
-#include <filesystem>
 
 namespace nuraft
 {
@@ -68,9 +65,6 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
-struct ChangelogFileOperation;
-using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
-
 /// changelog_fromindex_toindex.bin
 /// [fromindex, toindex] <- inclusive
 struct ChangelogFileDescription
@@ -89,8 +83,6 @@ struct ChangelogFileDescription
 
     bool deleted = false;
 
-    std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
-
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 
@@ -100,14 +92,6 @@ struct ChangelogFileDescription
         std::lock_guard lock(file_mutex);
         fn();
     }
-
-    std::string getPathSafe()
-    {
-        std::lock_guard lock(file_mutex);
-        return path;
-    }
-
-    void waitAllAsyncOperations();
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
@@ -150,8 +134,7 @@ private:
     mutable std::shared_future<LogEntryPtr> log_entry;
 };
 
-using PrefetchedCacheEntryPtr = std::shared_ptr<PrefetchedCacheEntry>;
-using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntryPtr>;
+using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntry>;
 using IndexToCacheEntry = std::unordered_map<uint64_t, CacheEntry>;
 using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
 
@@ -166,7 +149,7 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   * - for committing
   *
   * First cache will store latest logs in memory, limited by the latest_logs_cache_size_threshold coordination setting.
-  * Once the log is persisted to the disk, we store its location in the file and allow the storage
+  * Once the log is persisted to the disk, we store it's location in the file and allow the storage
   * to evict that log from cache if it's needed.
   * Latest logs cache should have a high hit rate in "normal" operation for both replication and committing.
   *
@@ -221,9 +204,9 @@ struct LogEntryStorage
 private:
     void prefetchCommitLogs();
 
-    void startCommitLogsPrefetch(uint64_t last_committed_index) const TSA_REQUIRES(commit_logs_cache_mutex);
+    void startCommitLogsPrefetch(uint64_t last_committed_index) const;
 
-    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size) TSA_REQUIRES(commit_logs_cache_mutex);
+    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size);
 
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
@@ -244,7 +227,7 @@ private:
 
         CacheEntry * getCacheEntry(uint64_t index);
         const CacheEntry * getCacheEntry(uint64_t index) const;
-        PrefetchedCacheEntryPtr getPrefetchedCacheEntry(uint64_t index);
+        PrefetchedCacheEntry & getPrefetchedCacheEntry(uint64_t index);
 
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
@@ -264,9 +247,7 @@ private:
     };
 
     InMemoryCache latest_logs_cache;
-
-    mutable SharedMutex commit_logs_cache_mutex;
-    mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
+    mutable InMemoryCache commit_logs_cache;
 
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
@@ -392,12 +373,6 @@ public:
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
-    static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
-
-    static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
-    static void spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog);
-    static std::string formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension);
-
     /// Fsync log to disk
     ~Changelog();
 
@@ -422,12 +397,8 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
-    /// Thread for operations on changelog file, e.g. removing the file
-    void backgroundChangelogOperationsThread();
-
-    void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
-    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
-    void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
+    /// Clean useless log files in a background thread
+    void cleanLogThread();
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
@@ -441,9 +412,10 @@ private:
     LogEntryStorage entry_storage;
 
     uint64_t max_log_id = 0;
-
-    ConcurrentBoundedQueue<ChangelogFileOperationPtr> changelog_operation_queue{std::numeric_limits<size_t>::max()};
-    std::unique_ptr<ThreadFromGlobalPool> background_changelog_operations_thread;
+    /// For compaction, queue of delete not used logs
+    /// 128 is enough, even if log is not removed, it's not a problem
+    ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
+    std::unique_ptr<ThreadFromGlobalPool> clean_log_thread;
 
     struct AppendLog
     {

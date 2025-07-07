@@ -1,11 +1,11 @@
 #pragma once
 
-#include <base/defines.h>
+#include <shared_mutex>
 
 #ifdef OS_LINUX /// Because of futex
 
 #include <base/types.h>
-
+#include <base/defines.h>
 #include <atomic>
 
 namespace DB
@@ -46,35 +46,11 @@ private:
 
 #else
 
-#include <absl/synchronization/mutex.h>
-
 namespace DB
 {
 
-class TSA_CAPABILITY("SharedMutex") SharedMutex : public absl::Mutex
-{
-    using absl::Mutex::Mutex;
+using SharedMutex = std::shared_mutex;
 
-public:
-    SharedMutex(const SharedMutex &) = delete;
-    SharedMutex & operator=(const SharedMutex &) = delete;
-    SharedMutex(SharedMutex &&) = delete;
-    SharedMutex & operator=(SharedMutex &&) = delete;
-
-    // Exclusive ownership
-    void lock() TSA_ACQUIRE() { WriterLock(); }
-
-    bool try_lock() TSA_TRY_ACQUIRE(true) { return WriterTryLock(); }
-
-    void unlock() TSA_RELEASE() { WriterUnlock(); }
-
-    // Shared ownership
-    void lock_shared() TSA_ACQUIRE_SHARED() { ReaderLock(); }
-
-    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true) { return ReaderTryLock(); }
-
-    void unlock_shared() TSA_RELEASE_SHARED() { ReaderUnlock(); }
-};
 }
 
 #endif

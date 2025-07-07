@@ -24,28 +24,6 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
-    bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }
-
-    const String & getPartName() const override { return data_part->name; }
-
-    const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
-
-    Int64 getMinDataVersion() const override
-    {
-        return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMinDataVersion()
-            : data_part->info.getDataVersion();
-    }
-
-    Int64 getMaxDataVersion() const override
-    {
-        return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMaxDataVersion()
-            : data_part->info.getDataVersion();
-    }
-
-    IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
-
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
@@ -53,8 +31,6 @@ public:
     const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
 
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
-
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
@@ -75,7 +51,7 @@ public:
 
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
+    const MergeTreeIndexGranularity & getIndexGranularity() const override { return data_part->index_granularity; }
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 

@@ -13,16 +13,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -119,7 +114,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef().allow_experimental_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
         }
@@ -145,8 +140,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
             "Table function '{}' requires a SELECT query with the result columns matching a table function after 'ELSE'. "
             "Currently the result columns of the SELECT query are {}, and the table function after 'ELSE' gives {}",
             getName(),
-            columns.toString(true),
-            else_columns.toString(true));
+            columns.toString(),
+            else_columns.toString());
     }
 
     return true;

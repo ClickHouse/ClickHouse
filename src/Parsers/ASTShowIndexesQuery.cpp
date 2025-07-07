@@ -15,22 +15,22 @@ ASTPtr ASTShowIndexesQuery::clone() const
     return res;
 }
 
-void ASTShowIndexesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowIndexesQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "SHOW "
                   << (extended ? "EXTENDED " : "")
                   << "INDEXES"
                   << (settings.hilite ? hilite_none : "");
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
     if (!database.empty())
-        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
 
     if (where_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->format(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        where_expression->formatImpl(settings, state, frame);
     }
 }
 

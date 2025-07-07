@@ -1,11 +1,13 @@
 #pragma once
 
-#include <base/types.h>
-#include <Columns/IColumn_fwd.h>
-#include <DataTypes/IDataType.h>
-#include <libdivide.h>
-
 #include <vector>
+#include <base/types.h>
+#include <Core/Field.h>
+#include <Common/PODArray.h>
+#include <Common/Allocator.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -53,22 +55,14 @@ public:
     /// For debug.
     UInt64 isEmpty() const;
 
-    size_t memoryUsageBytes() const;
-
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
 private:
-
-    static constexpr size_t word_bits = 8 * sizeof(UnderType);
 
     size_t size;
     size_t hashes;
     size_t seed;
     size_t words;
-    size_t modulus; /// 8 * size, cached for fast modulo.
-    libdivide::divider<size_t, libdivide::BRANCHFREE> divider; /// Divider for fast modulo by modulus.
     Container filter;
-
-    inline size_t fastMod(size_t value) const { return value - (value / divider) * modulus; }
 
 public:
     static ColumnPtr getPrimitiveColumn(const ColumnPtr & column);

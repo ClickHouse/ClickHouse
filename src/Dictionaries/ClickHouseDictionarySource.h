@@ -3,10 +3,10 @@
 #include <memory>
 #include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Context_fwd.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/IDictionarySource.h>
+#include <Interpreters/Context.h>
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
+#include "IDictionarySource.h"
 
 
 namespace DB
@@ -23,8 +23,6 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
-        const std::string proto_send_chunked;
-        const std::string proto_recv_chunked;
         const std::string quota_key;
         const std::string db;
         const std::string table;

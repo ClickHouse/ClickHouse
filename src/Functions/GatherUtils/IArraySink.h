@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/GatherUtils/ArraySinkVisitor.h>
+#include "ArraySinkVisitor.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -25,7 +25,7 @@ struct IArraySink
 };
 
 template <typename Derived>
-class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
+class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};
 
 }
 

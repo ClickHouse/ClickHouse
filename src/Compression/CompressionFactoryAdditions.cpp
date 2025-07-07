@@ -6,11 +6,11 @@
 
 #include <Compression/CompressionFactory.h>
 
-#include <Compression/ICompressionCodec.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -156,19 +156,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (!allow_experimental_codecs && result_codec->isExperimental())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting",
+                        " You can enable it with the 'allow_experimental_codecs' setting.",
                         codec_family_name);
 
                 if (!enable_deflate_qpl_codec && result_codec->isDeflateQpl())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_deflate_qpl_codec' setting",
+                        " You can enable it with the 'enable_deflate_qpl_codec' setting.",
                         codec_family_name);
 
                 if (!enable_zstd_qat_codec && result_codec->isZstdQat())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_zstd_qat_codec' setting",
+                        " You can enable it with the 'enable_zstd_qat_codec' setting.",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
@@ -190,7 +190,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 encryption_codecs_pos.insert(i);
         }
 
-        String codec_description = codecs_descriptions->formatWithSecretsOneLine();
+        String codec_description = queryToString(codecs_descriptions);
 
         if (sanity_check)
         {
@@ -262,11 +262,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             result->arguments = codecs_descriptions;
             return result;
         }
-
-        return ast;
+        else
+        {
+            return ast;
+        }
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
+    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", queryToString(ast));
 }
 
 

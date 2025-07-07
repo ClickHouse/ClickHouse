@@ -1,7 +1,7 @@
-#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
+#include "NamesProvider.h"
 
 #include <IO/ReadBufferFromFile.h>
-#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
+#include "NamesFormatReader.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -46,7 +46,8 @@ ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsN
     const auto data_file = getDataFilePath(language);
     if (fs::exists(data_file))
         return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);
-    return {};
+    else
+        return {};
 }
 
 std::string RegionsNamesDataProvider::getDataFilePath(const std::string & language) const

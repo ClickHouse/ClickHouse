@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/GatherUtils/ValueSourceVisitor.h>
+#include "ValueSourceVisitor.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -27,7 +27,7 @@ struct IValueSource
 };
 
 template <typename Derived>
-class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
+class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};
 
 }
 

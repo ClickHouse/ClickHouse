@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexHypothesis.h>
 #include <Storages/MergeTree/MergeTreeIndexHypothesisMergedCondition.h>
 
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
@@ -78,7 +79,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const ActionsDAG::Node *, ContextPtr) const
+    const ActionsDAG *, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }

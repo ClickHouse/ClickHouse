@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -18,9 +19,6 @@ namespace DB
   */
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
-
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class TableNode : public IQueryTreeNode
 {
@@ -105,8 +103,6 @@ public:
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
-
-    std::shared_ptr<ASTTableIdentifier> toASTIdentifier() const;
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;

@@ -2,14 +2,12 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/GWPAsan.h>
-#include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
-#include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
@@ -44,26 +42,11 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
     const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
     return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
 }
-
-bool madviseSupportsMadvPopulateWrite()
-{
-    /// Can't rely for detecton on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
-    VersionNumber linux_version(Poco::Environment::osVersion());
-    VersionNumber supported_version(5, 14, 0);
-    bool is_supported = linux_version >= supported_version;
-    if (!is_supported)
-        LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
-    return is_supported;
-}
 #endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
-    static const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
-    if (!is_supported_by_kernel)
-        return;
-
     if (len_ < POPULATE_THRESHOLD)
         return;
 
@@ -75,7 +58,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
         LOG_TRACE(
             LogFrequencyLimiter(getLogger("Allocator"), 1),
-            "Attempt to populate pages failed: {}",
+            "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
             errnoToString(errno));
 #endif
 }
@@ -99,8 +82,10 @@ void * allocNoTrack(size_t size, size_t alignment)
 
             return ptr;
         }
-
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     if (alignment <= MALLOC_MIN_ALIGNMENT)
@@ -219,9 +204,11 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-
-        [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 
     if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
@@ -260,10 +247,10 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
                 ReadableSize(new_size));
         }
 
+        buf = new_buf;
         auto trace_free = CurrentMemoryTracker::free(old_size);
         trace_free.onFree(buf, old_size);
-        trace_alloc.onAlloc(new_buf, new_size);
-        buf = new_buf;
+        trace_alloc.onAlloc(buf, new_size);
 
         if constexpr (clear_memory)
             if (new_size > old_size)

@@ -1,4 +1,4 @@
-#include <IO/WriteBufferFromFileDecorator.h>
+#include "WriteBufferFromFileDecorator.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/SwapHelper.h>
@@ -22,7 +22,6 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     if (!is_prefinalized)
         WriteBufferFromFileDecorator::preFinalize();
 
-    WriteBufferFromFileBase::finalizeImpl();
     {
         SwapHelper swap(*this, *impl);
         impl->finalize();
@@ -31,12 +30,8 @@ void WriteBufferFromFileDecorator::finalizeImpl()
 
 void WriteBufferFromFileDecorator::cancelImpl() noexcept
 {
-    WriteBufferFromFileBase::cancelImpl();
-
-    {
-        SwapHelper swap(*this, *impl);
-        impl->cancel();
-    }
+    SwapHelper swap(*this, *impl);
+    impl->cancel();
 }
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()

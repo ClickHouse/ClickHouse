@@ -10,19 +10,15 @@ namespace DB
 {
 namespace JoinStuff
 {
-
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-    using RawColumnsPtr = const Columns *;
-    using UsedFlagsForColumns = std::vector<std::atomic_bool>;
+    using RawBlockPtr = const Block *;
+    using UsedFlagsForBlock = std::vector<std::atomic_bool>;
 
-    /// For multiple disjuncts each entry in hashmap stores flags for particular block
-    std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
-
-    /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
-    /// Index is the offset in FindResult
-    UsedFlagsForColumns per_offset_flags;
+    /// For multiple dijuncts each empty in hashmap stores flags for particular block
+    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
+    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
 
     bool need_flags;
 
@@ -35,32 +31,36 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(per_offset_flags.size() <= size);
+            assert(flags[nullptr].size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
             // So we reinit only when the hash table is rehashed to a larger size.
-            if (per_offset_flags.size() < size) [[unlikely]]
-                per_offset_flags = std::vector<std::atomic_bool>(size);
+            if (flags.empty() || flags[nullptr].size() < size) [[unlikely]]
+            {
+                flags[nullptr] = std::vector<std::atomic_bool>(size);
+            }
         }
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Columns * columns)
+    void reinit(const Block * block_ptr)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(per_row_flags[columns].size() <= columns->at(0)->size());
+            assert(flags[block_ptr].size() <= block_ptr->rows());
             need_flags = true;
-            per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
+            flags[block_ptr] = std::vector<std::atomic_bool>(block_ptr->rows());
         }
     }
 
-    bool getUsedSafe(size_t i) const { return per_offset_flags[i].load(); }
-
-    bool getUsedSafe(const Columns * columns, size_t row_idx) const
+    bool getUsedSafe(size_t i) const
     {
-        if (auto it = per_row_flags.find(columns); it != per_row_flags.end())
+        return getUsedSafe(nullptr, i);
+    }
+    bool getUsedSafe(const Block * block_ptr, size_t row_idx) const
+    {
+        if (auto it = flags.find(block_ptr); it != flags.end())
             return it->second[row_idx].load();
         return !need_flags;
     }
@@ -75,22 +75,16 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
-            {
-                for (auto it = mapped.begin(); it.ok(); ++it)
-                    per_row_flags[it->columns][it->row_num].store(true, std::memory_order_relaxed);
-            }
-            else
-                per_row_flags[mapped.columns][mapped.row_num].store(true, std::memory_order_relaxed);
+            flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
-            per_offset_flags[f.getOffset()].store(true, std::memory_order_relaxed);
+            flags[nullptr][f.getOffset()].store(true, std::memory_order_relaxed);
         }
     }
 
     template <bool use_flags, bool flag_per_row>
-    void setUsed(const Columns * columns, size_t row_num, size_t offset)
+    void setUsed(const Block * block, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return;
@@ -98,11 +92,11 @@ public:
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
-            per_row_flags[columns][row_num].store(true, std::memory_order_relaxed);
+            flags[block][row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
-            per_offset_flags[offset].store(true, std::memory_order_relaxed);
+            flags[nullptr][offset].store(true, std::memory_order_relaxed);
         }
     }
 
@@ -115,11 +109,11 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            return per_row_flags[mapped.columns][mapped.row_num].load();
+            return flags[mapped.block][mapped.row_num].load();
         }
         else
         {
-            return per_offset_flags[f.getOffset()].load();
+            return flags[nullptr][f.getOffset()].load();
         }
 
     }
@@ -135,28 +129,27 @@ public:
             auto & mapped = f.getMapped();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_row_flags[mapped.columns][mapped.row_num].load(std::memory_order_relaxed))
+            if (flags[mapped.block][mapped.row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return per_row_flags[mapped.columns][mapped.row_num].compare_exchange_strong(expected, true);
+            return flags[mapped.block][mapped.row_num].compare_exchange_strong(expected, true);
         }
         else
         {
             auto off = f.getOffset();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_offset_flags[off].load(std::memory_order_relaxed))
+            if (flags[nullptr][off].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return per_offset_flags[off].compare_exchange_strong(expected, true);
+            return flags[nullptr][off].compare_exchange_strong(expected, true);
         }
 
     }
-
     template <bool use_flags, bool flag_per_row>
-    bool setUsedOnce(const Columns * columns, size_t row_num, size_t offset)
+    bool setUsedOnce(const Block * block, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return true;
@@ -164,20 +157,20 @@ public:
         if constexpr (flag_per_row)
         {
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_row_flags[columns][row_num].load(std::memory_order_relaxed))
+            if (flags[block][row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return per_row_flags[columns][row_num].compare_exchange_strong(expected, true);
+            return flags[block][row_num].compare_exchange_strong(expected, true);
         }
         else
         {
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_offset_flags[offset].load(std::memory_order_relaxed))
+            if (flags[nullptr][offset].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return per_offset_flags[offset].compare_exchange_strong(expected, true);
+            return flags[nullptr][offset].compare_exchange_strong(expected, true);
         }
     }
 };

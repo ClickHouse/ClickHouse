@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -15,39 +16,39 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
-#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
-#include <Analyzer/Passes/ArrayExistsToHasPass.h>
-#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
-#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
-#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
-#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/CountDistinctPass.h>
-#include <Analyzer/Passes/CrossToInnerJoinPass.h>
-#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
-#include <Analyzer/Passes/FuseFunctionsPass.h>
-#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
-#include <Analyzer/Passes/IfChainToMultiIfPass.h>
-#include <Analyzer/Passes/IfConstantConditionPass.h>
-#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
-#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
-#include <Analyzer/Passes/MultiIfToIfPass.h>
-#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
-#include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
-#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
-#include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
-#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
-#include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
-#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
-#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
-#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
-#include <Analyzer/Passes/SumIfToCountIfPass.h>
-#include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
+#include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
+#include <Analyzer/Passes/SumIfToCountIfPass.h>
+#include <Analyzer/Passes/MultiIfToIfPass.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
+#include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
+#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
+#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
+#include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
+#include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
+#include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
+#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
+#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
+#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
+#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
+#include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+
 
 namespace DB
 {
@@ -105,9 +106,6 @@ private:
                 function->toAST()->formatForErrorMessage(), pass_name);
 
         if (isNameOfInFunction(function->getFunctionName()))
-            return;
-
-        if (function->getFunctionName() == "exists")
             return;
 
         const auto & expected_argument_types = function->getArgumentTypes();
@@ -193,12 +191,8 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
 {
-    // Run only query tree passes that doesn't affect output header:
-    // 1. QueryAnalysisPass
-    // 2. GroupingFunctionsResolvePass
-    // 3. AutoFinalOnQueryPass
-    // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, 4);
+    // Run only QueryAnalysisPass and GroupingFunctionsResolvePass passes.
+    run(query_tree_node, 3);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
@@ -256,10 +250,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
-    /// This pass should be run for the secondary queries
-    /// to ensure that the only required columns are read from VIEWs on the shards.
-    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
 
+    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());

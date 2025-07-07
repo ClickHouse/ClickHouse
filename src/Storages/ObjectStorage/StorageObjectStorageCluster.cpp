@@ -1,29 +1,20 @@
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Interpreters/Context.h>
-
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-}
 
 namespace ErrorCodes
 {
@@ -42,7 +33,6 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         false, // distributed_processing
         context,
         {}, // predicate
-        {},
         metadata.getColumns().getAll(), // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
@@ -66,15 +56,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    /// We allow exceptions to be thrown on update(),
-    /// because Cluster engine can only be used as table function,
-    /// so no lazy initialization is allowed.
-    configuration->update(
-        object_storage,
-        context_,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
     ColumnsDescription columns{columns_};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
@@ -84,11 +65,10 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration())
+    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns, context_, sample_path, std::nullopt, configuration->isDataLakeConfiguration()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
     setInMemoryMetadata(metadata);
 }
 
@@ -97,47 +77,18 @@ std::string StorageObjectStorageCluster::getName() const
     return configuration->getEngineName();
 }
 
-std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-    return configuration->totalRows(query_context);
-}
-
-std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-    return configuration->totalBytes(query_context);
-}
-
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    auto * table_function = extractTableFunctionFromSelectQuery(query);
-    if (!table_function)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatForErrorMessage());
-    }
-
-    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatForErrorMessage());
+            configuration->getEngineName(), queryToString(query));
     }
 
     ASTs & args = expression_list->children;
@@ -150,69 +101,28 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    ASTPtr settings_temporary_storage = nullptr;
-    for (auto * it = args.begin(); it != args.end(); ++it)
-    {
-        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
-        if (settings_ast)
-        {
-            settings_temporary_storage = std::move(*it);
-            args.erase(it);
-            break;
-        }
-    }
-
-    if (!endsWith(table_function->name, "Cluster"))
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-    else
-    {
-        ASTPtr cluster_name_arg = args.front();
-        args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
-    }
-    if (settings_temporary_storage)
-    {
-        args.insert(args.end(), std::move(settings_temporary_storage));
-    }
+    ASTPtr cluster_name_arg = args.front();
+    args.erase(args.begin());
+    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+    args.insert(args.begin(), cluster_name_arg);
 }
 
-
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * filter,
-    const ContextPtr & local_context,
-    const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        configuration->getQuerySettings(local_context),
-        object_storage,
-        /* distributed_processing */false,
-        local_context,
-        predicate,
-        filter,
-        virtual_columns,
-        nullptr,
-        local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator,
-        number_of_replicas,
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
-
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
-        {
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        });
-
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
+    {
+        auto object_info = iterator->next(0);
+        if (object_info)
+            return object_info->getPath();
+        else
+            return "";
+    });
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
 }

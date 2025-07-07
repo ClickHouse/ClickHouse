@@ -1,4 +1,4 @@
-#include <Functions/FunctionsHashing.h>
+#include "FunctionsHashing.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -18,13 +18,13 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
         .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
         .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
-        .category = FunctionDocumentation::Category::Hash
+        .categories{"Hash"}
     });
     factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
         .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
                        "instead of using a fixed key.",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .category = FunctionDocumentation::Category::Hash});
+        .categories{"Hash"}});
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
@@ -40,7 +40,7 @@ REGISTER_FUNCTION(Hashing)
         FunctionDocumentation{
             .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
             .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
-            .category = FunctionDocumentation::Category::Hash
+            .categories{"Hash"}
         });
 
     factory.registerFunction<FunctionWyHash64>();
@@ -63,7 +63,8 @@ The function takes a variable number of input parameters. Arguments can be any o
 value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed
 Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
                        )"}},
-        .returned_value = {{"The computed half MD5 hash of the given input params returned as a UInt64 in big-endian byte order."}, {"UInt64"}},
+        .returned_value = "The computed half MD5 hash of the given input params returned as a "
+                          "[UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order.",
         .examples
         = {{"",
             "SELECT HEX(halfMD5('abc', 'cde', 'fgh'));",
@@ -71,8 +72,7 @@ Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) typ
 ┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
 │ 2C9506B7374CFAF4                  │
 └───────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash});
+            )"}}});
 #endif
 }
 }
