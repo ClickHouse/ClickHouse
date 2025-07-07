@@ -79,7 +79,10 @@ namespace
         explicit ScopedDecrement(std::atomic<int64_t>& var)
             : atomic_var(var)
         {
-            atomic_var->get().fetch_sub(1, std::memory_order_relaxed);
+            if(atomic_var)
+            {
+                atomic_var->get().fetch_sub(1, std::memory_order_relaxed);
+            }
         }
 
         ~ScopedDecrement()
