@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
+            {"table_engine_read_through_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -434,7 +435,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
             {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
             {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
-            {"allow_experimental_full_text_index", false, false, "Enable experimental full-text index"},
+            {"allow_experimental_full_text_index", false, false, "Enable experimental text index"},
             {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
             {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
             {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
