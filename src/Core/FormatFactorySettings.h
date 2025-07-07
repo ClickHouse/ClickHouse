@@ -1346,7 +1346,7 @@ Limits the size of the blocks formed during data parsing in input formats in byt
 0 means no limit in bytes.
 )", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
-Add a column of Bool type
+Indicate which field of protobuf oneof was found setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types

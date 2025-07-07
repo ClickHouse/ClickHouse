@@ -46,7 +46,7 @@
 #    include <boost/container/flat_set.hpp>
 #    include <boost/numeric/conversion/cast.hpp>
 #    include <boost/range/algorithm.hpp>
-#include <memory>
+#    include <memory>
 #    include <google/protobuf/descriptor.h>
 #    include <google/protobuf/descriptor.pb.h>
 
@@ -2505,7 +2505,6 @@ namespace
             const FieldDescriptor * parent_field_descriptor_,
             bool with_length_delimiter_,
             bool google_wrappers_special_treatment_,
-            bool /* oneof_presence_ */,
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : parent_field_descriptor(parent_field_descriptor_)
@@ -2614,7 +2613,6 @@ namespace
                 writer->endMessage(with_length_delimiter);
         }
 
-
         void readRow(size_t row_num) override
         {
             if (parent_field_descriptor || has_envelope_as_parent)
@@ -2647,9 +2645,7 @@ namespace
                             continue;
 
                         if (info.field_read)
-                        {
                             info.field_read = false;
-                        }
                         else
                         {
                             if (google_wrappers_special_treatment && isNullableGoogleWrapper())
@@ -3140,7 +3136,7 @@ namespace
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
                 /* columns_are_reordered_outside = */ false,
-                /* top_level_message = */ true);
+                /* check_nested_while_filling_missing_columns  = */ true);
 
             if (!message_serializer)
             {
@@ -3347,7 +3343,7 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool top_level_message)
+            bool check_nested_while_filling_missing_columns )
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -3365,7 +3361,7 @@ namespace
                 parent_field_descriptor,
                 used_column_indices,
                 columns_are_reordered_outside,
-                top_level_message);
+                check_nested_while_filling_missing_columns );
         }
 
         std::unique_ptr<ProtobufSerializer> buildMessageSerializerImpl(
@@ -3379,7 +3375,7 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool top_level_message)
+            bool check_nested_while_filling_missing_columns )
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -3568,7 +3564,7 @@ namespace
                             field_descriptor,
                             used_column_indices_in_nested,
                             /* columns_are_reordered_outside = */  true,
-                            /* top_level_message = */ false);
+                            /* check_nested_while_filling_missing_columns  = */ false);
 
                         /// `columns_are_reordered_outside` is true because column indices are
                         /// going to be transformed and then written to the outer message,
@@ -3682,7 +3678,7 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                if (top_level_message)
+                if (check_nested_while_filling_missing_columns )
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
                 else
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
@@ -3695,7 +3691,6 @@ namespace
                 parent_field_descriptor,
                 with_length_delimiter,
                 google_wrappers_special_treatment,
-                oneof_presence,
                 std::move(missing_columns_filler),
                 reader_or_writer);
         }
@@ -3837,7 +3832,7 @@ namespace
                                 &field_descriptor,
                                 used_column_indices,
                                 /* columns_are_reordered_outside = */ false,
-                                /* top_level_message = */ false);
+                                /* check_nested_while_filling_missing_columns  = */ false);
 
                             if (!message_serializer)
                                 return nullptr;
@@ -3903,7 +3898,7 @@ namespace
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
-                            /* top_level_message = */ false);
+                            /* check_nested_while_filling_missing_columns  = */ false);
 
                         if (!message_serializer)
                         {
