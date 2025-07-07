@@ -2146,30 +2146,30 @@ public:
                             "Invalid arguments for subtract operation: {} and {}. For subtraction, DateTime must be the first argument",
                             arguments[0]->getName(), arguments[1]->getName());
                     }
-                
+
                 /// Determine which argument is Time and which is DateTime
                 bool left_is_time = WhichDataType(arguments[0]).isTimeOrTime64();
                 const DataTypePtr & time_type = left_is_time ? arguments[0] : arguments[1];
                 const DataTypePtr & datetime_type = left_is_time ? arguments[1] : arguments[0];
-                
+
                 /// Return DateTime or DateTime64 based on input types
                 if (isDateTime64(datetime_type) || isTime64(time_type))
                 {
                     /// Calculate the maximum scale
                     UInt32 scale = 0;
-                    
+
                     if (isDateTime64(datetime_type))
                     {
                         const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(datetime_type.get());
                         scale = std::max(scale, dt64->getScale());
                     }
-                    
+
                     if (isTime64(time_type))
                     {
                         const auto * t64 = checkAndGetDataType<DataTypeTime64>(time_type.get());
                         scale = std::max(scale, t64->getScale());
                     }
-                    
+
                     return std::make_shared<DataTypeDateTime64>(scale);
                 }
                 else
@@ -2876,7 +2876,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         {
             return executeTime64Subtraction(arguments, result_type, input_rows_count);
         }
-        
+
         /// Special case when the function is plus or minus, one argument is Time/Time64 and another is DateTime/DateTime64
         if constexpr (is_plus || is_minus)
         {
