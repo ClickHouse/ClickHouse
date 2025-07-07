@@ -356,7 +356,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 {
                     SQLColumn col = filtered_columns[i].get();
 
-                    addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, fc.type_mask, col, cmvt->add_col_list());
+                    addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
                     next.cols.insert(col.cname);
                 }
                 filtered_columns.clear();
@@ -1378,6 +1378,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t ncname = t.col_counter++;
                 AddColumn * add_col = ati->mutable_add_column();
                 ColumnDef * def = add_col->mutable_new_col();
+                const uint32_t type_mask_backup = this->next_type_mask;
 
                 if (next_option < 4)
                 {
@@ -1400,8 +1401,12 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                             this->ids.emplace_back(key);
                         }
                     }
+                    this->next_type_mask = fc.type_mask & ~(allow_nested);
                 }
+
                 addTableColumn(rg, t, ncname, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
+                this->next_type_mask = type_mask_backup;
+
                 if (!this->ids.empty())
                 {
                     std::unordered_map<uint32_t, SQLColumn> nested_cols;
@@ -1477,6 +1482,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
                 ColumnDef * def = add_col->mutable_new_col();
+                const uint32_t type_mask_backup = this->next_type_mask;
 
                 if (next_option < 4)
                 {
@@ -1499,9 +1505,13 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                             this->ids.emplace_back(key);
                         }
                     }
+                    this->next_type_mask = fc.type_mask & ~(allow_nested);
                 }
+
                 const uint32_t ncol = this->ids.empty() ? rg.pickRandomly(t.cols) : t.col_counter++;
                 addTableColumn(rg, t, ncol, true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
+                this->next_type_mask = type_mask_backup;
+
                 if (!this->ids.empty())
                 {
                     std::unordered_map<uint32_t, SQLColumn> nested_cols;
@@ -4451,7 +4461,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     const bool is_nested = ati.modify_column().new_col().col().sub_cols_size() > 0;
                     const Column & cstr = is_nested
                         ? ati.modify_column().new_col().col().sub_cols(ati.modify_column().new_col().col().sub_cols_size() - 1)
-                        : ati.add_column().new_col().col().col();
+                        : ati.modify_column().new_col().col().col();
                     const uint32_t cname = static_cast<uint32_t>(std::stoul(cstr.column().substr(1)));
 
                     if (is_nested)
@@ -4475,7 +4485,6 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                                 }
                             }
                         }
-                        t.staged_cols.erase(cname);
                     }
                     else
                     {
@@ -4484,8 +4493,8 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                             t.cols.erase(cname);
                             t.cols[cname] = std::move(t.staged_cols[cname]);
                         }
-                        t.staged_cols.erase(cname);
                     }
+                    t.staged_cols.erase(cname);
                 }
                 else if (
                     ati.has_column_remove_property() && success

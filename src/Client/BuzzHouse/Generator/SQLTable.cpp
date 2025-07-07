@@ -1297,7 +1297,6 @@ void StatementGenerator::addTableColumnInternal(
     const bool modify,
     const bool is_pk,
     const ColumnSpecial special,
-    const uint32_t col_tp_mask,
     SQLColumn & col,
     ColumnDef * cd)
 {
@@ -1313,37 +1312,29 @@ void StatementGenerator::addTableColumnInternal(
     }
     else if (special == ColumnSpecial::VERSION)
     {
-        if (((col_tp_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
+        if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
             Integers nint;
 
-            std::tie(tp, nint) = randomIntType(rg, col_tp_mask);
+            std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
-        else if (((col_tp_mask & allow_datetimes) == 0) || rg.nextBool())
+        else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
             Dates dd;
 
-            std::tie(tp, dd) = randomDateType(rg, col_tp_mask);
+            std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
         }
         else
         {
-            const uint32_t type_mask_backup = this->next_type_mask;
-
-            this->next_type_mask = col_tp_mask;
             tp = randomDateTimeType(
                 rg, this->next_type_mask, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
-            this->next_type_mask = type_mask_backup;
         }
     }
     else
     {
-        const uint32_t type_mask_backup = this->next_type_mask;
-
-        this->next_type_mask = col_tp_mask;
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
-        this->next_type_mask = type_mask_backup;
     }
     col.tp = tp;
     col.special = special;
@@ -1425,49 +1416,50 @@ void StatementGenerator::addTableColumn(
 {
     SQLColumn col;
     auto & to_add = staged ? t.staged_cols : t.cols;
+    const uint32_t type_mask_backup = this->next_type_mask;
 
-    uint32_t col_tp_mask = fc.type_mask;
     if ((t.isMySQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasMySQLPeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
             | set_no_decimal_limit);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
             | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
-            col_tp_mask &= ~(set_any_datetime_precision);
+            this->next_type_mask &= ~(set_any_datetime_precision);
         }
     }
     if ((t.isSQLiteEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasSQLitePeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
             | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
             /// For decimal it prints as text
-            col_tp_mask &= ~(allow_bool | allow_decimals);
+            this->next_type_mask &= ~(allow_bool | allow_decimals);
         }
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        col_tp_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
     if (t.hasDatabasePeer())
     {
         /// ClickHouse's UUID sorting order is different from other databases
-        col_tp_mask &= ~(allow_uuid);
+        this->next_type_mask &= ~(allow_uuid);
     }
-    addTableColumnInternal(rg, t, cname, modify, is_pk, special, col_tp_mask, col, cd);
+    addTableColumnInternal(rg, t, cname, modify, is_pk, special, col, cd);
 
     to_add[cname] = std::move(col);
+    this->next_type_mask = type_mask_backup;
 }
 
 void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)

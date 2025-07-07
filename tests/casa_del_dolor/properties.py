@@ -79,7 +79,7 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 possible_properties = {
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
-        "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 0, 60, 32),
+        "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 32),
         "select_from_information_schema_requires_grant": true_false_lambda,
         "select_from_system_db_requires_grant": true_false_lambda,
         "settings_constraints_replace_previous": true_false_lambda,

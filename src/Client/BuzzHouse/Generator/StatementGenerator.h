@@ -312,7 +312,6 @@ private:
         bool modify,
         bool is_pk,
         ColumnSpecial special,
-        uint32_t col_tp_mask,
         SQLColumn & col,
         ColumnDef * cd);
     void addTableColumn(
