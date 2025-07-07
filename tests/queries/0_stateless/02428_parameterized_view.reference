@@ -3,8 +3,16 @@
 ERROR
 10
 50
-SELECT *
-FROM test_02428_pv1(price = 10)
+SELECT
+    Name,
+    Price,
+    Quantity
+FROM
+(
+    SELECT *
+    FROM default.test_02428_Catalog
+    WHERE Price = _CAST(10, \'UInt64\')
+) AS test_02428_pv1
 ERROR
 ERROR
 ERROR

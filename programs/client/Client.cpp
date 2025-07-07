@@ -1,7 +1,6 @@
-#include <Client.h>
+#include "Client.h"
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
-#include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
@@ -9,6 +8,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -21,14 +21,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Parsers/ASTAlterQuery.h>
 
 #include <Poco/Util/Application.h>
 
@@ -80,7 +79,7 @@ void Client::processError(std::string_view query) const
             stderr,
             "Received exception from server (version {}):\n{}\n",
             server_version,
-            getExceptionMessageForLogging(*server_exception, print_stack_trace, true));
+            getExceptionMessage(*server_exception, print_stack_trace, true));
 
         if (server_exception->code() == ErrorCodes::USER_EXPIRED)
         {
@@ -177,13 +176,7 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         if (config.has(prefix + ".port"))
             config.setInt("port", config.getInt(prefix + ".port"));
         if (config.has(prefix + ".secure"))
-        {
-            bool secure = config.getBool(prefix + ".secure");
-            if (secure)
-                config.setBool("secure", true);
-            else
-                config.setBool("no-secure", true);
-        }
+            config.setBool("secure", config.getBool(prefix + ".secure"));
         if (config.has(prefix + ".user"))
             config.setString("user", config.getString(prefix + ".user"));
         if (config.has(prefix + ".password"))
@@ -325,26 +318,27 @@ void Client::initialize(Poco::Util::Application & self)
         config().setString("password", env_password);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
+    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
         if (config().has(name))
-            client_context->setSetting(name, config().getString(name));
+            global_context->setSetting(name, config().getString(name));
     }
 
     /// Set path for format schema files
     if (config().has("format_schema_path"))
-        client_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+        global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
-        client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
+    auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
@@ -355,11 +349,18 @@ try
     registerAggregateFunctions();
 
     processConfig();
-    adjustSettings(client_context);
-
+    adjustSettings();
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
+
+    {
+        // All that just to set DB::CurrentThread::get().getGlobalContext()
+        // which is required for client timezone (pushed from server) to work.
+        auto thread_group = std::make_shared<ThreadGroup>();
+        const_cast<ContextWeakPtr &>(thread_group->global_context) = global_context;
+        thread_status.attachToGroup(thread_group, false);
+    }
 
     /// Includes delayed_interactive.
     if (is_interactive)
@@ -424,10 +425,10 @@ try
 
     return 0;
 }
-catch (Exception & e)
+catch (const Exception & e)
 {
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
@@ -492,7 +493,7 @@ void Client::connect()
 
             break;
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
@@ -505,7 +506,7 @@ void Client::connect()
             {
                 std::cerr << "Connection attempt to database at " << connection_parameters.host << ":" << connection_parameters.port
                           << " resulted in failure" << std::endl
-                          << getExceptionMessageForLogging(e, false) << std::endl
+                          << getExceptionMessage(e, false) << std::endl
                           << "Attempting connection to the next provided address" << std::endl;
             }
         }
@@ -644,7 +645,7 @@ void Client::printChangedSettings() const
     };
 
     print_changes(client_context->getSettingsRef().changes(), "settings");
-    print_changes(cmd_merge_tree_settings->changes(), "MergeTree settings");
+    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
 
@@ -666,66 +667,65 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
-    options_description.main_description->add_options()
-        ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
-        ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
-        ("secure,s", "Use TLS connection")
-        ("no-secure", "Don't use TLS connection")
-        ("user,u", po::value<std::string>()->default_value("default"), "user")
-        ("password", po::value<std::string>(), "password")
-        ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
-        ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("jwt", po::value<std::string>(), "Use JWT for authentication")
+    options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
+        "connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")(
+        "secure,s", "Use TLS connection")("no-secure", "Don't use TLS connection")(
+        "user,u", po::value<std::string>()->default_value("default"), "user")("password", po::value<std::string>(), "password")(
+        "ask-password",
+        "ask-password")("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")(
+        "ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")(
+        "quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")(
+        "jwt", po::value<std::string>(), "Use JWT for authentication")
+
         ("max_client_network_bandwidth",
-            po::value<int>(),
-            "the maximum speed of data exchange over the network for the client in bytes per second.")
-        ("compression",
+         po::value<int>(),
+         "the maximum speed of data exchange over the network for the client in bytes per second.")(
+            "compression",
             po::value<bool>(),
             "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
-        ("query-fuzzer-runs",
-            po::value<int>()->default_value(0),
-            "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
-            "testing to discover unexpected corner cases.")
-        ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
-        ("buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")
-        ("interleave-queries-file",
-            po::value<std::vector<std::string>>()->multitoken(),
-            "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
-            "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
-        ("opentelemetry-traceparent",
-            po::value<std::string>(),
-            "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
-        ("opentelemetry-tracestate",
-            po::value<std::string>(),
-            "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-        ("no-warnings", "disable warnings when client connects to server")
+
+            ("query-fuzzer-runs",
+             po::value<int>()->default_value(0),
+             "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
+             "testing to discover unexpected corner cases.")("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")(
+                "buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")(
+                "interleave-queries-file",
+                po::value<std::vector<std::string>>()->multitoken(),
+                "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
+                "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
+
+                ("opentelemetry-traceparent",
+                 po::value<std::string>(),
+                 "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")(
+                    "opentelemetry-tracestate",
+                    po::value<std::string>(),
+                    "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
+
+                    ("no-warnings", "disable warnings when client connects to server")
         /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
-        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
-        ("accept-invalid-certificate",
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")(
+            "accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
             "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
 
     /// Commandline options related to external tables.
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
-    options_description.external_description->add_options()
-        ("file", po::value<std::string>(), "data file or - for stdin")
-        ("name", po::value<std::string>()->default_value("_data"), "name of the table")
-        ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
-        ("structure", po::value<std::string>(), "structure")
-        ("types", po::value<std::string>(), "types");
+    options_description.external_description->add_options()("file", po::value<std::string>(), "data file or - for stdin")(
+        "name", po::value<std::string>()->default_value("_data"), "name of the table")(
+        "format", po::value<std::string>()->default_value("TabSeparated"), "data format")(
+        "structure", po::value<std::string>(), "structure")("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
-    options_description.hosts_and_ports_description->add_options()
-        ("host,h", po::value<String>()->default_value("localhost"),
-            "Server hostname. Multiple hosts can be passed via multiple arguments"
-            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
-            "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
-            "if there is no such host, the port will be attached to the next first host or to default host.")
-        ("port", po::value<UInt16>(), "server ports");
+    options_description.hosts_and_ports_description->add_options()(
+        "host,h",
+        po::value<String>()->default_value("localhost"),
+        "Server hostname. Multiple hosts can be passed via multiple arguments"
+        "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+        "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+        "if there is no such host, the port will be attached to the next first host or to default host.")(
+        "port", po::value<UInt16>(), "server ports");
 }
 
 
@@ -754,9 +754,9 @@ void Client::processOptions(
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
-            std::cerr << getExceptionMessageForLogging(e, false) << std::endl;
+            std::cerr << getExceptionMessage(e, false) << std::endl;
             std::cerr << "Table №" << i << std::endl << std::endl;
             /// Avoid the case when error exit code can possibly overflow to normal (zero).
             auto exit_code = e.code() % 256;
@@ -785,7 +785,7 @@ void Client::processOptions(
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-    global_context->setSettings(*cmd_settings);
+    global_context->setSettings(cmd_settings);
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
@@ -885,10 +885,10 @@ void Client::processOptions(
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
-    initClientContext(Context::createCopy(global_context));
-    /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope.emplace(client_context);
-
+    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
+    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
+    client_context = global_context;
+    initClientContext();
 
     /// Allow to pass-through unknown settings to the server.
     client_context->getAccessControl().allowAllSettings();
@@ -920,7 +920,7 @@ void Client::processConfig()
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
-            client_context->setCurrentQueryId(query_id);
+            global_context->setCurrentQueryId(query_id);
     }
 
     if (is_interactive || delayed_interactive)
@@ -1017,8 +1017,8 @@ void Client::readArguments(
             if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
 
-            /// Parameter arg after underline or dash.
-            if (arg.starts_with("--param_") || arg.starts_with("--param-"))
+            /// Parameter arg after underline.
+            if (arg.starts_with("--param_"))
             {
                 auto param_continuation = arg.substr(strlen("--param_"));
                 auto equal_pos = param_continuation.find_first_of('=');
@@ -1130,8 +1130,6 @@ void Client::readArguments(
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::MainThreadStatus::getInstance();
-
     try
     {
         DB::Client client;
@@ -1139,9 +1137,9 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

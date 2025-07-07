@@ -52,7 +52,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
 
             String condition;
             if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)

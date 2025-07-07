@@ -1,4 +1,4 @@
-#include <Parsers/HiliteComparator/HiliteComparator.h>
+#include "HiliteComparator.h"
 
 namespace HiliteComparator
 {

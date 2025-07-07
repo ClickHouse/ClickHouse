@@ -139,9 +139,9 @@ namespace DB
     A value of `0` (default) means unlimited.
     :::
     )", 0) \
-    DECLARE(NonZeroUInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
+    DECLARE(UInt64, backup_threads, 16, R"(The maximum number of threads to execute `BACKUP` requests.)", 0) \
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
-    DECLARE(NonZeroUInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
+    DECLARE(UInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, R"(If set to true ClickHouse will wait for running backups and restores to finish before shutdown.)", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, R"(For testing purposes.)", 0) \
     DECLARE(Int32, max_connections, 4096, R"(Max server connections.)", 0) \
@@ -508,12 +508,15 @@ namespace DB
     DECLARE(Double, page_cache_free_memory_ratio, 0.15, "Fraction of the memory limit to keep free from the userspace page cache. Analogous to Linux min_free_kbytes setting.", 0) \
     DECLARE(UInt64, page_cache_shards, 4, "Stripe userspace page cache over this many shards to reduce mutex contention. Experimental, not likely to improve performance.", 0) \
     DECLARE(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, R"(
-    This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
+    Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
 
     The amount of data in mapped files can be monitored in the following system tables with the following metrics:
 
-    - `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/operations/system-tables/metrics), [`system.metric_log`](/operations/system-tables/metric_log)
-    - `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/operations/system-tables/events), [`system.processes`](/operations/system-tables/processes), [`system.query_log`](/operations/system-tables/query_log), [`system.query_thread_log`](/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)
+    | System Table                                                                                                                                                                                                                                                                                                                                                       | Metric                                                                                                   |
+    |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+    | [`system.metrics`](/operations/system-tables/metrics) and [`system.metric_log`](/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
+    | [`system.asynchronous_metrics_log`](/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
+    | [`system.events`](/operations/system-tables/events), [`system.processes`](/operations/system-tables/processes), [`system.query_log`](/operations/system-tables/query_log), [`system.query_thread_log`](/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
 
     :::note
     The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -873,7 +876,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values:
 
-    - Positive double.
+    - Positive integer.
     - `0` — Writing of random allocations and de-allocations in the `system.trace_log` system table is disabled.
     )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
@@ -925,7 +928,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, global_profiler_real_time_period_ns, 0, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, 0, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
-    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
     Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
@@ -990,7 +992,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
     DECLARE(UInt64, load_marks_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
-    DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
+    DECLARE(UInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
@@ -1056,14 +1058,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
-    Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
-    See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
-    )", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
-    Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.
-    See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
-    )", 0) \
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
 
 
@@ -1178,9 +1174,6 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
-            {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
-            {"max_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMaxOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
-
             {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},
             {"max_concurrent_insert_queries",
             {std::to_string(context->getProcessList().getMaxInsertQueriesAmount()), ChangeableWithoutRestart::Yes}},
@@ -1214,7 +1207,6 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
-            {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},

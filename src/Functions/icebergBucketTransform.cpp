@@ -10,13 +10,14 @@
 #include <Functions/FunctionsHashing.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/Field.h>
-#include <Core/Types.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <base/Decimal.h>
-#include <base/types.h>
+#include <Poco/Logger.h>
+#include "Columns/ColumnsDateTime.h"
+#include "Core/ColumnWithTypeAndName.h"
+#include "Core/Field.h"
+#include "Core/Types.h"
+#include "DataTypes/DataTypeDateTime64.h"
+#include "base/Decimal.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -255,7 +256,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Syntax syntax = "icebergHash(N, value)";
     FunctionDocumentation::Arguments arguments
         = {{"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time, datetime."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::ReturnedValue returned_value = "Int32";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
@@ -344,7 +345,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Arguments arguments
         = {{"N", "modulo, positive integer, always constant."},
            {"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time or datetime value."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::ReturnedValue returned_value = "Int32";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

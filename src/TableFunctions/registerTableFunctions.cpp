@@ -1,4 +1,4 @@
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
 namespace DB
