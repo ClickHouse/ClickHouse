@@ -5,6 +5,8 @@ slug: /operations/backup/s3_endpoint
 title: 'Backup and restore to/from an S3 endpoint'
 ---
 
+import Syntax from '@site/docs/operations/backup_restore/_snippets/_syntax.md';
+
 # BACKUP / RESTORE to or from an S3 endpoint {#backup-to-a-local-disk}
 
 This article covers backing up or restoring backups to/from an S3 bucket
@@ -12,9 +14,7 @@ via an S3 endpoint.
 
 ## Syntax {#syntax}
 
-```sql
-
-```
+<Syntax/>
 
 ## Usage example {#usage-examples}
 

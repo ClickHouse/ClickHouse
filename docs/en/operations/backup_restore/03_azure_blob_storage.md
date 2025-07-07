@@ -1,19 +1,19 @@
 ---
 description: 'Details backup/restore to or from an Azure Blob Storage endpoint'
-sidebar_label: 'Azure Blob Storage'
+sidebar_label: 'AzureBlobStorage'
 slug: /operations/backup/azure
 title: 'Backup and restore to/from Azure Blob Storage'
 ---
+
+import Syntax from '@site/docs/operations/backup_restore/_snippets/_syntax.md';
 
 # BACKUP/RESTORE to or from Azure Blob Storage {#backup-to-azure-blob-storage}
 
 ## Syntax {#syntax}
 
-```sql
+<Syntax/>
 
-```
-
-## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint {#configuring-backuprestore-to-use-an-azureblobstorage-endpoint}
+## Configuring BACKUP / RESTORE to use an AzureBlobStorage endpoint {#configuring-backuprestore-to-use-an-azureblobstorage-endpoint}
 
 To write backups to an AzureBlobStorage container you need the following pieces of information:
 - AzureBlobStorage endpoint connection string / url,
@@ -22,7 +22,7 @@ To write backups to an AzureBlobStorage container you need the following pieces 
 - Account name (if url is specified)
 - Account Key (if url is specified)
 
-The destination for a backup will be specified like this:
+The destination for a backup will be specified as:
 
 ```sql
 AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')

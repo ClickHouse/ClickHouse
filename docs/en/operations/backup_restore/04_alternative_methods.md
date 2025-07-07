@@ -1,6 +1,6 @@
 ---
 description: 'Details alternative backup or restore methods'
-sidebar_label: 'other'
+sidebar_label: 'Alternative methods'
 slug: /operations/backup/alternative_methods
 title: 'Alternative backup or restore methods'
 ---

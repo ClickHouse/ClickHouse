@@ -6,15 +6,16 @@ title: 'Backup and Restore in ClickHouse'
 ---
 
 import GenericSettings from '@site/docs/operations/backup_restore/_snippets/_generic_settings.md';
+import S3Settings from '@site/docs/operations/backup_restore/_snippets/_s3_settings.md';
 import ExampleSetup from '@site/docs/operations/backup_restore/_snippets/_example_setup.md';
+import Syntax from '@site/docs/operations/backup_restore/_snippets/_syntax.md';
 
 # BACKUP / RESTORE to disk {#backup-to-a-local-disk}
 
 ## Syntax {#syntax}
 
-```sql
+<Syntax/>
 
-```
 ## Configure backup destinations for disk {#configure-backup-destinations-for-disk}
 
 ### Configure a backup destination for local disk {#configure-a-backup-destination}
@@ -332,101 +333,4 @@ Run the following command to restore partitions 1 and 4:
 RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
 FROM Disk('backups', 'partitioned.zip')
 SETTINGS allow_non_empty_tables=true
-```
-
-## Administration and Troubleshooting {#check-the-status-of-backups}
-
-The backup command returns an `id` and `status`, and that `id` can be used to
-get the status of the backup. This is very useful to check the progress of long
-`ASYNC` backups. The example below shows a failure that happened when trying to
-overwrite an existing backup file:
-
-```sql
-BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
-```
-
-```response
-┌─id───────────────────────────────────┬─status──────────┐
-│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
-└──────────────────────────────────────┴─────────────────┘
-
-1 row in set. Elapsed: 0.001 sec.
-```
-
-```sql
-SELECT
-*
-FROM system.backups
-WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
-FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
-name:              Disk('backups', '1.zip')
-#highlight-next-line
-status:            BACKUP_FAILED
-num_files:         0
-uncompressed_size: 0
-compressed_size:   0
-#highlight-next-line
-error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
-start_time:        2022-08-30 09:21:46
-end_time:          2022-08-30 09:21:46
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
-Along with the [`system.backups`](/operations/system-tables/backups) table, all backup and restore operations are also tracked in the system log table
-[`system.backup_log`](/operations/system-tables/backup_log):
-
-```sql
-SELECT *
-FROM system.backup_log
-WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
-ORDER BY event_time_microseconds ASC
-FORMAT Vertical
-```
-
-```response
-Row 1:
-──────
-event_date:              2023-08-18
-event_time_microseconds: 2023-08-18 11:13:43.097414
-id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
-name:                    Disk('backups', '1.zip')
-status:                  CREATING_BACKUP
-error:
-start_time:              2023-08-18 11:13:43
-end_time:                1970-01-01 03:00:00
-num_files:               0
-total_size:              0
-num_entries:             0
-uncompressed_size:       0
-compressed_size:         0
-files_read:              0
-bytes_read:              0
-
-Row 2:
-──────
-event_date:              2023-08-18
-event_time_microseconds: 2023-08-18 11:13:43.174782
-id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
-name:                    Disk('backups', '1.zip')
-status:                  BACKUP_FAILED
-#highlight-next-line
-error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
-start_time:              2023-08-18 11:13:43
-end_time:                2023-08-18 11:13:43
-num_files:               0
-total_size:              0
-num_entries:             0
-uncompressed_size:       0
-compressed_size:         0
-files_read:              0
-bytes_read:              0
-
-2 rows in set. Elapsed: 0.075 sec.
 ```

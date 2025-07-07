@@ -6,6 +6,9 @@ title: 'Backup and Restore in ClickHouse'
 ---
 
 import GenericSettings from '@site/docs/operations/backup_restore/_snippets/_generic_settings.md';
+import Syntax from '@site/docs/operations/backup_restore/_snippets/_syntax.md';
+import AzureSettings from '@site/docs/operations/backup_restore/_snippets/_azure_settings.md';
+import S3Settings from '@site/docs/operations/backup_restore/_snippets/_s3_settings.md';
 
 > This section broadly covers backups and restores in ClickHouse. For a more 
 detailed description of each backup method, see the pages for specific methods
@@ -46,20 +49,20 @@ it on a spare ClickHouse cluster regularly.
 The following pages detail the various backup and 
 restore methods available in ClickHouse:
 
-| Page                                                    | Description                                      |
-|---------------------------------------------------------|--------------------------------------------------|
-| [Backup/restore using local disk](./01_local_disk.md)   | Details backup/restore to or from a local disk   |
-| [Backup/restore using S3 endpoint](./02_s3_endpoint.md) | Details backup/restore to or from an S3 endpoint |
-| [Backup/restore using S3 disk](./03_s3_disk.md)         | Details backup/restore to or from an S3 endpoint |
-| [Alternative methods](./04_alternative_methods.md)      | Discusses alternative backup methods
+| Page                                                             | Description                                               |
+|------------------------------------------------------------------|-----------------------------------------------------------|
+| [Backup/restore using local disk or S3 disk](./01_local_disk.md) | Details backup/restore to or from a local disk or S3 disk |
+| [Backup/restore using S3 endpoint](./02_s3_endpoint.md)          | Details backup/restore to or from an S3 endpoint          |
+| [Backup/restore using AzureBlobStorage](./03_s3_disk.md)       | Details backup/restore to or from Azure blob storage      |
+| [Alternative methods](./04_alternative_methods.md)               | Discusses alternative backup methods                      |        
 
 Backups can:
-- be [**full** or **incremental**](#backup-types)
-- set to selectively include tables, materialized views, projections, dictionaries, or databases.
+- be [full or incremental](#backup-types)
 - [synchronous or asynchronous](#synchronous-vs-asynchronous)
 - [concurrent or non-concurrent](#concurrent-vs-non-concurrent)
-- compressed or uncompressed
-- password protected
+- [compressed or uncompressed](#compressed-vs-uncompressed)
+- use [named collections](#using-named-collections)
+- be password protected
 - be taken of [system tables, log tables, or access management tables](#system-backups)
 
 ## Backup types {#backup-types}
@@ -109,6 +112,14 @@ The default value for both is true, so by default concurrent backup/restores are
 allowed. When these settings are false on a cluster, only a single backup/restore
 is allowed to run on a cluster at a time.
 
+## Compressed vs uncompressed backups {#compressed-vs-uncompressed}
+
+
+## Using Named Collections {#using-named-collections}
+
+Named collections can be used for `BACKUP/RESTORE` parameters.
+See the section ["named collections for backups"](../named-collections.md#named-collections-for-backups) for an example.
+
 ## Backing up system, log or access management tables {#system-backups}
 
 System tables can also be included in your backup and restore workflows, but their
@@ -138,27 +149,7 @@ are not included in backups and cannot be restored through this method.
 
 ## General syntax {#syntax}
 
-```sql
--- core commands
-BACKUP | RESTORE [ASYNC]
---- what to backup/restore (or exclude)
-TABLE [db.]table_name           [AS [db.]table_name_in_backup]
-DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]     |
-DATABASE database_name          [AS database_name_in_backup] |
-TEMPORARY TABLE table_name      [AS table_name_in_backup]    |
-VIEW view_name                  [AS view_name_in_backup]     |
-[EXCEPT TABLES ...] |
-ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
---- 
-[ON CLUSTER 'cluster_name']
---- where to backup or restore to or from
-TO|FROM 
-File('<path>/<filename>')      | 
-Disk('<disk_name>', '<path>/') | 
-S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>', '<extra_credentials>')
---- additional settings
-[SETTINGS ...]
-```
+<Syntax/>
 
 ### Command summary {#command-summary}
 
@@ -185,16 +176,116 @@ Each of the commands above is detailed below:
 | `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Store to/restore from Amazon S3 or S3-compatible storage                                                                                             |
 | `[SETTINGS ...]`                                                       | See below for complete list of settings                                                                                                              |                                                                                                                         |
 
-### General settings {#settings}
+### Settings {#settings}
 
-:::note
-The following settings are applicable to all backup methods. See the 
-"settings" section of each backup method's page for additional method
-specific settings
-:::
+**Generic backup/restore settings**
 
 <GenericSettings/>
 
-## Incremental backups {#incremental-backups}
+**S3 specific settings**
+
+<S3Settings/>
+
+**Azure specific settings**
+
+<AzureSettings/>
+
+
+## Administration and troubleshooting {#check-the-status-of-backups}
+
+The backup command returns an `id` and `status`, and that `id` can be used to
+get the status of the backup. This is very useful to check the progress of long
+`ASYNC` backups. The example below shows a failure that happened when trying to
+overwrite an existing backup file:
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+#highlight-next-line
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+#highlight-next-line
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Along with the [`system.backups`](/operations/system-tables/backups) table, all backup and restore operations are also tracked in the system log table
+[`system.backup_log`](/operations/system-tables/backup_log):
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+#highlight-next-line
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```
 
 
