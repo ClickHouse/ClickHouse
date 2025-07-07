@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 namespace DB
 {
 enum class LogsLevel : uint8_t
