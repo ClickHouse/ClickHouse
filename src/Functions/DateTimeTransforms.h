@@ -7,7 +7,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
-#include "base/Decimal.h"
+#include <base/Decimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
