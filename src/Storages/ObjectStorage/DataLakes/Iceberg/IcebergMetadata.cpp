@@ -898,7 +898,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
 
     LOG_DEBUG(
-        log,
+        &Poco::Logger::get("Get Files"),
         "Getting {} files for Iceberg table `{}` with snapshot id `{}` and schema id `{}`, use partition pruning: {}, cached files "
         "exists: {}, cached files size: {}",
         file_content_type == FileContentType::DATA ? "data" : "position delete",
@@ -913,7 +913,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     if (!use_partition_pruning && cached_files.has_value())
     {
         LOG_DEBUG(
-            log,
+            &Poco::Logger::get("Get Files"),
             "Returning {} cached {} files for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
             cached_files->size(),
             file_content_type == FileContentType::DATA ? "data" : "position delete",
@@ -940,7 +940,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
                     if (!pruner.canBePruned(manifest_file_entry))
                     {
                         LOG_DEBUG(
-                            log,
+                            &Poco::Logger::get("Get Files"),
                             "File {} with status {} is not pruned by partition or minmax pruning for Iceberg table `{}` with snapshot id "
                             "`{}` and "
                             "schema "
@@ -955,7 +955,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
                     else
                     {
                         LOG_DEBUG(
-                            log,
+                            &Poco::Logger::get("Get Files"),
                             "File {} with status {} is pruned by partition or minmax pruning for Iceberg table `{}` with snapshot id `{}` "
                             "and schema "
                             "id `{}`",
@@ -970,7 +970,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     }
 
     LOG_DEBUG(
-        log,
+        &Poco::Logger::get("Get Files"),
         "Found {} files with content type {} for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
         files.size(),
         file_content_type == FileContentType::DATA ? "data" : "position delete",
@@ -984,7 +984,7 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     if (!use_partition_pruning)
     {
         LOG_DEBUG(
-            log,
+            &Poco::Logger::get("Get Files"),
             "Caching {} files with content type {} for Iceberg table `{}` with snapshot id `{}` and schema id `{}`",
             files.size(),
             file_content_type == FileContentType::DATA ? "data" : "position delete",
@@ -1184,18 +1184,22 @@ IcebergKeysIterator::IcebergKeysIterator(
     , callback(callback_)
 {
     LOG_DEBUG(
-        iceberg_metadata.log,
+        &Poco::Logger::get("IcebergKeysIterator"),
         "Creating IcebergKeysIterator for {} data files and {} position deletes files",
         data_files.size(),
         position_deletes_files.size());
     for (const auto & file : data_files)
     {
-        LOG_DEBUG(iceberg_metadata.log, "Data file path: {}, data file path_key: {}, ", file.file_path, file.file_path_key);
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergKeysIterator"), "Data file path: {}, data file path_key: {}, ", file.file_path, file.file_path_key);
     }
     for (const auto & file : position_deletes_files)
     {
         LOG_DEBUG(
-            iceberg_metadata.log, "Position delete file path: {}, position delete file path_key: {}, ", file.file_path, file.file_path_key);
+            &Poco::Logger::get("IcebergKeysIterator"),
+            "Position delete file path: {}, position delete file path_key: {}, ",
+            file.file_path,
+            file.file_path_key);
     }
 }
 
@@ -1204,8 +1208,8 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
 {
     while (true)
     {
-        LOG_DEBUG("Taken index: {}", index.load());
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        LOG_DEBUG(&Poco::Logger::get("next()"), "Taken index: {}", current_index);
         if (current_index >= data_files.size())
             return nullptr;
 
