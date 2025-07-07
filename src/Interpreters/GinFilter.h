@@ -15,9 +15,9 @@ static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
 struct GinFilterParameters
 {
-    GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_);
+    GinFilterParameters(String tokenizer_, UInt64 max_rows_per_postings_list_);
 
-    size_t ngrams;
+    String tokenizer;
     UInt64 max_rows_per_postings_list;
 };
 

@@ -33,6 +33,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -777,7 +778,7 @@ void TCPHandler::runImpl()
         }
         catch (...)
         {
-            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            exception = std::make_unique<DB::Exception>(getCurrentExceptionMessageAndPattern(false), ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         if (exception)
@@ -851,7 +852,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
@@ -968,7 +969,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (!server.isCancelled() && tcp_server.isOpen())
     {
-        if (!in->poll(timeout_us))
+        while (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))

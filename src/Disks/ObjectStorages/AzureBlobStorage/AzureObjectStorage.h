@@ -100,6 +100,8 @@ public:
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
 
+    bool isReadOnly() const override { return settings.get()->read_only; }
+
     bool supportParallelWrite() const override { return true; }
 
 private:

@@ -124,7 +124,7 @@ CREATE TABLE 03165_token_ft
 (
     id Int64,
     message String,
-    INDEX idx_message message TYPE gin() GRANULARITY 1
+    INDEX idx_message message TYPE gin(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

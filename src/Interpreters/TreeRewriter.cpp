@@ -366,9 +366,12 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
     for (auto & expr : elements)
     {
         auto name = expr->getAliasOrColumnName();
-
         if (!assigned_column_names.insert(name).second)
         {
+            /// We can't rename with aliases if it doesn't support alias (e.g. asterisk)
+            if (!dynamic_cast<ASTWithAlias *>(expr.get()))
+                continue;
+
             size_t i = 1;
             while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;

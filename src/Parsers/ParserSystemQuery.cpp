@@ -441,7 +441,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;

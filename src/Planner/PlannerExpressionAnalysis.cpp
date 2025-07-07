@@ -400,7 +400,6 @@ ProjectionAnalysisResult analyzeProjection(
         input_columns,
         planner_context,
         correlated_columns_set);
-    correlated_subtrees.assertEmpty("in projection list");
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -436,6 +435,7 @@ ProjectionAnalysisResult analyzeProjection(
 
     ProjectionAnalysisResult result;
     result.projection_actions = std::move(projection_actions);
+    result.correlated_subtrees = std::move(correlated_subtrees);
     result.projection_column_names = std::move(projection_column_names);
     result.projection_column_names_with_display_aliases = std::move(projection_column_names_with_display_aliases);
 

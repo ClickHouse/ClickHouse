@@ -107,3 +107,4 @@ class Workflow:
             description: str
             is_required: bool
             default_value: str
+            options: Optional[List] = None

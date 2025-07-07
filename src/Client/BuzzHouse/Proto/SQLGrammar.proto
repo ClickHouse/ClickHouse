@@ -3146,6 +3146,11 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
+message CreateTableSelect {
+    optional bool empty = 1;
+    required Select sel = 2;
+}
+
 enum CreateReplaceOption {
     Create = 1;
     Replace = 2;
@@ -3164,7 +3169,7 @@ message CreateTable {
     }
     required TableEngine engine = 8;
     optional TTLExpr ttl_expr = 9;
-    optional Select as_select_stmt = 10;
+    optional CreateTableSelect as_select_stmt = 10;
     optional string comment = 11;
 }
 
@@ -3592,12 +3597,13 @@ message AlterItem {
         FreezePartition unfreeze_partition = 42;
         ClearIndexInPartition clear_index_partition = 43;
         MovePartition move_partition = 44;
-        string comment = 45;
-        TTLExpr modify_ttl  = 46;
-        bool remove_ttl = 47;
+        TTLExpr modify_ttl  = 45;
+        bool remove_ttl = 46;
         /// For views
-        Select modify_query = 48;
-        RefreshableView refresh = 49;
+        Select modify_query = 47;
+        RefreshableView refresh = 48;
+        // For tables, views and databases
+        string comment = 49;
     }
 }
 
@@ -3828,11 +3834,16 @@ message ExplainQuery {
     required SQLQueryInner inner_query = 4;
 }
 
-message SQLQuery {
+message SingleSQLQuery {
     oneof query_oneof {
         ExplainQuery explain = 1;
         bool start_trans = 2;
         bool commit_trans = 3;
         bool rollback_trans = 4;
     }
+}
+
+message SQLQuery {
+    required SingleSQLQuery single_query = 1;
+    repeated SingleSQLQuery parallel_queries = 2;
 }

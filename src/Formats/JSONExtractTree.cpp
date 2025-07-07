@@ -1444,8 +1444,13 @@ public:
         auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
         auto insert_settings_with_no_type_conversion = insert_settings;
         insert_settings_with_no_type_conversion.allow_type_conversion = false;
-        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
-        for (size_t i : order)
+
+        /// Check if we already have variants order for this Variant type in cache.
+        auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
+        if (variants_order_it == variants_order_cache.end())
+            variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+
+        for (size_t i : variants_order_it->second)
         {
             if (i != shared_variant_discr)
             {
@@ -1591,6 +1596,8 @@ private:
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
+    /// Avoid calling getVariantsDeserializeTextOrder for the same data types on each row by using cache.
+    mutable std::unordered_map<String, std::vector<size_t>> variants_order_cache;
 };
 
 template <typename JSONParser>
@@ -1698,12 +1705,22 @@ private:
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
+            std::unordered_set<std::string_view> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
                 path += key;
+
+                if (!visited_keys.insert(key).second)
+                {
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    return false;
+                }
+
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }

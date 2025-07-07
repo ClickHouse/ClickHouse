@@ -40,6 +40,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
+    extern const SettingsFloat vector_search_postfilter_multiplier;
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
 }
 
 namespace ServerSetting
@@ -415,9 +417,14 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , index_column(index_column_)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
+    , postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
+    , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
 {
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+    if (!std::isfinite(postfilter_multiplier) || postfilter_multiplier < 0.0 ||
+        (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be bigger than 0.0");
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -459,12 +466,16 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
             parameters->reference_vector.size(), index->dimensions());
 
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present)
+        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
+        limit = std::min(static_cast<size_t>(limit * postfilter_multiplier), max_limit);
+
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-
-    auto search_result = index->search(parameters->reference_vector.data(), parameters->limit, USearchIndex::any_thread(), false, expansion_search);
+    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
@@ -592,17 +603,17 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity indexes must be created on a single column");
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity index must be created on a single column");
 
     /// Check that the data type is Array(Float32|Float64|BFloat16)
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
     if (!data_type_array)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32|Float64|BFloat16)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32|Float64|BFloat16)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (!which.isNativeFloat() && !which.isBFloat16())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32|Float64|BFloat16)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32|Float64|BFloat16)");
 }
 
 }

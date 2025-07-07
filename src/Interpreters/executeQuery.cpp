@@ -130,7 +130,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -573,7 +573,7 @@ void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    const QueryPipeline & query_pipeline,
+    QueryPipeline && query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
@@ -586,16 +586,24 @@ void logQueryFinishImpl(
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
     {
+
+        logProcessorProfile(context, query_pipeline.getProcessors());
+
+        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
+
+        /// Reset pipeline before fetching profile counters
+        query_pipeline.reset();
+
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time, std::make_shared<QueryStatusInfo>(info));
+
         elem.type = QueryLogElementType::QUERY_FINISH;
 
         addStatusInfoToQueryLogElement(elem, info, query_ast, context, time);
 
-        auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
         elem.result_rows = result_progress.result_rows;
         elem.result_bytes = result_progress.result_bytes;
 
@@ -622,10 +630,9 @@ void logQueryFinishImpl(
                 query_log->add(elem);
         }
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
     }
 
-    if (query_span)
+    if (query_span && query_span->isTraceEnabled())
     {
         query_span->addAttribute("db.statement", elem.query);
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
@@ -659,14 +666,14 @@ void logQueryFinish(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    const QueryPipeline & query_pipeline,
+    QueryPipeline && query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
     bool internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
 void logQueryException(
@@ -1643,14 +1650,14 @@ static BlockIO executeQueryImpl(
                                     execute_implicit_tcl_query,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](QueryPipeline & query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span](QueryPipeline && query_pipeline, std::chrono::system_clock::time_point finish_time) mutable
             {
                 if (query_result_cache_usage == QueryResultCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
                     /// prevent partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, std::move(query_pipeline), pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);

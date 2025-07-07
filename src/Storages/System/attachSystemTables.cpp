@@ -10,7 +10,7 @@
 #include <Storages/System/StorageSystemAsyncLoader.h>
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
-#include <Storages/System/SystemStorageInstrumentation.h>
+#include <Storages/System/SystemStorageXRayInstrumentation.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
@@ -102,6 +102,7 @@
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemLatencyBuckets.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -145,7 +146,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
 #if USE_XRAY
-    attach<SystemStorageInstrumentation>(context, system_database, "instrumentation", "Contains a list of all functions instrumented with XRay with their IDs and handlers.");
+    attach<SystemStorageXRayInstrumentation>(context, system_database, "xray_instrumentation", "Contains a list of all functions instrumented with XRay with their IDs and handlers.");
 #endif
     attach<StorageSystemFormats>(context, system_database, "formats", "Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.");
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");

@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (
     id UInt64,
     str Map(String, String),
-    INDEX idx mapKeys(str) TYPE gin(2) GRANULARITY 1)
+    INDEX idx mapKeys(str) TYPE gin(tokenizer = 'ngram', ngram_size = 2) GRANULARITY 1)
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',

@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -748,7 +749,7 @@ void executeQueryWithParallelReplicas(
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1095,6 +1096,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
+
+    /// Otherwise CompletedPipelineExecutor uses 1 thread by default
+    pipeline.setNumThreads(settings[Setting::max_threads]);
 
     return pipeline;
 }

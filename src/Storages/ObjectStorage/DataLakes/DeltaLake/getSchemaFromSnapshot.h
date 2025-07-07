@@ -27,7 +27,7 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedGlobalScanState * sca
 /// Get list of partition columns.
 /// Read schema does not contain partition columns,
 /// therefore partition columns are passed separately.
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedGlobalScanState * scan_state);
+DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
 }
 

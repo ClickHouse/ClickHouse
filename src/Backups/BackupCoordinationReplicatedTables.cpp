@@ -290,7 +290,7 @@ void BackupCoordinationReplicatedTables::prepare() const
             for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
             {
                 auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-                const auto & partition_id = part_info.getPartitionId();
+                [[maybe_unused]] const auto & partition_id = part_info.getPartitionId();
 
                 auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
                 auto it2 = min_data_versions_by_partition.find(partition_id);

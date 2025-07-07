@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -124,7 +126,7 @@ ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
     return result;
 }
 
-void QueryNode::addCorrelatedColumn(ColumnNodePtr correlated_column)
+void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 {
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
@@ -133,6 +135,22 @@ void QueryNode::addCorrelatedColumn(ColumnNodePtr correlated_column)
             return;
     }
     correlated_columns.push_back(correlated_column);
+}
+
+DataTypePtr QueryNode::getResultType() const
+{
+    if (isCorrelated())
+    {
+        if (projection_columns.size() == 1)
+        {
+            return projection_columns[0].type;
+        }
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+                projection_columns.size());
+    }
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

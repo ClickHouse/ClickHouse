@@ -1,12 +1,8 @@
 #pragma once
 
-#include <unordered_map>
-#include <mutex>
-
 #include <Common/NamePrompter.h>
-
 #include <Parsers/ASTCreateFunctionQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -52,7 +48,9 @@ private:
     static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
     static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
 
-    ContextPtr global_context = Context::getGlobalContextInstance();
+    ContextPtr global_context;
+
+    UserDefinedSQLFunctionFactory();
 };
 
 }

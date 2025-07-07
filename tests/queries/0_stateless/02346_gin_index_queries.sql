@@ -6,11 +6,11 @@ SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 ----------------------------------------------------
-SELECT 'Test gin(2)';
+SELECT 'Test gin(tokenizer="ngram", ngram_size = 2)';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2))
             ENGINE = MergeTree() ORDER BY k
             SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
                      min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
@@ -63,11 +63,11 @@ SELECT read_rows==8 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test gin()';
+SELECT 'Test gin(tokenizer = "default")';
 
 DROP TABLE IF EXISTS tab_x;
 
-CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE gin())
+CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE gin(tokenizer = 'default'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
              min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
@@ -121,7 +121,7 @@ SELECT 'Test on array columns';
 
 DROP TABLE IF EXISTS tab;
 
-create table tab (k UInt64, s Array(String), INDEX af(s) TYPE gin(2))
+create table tab (k UInt64, s Array(String), INDEX af(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
              min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
@@ -149,7 +149,7 @@ SELECT 'Test on map columns';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE gin(2))
+CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE gin(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
              min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
@@ -186,12 +186,12 @@ SELECT read_rows==8 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test gin(2) on a column with two parts';
+SELECT 'Test gin(tokenizer = "ngram", ngram_size = 2) on a column with two parts';
 
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
              min_bytes_for_full_part_storage = 0; -- GIN indexes currently don't work with packed parts
@@ -216,11 +216,11 @@ SELECT read_rows==6 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
-SELECT 'Test gin(2) on UTF-8 data';
+SELECT 'Test gin(tokenizer = "ngram", ngram_size = 2) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(2))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(tokenizer = 'ngram', ngram_size = 2))
     ENGINE = MergeTree()
     ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi',
@@ -251,7 +251,7 @@ SELECT 'Test max_rows_per_postings_list';
 DROP TABLE IF EXISTS tab;
 
 -- create table 'tab' with GIN index parameter (ngrams, max_rows_per_most_list) which is (0, 10240)
-CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(0, 12040))
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE gin(tokenizer = 'default', max_rows_per_postings_list = 12040))
                      Engine=MergeTree
                      ORDER BY (k)
                      SETTINGS min_bytes_for_full_part_storage = 0

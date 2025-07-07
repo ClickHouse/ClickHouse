@@ -26,7 +26,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InstrumentationProfilingLog.h>
+#include <Interpreters/XRayInstrumentationProfilingLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
@@ -371,7 +371,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
     in_hook = true;
     LOG_DEBUG(getLogger("XRayInstrumentationManager::profile"), "function with id {}", toString(func_id));
     HandlerType type = HandlerType::Profile;
-    static thread_local std::unordered_map<int32_t, InstrumentationProfilingLogElement> active_elements;
+    static thread_local std::unordered_map<int32_t, XRayInstrumentationProfilingLogElement> active_elements;
     if (entry_type == XRayEntryType::ENTRY)
     {
         auto parameters_it = functionIdToHandlers[func_id].find(type);
@@ -397,7 +397,7 @@ void XRayInstrumentationManager::parseXRayInstrumentationMap()
             in_hook = false;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No context for profiling instrumentation");
         }
-        InstrumentationProfilingLogElement element;
+        XRayInstrumentationProfilingLogElement element;
         element.function_name = xrayIdToFunctionName[func_id];
         element.tid = getThreadId();
         using namespace std::chrono;

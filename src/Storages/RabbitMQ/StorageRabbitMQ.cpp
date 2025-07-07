@@ -1056,7 +1056,6 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return true;
 }
 
-
 void StorageRabbitMQ::streamingToViewsFunc()
 {
     try

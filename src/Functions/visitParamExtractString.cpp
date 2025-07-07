@@ -52,7 +52,7 @@ SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;)",
 
 ☺
 )"}},
-        .category{"JSON"}});
+        .category = FunctionDocumentation::Category::JSON});
     factory.registerAlias("visitParamExtractString", "simpleJSONExtractString");
 }
 

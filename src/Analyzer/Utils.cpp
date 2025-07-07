@@ -252,10 +252,13 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 
 bool checkCorrelatedColumn(
     IdentifierResolveScope * scope_to_check,
-    const ColumnNodePtr & column
+    const QueryTreeNodePtr & column
 )
 {
-    auto column_source = column->getColumnSource();
+    auto * current_scope = scope_to_check;
+    chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
+    auto * column_node = column->as<ColumnNode>();
+    auto column_source = column_node->getColumnSource();
 
     /// The case of lambda argument. Example:
     /// arrayMap(X -> X + Y, [0])
@@ -283,7 +286,11 @@ bool checkCorrelatedColumn(
         scope_to_check = scope_to_check->parent_scope;
     }
     if (!scope_to_check)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find the original scope of the column");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot find the original scope of the column '{}'. Current scope: {}",
+            column_node->getColumnName(),
+            current_scope->scope_node->formatASTForErrorMessage());
 
     return is_correlated;
 }

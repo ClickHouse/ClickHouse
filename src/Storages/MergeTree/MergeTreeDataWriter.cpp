@@ -1,5 +1,7 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/intExp.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/ObjectUtils.h>
@@ -184,6 +186,17 @@ void updateTTL(
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
+    else if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(ttl_column.get()))
+    {
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+        for (const auto & val : column_date_32->getData())
+            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(val)));
+    }
+    else if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(ttl_column.get()))
+    {
+        for (const auto & val : column_date_time_64->getData())
+            ttl_info.update(val / intExp10OfSize<Int64>(column_date_time_64->getScale()));
+    }
     else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
@@ -194,6 +207,15 @@ void updateTTL(
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
         {
             ttl_info.update(column_const->getValue<UInt32>());
+        }
+        else if (typeid_cast<const ColumnInt32 *>(&column_const->getDataColumn()))
+        {
+            const auto & date_lut = DateLUT::serverTimezoneInstance();
+            ttl_info.update(date_lut.fromDayNum(ExtendedDayNum(column_const->getValue<Int32>())));
+        }
+        else if (const ColumnDateTime64 * column_dt64 = typeid_cast<const ColumnDateTime64 *>(&column_const->getDataColumn()))
+        {
+            ttl_info.update(column_const->getValue<DateTime64>() / intExp10OfSize<Int64>(column_dt64->getScale()));
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
@@ -805,7 +827,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows()).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

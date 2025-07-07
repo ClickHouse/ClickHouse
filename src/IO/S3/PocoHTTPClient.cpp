@@ -117,6 +117,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         unsigned int s3_retry_attempts_,
+        bool s3_slow_all_threads_after_network_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
@@ -128,6 +129,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
     , s3_retry_attempts(s3_retry_attempts_)
+    , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , get_request_throttler(get_request_throttler_)

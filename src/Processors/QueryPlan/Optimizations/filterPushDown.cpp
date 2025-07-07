@@ -104,7 +104,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     return res;
 }
 
-static std::optional<ActionsDAG> splitFilter(QueryPlan::Node * parent_node, const Names & available_inputs, size_t child_idx = 0)
+static std::optional<ActionsDAG> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -118,7 +118,8 @@ static std::optional<ActionsDAG> splitFilter(QueryPlan::Node * parent_node, cons
     bool removes_filter = filter->removesFilterColumn();
 
     const auto & all_inputs = child->getInputHeaders()[child_idx].getColumnsWithTypeAndName();
-    return expression.splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs);
+    bool allow_deterministic_functions = !step_changes_the_number_of_rows;
+    return expression.splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
 }
 
 static size_t
@@ -186,10 +187,10 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 }
 
 static size_t
-tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
+tryAddNewFilterStep(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
                     bool can_remove_filter = true, size_t child_idx = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, allowed_inputs, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), can_remove_filter, child_idx);
     return 0;
 }
@@ -197,12 +198,12 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
 
 /// Push down filter through specified type of step
 template <typename Step>
-static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
+static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     if (typeid_cast<Step *>(child.get()))
     {
         Names allowed_inputs = child->getOutputHeader().getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, step_changes_the_number_of_rows, nodes, allowed_inputs))
             return updated_steps;
     }
     return 0;
@@ -386,8 +387,33 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     size_t updated_steps = 0;
 
+    /// For the logical join step, we need to merge pre-join actions to filter dag.
+    /// TODO: this should be refactored and replaced with optimizations which
+    /// 1. push filter/expression into JOIN (as post-filter)
+    /// 2. move filter within JOIN step, potentially changing JoinKind
+    /// 3. push filter/expression out of JOIN (from pre-filter)
+    auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, const ActionsDAG & side_dag)
+    {
+        filter_dag = ActionsDAG::merge(side_dag.clone(), std::move(filter_dag));
+        auto & outputs = filter_dag.getOutputs();
+        outputs.resize(1);
+        outputs.insert(outputs.end(), filter_dag.getInputs().begin(), filter_dag.getInputs().end());
+        filter_dag.removeUnusedActions();
+        return filter_dag;
+    };
+
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
+        if (logical_join)
+        {
+
+            join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().left_pre_join_actions
+            );
+            join_filter_push_down_actions.left_stream_filter_removes_filter = true;
+        }
+
         const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
@@ -403,6 +429,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
     {
+        if (logical_join)
+        {
+
+            join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
+                std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down),
+                *logical_join->getExpressionActions().right_pre_join_actions
+            );
+            join_filter_push_down_actions.right_stream_filter_removes_filter = true;
+        }
+
         const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
@@ -507,7 +543,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
         const bool can_remove_filter = filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, can_remove_filter))
             return updated_steps;
     }
 
@@ -568,7 +604,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///    ) group by y with totals) where y != 2`
         /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
         /// It is expected to ok, cause AST optimization `enable_optimize_predicate_expression = 1` also brakes it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys))
             return updated_steps;
     }
 
@@ -584,11 +620,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (!keys_set.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
             return updated_steps;
     }
 
-    if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
+    if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
         return updated_steps;
 
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
@@ -619,14 +655,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         bool can_remove_filter = sort_description_it == sort_description.end();
 
         Names allowed_inputs = child->getOutputHeader().getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs, can_remove_filter))
             return updated_steps;
     }
 
     if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
     {
         Names allowed_inputs = {"event_date", "event_time", "hostname"};
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, true))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs, true))
             return updated_steps;
     }
 
@@ -636,7 +672,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         bool can_remove_filter = !join_filter_set_step->isColumnPartOfSetKey(filter_column_name);
 
         Names allowed_inputs = child->getOutputHeader().getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs, can_remove_filter))
             return updated_steps;
     }
 

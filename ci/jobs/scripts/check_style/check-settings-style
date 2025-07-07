@@ -69,7 +69,7 @@ done
 # previous releases, which is more important than consistency
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections"
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size"
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "

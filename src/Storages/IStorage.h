@@ -140,7 +140,7 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
-    virtual bool noPushingToViews() const { return false; }
+    virtual bool noPushingToViewsOnInserts() const { return false; }
 
     /// Read query returns streams which automatically distribute data between themselves.
     /// So, it's impossible for one stream run out of data when there is data in other streams.
@@ -172,6 +172,8 @@ public:
 
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
+
+    virtual bool isSharedStorage() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -229,7 +231,7 @@ public:
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
+    virtual void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
@@ -239,6 +241,12 @@ public:
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
+
+    /// Called after all databases and tables on all replicas have been restored from backup.
+    /// If this data does some background work that depends on contents of other tables, this is
+    /// the place to kick off that work (and it should be paused when IStorage is created with
+    /// is_restore_from_backup = true in StorageFactory::Arguments).
+    virtual void finalizeRestoreFromBackup() {}
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }

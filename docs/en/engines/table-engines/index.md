@@ -29,7 +29,7 @@ Engines in the family:
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
 | [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
-| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replication)                               |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
 | [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
 | [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
 | [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |

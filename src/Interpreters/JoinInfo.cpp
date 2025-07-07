@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsOverflowMode join_overflow_mode;
@@ -39,6 +39,7 @@ namespace Setting
 
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
 
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsString temporary_files_codec;
@@ -73,6 +74,7 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
 
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
@@ -115,6 +117,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
+    parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
@@ -148,6 +151,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
+    parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
 
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
@@ -185,6 +189,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
+    settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
 
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
@@ -351,6 +356,16 @@ JoinActionRef JoinActionRef::deserialize(ReadBuffer & in, const ActionsDAGRawPtr
     return res;
 }
 
+JoinActionRef JoinActionRef::clone(const ActionsDAG * actions_dag_) const
+{
+    return JoinActionRef{actions_dag_, column_name};
+}
+
+JoinActionRef::JoinActionRef(const ActionsDAG * actions_dag_, const String & column_name_)
+    : actions_dag(actions_dag_)
+    , column_name(column_name_)
+{}
+
 void JoinPredicate::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
     serializePredicateOperator(op, out);
@@ -430,6 +445,40 @@ JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::A
     };
 }
 
+JoinCondition JoinCondition::clone(const JoinExpressionActions & expression_actions) const
+{
+    JoinCondition copy;
+
+    copy.predicates.reserve(predicates.size());
+    for (const auto & predicate : predicates)
+    {
+        copy.predicates.emplace_back(
+            predicate.left_node.clone(expression_actions.left_pre_join_actions.get()),
+            predicate.right_node.clone(expression_actions.right_pre_join_actions.get()),
+            predicate.op);
+    }
+
+    copy.left_filter_conditions.reserve(left_filter_conditions.size());
+    for (const auto & condition: left_filter_conditions)
+    {
+        copy.left_filter_conditions.emplace_back(condition.clone(expression_actions.left_pre_join_actions.get()));
+    }
+
+    copy.right_filter_conditions.reserve(right_filter_conditions.size());
+    for (const auto & condition: right_filter_conditions)
+    {
+        copy.right_filter_conditions.emplace_back(condition.clone(expression_actions.right_pre_join_actions.get()));
+    }
+
+    copy.residual_conditions.reserve(residual_conditions.size());
+    for (const auto & condition: residual_conditions)
+    {
+        copy.residual_conditions.emplace_back(condition.clone(expression_actions.post_join_actions.get()));
+    }
+
+    return copy;
+}
+
 void JoinExpression::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const
 {
     UInt8 is_using_flag = is_using ? 1 : 0;
@@ -466,6 +515,20 @@ JoinExpression JoinExpression::deserialize(ReadBuffer & in, const JoinActionRef:
         disjunctive_conditions.emplace_back(JoinCondition::deserialize(in, dags));
 
     return {std::move(condition), std::move(disjunctive_conditions), bool(is_using_flag)};
+}
+
+JoinExpression JoinExpression::clone(const JoinExpressionActions & expression_copy) const
+{
+    JoinExpression copy;
+    copy.condition = condition.clone(expression_copy);
+
+    copy.disjunctive_conditions.reserve(disjunctive_conditions.size());
+    for (const auto & disjunctive_condition : disjunctive_conditions)
+        copy.disjunctive_conditions.emplace_back(disjunctive_condition.clone(expression_copy));
+
+    copy.is_using = is_using;
+
+    return copy;
 }
 
 void JoinInfo::serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const

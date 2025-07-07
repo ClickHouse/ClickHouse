@@ -61,6 +61,7 @@ namespace
             , schedule(schedule_)
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
+            , normal_part_size(0)
         {
         }
 

@@ -331,16 +331,17 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     auto * dynamic_state = checkAndGetState<SerializeBinaryBulkStateDynamic>(state);
-    settings.path.push_back(Substream::DynamicStructure);
-    auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
-
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
 
     /// Write statistics in suffix if needed.
     if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX)
     {
+        settings.path.push_back(Substream::DynamicStructure);
+        auto * stream = settings.getter(settings.path);
+        settings.path.pop_back();
+
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
+
         /// First, write statistics for usual variants.
         for (const auto & variant_name : dynamic_state->variant_names)
             writeVarUInt(dynamic_state->statistics.variants_statistics[variant_name], *stream);

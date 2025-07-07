@@ -45,6 +45,11 @@ public:
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
 
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
+
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         /// Columns which should be aggregated.
@@ -82,14 +87,9 @@ public:
     private:
         ColumnsDefinition & def;
 
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
-
         bool is_group_started = false;
 
-        Row current_row;
+        std::vector<ColumnPtr> current_row;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

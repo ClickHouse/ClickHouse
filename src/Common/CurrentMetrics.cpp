@@ -376,6 +376,10 @@
     M(SharedCatalogDropZooKeeperThreadsActive, "Number of active threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     \
+    M(CoordinatedMergesCoordinatorRunningMerges, "Number of running merges visible for merge coordinator.") \
+    M(CoordinatedMergesCoordinatorAssignedMerges, "Number of assigned merges in merge coordinator state.") \
+    M(CoordinatedMergesWorkerAssignedMerges, "Number of assigned merges in merge worker state.") \
+    \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \

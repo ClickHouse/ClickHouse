@@ -10,6 +10,9 @@
 03045_unknown_identifier_alias_substitution
 02561_temporary_table_sessions
 02525_different_engines_in_temporary_tables
+00645_date_time_input_format
+02154_default_keyword_insert
+02807_default_date_time_nullable
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
@@ -33,12 +36,16 @@
     Duplicates on RIGHT JOIN with Values table
 03006_join_on_inequal_expression_3.gen
 
-    optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
-02317_distinct_in_order_optimization
-
     https://github.com/ClickHouse/ClickHouse/issues/74343
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
+00500_point_in_polygon_non_const_poly
+01017_tuplehamming_distance
+01300_svg
+01849_geoToS2
+02504_regexp_dictionary_table_source
+02833_tuple_concat
+02378_analyzer_projection_names
 
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
@@ -77,6 +84,7 @@
 01594_storage_join_uuid
     Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
 02498_storage_join_key_positions.gen
+03447_storage_join_unsupported_keys
 
     https://github.com/ClickHouse/ClickHouse/pull/73609
     Cannot parse string
@@ -133,6 +141,10 @@
 02950_dictionary_ssd_cache_short_circuit
 02504_regexp_dictionary_ua_parser
 03062_analyzer_join_engine_missing_column
+01852_dictionary_query_count_long
+01904_dictionary_default_nullable_type
+02391_hashed_dictionary_shards
+02740_hashed_dictionary_load_factor_smoke
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
@@ -160,7 +172,8 @@
 01780_column_sparse_full
 01783_merge_engine_join_key_condition
 02789_filesystem_cache_alignment
-
+00475_in_join_db_table
+03325_sqlite_join_wrong_answer
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 02023_transform_or_to_in
@@ -185,6 +198,30 @@
 
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
+
+    https://github.com/ClickHouse/ClickHouse/issues/80426
+    Duplicates with all right join and join engine
+01051_all_join_engine
+02497_storage_join_right_assert
+02495_analyzer_storage_join
+
+    https://github.com/ClickHouse/clickhouse-private/issues/27882
+    duplicates cross_to_inner_join_rewrite=1
+02564_analyzer_cross_to_inner
+
+    https://github.com/ClickHouse/ClickHouse/issues/80439
+    Predicate pushdown CTE incorrect result
+02901_predicate_pushdown_cte_stateful
+
+    https://github.com/ClickHouse/ClickHouse/issues/80440
+    MULTIPLE_EXPRESSIONS_FOR_ALIAS
+03121_analyzer_filed_redefenition_in_subquery
+
+    Correlated subqueries are not supported
+    Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
+03448_analyzer_correlated_subquery_in_projection
+03412_analyzer_correlated_subquery_bug
+03399_analyzer_correlated_subquery
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -330,6 +367,7 @@
 00175_partition_by_ignore
 01655_plan_optimizations_optimize_read_in_window_order
 01625_constraints_index_append
+01883_with_grouping_sets
     Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
 01655_plan_optimizations_optimize_read_in_window_order_long
 01824_move_to_prewhere_many_columns
@@ -387,6 +425,8 @@
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
 00183_prewhere_conditions_order
+03302_analyzer_join_filter_push_down_bug
+02815_join_algorithm_setting
 
     # NOT BUGS
     Not a bug
@@ -513,7 +553,6 @@
 
 00955_test_final_mark_use
 01624_soft_constraints
-02968_file_log_multiple_read
 03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries

@@ -401,7 +401,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {

@@ -72,7 +72,7 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
  */
 bool checkCorrelatedColumn(
     IdentifierResolveScope * scope_to_check,
-    const ColumnNodePtr & column
+    const QueryTreeNodePtr & column
 );
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);

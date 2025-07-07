@@ -269,10 +269,9 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    MergeTreeData::DataPartPtr data_part,
+    RangesInDataPart data_part,
     AlterConversionsPtr alter_conversions,
     MergedPartOffsetsPtr merged_part_offsets,
-    size_t part_index,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
@@ -281,11 +280,13 @@ Pipe createMergeTreeSequentialSource(
     bool prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
-    info->data_part = std::move(data_part);
+    info->data_part = std::move(data_part.data_part);
     info->alter_conversions = std::move(alter_conversions);
     info->merged_part_offsets = std::move(merged_part_offsets);
-    info->part_index_in_query = part_index;
+    info->part_index_in_query = data_part.part_index_in_query;
+    info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
+    info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
 
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
@@ -343,10 +344,9 @@ public:
         MergeTreeSequentialSourceType type_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
-        MergeTreeData::DataPartPtr data_part_,
+        RangesInDataPart data_part_,
         AlterConversionsPtr alter_conversions_,
         MergedPartOffsetsPtr merged_part_offsets_,
-        size_t part_index_,
         Names columns_to_read_,
         std::shared_ptr<std::atomic<size_t>> filtered_rows_count_,
         bool apply_deleted_mask_,
@@ -362,7 +362,6 @@ public:
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
         , merged_part_offsets(std::move(merged_part_offsets_))
-        , part_index(part_index_)
         , columns_to_read(std::move(columns_to_read_))
         , filtered_rows_count(std::move(filtered_rows_count_))
         , apply_deleted_mask(apply_deleted_mask_)
@@ -374,7 +373,7 @@ public:
     {
     }
 
-    String getName() const override { return fmt::format("ReadFromPart({})", data_part->name); }
+    String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -395,6 +394,7 @@ public:
                     metadata_snapshot,
                     key_condition,
                     /*part_offset_condition=*/{},
+                    /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
                     context->getSettingsRef(),
                     log);
@@ -412,7 +412,6 @@ public:
             data_part,
             alter_conversions,
             merged_part_offsets,
-            part_index,
             columns_to_read,
             std::move(mark_ranges),
             filtered_rows_count,
@@ -427,10 +426,9 @@ private:
     const MergeTreeSequentialSourceType type;
     const MergeTreeData & storage;
     const StorageSnapshotPtr storage_snapshot;
-    const MergeTreeData::DataPartPtr data_part;
+    const RangesInDataPart data_part;
     const AlterConversionsPtr alter_conversions;
     const MergedPartOffsetsPtr merged_part_offsets;
-    const size_t part_index;
     const Names columns_to_read;
     const std::shared_ptr<std::atomic<size_t>> filtered_rows_count;
     const bool apply_deleted_mask;
@@ -446,10 +444,9 @@ void createReadFromPartStep(
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    MergeTreeData::DataPartPtr data_part,
+    RangesInDataPart data_part,
     AlterConversionsPtr alter_conversions,
     MergedPartOffsetsPtr merged_part_offsets,
-    size_t part_index,
     Names columns_to_read,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
@@ -466,7 +463,6 @@ void createReadFromPartStep(
         std::move(data_part),
         std::move(alter_conversions),
         std::move(merged_part_offsets),
-        part_index,
         std::move(columns_to_read),
         filtered_rows_count,
         apply_deleted_mask,

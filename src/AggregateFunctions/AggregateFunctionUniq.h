@@ -276,13 +276,13 @@ struct Adder
 {
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
     /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
-    template <bool use_single_level_hash_table = true>
+    template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
         if constexpr (Data::is_variadic)
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, use_single_level_hash_table>(
+                data.set.template insert<T, hint>(
                     UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
             else
                 data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
@@ -316,12 +316,11 @@ struct Adder
                 hash.update(value.data, value.size);
                 const auto key = hash.get128();
 
-                data.set.template insert<const UInt128 &, use_single_level_hash_table>(key);
+                data.set.template insert<const UInt128 &, hint>(key);
             }
             else
             {
-                data.set.template insert<const T &, use_single_level_hash_table>(
-                    assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                data.set.template insert<const T &, hint>(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
             }
         }
 #if USE_DATASKETCHES
@@ -341,9 +340,9 @@ struct Adder
             use_single_level_hash_table = data.set.isSingleLevel();
 
         if (use_single_level_hash_table)
-            addImpl<true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
         else
-            addImpl<false>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -353,22 +352,28 @@ struct Adder
     }
 
 private:
-    template <bool use_single_level_hash_table>
-    static void ALWAYS_INLINE
-    addImpl(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    template <SetLevelHint hint>
+    static void ALWAYS_INLINE addImpl(
+        Data & data,
+        const IColumn ** columns,
+        size_t num_args,
+        size_t row_begin,
+        size_t row_end,
+        const char8_t * flags,
+        const UInt8 * null_map)
     {
         if (!flags)
         {
             if (!null_map)
             {
                 for (size_t row = row_begin; row < row_end; ++row)
-                    add<use_single_level_hash_table>(data, columns, num_args, row);
+                    add<hint>(data, columns, num_args, row);
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
         }
         else
@@ -377,13 +382,13 @@ private:
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (flags[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row] && flags[row])
-                        add<use_single_level_hash_table>(data, columns, num_args, row);
+                        add<hint>(data, columns, num_args, row);
             }
         }
     }

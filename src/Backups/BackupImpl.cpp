@@ -92,7 +92,7 @@ BackupImpl::BackupImpl(
     BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
     std::shared_ptr<IBackupReader> reader_,
-    std::shared_ptr<IBackupReader> lightweight_snapshot_reader_)
+    SnapshotReaderCreator lightweight_snapshot_reader_creator_)
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -100,15 +100,11 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , lightweight_snapshot_reader(std::move(lightweight_snapshot_reader_))
+    , lightweight_snapshot_reader_creator(lightweight_snapshot_reader_creator_)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
-    if (params.is_lightweight_snapshot && !lightweight_snapshot_reader_)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create lightweight backup reader");
-    }
     open();
 }
 

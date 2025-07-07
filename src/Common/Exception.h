@@ -6,6 +6,7 @@
 #include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
 
+#include <atomic>
 #include <cerrno>
 #include <exception>
 #include <vector>
@@ -61,6 +62,12 @@ public:
         message_format_string = msg.format_string;
         message_format_string_args = msg.format_string_args;
     }
+
+    ~Exception() override;
+    Exception(const Exception &) = default;
+    Exception & operator=(const Exception &) = default;
+    Exception(Exception &&) = default;
+    Exception & operator=(Exception &&) = default;
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
@@ -166,11 +173,23 @@ public:
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
+    void markAsLogged()
+    {
+        if (logged)
+        {
+            logged->store(true, std::memory_order_relaxed);
+        }
+    }
+
+    /// Indicates if the error code triggers alerts in ClickHouse Cloud
+    bool isErrorCodeImportant() const;
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
     bool remote = false;
+    std::shared_ptr<std::atomic<bool>> logged = std::make_shared<std::atomic<bool>>(false);
 
     /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
     size_t error_index = static_cast<size_t>(-1);
@@ -326,7 +345,7 @@ struct ExecutionStatus
 
 /// TODO: Logger leak constexpr overload
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
-void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);

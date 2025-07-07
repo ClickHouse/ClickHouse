@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import logging
@@ -348,7 +349,11 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
     nc = await nats_connect_ssl(
-        nats_port, user="click", password="house", ssl_ctx=ssl_ctx, max_reconnect_attempts=1
+        nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=ssl_ctx,
+        max_reconnect_attempts=1,
     )
     available = nc.is_connected
     await nc.close()
@@ -365,7 +370,7 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_op
         user=user,
         password=password,
         tls=ssl_ctx,
-        **connect_options
+        **connect_options,
     )
     return nc
 
@@ -544,6 +549,7 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self.with_glue_catalog = False
+        self.with_hms_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1414,15 +1420,11 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_glue_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
-    ):
+    def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
             [
                 "--file",
-                p.join(
-                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
-                ),
+                p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
             ]
         )
         self.base_iceberg_catalog_cmd = self.compose_cmd(
@@ -1432,6 +1434,28 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
+
+
+    def setup_hms_catalog_cmd(
+         self, instance, env_variables, docker_compose_yml_dir
+     ):
+         self.base_cmd.extend(
+             [
+                 "--file",
+                 p.join(
+                     docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"
+                 ),
+             ]
+         )
+
+         self.base_iceberg_hms_cmd = self.compose_cmd(
+             "--env-file",
+             instance.env_file,
+             "--file",
+             p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
+         )
+         return self.base_iceberg_hms_cmd
+
 
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1621,6 +1645,7 @@ class ClickHouseCluster:
         with_prometheus=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
+        with_hms_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1728,7 +1753,10 @@ class ClickHouseCluster:
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka or with_kafka_sasl,
+            with_secrets=with_secrets
+            or with_kerberos_kdc
+            or with_kerberized_kafka
+            or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -1741,6 +1769,7 @@ class ClickHouseCluster:
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
+            with_hms_catalog=with_hms_catalog,
             use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
@@ -1873,7 +1902,9 @@ class ClickHouseCluster:
 
         if with_kafka_sasl and not self.with_kafka_sasl:
             cmds.append(
-                self.setup_kafka_sasl_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_kafka_sasl_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
@@ -1933,6 +1964,13 @@ class ClickHouseCluster:
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_hms_catalog and not self.with_hms_catalog:
+            cmds.append(
+                self.setup_hms_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2434,11 +2472,28 @@ class ClickHouseCluster:
         raise RuntimeError("Cannot wait RabbitMQ container")
 
     def stop_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout)
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
+        )
 
     def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout)
-        self.wait_rabbitmq_to_start()
+        run_rabbitmqctl(
+            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+        )
+        self.wait_rabbitmq_to_start(timeout)
+
+    @contextmanager
+    def pause_rabbitmq(self, monitor=None, timeout=120):
+        if monitor is not None:
+            monitor.stop()
+        self.stop_rabbitmq_app(timeout)
+
+        try:
+            yield
+        finally:
+            self.start_rabbitmq_app(timeout)
+            if monitor is not None:
+                monitor.start(self)
 
     def reset_rabbitmq(self, timeout=120):
         self.stop_rabbitmq_app()
@@ -2529,7 +2584,10 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
+            host="localhost",
+            port=self.mongo_port,
+            user=mongo_user,
+            password=urllib.parse.quote_plus(mongo_pass),
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2577,7 +2635,9 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occurred when deleting object {error}")
+                            logging.error(
+                                f"Error occurred when deleting object {error}"
+                            )
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3283,10 +3343,10 @@ class ClickHouseCluster:
 
     @contextmanager
     def pause_container(self, instance_name):
-        '''Use it as following:
+        """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
-        '''
+        """
         self._pause_container(instance_name)
         try:
             yield
@@ -3359,10 +3419,39 @@ class ClickHouseCluster:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
 
+    # Faster than waiting for clean stop
+    def kill_zookeeper_nodes(self, zk_nodes):
+
+        def kill_keeper(node):
+            logging.info("Killing zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["kill", node])
+            logging.info("Killed zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(kill_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+
     def start_zookeeper_nodes(self, zk_nodes):
-        for n in zk_nodes:
-            logging.info("Starting zookeeper node: %s", n)
-            subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
+        def start_keeper(node):
+            logging.info("Starting zookeeper node: %s", node)
+            subprocess_check_call(self.base_zookeeper_cmd + ["start", node])
+            logging.info("Started zookeeper node: %s", node)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(zk_nodes)
+        ) as executor:
+            futures = []
+            for n in zk_nodes:
+                futures += [executor.submit(start_keeper, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     def query_all_nodes(self, sql, *args, **kwargs):
         return {
@@ -3455,6 +3544,7 @@ class ClickHouseInstance:
         with_ldap,
         with_iceberg_catalog,
         with_glue_catalog,
+        with_hms_catalog,
         use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
@@ -4601,13 +4691,15 @@ class ClickHouseInstance:
                 delimiter = d
                 break
         else:
-            raise Exception(
-                f"Couldn't find a suitable delimiter"
-            )
+            raise Exception(f"Couldn't find a suitable delimiter")
         replace = shlex.quote(replace)
         replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}"]
+            [
+                "bash",
+                "-c",
+                f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}",
+            ]
         )
 
     def create_dir(self):
@@ -4670,11 +4762,11 @@ class ClickHouseInstance:
         if self.with_installed_binary:
             # Ignore CPU overload in this case
             write_embedded_config("0_common_min_cpu_busy_time.xml", self.config_d_dir)
-        else:
-            write_embedded_config("0_common_max_cpu_load.xml", users_d_dir)
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-        use_distributed_plan = os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        use_distributed_plan = (
+            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        )
 
         # If specific version was used there can be no
         # enable_analyzer setting, so do this only if it was

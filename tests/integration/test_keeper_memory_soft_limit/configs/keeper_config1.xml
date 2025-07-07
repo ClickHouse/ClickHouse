@@ -15,7 +15,7 @@
             <value>az-zoo1</value>
         </availability_zone>
         <server_id>1</server_id>
-        <max_memory_usage_soft_limit>200000000</max_memory_usage_soft_limit>
+        <max_memory_usage_soft_limit>80000000</max_memory_usage_soft_limit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>

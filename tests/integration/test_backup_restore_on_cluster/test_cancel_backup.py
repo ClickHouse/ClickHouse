@@ -617,12 +617,12 @@ def test_error_leaves_no_trash():
 
 # A backup must be stopped if Zookeeper is disconnected longer than `failure_after_host_disconnected_for_seconds`.
 def test_long_disconnection_stops_backup():
+    create_and_fill_table(random_node(), num_parts=100)
+
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
         # Config "faster_zk_disconnect_detect.xml" is used in this test to decrease number of retries when reconnecting to ZooKeeper.
         # Without this config this test can take several minutes (instead of seconds) to run.
         config_manager.add_main_config(nodes, "configs/faster_zk_disconnect_detect.xml")
-
-        create_and_fill_table(random_node(), num_parts=100)
 
         initiator = random_node()
         print(f"Using {get_node_name(initiator)} as initiator")
@@ -675,6 +675,8 @@ def test_long_disconnection_stops_backup():
 
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_backup():
+    create_and_fill_table(random_node())
+
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
         use_faster_zk_disconnect_detect = random.choice([True, False])
         if use_faster_zk_disconnect_detect:
@@ -682,8 +684,6 @@ def test_short_disconnection_doesnt_stop_backup():
             config_manager.add_main_config(
                 nodes, "configs/faster_zk_disconnect_detect.xml"
             )
-
-        create_and_fill_table(random_node())
 
         initiator = random_node()
         print(f"Using {get_node_name(initiator)} as initiator")

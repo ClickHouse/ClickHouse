@@ -2,6 +2,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
 #include "KernelHelper.h"
 #include "KernelUtils.h"
 #include <Common/logger_useful.h>
@@ -114,6 +115,36 @@ private:
     }
 };
 
+/// A helper class to manage local fs storage.
+class LocalKernelHelper final : public IKernelHelper
+{
+public:
+    explicit LocalKernelHelper(const std::string & path_) : table_location(getTableLocation(path_)), path(path_) {}
+
+    const std::string & getTableLocation() const override { return table_location; }
+
+    const std::string & getDataPath() const override { return path; }
+
+    ffi::EngineBuilder * createBuilder() const override
+    {
+        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ffi::get_engine_builder(
+                KernelUtils::toDeltaString(table_location),
+                &KernelUtils::allocateError),
+            "get_engine_builder");
+
+        return builder;
+    }
+
+private:
+    const std::string table_location;
+    const std::string path;
+
+    static std::string getTableLocation(const std::string & path)
+    {
+        return "file://" + path + "/";
+    }
+};
 }
 
 namespace DB
@@ -147,6 +178,11 @@ DeltaLake::KernelHelperPtr getKernelHelper(
                 s3_client->getRegionForBucket(url.bucket),
                 s3_credentials.GetSessionToken(),
                 auth_settings[S3AuthSetting::no_sign_request]);
+        }
+        case DB::ObjectStorageType::Local:
+        {
+            const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPath());
         }
         default:
         {
