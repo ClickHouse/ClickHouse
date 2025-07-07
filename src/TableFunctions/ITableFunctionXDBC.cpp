@@ -125,32 +125,18 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    if (args.size() == 1)
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
     {
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
-        {
-            if (getName() == "JDBC")
-            {
-                validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "table"});
-                connection_string = named_collection->get<String>("datasource");
-                schema_name = named_collection->getOrDefault<String>("schema", "");
-                remote_table_name = named_collection->getOrDefault<String>("table", "");
-            }
-            else
-            {
-                validateNamedCollection<>(*named_collection, {"connection_settings"}, {"external_database", "external_table"});
+        validateNamedCollection<>(*named_collection, {"datasource"}, {"external_database", "external_table"});
 
-                connection_string = named_collection->get<String>("connection_settings");
-                schema_name = named_collection->getOrDefault<String>("external_database", "");
-                remote_table_name = named_collection->getOrDefault<String>("external_table", "");
-
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
-        }
+        connection_string = named_collection->get<String>("datasource");
+        schema_name = named_collection->getOrDefault<String>("external_database", "");
+        remote_table_name = named_collection->getOrDefault<String>("external_table", "");
+    }
+    else if (args.size() == 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{0}' has 1 argument, it is expected to be named collection", getName());
     }
     else
     {

@@ -191,20 +191,11 @@ namespace
 
             if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
             {
-                if (name == "JDBC")
-                {
-                    validateNamedCollection<>(*named_collection, {"datasource", "schema", "table"}, {});
-                    connection_string = named_collection->get<String>("datasource");
-                    database_or_schema = named_collection->get<String>("schema");
-                    table = named_collection->get<String>("table");
-                }
-                else
-                {
-                    validateNamedCollection<>(*named_collection, {"connection_settings", "external_database", "external_table"}, {});
-                    connection_string = named_collection->get<String>("connection_settings");
-                    database_or_schema = named_collection->get<String>("external_database");
-                    table = named_collection->get<String>("external_table");
-                }
+                validateNamedCollection<>(*named_collection, {"datasource"}, {"external_database", "external_table"});
+
+                connection_string = named_collection->get<String>("datasource");
+                database_or_schema = named_collection->getOrDefault<String>("external_database", "");
+                table = named_collection->getOrDefault<String>("external_table", "");
             }
             else
             {
@@ -218,9 +209,9 @@ namespace
                 for (size_t i = 0; i < 3; ++i)
                     engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-                connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string");
-                database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "database_name");
-                table = checkAndGetLiteralArgument<String>(engine_args[2], "table_name");
+                connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "datasource");
+                database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "external_database");
+                table = checkAndGetLiteralArgument<String>(engine_args[2], "external_table");
             }
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(

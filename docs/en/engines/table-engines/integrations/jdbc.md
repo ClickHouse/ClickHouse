@@ -30,20 +30,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(datasource_uri, external_database, external_table)
+ENGINE = JDBC(datasource, external_database, external_table)
 ```
 
 **Engine Parameters**
 
 
-- `datasource_uri` — URI or name of an external DBMS.
+- `datasource` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Database in an external DBMS.
+- `external_database` — Name of a database in an external DBMS, or, instead, an explicitly defined table schema (see examples).
 
-- `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
+- `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
 
 - These parameters can also be passed using [named collections](operations/named-collections.md).
 
