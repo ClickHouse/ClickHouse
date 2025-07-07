@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -140,11 +141,17 @@ DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
 }
 
+void DataTypeMap::updateHashImpl(SipHash & hash) const
+{
+    key_type->updateHash(hash);
+    value_type->updateHash(hash);
+}
+
 void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
     callback(*key_type);
-    key_type->forEachChild(callback);
     callback(*value_type);
+    key_type->forEachChild(callback);
     value_type->forEachChild(callback);
 }
 

@@ -1039,9 +1039,19 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
+    bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
     for (auto & elem : catalog.getDatabases())
     {
+        if (!elem.second->canContainMergeTreeTables())
+            continue;
+
+        if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
+        {
+            LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
+            continue;
+        }
+
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
