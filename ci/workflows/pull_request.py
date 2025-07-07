@@ -10,10 +10,12 @@ REQUIRED_STATELESS_TESTS_JOB_NAMES = [
 ]
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
+BASE_TEST_BRANCH = "divanik/fix_test_base_branch"
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH],
+    base_branches=[BASE_BRANCH, BASE_TEST_BRANCH],
     jobs=[
         JobConfigs.style_check,
         JobConfigs.docs_job,
@@ -30,10 +32,7 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.build_jobs
         ],
-        *[
-            job.set_dependency(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.special_build_jobs
-        ],
+        *[job.set_dependency(REGULAR_BUILD_NAMES) for job in JobConfigs.special_build_jobs],
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
