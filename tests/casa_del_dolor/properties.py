@@ -357,9 +357,6 @@ cache_storage_properties = {
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "cache_on_write_operations": true_false_lambda,
-    "cache_policy": lambda: random.choice(
-        ["LRU", "LRU_OVERCOMMIT", "SLRU", "SLRU_OVERCOMMIT"]
-    ),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -987,6 +984,13 @@ def modify_server_settings(
         possible_timezones = get_system_timezones()
         if len(possible_timezones) > 0:
             possible_properties["timezone"] = lambda: random.choice(possible_timezones)
+    if "cache_policy" not in cache_storage_properties:
+        possible_policies = ["LRU", "SLRU"]
+        if is_private_binary:
+            possible_policies.extend(["LRU_OVERCOMMIT", "SLRU_OVERCOMMIT"])
+        cache_storage_properties["cache_policy"] = lambda: random.choice(
+            possible_policies
+        )
 
     selected_properties = {}
     # Select random properties to the XML
