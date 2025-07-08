@@ -458,49 +458,7 @@ StorageKeeperMap::StorageKeeperMap(
 
                 if (exists)
                 {
-                    // this requires same name for columns
-                    // maybe we can do a smarter comparison for columns and primary key expression
-                    if (stored_metadata_string != metadata_string)
-                    {
-                        const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
-                        if (!metadata_string.starts_with(metadata_format_version_prefix))
-                            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", stored_metadata_string);
-
-                        auto stored_pk_pos = stored_metadata_string.rfind("primary key: ");
-                        if (stored_pk_pos == std::string::npos)
-                            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", stored_metadata_string);
-
-                        auto pk_pos = metadata_string.find("primary key: ");
-                        if (pk_pos == std::string::npos)
-                            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", metadata_string);
-
-                        auto stored_columns = ColumnsDescription::parse(stored_metadata_string.substr(metadata_format_version_prefix.size(), stored_pk_pos - metadata_format_version_prefix.size()));
-                        auto local_columns = metadata.columns;
-
-                        /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
-                        if (stored_columns.toString(/*include_comments=*/ false) != local_columns.toString(/*include_comments=*/ false))
-                        {
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Path {} is already used but the stored columns definition doesn't match. Stored metadata: {}, local metadata: {}",
-                                zk_root_path,
-                                stored_metadata_string,
-                                metadata_string);
-                        }
-
-                        auto stored_pk = stored_metadata_string.substr(stored_pk_pos + strlen("primary key: "));
-                        auto pk = metadata_string.substr(pk_pos + strlen("primary key: "));
-
-                        if (stored_pk != pk)
-                        {
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Path {} is already used but the stored primary key definition doesn't match. Stored metadata: {}, local metadata: {}",
-                                zk_root_path,
-                                stored_metadata_string,
-                                metadata_string);
-                        }
-                    }
+                    isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
 
                     auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
@@ -675,6 +633,66 @@ private:
 
     Strings getAllKeys() const;
 };
+
+bool StorageKeeperMap::isMetadataStringEqual(
+    const std::string & zk_metadata_string,
+    const std::string & local_metadata_string,
+    bool throw_on_error) const
+{
+    if (zk_metadata_string == local_metadata_string)
+        return true;
+
+    const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
+    const std::string_view primary_key_header = "primary key: ";
+
+    if (!local_metadata_string.starts_with(metadata_format_version_prefix))
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
+
+    auto zk_pk_pos = zk_metadata_string.rfind(primary_key_header);
+    if (zk_pk_pos == std::string::npos)
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
+
+    auto local_pk_pos = local_metadata_string.rfind(primary_key_header);
+    if (local_pk_pos == std::string::npos)
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
+
+    auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos - metadata_format_version_prefix.size()));
+    auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos - metadata_format_version_prefix.size()));
+
+    /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
+    bool columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
+
+    auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
+    auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
+
+    bool pk_equal = zk_pk == local_pk;
+
+    if (columns_equal && pk_equal)
+        return true;
+
+    if (throw_on_error)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}",
+            columns_equal ? "columns" : "primary key",
+            zk_root_path,
+            zk_metadata_string,
+            local_metadata_string);
+    }
+
+    LOG_WARNING(
+        log,
+        "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}. "
+        "Will use stored metadata",
+        columns_equal ? "columns" : "primary key",
+        zk_root_path,
+        zk_metadata_string,
+        local_metadata_string);
+
+    return false;
+}
+
 
 void StorageKeeperMap::read(
         QueryPlan & query_plan,
@@ -1283,13 +1301,8 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                     return;
                 }
 
-                if (metadata_string != stored_metadata_string)
+                if (!isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
                 {
-                    LOG_ERROR(
-                        log,
-                        "Table definition does not match to the one stored in the path {}. Stored definition: {}",
-                        zk_root_path,
-                        stored_metadata_string);
                     table_status = TableStatus::INVALID_METADATA;
                     return;
                 }
