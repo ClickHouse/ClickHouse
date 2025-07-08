@@ -10,6 +10,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -175,6 +177,9 @@ protected:
     /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
     /// the structure from the sample.
     void initOrAdjustDynamicStructureIfNeeded(Block & block);
+
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
 

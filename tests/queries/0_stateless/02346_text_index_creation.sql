@@ -267,12 +267,58 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY key; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
 
-SELECT 'Must be created on String or FixedString or Array(String) or Array(FixedString) or LowCardinality(String) or LowCardinality(FixedString) columns.';
+SELECT 'A column must not have >1 text index';
+
+SELECT '-- CREATE TABLE';
+
+CREATE TABLE tab(
+    s String,
+    INDEX idx_1(s) TYPE text(tokenizer = 'default'),
+    INDEX idx_2(s) TYPE text(tokenizer = 'ngram', ngram_size = 3)
+)
+Engine = MergeTree()
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- ALTER TABLE';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx_1 (str) TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE tab ADD INDEX idx_2(str) TYPE text(tokenizer = 'ngram', ngram_size = 3); -- { serverError BAD_ARGUMENTS }
+
+-- It must still be possible to create a column on the same column with a different expression
+ALTER TABLE tab ADD INDEX idx_3(lower(str)) TYPE text(tokenizer = 'ngram', ngram_size = 3);
+
+DROP TABLE tab;
+
+SELECT 'Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.';
 
 CREATE TABLE tab
 (
     key UInt64,
     str UInt64,
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(String),
+    INDEX idx str TYPE text(tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY key; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str Array(FixedString(2)),
     INDEX idx str TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree

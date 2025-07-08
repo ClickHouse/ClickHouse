@@ -496,7 +496,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto & data = queue_it->second.data;
         size_t entry_data_size = entry->chunk.byteSize();
 
-        assert(data);
+        chassert(data);
         auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
