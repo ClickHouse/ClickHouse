@@ -1127,6 +1127,9 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    if (!allowed_time_delimiters)
+        allowed_time_delimiters = ":";
+
     time = 0;
 
     if (buf.eof())
@@ -1238,6 +1241,58 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 
             time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
             buf.position() += 7;
+
+            return ReturnType(true);
+        }
+        // MM:SS
+        else if (available_bytes >= 5 && isNumericASCII(s[0]) && isNumericASCII(s[1]) &&
+                 isSymbolIn(s[2], allowed_time_delimiters) &&
+                 isNumericASCII(s[3]) && isNumericASCII(s[4]))
+        {
+            hour = 0;
+            minute = (s[0] - '0') * 10 + (s[1] - '0');
+            second = (s[3] - '0') * 10 + (s[4] - '0');
+
+            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            buf.position() += 5;
+
+            return ReturnType(true);
+        }
+        // M:SS
+        else if (available_bytes >= 4 && isNumericASCII(s[0]) &&
+                 isSymbolIn(s[1], allowed_time_delimiters) &&
+                 isNumericASCII(s[2]) && isNumericASCII(s[3]))
+        {
+            hour = 0;
+            minute = s[0] - '0';
+            second = (s[2] - '0') * 10 + (s[3] - '0');
+
+            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            buf.position() += 4;
+
+            return ReturnType(true);
+        }
+        // SS
+        else if (available_bytes >= 2 && isNumericASCII(s[0]) && isNumericASCII(s[1]))
+        {
+            hour = 0;
+            minute = 0;
+            second = (s[0] - '0') * 10 + (s[1] - '0');
+
+            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            buf.position() += 2;
+
+            return ReturnType(true);
+        }
+        // S
+        else if (available_bytes >= 1 && isNumericASCII(s[0]))
+        {
+            hour = 0;
+            minute = 0;
+            second = s[0] - '0';
+
+            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            buf.position() += 1;
 
             return ReturnType(true);
         }
@@ -1446,6 +1501,9 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
                 negative_fraction_multiplier = -1;
             }
         }
+
+        if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
+            negative_fraction_multiplier = -1;
     }
     /// prevent overflow (taken from DateTime)
     else if (parse_success && whole >= 10413792000LL)

@@ -216,6 +216,8 @@ public:
         return false;
     }
 
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
     bool canBeInsideNullable() const override { return true; }
 
     bool isFixedAndContiguous() const override { return true; }
