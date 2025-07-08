@@ -74,6 +74,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
+            {"promql_database", "", "", "New experimental setting"},
+            {"promql_table", "", "", "New experimental setting"},
+            {"evaluation_time", 0, 0, "New experimental setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
