@@ -12,7 +12,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 <ExperimentalBadge/>
 
 :::note
-Lightweight update is currently beta.
+Lightweight updates are currently experimental.
 To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
