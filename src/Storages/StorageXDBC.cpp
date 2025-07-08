@@ -191,11 +191,38 @@ namespace
 
             if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
             {
-                validateNamedCollection<>(*named_collection, {"datasource"}, {"external_database", "external_table"});
+                if (Poco::toLower(name) == "jdbc")
+                {
+                    validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "external_database",
+                                                                                  "external_table", "table"});
 
-                connection_string = named_collection->get<String>("datasource");
-                database_or_schema = named_collection->getOrDefault<String>("external_database", "");
-                table = named_collection->getOrDefault<String>("external_table", "");
+                    /// There are aliases for better compatibility and similarity between JDBC and ODBC
+                    /// Both aliases cannot be specified simultaneously.
+
+                    connection_string = named_collection->get<String>("datasource");
+
+                    if (named_collection->has("external_database") == named_collection->has("schema"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `external_database` / `schema` argument", name);
+                    database_or_schema = named_collection->getAny<String>({"external_database", "schema"});
+
+                    if (named_collection->has("external_table") == named_collection->has("table"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `external_table` / `table` argument", name);
+                    table = named_collection->getAny<String>({"external_table", "table"});
+                }
+                else
+                {
+                    validateNamedCollection<>(*named_collection, {"external_database", "external_table"}, {"datasource", "connection_settings"});
+
+                    if (named_collection->has("datasource") == named_collection->has("connection_settings"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `datasource` / `connection_settings` argument", name);
+                    connection_string = named_collection->getAny<String>({"datasource", "connection_settings"});
+
+                    database_or_schema = named_collection->get<String>("external_database");
+                    table = named_collection->get<String>("external_table");
+                }
             }
             else
             {
