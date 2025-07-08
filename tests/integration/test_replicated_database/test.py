@@ -82,6 +82,17 @@ def assert_create_query(nodes, table_name, expected):
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
 
 
+def zk_rmr_with_retries(zk, path):
+    for i in range(1, 10):
+        try:
+            zk.delete(path, recursive=True)
+            return
+        except Exception as ex:
+            print(ex)
+            time.sleep(0.5)
+    assert False
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -1629,13 +1640,119 @@ def test_create_alter_sleeping(started_cluster, engine):
 
 def test_system_database_replicas(started_cluster):
     database_1 = "test_system_database_replicas_1"
-    database_1 = "test_system_database_replicas_1"
-    database_1 = "test_system_database_replicas_1"
+    
 
     main_node.query(
         f"CREATE DATABASE {database_1} ENGINE = Replicated('/test/{database_1}', 'shard1', 'replica1');"
     )
 
     assert (
-        main_node.query("SELECT * FROM system.database_replicas;") == "test_system_database_replicas_1\t0\n"
+        main_node.query("SELECT * FROM system.database_replicas") == f"{database_1}\t0\n"
     )
+
+    assert (
+        main_node.query("SELECT * FROM system.database_replicas LIMIT 1") == f"{database_1}\t0\n"
+    )
+
+    assert (
+        main_node.query("SELECT * FROM system.database_replicas LIMIT 2") == f"{database_1}\t0\n"
+    )
+
+    assert (
+        main_node.query("SELECT database FROM system.database_replicas") == f"{database_1}\n"
+    )
+
+    assert (
+        main_node.query("SELECT is_readonly FROM system.database_replicas") == "0\n"
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk_rmr_with_retries(zk, f"/test/{database_1}")
+
+    main_node.query(f"DETACH DATABASE {database_1}")
+    main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
+    
+    assert (
+        main_node.query("SELECT * FROM system.database_replicas") == f"{database_1}\t1\n"
+    )
+
+    database_2 = "test_system_database_replicas_2"
+    main_node.query(
+        f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
+    )
+
+    assert (
+        main_node.query("SELECT * FROM system.database_replicas ORDER BY database") == f"{database_1}\t1\n{database_2}\t0\n"
+    )
+
+
+def test_block_system_database_replicas(started_cluster):
+    for i in range(1, 7):
+        main_node.query(
+            f"CREATE DATABASE db_{i} ENGINE = Replicated('/test/db_{i}', 'shard1', 'replica1');"
+        )
+
+    expected = f"""db_1\t0
+db_2\t0
+db_3\t0
+db_4\t0
+db_5\t0
+db_6\t0
+"""
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
+    )
+
+    assert (
+        main_node.query("SET max_block_size=4; SELECT * FROM system.database_replicas ORDER BY database") == expected
+    )
+
+    assert (
+        main_node.query("SET max_block_size=7; SELECT * FROM system.database_replicas ORDER BY database") == expected
+    )
+
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas WHERE is_readonly=0 ORDER BY database") == expected
+    )
+
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas WHERE is_readonly=1 ORDER BY database") == ""
+    )
+
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 1") == "db_1\t0\n"
+    )
+
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 2") == "db_1\t0\ndb_2\t0\n"
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk_rmr_with_retries(zk, f"/test/db_1")
+    zk_rmr_with_retries(zk, f"/test/db_2")
+    zk_rmr_with_retries(zk, f"/test/db_3")
+
+    for i in range(1, 7):
+        main_node.query(
+            f"DETACH DATABASE db_{i}"
+        )
+        main_node.query(
+            f"ATTACH DATABASE db_{i}"
+        )
+
+    expected = f"""db_1\t1
+db_2\t1
+db_3\t1
+db_4\t0
+db_5\t0
+db_6\t0
+"""
+    assert (
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
+    )
+
+    # assert (
+    #     main_node.query("SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='db_1'") == "1\n"
+    # )
+
+    # empty

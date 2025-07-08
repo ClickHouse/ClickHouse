@@ -28,11 +28,13 @@ class SystemDatabaseReplicasSource : public ISource
 public:
     SystemDatabaseReplicasSource(
         Block header_,
+        size_t max_databases_,
         size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_readonly_,
         ContextPtr context_)
         : ISource(header_)
+        , max_databases(max_databases_)
         , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))
         , col_readonly(std::move(col_readonly_))
@@ -46,48 +48,33 @@ protected:
     Chunk generate() override;
 
 private:
+    const size_t max_databases;
     const size_t max_block_size;
     ColumnPtr col_database;
     ColumnPtr col_readonly;
     ContextPtr context;
-    size_t i = 0;
+    size_t index = 0;
 };
 
 Chunk SystemDatabaseReplicasSource::generate()
 {
-    LOG_TEST(getLogger("source"), "call generate: i {}", i);
-    if (i == 1)
+    if (index == max_databases)
         return {};
 
     MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-    bool rows_added = false;
-
     // if (query_status)
     //     query_status->checkTimeLimit();
+    // LOG_TEST(getLogger("source"), "col_database={}", (*col_database)[index].safeGet<String>());
 
-    if (rows_added)
+    for(size_t row_count{}; index < max_databases && row_count < max_block_size; index++, row_count++)
     {
-        if (max_block_size != 0)
-        {
-            // size_t total_size = 0;
-            // for (const auto & column : res_columns)
-            //     total_size += column->byteSize();
-            /// If the block size exceeds the maximum, return the current block
-            // if (total_size >= max_block_size)
-            //     break;
-        }
+        // @todo issue with filter
+        res_columns[0]->insert((*col_database)[index]);
+        res_columns[1]->insert((*col_readonly)[index]);
     }
 
-    LOG_TEST(getLogger("source"), "col_database={}", (*col_database)[i].safeGet<String>());
-
-    res_columns[0]->insert((*col_database)[i]);
-    res_columns[1]->insert((*col_readonly)[i]);
-
-    i++;
-
-    rows_added = true;
-
+    
     UInt64 num_rows = res_columns.at(0)->size();
     return Chunk(std::move(res_columns), num_rows);
 }
@@ -96,8 +83,7 @@ Chunk SystemDatabaseReplicasSource::generate()
 class ReadFromSystemDatabaseReplicas : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    
 
     ReadFromSystemDatabaseReplicas(
         const Names & column_names_,
@@ -117,6 +103,9 @@ public:
         , max_block_size(max_block_size_)
     {
     }
+
+    std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -153,7 +142,7 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
     for (auto & [db_name, data] : replicated_databases)
     {
         col_database_mut->insert(db_name);
-        col_readonly_mut->insert(false);
+        col_readonly_mut->insert(data->isReadOnly());
     }
 
     ColumnPtr col_database = std::move(col_database_mut);
@@ -182,7 +171,7 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 
     }
 
-    pipeline.init(Pipe(std::make_shared<SystemDatabaseReplicasSource>(header, max_block_size, col_database, col_readonly, context)));
+    pipeline.init(Pipe(std::make_shared<SystemDatabaseReplicasSource>(header, replicated_databases.size(), max_block_size, col_database, col_readonly, context)));
 }
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
@@ -190,8 +179,8 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 {
 
     ColumnsDescription description = {
-        { "database",                             std::make_shared<DataTypeString>(),   "Database name."},
-        { "is_readonly",                                std::make_shared<DataTypeUInt8>(),   ""}
+        { "database", std::make_shared<DataTypeString>(),   "Database name."},
+        { "is_readonly", std::make_shared<DataTypeUInt8>(),   "is_readonly"}
     };
 
     StorageInMemoryMetadata storage_metadata;
@@ -221,11 +210,9 @@ void StorageSystemDatabaseReplicas::read(
     {
         // @todo to const
         if (db_data->getEngineName() != "Replicated") {
-            LOG_TEST(getLogger("test_lg"), "wrong engine");
             continue;
         }
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get())) {
-            LOG_TEST(getLogger("test_lg"), "failed cast");
             continue;
         }
             
