@@ -40,6 +40,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -169,6 +170,10 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
+    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsString promql_database_name;
+    extern const SettingsString promql_table_name;
+    extern const SettingsFloat promql_evaluation_time;
 }
 
 namespace ServerSetting
@@ -1050,6 +1055,13 @@ static BlockIO executeQueryImpl(
             if (!settings[Setting::allow_experimental_prql_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::promql && !internal)
+        {
+            if (!settings[Setting::allow_experimental_time_series_table])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+            ParserPrometheusQuery parser(settings[Setting::promql_database_name], settings[Setting::promql_table_name], settings[Setting::promql_evaluation_time]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
