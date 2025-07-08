@@ -381,7 +381,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_column.name.size());
         state.update(projection_column.name);
 
-        updateHashForType(state, projection_column.type);
+        projection_column.type->updateHash(state);
     }
 
     for (const auto & projection_alias : projection_aliases_to_override)

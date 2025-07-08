@@ -54,6 +54,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
@@ -176,7 +177,6 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_full_text_index;
-    extern const SettingsBool allow_experimental_inverted_index;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
@@ -300,7 +300,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -970,6 +969,7 @@ void MergeTreeData::checkProperties(
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
+        std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -984,10 +984,25 @@ void MergeTreeData::checkProperties(
 
             MergeTreeIndexFactory::instance().validate(index, attach);
 
-            if (indices_names.find(index.name) != indices_names.end())
+            if (indices_names.contains(index.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
 
             indices_names.insert(index.name);
+
+            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions searchAll/searchAny don't work
+            /// on columns with more than one text index
+            if (index.type == TEXT_INDEX_NAME)
+            {
+                const auto & column = index.column_names[0];
+
+                if (columns_with_text_indexes.contains(column))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} must not have more than one text index",
+                        backQuote(index.column_names[0]));
+
+                columns_with_text_indexes.insert(column);
+            }
         }
     }
 
@@ -1007,7 +1022,7 @@ void MergeTreeData::checkProperties(
 
         for (const auto & projection : new_metadata.projections)
         {
-            if (projections_names.find(projection.name) != projections_names.end())
+            if (projections_names.contains(projection.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
             const auto settings = getSettings();
@@ -3924,19 +3939,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental full-text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
-
-    /// -------------------------------------------------------------------------------------------------------
-    /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
-    if (AlterCommands::hasLegacyFullTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
-
-    if (AlterCommands::hasLegacyInvertedIndex(new_metadata) && !settings[Setting::allow_experimental_inverted_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
-
-    if (AlterCommands::hasLegacyGinIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
-    /// -------------------------------------------------------------------------------------------------------
+                "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

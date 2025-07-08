@@ -49,6 +49,8 @@ public:
     bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 
+    void updateHashImpl(SipHash & hash) const override;
+
     const DataTypePtr & getVariant(size_t i) const { return variants[i]; }
     const DataTypes & getVariants() const { return variants; }
 
