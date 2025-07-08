@@ -1,5 +1,5 @@
 #include <DataTypes/Native.h>
-#include "Columns/ColumnDecimal.h"
+#include <Columns/ColumnDecimal.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/DataTypeNullable.h>

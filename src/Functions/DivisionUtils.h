@@ -1,13 +1,13 @@
 #pragma once
 
+#include "config.h"
+
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
-
-#include "DataTypes/Native.h"
-#include "config.h"
+#include <DataTypes/Native.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <Core/ValuesWithType.h>

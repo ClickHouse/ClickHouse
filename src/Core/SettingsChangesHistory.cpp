@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -147,8 +148,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
-            {"compile_expressions", false, true, "For ci tests"},
-            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             /// Release closed. Please use 25.5
             {"use_query_condition_cache", false, true, "A new optimization"},
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "DataTypes/DataTypesDecimal.h"
 #include "config.h"
+#include <DataTypes/DataTypesDecimal.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
