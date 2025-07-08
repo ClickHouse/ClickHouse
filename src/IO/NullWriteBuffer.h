@@ -23,7 +23,7 @@ private:
 };
 
 /// Similar to above, but allocated memory,
-/// which is useful when WriteBufferFromFileDecorator<NullWroteBufferWithMemory> is used.
+/// which is useful when WriteBufferFromFileDecorator<NullWriteBufferWithMemory> is used.
 class NullWriteBufferWithMemory final : public BufferWithOwnMemory<WriteBufferFromPointer>
 {
 public:
