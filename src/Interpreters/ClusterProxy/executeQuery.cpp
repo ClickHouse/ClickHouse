@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -36,7 +37,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 
 namespace DB
@@ -670,12 +671,15 @@ void executeQueryWithParallelReplicas(
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
 
-        /// If there's only one replica or the source is empty, just read locally.
         if (!with_parallel_replicas || connection_pools.size() == 1)
         {
             query_plan = std::move(*local_plan);
             return;
         }
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
+        auto stub_local_plan = std::make_unique<QueryPlan>();
+        stub_local_plan->addStep(std::move(read_from_local));
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
@@ -701,11 +705,11 @@ void executeQueryWithParallelReplicas(
 
         Headers input_headers;
         input_headers.reserve(2);
-        input_headers.emplace_back(local_plan->getCurrentHeader());
+        input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
         std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::move(local_plan));
+        plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
@@ -749,7 +753,7 @@ void executeQueryWithParallelReplicas(
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1019,6 +1023,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         chassert(local_pipeline);
 
         local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+        chassert(local_replica_index.has_value());
 
         /// while building local pipeline
         /// - the coordinator is created
@@ -1033,10 +1038,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             std::swap(connection_pools[local_replica_index.value()], connection_pools[snapshot_replica_num.value()]);
             local_replica_index = snapshot_replica_num;
         }
+
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
     }
     connection_pools.resize(max_replicas_to_use);
-
-    LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
     String formatted_query;
     {
@@ -1055,7 +1060,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         formatted_query = buf.str();
     }
 
-    const bool skip_local_replica = local_pipeline.has_value();
     QueryPipeline pipeline;
     if (local_pipeline)
     {
@@ -1068,7 +1072,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     for (size_t i = 0; i < connection_pools.size(); ++i)
     {
-        if (skip_local_replica && i == *local_replica_index)
+        if (local_replica_index && i == *local_replica_index)
             continue;
 
         IConnections::ReplicaInfo replica_info{

@@ -17,16 +17,16 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsBool compress_primary_key;
-    extern const MergeTreeSettingsUInt64 marks_compress_block_size;
-    extern const MergeTreeSettingsString marks_compression_codec;
-    extern const MergeTreeSettingsUInt64 max_compress_block_size;
-    extern const MergeTreeSettingsUInt64 min_compress_block_size;
-    extern const MergeTreeSettingsUInt64 primary_key_compress_block_size;
-    extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
+    extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
+    extern const MergeTreeSettingsString marks_compression_codec;
+    extern const MergeTreeSettingsString primary_key_compression_codec;
+    extern const MergeTreeSettingsUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsUInt64 max_compress_block_size;
+    extern const MergeTreeSettingsUInt64 min_compress_block_size;
+    extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -38,10 +38,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     bool save_marks_in_cache_,
     bool save_primary_index_in_memory_,
     bool blocks_are_granules_size_)
-    : min_compress_block_size(
-          (*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
-    , max_compress_block_size(
-          (*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size])
+    : min_compress_block_size((*storage_settings)[MergeTreeSetting::min_compress_block_size] ? (*storage_settings)[MergeTreeSetting::min_compress_block_size] : global_settings[Setting::min_compress_block_size])
+    , max_compress_block_size((*storage_settings)[MergeTreeSetting::max_compress_block_size] ? (*storage_settings)[MergeTreeSetting::max_compress_block_size] : global_settings[Setting::max_compress_block_size])
     , marks_compression_codec((*storage_settings)[MergeTreeSetting::marks_compression_codec])
     , marks_compress_block_size((*storage_settings)[MergeTreeSetting::marks_compress_block_size])
     , compress_primary_key((*storage_settings)[MergeTreeSetting::compress_primary_key])

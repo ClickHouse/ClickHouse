@@ -1,10 +1,12 @@
-#include "UserDefinedSQLFunctionVisitor.h"
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
@@ -154,7 +156,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 

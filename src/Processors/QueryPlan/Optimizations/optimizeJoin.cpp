@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
@@ -50,8 +50,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return {};
@@ -295,6 +294,7 @@ bool convertLogicalJoinToPhysical(
             new_right_node->step->getOutputHeader(),
             join_ptr,
             settings.max_block_size,
+            settings.min_joined_block_size_rows,
             settings.min_joined_block_size_bytes,
             optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),

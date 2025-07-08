@@ -137,7 +137,7 @@ public:
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
-    static void shutdown();
+    static void shutdown(std::function<void()> shutdown_system_logs);
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
@@ -223,7 +223,8 @@ public:
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
-    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+    void enqueueDroppedTableCleanup(
+        StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
@@ -252,6 +253,7 @@ public:
     {
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
+        DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
     };
@@ -280,7 +282,7 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    void shutdownImpl();
+    void shutdownImpl(std::function<void()> shutdown_system_logs);
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 

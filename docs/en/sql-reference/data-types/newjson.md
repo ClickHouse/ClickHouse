@@ -8,6 +8,22 @@ slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
 ---
 
+import {CardSecondary} from '@clickhouse/click-ui/bundled';
+import Link from '@docusaurus/Link'
+
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{textDecoration: 'none', width: '100%'}}>
+<CardSecondary
+  badgeState="success"
+  badgeText=""
+  description="Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type."
+  icon="book"
+  infoText="Read more"
+  infoUrl="/docs/best-practices/use-json-where-appropriate"
+  title="Looking for a guide?"
+/>
+</Link>
+<br/>
+
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
 If you want to use the `JSON` type, and for the examples on this page, please use:
@@ -15,8 +31,6 @@ If you want to use the `JSON` type, and for the examples on this page, please us
 ```sql
 SET enable_json_type = 1
 ```
-
-However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
 
 :::note
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
@@ -73,9 +87,9 @@ SELECT json FROM test;
 
 ```text title="Response (Example 2)"
 ┌─json──────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3]}        │
+│ {"a":{"b":42},"c":["1","2","3"]}  │
 │ {"a":{"b":0},"f":"Hello, World!"} │
-│ {"a":{"b":43},"c":[4,5,6]}        │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
 └───────────────────────────────────┘
 ```
 
@@ -90,9 +104,9 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
 #### CAST from `Tuple` to `JSON` {#cast-from-tuple-to-json}
@@ -103,9 +117,9 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
 #### CAST from `Map` to `JSON` {#cast-from-map-to-json}
@@ -116,9 +130,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
 #### CAST from deprecated `Object('json')` to `JSON` {#cast-from-deprecated-objectjson-to-json}
@@ -129,9 +143,9 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
 :::note
@@ -142,7 +156,7 @@ Our implementation will always assume the latter.
 For example:
 
 ```sql
-SELECT CAST('{"a.b.c" : 42}', 'JSON') as json
+SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 ```
 
 will return:
@@ -177,11 +191,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json──────────────────────────────────────────────────┐
-│ {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2020-01-01"} │
-│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}    │
-│ {"a":{"b":43,"g":43.43},"c":[4,5,6]}                  │
-└───────────────────────────────────────────────────────┘
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query (Reading JSON paths as sub-columns)"
@@ -286,11 +300,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json────────────────────────────────────────────────────────────────────────────────────────┐
-│ {"a":{"b":{"c":42,"g":42.42}},"c":[1,2,3],"d":{"e":{"f":{"g":"Hello, World","h":[1,2,3]}}}} │
-│ {"d":{"e":{"f":{"h":[4,5,6]}}},"f":"Hello, World!"}                                         │
-│ {"a":{"b":{"c":43,"e":10,"g":43.43}},"c":[4,5,6]}                                           │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
+│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
+│ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query"
@@ -298,11 +312,11 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 ```text title="Response"
-┌─json.^`a`.b───────────────┬─json.^`d`.e.f────────────────────┐
-│ {"c":42,"g":42.42}        │ {"g":"Hello, World","h":[1,2,3]} │
-│ {}                        │ {"h":[4,5,6]}                    │
-│ {"c":43,"e":10,"g":43.43} │ {}                               │
-└───────────────────────────┴──────────────────────────────────┘
+┌─json.^`a`.b───────────────────┬─json.^`d`.e.f──────────────────────────┐
+│ {"c":"42","g":42.42}          │ {"g":"Hello, World","h":["1","2","3"]} │
+│ {}                            │ {"h":["4","5","6"]}                    │
+│ {"c":"43","e":"10","g":43.43} │ {}                                     │
+└───────────────────────────────┴────────────────────────────────────────┘
 ```
 
 :::note
@@ -315,7 +329,6 @@ During parsing of `JSON`, ClickHouse tries to detect the most appropriate data t
 It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
 and is controlled by the same settings:
  
-- [input_format_try_infer_integers](/operations/settings/formats#input_format_try_infer_integers)
 - [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
 - [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
 - [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
@@ -583,7 +596,7 @@ Let's see an example of such a merge.
 First, let's create a table with a `JSON` column, set the limit of dynamic paths to `3` and then insert values with `5` different paths:
 
 ```sql title="Query"
-CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree ORDER BY id;
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
@@ -781,7 +794,7 @@ It's possible to alter an existing table and change the type of the column to th
 **Example**
 
 ```sql title="Query"
-CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
+CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
 INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
 ALTER TABLE test MODIFY COLUMN json JSON;
 SELECT json, json.a, json.b, json.c FROM test;

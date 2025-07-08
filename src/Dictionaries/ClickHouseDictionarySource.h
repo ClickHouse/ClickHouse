@@ -3,10 +3,10 @@
 #include <memory>
 #include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Context.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Interpreters/Context_fwd.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 
 namespace DB

@@ -48,7 +48,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             config,
             config_prefix);
 
-        disk->startup(context, skip_access_check);
+        disk->startup(skip_access_check);
         return disk;
     };
 

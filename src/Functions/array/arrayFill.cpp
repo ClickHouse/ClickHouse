@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
@@ -128,8 +128,54 @@ using FunctionArrayReverseFill = FunctionArrayMapped<ArrayFillImpl<true>, NameAr
 
 REGISTER_FUNCTION(ArrayFill)
 {
-    factory.registerFunction<FunctionArrayFill>();
-    factory.registerFunction<FunctionArrayReverseFill>();
+    FunctionDocumentation::Description description = R"(
+The `arrayFill` function sequentially processes a source array from the first element
+to the last, evaluating a lambda condition at each position using elements from
+the source and condition arrays. When the lambda function evaluates to false at
+position i, the function replaces that element with the element at position i-1
+from the current state of the array. The first element is always preserved
+regardless of any condition.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayFill(func(x [, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments = {
+        {"func(x [, y1, ..., yN])", "A lambda function `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])` which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Lambda function"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array", {"Array(T)"}};    FunctionDocumentation::Examples examples = {
+        {"Example with single array", "SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 1, 2, 2]"},
+        {"Example with two arrays", "SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res", "[5, 5, 6, 6]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayFill>(documentation);
+
+    FunctionDocumentation::Description description_reverse = R"(
+The `arrayReverseFill` function sequentially processes a source array from the last
+element to the first, evaluating a lambda condition at each position using elements
+from the source and condition arrays. When the condition evaluates to false at
+position i, the function replaces that element with the element at position i+1
+from the current state of the array. The last element is always preserved
+regardless of any condition.
+    )";
+    FunctionDocumentation::Syntax syntax_reverse = "arrayReverseFill(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_reverse = {
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value_reverse = {"Returns an array with elements of the source array replaced by the results of the lambda.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_reverse = {
+        {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 2, 2, NULL]"},
+        {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5, 6, 6, 2]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_reverse = {20, 1};
+    FunctionDocumentation::Category category_reverse = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_reverse = {description_reverse, syntax_reverse, arguments_reverse, returned_value_reverse, examples_reverse, introduced_in_reverse, category_reverse};
+
+    factory.registerFunction<FunctionArrayReverseFill>(documentation_reverse);
 }
 
 }

@@ -239,7 +239,7 @@ void DatabaseCatalog::startupBackgroundTasks()
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::shutdownImpl()
+void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
@@ -278,6 +278,9 @@ void DatabaseCatalog::shutdownImpl()
         LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
+
+    LOG_TRACE(log, "Shutting down system logs");
+    shutdown_system_logs();
 
     LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
@@ -627,18 +630,18 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
-        auto db_disk = getContext()->getDatabaseDisk();
         UUID db_uuid = db->getUUID();
 
         /// Delete the database.
         db->drop(local_context);
 
+        auto default_db_disk = getContext()->getDatabaseDisk();
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
         fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
-        db_disk->removeDirectoryIfExists(database_metadata_dir);
+        default_db_disk->removeDirectoryIfExists(database_metadata_dir);
         fs::path database_metadata_file = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        db_disk->removeFileIfExists(database_metadata_file);
+        default_db_disk->removeFileIfExists(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -670,7 +673,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name});
+            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
         }
     }
@@ -695,19 +698,22 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
 
     auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
     auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
-    auto db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(
-        db_disk, /*file_path=*/database_metadata_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        default_db_disk,
+        /*file_path=*/database_metadata_tmp_path,
+        /*content=*/statement,
+        getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     try
     {
         /// rename atomically replaces the old file with the new one.
-        db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
+        default_db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
     }
     catch (...)
     {
-        db_disk->removeFileIfExists(database_metadata_tmp_path);
+        default_db_disk->removeFileIfExists(database_metadata_tmp_path);
         throw;
     }
 }
@@ -929,13 +935,13 @@ DatabaseCatalog & DatabaseCatalog::instance()
     return *database_catalog;
 }
 
-void DatabaseCatalog::shutdown()
+void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 {
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
     {
-        database_catalog->shutdownImpl();
+        database_catalog->shutdownImpl(std::move(shutdown_system_logs));
     }
 }
 
@@ -1038,7 +1044,22 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
-    auto db_disk = getContext()->getDatabaseDisk();
+    // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
+    // we need to check the dropped metadata on these disks, not just the default database disk.
+    std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
+    String path = fs::path("metadata_dropped") / "";
+
+    auto db_map = getDatabases();
+    std::set<DiskPtr> metadata_disk_list;
+    for (const auto & [_, db] : db_map)
+    {
+        auto db_disk = db->getDisk();
+        if (!db_disk->existsDirectory(path))
+            continue;
+
+        metadata_disk_list.insert(std::move(db_disk));
+    }
+
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1046,45 +1067,41 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// and metadata still exists in ZooKeeper for ReplicatedMergeTree tables.
     /// If server restarts before such tables was completely dropped,
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
-
-    std::map<String, StorageID> dropped_metadata;
-    String path = fs::path("metadata_dropped") / "";
-
-    if (!db_disk->existsDirectory(path))
-        return;
-
-    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
+    for (const auto & db_disk : metadata_disk_list)
     {
-        /// File name has the following format:
-        /// database_name.table_name.uuid.sql
+        for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
+        {
+            /// File name has the following format:
+            /// database_name.table_name.uuid.sql
 
-        auto sub_path_filename = it->name();
+            auto sub_path_filename = it->name();
 
-        /// Ignore unexpected files
-        if (!sub_path_filename.ends_with(".sql"))
-            continue;
+            /// Ignore unexpected files
+            if (!sub_path_filename.ends_with(".sql"))
+                continue;
 
-        /// Process .sql files with metadata of tables which were marked as dropped
-        StorageID dropped_id = StorageID::createEmpty();
-        size_t dot_pos = sub_path_filename.find('.');
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.database_name = unescapeForFileName(sub_path_filename.substr(0, dot_pos));
+            /// Process .sql files with metadata of tables which were marked as dropped
+            StorageID dropped_id = StorageID::createEmpty();
+            size_t dot_pos = sub_path_filename.find('.');
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.database_name = unescapeForFileName(sub_path_filename.substr(0, dot_pos));
 
-        size_t prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.table_name = unescapeForFileName(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+            size_t prev_dot_pos = dot_pos;
+            dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.table_name = unescapeForFileName(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
-        prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+            prev_dot_pos = dot_pos;
+            dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
-        String full_path = path + sub_path_filename;
-        dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
+            String full_path = path + sub_path_filename;
+            dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
+        }
     }
 
     if (dropped_metadata.empty())
@@ -1095,7 +1112,10 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
     for (const auto & elem : dropped_metadata)
     {
-        runner([this, &elem](){ this->enqueueDroppedTableCleanup(elem.second, nullptr, elem.first); });
+        auto full_path = elem.first;
+        auto storage_id = elem.second.first;
+        auto db_disk = elem.second.second;
+        runner([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1125,13 +1145,12 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
     return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
-void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
+void DatabaseCatalog::enqueueDroppedTableCleanup(
+    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1148,7 +1167,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
         ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
-            log, getContext(), dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
+            log, getContext(), db_disk, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         assert(!create || create->uuid == table_id.uuid);
 
@@ -1185,17 +1204,18 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     {
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
-        tables_marked_dropped.emplace(first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, dropped_metadata_path, drop_time});
+        tables_marked_dropped.emplace(
+            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
     }
     else
     {
-        tables_marked_dropped.push_back
-        ({
-            table_id,
-            table,
-            dropped_metadata_path,
-            drop_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])
-        });
+        tables_marked_dropped.push_back(
+            {table_id,
+             table,
+             db_disk,
+             dropped_metadata_path,
+             drop_time
+                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1210,7 +1230,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
+    auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1432,7 +1452,7 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
+    auto db_disk = table.db_disk;
 
     if (table.table)
     {
@@ -1581,7 +1601,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             old_view_dependencies.push_back(the_table_from);
         }
     }
@@ -1613,7 +1633,7 @@ void DatabaseCatalog::updateDependencies(
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
         }
     }
@@ -1665,6 +1685,9 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
     const TableNamesSet & new_referential_dependencies,
     const TableNamesSet & new_loading_dependencies)
 {
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty())
+        return;
+
     std::lock_guard lock{databases_mutex};
 
     StorageID table_id = StorageID{table_name};

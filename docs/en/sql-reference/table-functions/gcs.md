@@ -16,7 +16,7 @@ This is an alias of the [s3 table function](../../sql-reference/table-functions/
 
 If you have multiple replicas in your cluster, you can use the [s3Cluster function](../../sql-reference/table-functions/s3Cluster.md) (which works with GCS) instead to parallelize inserts.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
@@ -24,41 +24,47 @@ gcs(named_collection[, option=value [,..]])
 ```
 
 :::tip GCS
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
-
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
+See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 :::
 
-**Parameters**
+## Arguments {#arguments}
 
-- `url` — Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
-  :::note GCS
-  The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
+| Argument                     | Description                                                                                                                                                                              |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                        | Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                       |
+| `NOSIGN`                     | If this keyword is provided in place of credentials, all the requests will not be signed.                                                                                                |
+| `hmac_key` and `hmac_secret` | Keys that specify credentials to use with given endpoint. Optional.                                                                                                                      |
+| `format`                     | The [format](/sql-reference/formats) of the file.                                                                                                                                        |
+| `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
+| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
+
+:::note GCS
+The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
+
 ```text
   https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
-  ```
-  and not ~~https://storage.cloud.google.com~~.
-  :::
-- `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
-- `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
-- `format` — The [format](/sql-reference/formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
+```
+
+and not ~~https://storage.cloud.google.com~~.
+:::
 
 Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
- - `access_key_id` — `hmac_key`, optional.
- - `secret_access_key` — `hmac_secret`, optional.
- - `filename` — appended to the url if specified.
- - `use_environment_credentials` — enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`.
- - `no_sign_request` — disabled by default.
- - `expiration_window_seconds` — default value is 120.
+| Parameter                     | Description                                                                                                                                                                                                                       |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `access_key_id`               | `hmac_key`, optional.                                                                                                                                                                                                             |
+| `secret_access_key`           | `hmac_secret`, optional.                                                                                                                                                                                                          |
+| `filename`                    | Appended to the url if specified.                                                                                                                                                                                                 |
+| `use_environment_credentials` | Enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`. |
+| `no_sign_request`             | Disabled by default.                                                                                                                                                                                                              |
+| `expiration_window_seconds`   | Default value is 120.                                                                                                                                                                                                             |
 
-
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Examples**
+## Examples {#examples}
 
 Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
 
@@ -206,7 +212,6 @@ INSERT INTO TABLE FUNCTION
 ```
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.
 
-**See Also**
-
--   [S3 table function](s3.md)
--   [S3 engine](../../engines/table-engines/integrations/s3.md)
+## Related {#related}
+- [S3 table function](s3.md)
+- [S3 engine](../../engines/table-engines/integrations/s3.md)

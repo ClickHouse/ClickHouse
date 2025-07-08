@@ -1,8 +1,8 @@
-#include "ZooKeeper.h"
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
-#include "ZooKeeperImpl.h"
-#include "KeeperException.h"
-#include "TestKeeper.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/TestKeeper.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -16,7 +16,6 @@
 #include <Core/ServerUUID.h>
 #include <Interpreters/Context.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/map.h>
 #include <base/sort.h>
 
 #include <Poco/Net/NetException.h>
@@ -118,8 +117,10 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             /// We will keep the az info when starting new sessions
             availability_zones = args.availability_zones;
 
-            LOG_TEST(log, "Availability zones from config: [{}], client: {}",
-                fmt::join(collections::map(availability_zones, [](auto s){ return DB::quoteString(s); }), ", "),
+            LOG_TEST(
+                log,
+                "Availability zones from config: [{}], client: {}",
+                fmt::join(availability_zones | std::views::transform([](auto s) { return DB::quoteString(s); }), ", "),
                 DB::quoteString(args.client_availability_zone));
 
             if (args.availability_zone_autodetect)
@@ -771,7 +772,13 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Multi, requests[0]->getPath()));
+        auto & request = *requests[0];
+        impl->finalize(fmt::format(
+            "Operation timeout on {} of {} requests. First ({}): {}",
+            Coordination::OpNum::Multi,
+            requests.size(),
+            demangle(typeid(request).name()),
+            request.getPath()));
         return {Coordination::Error::ZOPERATIONTIMEOUT, ""};
     }
 

@@ -5,22 +5,20 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -29,6 +27,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -111,12 +110,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
-/// Headers in config file will have structure "headers.header.name" and "headers.header.value".
-/// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
-};
 
 bool urlWithGlobs(const String & uri)
 {
@@ -491,7 +484,8 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         pipeline->reset();
@@ -604,18 +598,34 @@ std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & ur
 }
 
 StorageURLSink::StorageURLSink(
-    const String & uri,
-    const String & format,
-    const std::optional<FormatSettings> & format_settings,
+    String uri_,
+    String format_,
+    const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block,
-    const ContextPtr & context,
-    const ConnectionTimeouts & timeouts,
-    const CompressionMethod compression_method,
-    const HTTPHeaderEntries & headers,
-    const String & http_method)
+    const ContextPtr & context_,
+    const ConnectionTimeouts & timeouts_,
+    const CompressionMethod & compression_method_,
+    HTTPHeaderEntries headers_,
+    String method)
     : SinkToStorage(sample_block)
+    , uri(std::move(uri_))
+    , format(std::move(format_))
+    , format_settings(format_settings_)
+    , context(context_)
+    , timeouts(timeouts_)
+    , compression_method(compression_method_)
+    , headers(std::move(headers_))
+    , http_method(std::move(method))
 {
-    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+}
+
+
+void StorageURLSink::initBuffers()
+{
+    if (write_buf)
+        return;
+
+    std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
     auto poco_uri = Poco::URI(uri);
@@ -636,7 +646,7 @@ StorageURLSink::StorageURLSink(
         compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
-    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
+    writer = FormatFactory::instance().getOutputFormat(format, *write_buf, getHeader(), context, format_settings);
 }
 
 
@@ -644,6 +654,9 @@ void StorageURLSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
+
+    initBuffers();
+
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
@@ -1186,12 +1199,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
             {
-                String next_uri = callback();
-                if (next_uri.empty())
+                auto task = callback();
+                if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(next_uri, max_addresses);
+                return getFailoverOptions(task->path, max_addresses);
             });
     }
     else if (is_url_with_globs)
@@ -1550,6 +1563,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
 {
+    /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
+    /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
+    static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys
+    {
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+        std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
+    };
+
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys, optional_regex_keys);
 
     configuration.url = collection.get<String>("url");
@@ -1640,7 +1661,7 @@ void registerStorageURL(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::URL,
+            .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }

@@ -1,4 +1,4 @@
-#include "MySQLHandler.h"
+#include <Server/MySQLHandler.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
@@ -18,6 +18,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
@@ -38,6 +39,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -504,10 +506,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
+        /// --- Workaround for Bug 56173.
         auto settings = query_context->getSettingsCopy();
-        settings[Setting::prefer_column_name_to_alias] = true;
-        query_context->setSettings(settings);
+        if (!settings[Setting::allow_experimental_analyzer])
+        {
+            settings[Setting::prefer_column_name_to_alias] = true;
+            query_context->setSettings(settings);
+        }
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);

@@ -12,6 +12,7 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -312,9 +313,45 @@ void registerStorageKafka(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::KAFKA,
+            .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
+}
+
+template <typename RevocationCb, typename AssignmentCb>
+void stopConsumerImpl(
+    cppkafka::Consumer& consumer,
+    RevocationCb revocation_cb,
+    AssignmentCb assignment_cb,
+    const std::chrono::milliseconds drain_timeout,
+    const LoggerPtr& log,
+    StorageKafkaUtils::ErrorHandler error_handler)
+{
+    consumer.set_revocation_callback(revocation_cb);
+
+    consumer.set_assignment_callback(assignment_cb);
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
+    }
+
+    StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }
 
 namespace StorageKafkaUtils
@@ -355,14 +392,13 @@ void consumerGracefulStop(
     //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
     //   (5) Poll the event queue to process any remaining callbacks.
 
-    consumer.set_revocation_callback(
-        [](const cppkafka::TopicPartitionList &)
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
         {
             // we don't care during the destruction
-        });
-
-    consumer.set_assignment_callback(
-        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        },
+        /*assignment*/ [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
         {
             if (!topic_partitions.empty())
             {
@@ -372,30 +408,24 @@ void consumerGracefulStop(
             // it's not clear if get_partition_queue will work in that context
             // as just after processing the callback cppkafka will call run assign
             // and that can reset the queues
+        },
+        drain_timeout, log, std::move(error_handler));
+}
 
-        });
-
-    try
-    {
-        auto assignment = consumer.get_assignment();
-
-        if (!assignment.empty())
+void consumerStopWithoutRebalance(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
         {
-            consumer.pause_partitions(assignment);
-
-            for (const auto& partition : assignment)
-            {
-                // that call disables the forwarding of the messages to the customer queue
-                consumer.get_partition_queue(partition);
-            }
-        }
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
-    }
-
-    drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+            // we don't care during the destruction
+        },
+        /*assignment*/ [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        },
+        drain_timeout, log, std::move(error_handler));
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
@@ -503,7 +533,7 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -515,10 +545,6 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id, context))
             return false;
     }
 
