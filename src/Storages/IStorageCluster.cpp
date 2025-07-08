@@ -213,7 +213,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         {
             LOG_DEBUG(log, "Check replica if has {} locality tasks", replica_index);
             // If this shard no belong task skip create shard level RemoteQueryExecutor
-            if (!(*this->extension->has_pending_task_checker.value())(replica_index)) {
+            if (!(*this->extension->has_pending_task_checker.value())(replica_index))
+            {
                 LOG_DEBUG(log, " Skip replica {} because it has no locality tasks", replica_index);
                 replica_index++;
                 continue;

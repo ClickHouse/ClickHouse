@@ -194,15 +194,18 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     return {};
 }
 
-String StorageObjectStorageStableTaskDistributor::getPathFromObjectInfo(ObjectInfoPtr object_info) {
-
+String StorageObjectStorageStableTaskDistributor::getPathFromObjectInfo(ObjectInfoPtr object_info)
+{
     String file_path;
     if (send_over_whole_archive && object_info->isArchive())
     {
         file_path = object_info->getPathOrPathToArchiveIfArchive();
-        LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                      "This will be suboptimal, consider turning on "
-                      "cluster_function_process_archive_on_multiple_nodes setting", file_path);
+        LOG_TEST(
+            log,
+            "Will send over the whole archive {} to replicas. "
+            "This will be suboptimal, consider turning on "
+            "cluster_function_process_archive_on_multiple_nodes setting",
+            file_path);
     }
     else
     {

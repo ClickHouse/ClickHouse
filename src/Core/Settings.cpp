@@ -1103,11 +1103,11 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard has no read file task after consistency hash assginment, skip assgin read task to this shard.
+    If a shard has no read file task after consistency hash assignment, skip assign read task to this shard.
 
 - 0 — skipping disabled.
 
-    All available shards will get read task from schduler.
+    All available shards will get read task from scheduler.
 )", 0) \
     \
     DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
