@@ -401,13 +401,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
     auto batch_load_size = keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size];
     if constexpr (use_rocksdb)
-    {
-        storage.container.startLoading();
-        if (batch_load_size != 0)
-        {
-            storage.container.startBatch();
-        }
-    }
+        storage.container.startLoading(batch_load_size);
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
@@ -481,15 +475,6 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             storage.nodes_digest += node.getDigest(path);
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
-
-        if constexpr (use_rocksdb)
-        {
-            if (batch_load_size && nodes_read % keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size] == 0)
-            {
-                storage.container.commitBatch();
-                storage.container.startBatch();
-            }
-        }
     }
 
     if constexpr (use_rocksdb)

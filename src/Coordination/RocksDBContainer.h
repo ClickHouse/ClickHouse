@@ -296,7 +296,7 @@ public:
         kv->key = key;
         kv->value.decodeFromString(buffer_str);
         updater(kv->value);
-        insertOrReplace<false>(key.toString(), kv->value);
+        insertOrReplace(key.toString(), kv->value);
         return const_iterator(kv);
     }
 
@@ -317,8 +317,9 @@ public:
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
     }
 
-    void startLoading()
+    void startLoading(size_t batch_size_)
     {
+        batch_size = batch_size_;
         if (rocksdb_ptr != nullptr)
             rocksdb_ptr->Close();
 
@@ -338,10 +339,14 @@ public:
                 rocksdb_dir, status.ToString());
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+
+        startBatch();
     }
 
     void finishLoading()
     {
+        commitBatch();
+
         if (rocksdb_ptr != nullptr)
             rocksdb_ptr->Close();
 
@@ -378,20 +383,24 @@ public:
 
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
-        
-        counter += batch_counter;
-        batch_counter = 0;
     }
 
-    template<bool need_get = true>
     void insertOrReplace(const std::string & key, Node & value)
     {
         rocksdb::Status status;
 
         if (write_batch)
         {
-
             write_batch->Put(key, value.getEncodedString());
+
+            ++batch_counter;
+            if (batch_counter == batch_size)
+            {
+                commitBatch();
+                batch_counter = 0;
+                startBatch();
+            }
+
             return;
         }
 
@@ -512,6 +521,7 @@ private:
     size_t counter{0};
 
     std::optional<rocksdb::WriteBatch> write_batch;
+    size_t batch_size = 0;
     size_t batch_counter = 0;
 
 };
