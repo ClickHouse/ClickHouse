@@ -42,6 +42,8 @@ struct ACL
         return std::tuple(permissions, scheme, id)
             < std::tuple(other.permissions, other.scheme, other.id);
     }
+
+    bool operator==(const ACL & other) const = default;
 };
 
 using ACLs = std::vector<ACL>;

@@ -104,6 +104,7 @@ add_subdirectory (compressor)
 add_subdirectory (disks)
 add_subdirectory (extract-from-config)
 add_subdirectory (format)
+add_subdirectory (fst-dump-tree)
 add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
@@ -199,6 +200,7 @@ clickhouse_program_install(clickhouse-compressor compressor)
 clickhouse_program_install(clickhouse-disks disks)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
+clickhouse_program_install(clickhouse-fst-dump-tree fst-dump-tree)
 clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
@@ -258,12 +260,12 @@ else()
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
-# A target to get stripped binary.
-# Note: this is different to the above (extract debug symbols to a separate place)
-add_custom_target(clickhouse-stripped ALL
-    COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
-    DEPENDS clickhouse
-    COMMENT "Stripping clickhouse binary" VERBATIM)
+if (BUILD_STRIPPED_BINARY)
+    add_custom_target(clickhouse-stripped ALL
+        COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"
+        DEPENDS clickhouse
+        COMMENT "Stripping clickhouse binary" VERBATIM)
+endif()
 
 if (ENABLE_TESTS)
     set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)

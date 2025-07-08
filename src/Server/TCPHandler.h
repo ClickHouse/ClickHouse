@@ -28,8 +28,8 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include "Client/IServerConnection.h"
-#include "IServer.h"
+#include <Client/IServerConnection.h>
+#include <Server/IServer.h>
 
 
 namespace CurrentMetrics
@@ -326,6 +326,7 @@ private:
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
+    void initMaybeCompressedOut(QueryState & state);
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);
     void initLogsBlockOutput(QueryState & state, const Block & block);

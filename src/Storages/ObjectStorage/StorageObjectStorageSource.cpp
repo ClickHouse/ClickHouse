@@ -1,4 +1,4 @@
-#include "StorageObjectStorageSource.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>
@@ -75,9 +75,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    FormatParserGroupPtr parser_group_,
+    size_t max_parsing_threads_,
     bool need_only_count_)
-    : ISource(info.source_header, false)
+    : SourceWithKeyCondition(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -85,7 +85,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , parser_group(std::move(parser_group_))
+    , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -101,6 +101,11 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     create_reader_pool->wait();
+}
+
+void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
+{
+    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -332,7 +337,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !parser_group->filter_actions_dag)
+            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -368,11 +373,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_storage,
         read_from_format_info,
         format_settings,
+        key_condition,
         read_context,
         &schema_cache,
         log,
         max_block_size,
-        parser_group,
+        max_parsing_threads,
         need_only_count);
 }
 
@@ -383,11 +389,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    FormatParserGroupPtr parser_group,
+    size_t max_parsing_threads,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -490,12 +497,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            parser_group,
+            need_only_count ? 1 : max_parsing_threads,
+            std::nullopt,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
+
+        if (key_condition_)
+            input_format->setKeyCondition(key_condition_);
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -654,7 +665,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
         : effective_read_settings.remote_fs_buffer_size;
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);

@@ -9,9 +9,7 @@ namespace BuzzHouse
 
 String StatementGenerator::nextComment(RandomGenerator & rg) const
 {
-    std::uniform_int_distribution<uint32_t> strlens(0, fc.max_string_length);
-
-    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, strlens(rg.generator));
+    return rg.nextSmallNumber() < 4 ? "''" : rg.nextString("'", true, rg.nextStrlen());
 }
 
 void collectColumnPaths(
@@ -167,6 +165,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
@@ -578,22 +577,6 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
 
         col->set_column(entry.path[i].cname);
     }
-}
-
-String StatementGenerator::columnPathRef(const ColumnPathChain & entry) const
-{
-    String res = "`";
-
-    for (size_t i = 0; i < entry.path.size(); i++)
-    {
-        if (i != 0)
-        {
-            res += ".";
-        }
-        res += entry.path[i].cname;
-    }
-    res += "`";
-    return res;
 }
 
 void StatementGenerator::colRefOrExpression(
@@ -1569,18 +1552,38 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(next_dist1(rg.generator));
         }
         break;
-        case IndexType::IDX_text:
-            if (rg.nextBool())
-            {
-                static const DB::Strings & tokenizerVals = {"default", "ngram", "noop"};
+        case IndexType::IDX_text: {
+            static const DB::Strings & tokenizerVals = {"default", "ngram", "split", "no_op"};
+            const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
 
-                idef->add_params()->set_unescaped_sval("tokenizer = '" + rg.pickRandomly(tokenizerVals) + "'");
-            }
+            idef->add_params()->set_unescaped_sval("tokenizer = '" + next_tokenizer + "'");
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(2, 8);
 
                 idef->add_params()->set_unescaped_sval("ngram_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (next_tokenizer == "split" && rg.nextBool())
+            {
+                String buf;
+                DB::Strings separators = {"叫", "😉", "a", "b", "c", ",", "\\\\", "\"", "\\'", "\\t", "\\n", " ", "1", "."};
+                std::uniform_int_distribution<size_t> next_dist(UINT32_C(0), separators.size());
+
+                std::shuffle(separators.begin(), separators.end(), rg.generator);
+                const size_t nlen = next_dist(rg.generator);
+                buf += "separators = [";
+                for (size_t i = 0; i < nlen; i++)
+                {
+                    if (i != 0)
+                    {
+                        buf += ", ";
+                    }
+                    buf += "'";
+                    buf += separators[i];
+                    buf += "'";
+                }
+                buf += "]";
+                idef->add_params()->set_unescaped_sval(std::move(buf));
             }
             if (rg.nextBool())
             {
@@ -1589,7 +1592,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 idef->add_params()->set_unescaped_sval(
                     "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
             }
-            break;
+        }
+        break;
         case IndexType::IDX_vector_similarity:
             idef->add_params()->set_sval("hnsw");
             idef->add_params()->set_sval(rg.nextBool() ? "cosineDistance" : "L2Distance");
@@ -1699,12 +1703,12 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
 
-    if (noption < 4)
+    if (noption < 3)
     {
         b.teng = MergeTree;
         return;
     }
-    if (noption < 9)
+    if (noption < 6)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, VersionedCollapsingMergeTree);
         b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));
@@ -2113,7 +2117,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.hostname);
+            dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2126,7 +2130,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.hostname);
+            dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2139,7 +2143,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
             est->mutable_database()->set_database(sc.database);
             est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            dsd->set_host(sc.hostname);
+            dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
@@ -2149,7 +2153,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         {
             const ServerCredentials & sc = fc.redis_server.value();
 
-            dsd->set_host(sc.hostname);
+            dsd->set_host(sc.server_hostname);
             dsd->set_port(std::to_string(sc.port));
             dsd->set_user(sc.user);
             dsd->set_password(sc.password);
