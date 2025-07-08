@@ -162,6 +162,9 @@ def main():
         )
         res = results[-1].is_ok()
 
+    # Activate FIPS-permissive config for OpenSSL
+    os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"
+
     files = []
     if res and JobStages.BUILD in stages:
         run_shell("sccache stats", "sccache --show-stats")
