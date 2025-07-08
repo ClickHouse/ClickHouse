@@ -128,6 +128,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     const ColumnPtr & column,
     const ASTPtr & effective_codec_desc)
 {
+    std::optional<String> prev_stream_name;
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
@@ -163,6 +164,12 @@ void MergeTreeDataPartWriterWide::addStreams(
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+
+        /// If previous stream is not null it means it was Array offsets stream.
+        /// Can't apply lossy compression for offsets.
+        if (prev_stream_name && column_streams[*prev_stream_name]->compressor.getCodec()->isLossyCompression())
+            column_streams[*prev_stream_name]->compressor.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
+        prev_stream_name = stream_name;
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -226,6 +233,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         /// Don't write offsets more than one time for Nested type.
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
+
 
         return &column_streams.at(stream_name)->compressed_hashing;
     };
@@ -447,6 +455,12 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
+        /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+        /// require specifying the array dimensions before compression starts.
+        /// For 1D arrays, it's simply the length.
+        auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
+        setVectorDimensionsIfNeeded(compression_codec, &column);
+
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     }, name_and_type.type, column.getPtr());
 }
@@ -534,8 +548,13 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
 
     String escaped_name = escapeForFileName(name);
-    String mrk_path = escaped_name + marks_file_extension;
-    String bin_path = escaped_name + DATA_FILE_EXTENSION;
+    String stream_name;
+    if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && escaped_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+        stream_name = sipHash128String(escaped_name);
+    else
+        stream_name = escaped_name;
+    String mrk_path = stream_name + marks_file_extension;
+    String bin_path = stream_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
     if (!getDataPartStorage().existsFile(mrk_path))

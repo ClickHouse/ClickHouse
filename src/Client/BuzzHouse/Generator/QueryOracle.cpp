@@ -14,28 +14,6 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-static const std::unordered_map<OutFormat, InFormat> outIn{
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_CSV, InFormat::IN_CSV},
-    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-    {OutFormat::OUT_Values, InFormat::IN_Values}};
-
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -48,8 +26,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
     const uint32_t combination = 0;
 
-    can_test_query_success = fc.compare_success_results && rg.nextBool();
-    gen.setAllowEngineUDF(!can_test_query_success);
+    can_test_oracle_result = fc.compare_success_results && rg.nextBool();
+    gen.setAllowEngineUDF(!can_test_oracle_result);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.resetAliasCounter();
@@ -163,8 +141,8 @@ void QueryOracle::insertOnTableOrCluster(
         /// If the table is set on cluster, always insert to all replicas/shards
         ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
-        cdf->set_cname(ClusterFunc::clusterAllReplicas);
-        cdf->set_ccluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        cdf->set_all_replicas(true);
+        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (rg.nextSmallNumber() < 4)
         {
@@ -217,7 +195,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     gen.entries.clear();
 
     addLimitOrOffset(rg, gen, ncols, sel);
-    ts->set_format(rg.pickRandomly(outIn));
+    ts->set_format(rg.pickRandomly(StatementGenerator::outIn));
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -232,18 +210,19 @@ void QueryOracle::generateExportQuery(
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
-    OutFormat outf = rg.pickRandomly(outIn);
+    OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
-    can_test_query_success &= test_content;
+    can_test_oracle_result &= test_content;
     /// Remove the file if exists
     if (!std::filesystem::remove(cnfile, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(snfile.generic_string());
+    ff->set_fname(FileFunc_FName::FileFunc_FName_file);
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    if (!can_test_query_success && rg.nextSmallNumber() < 3)
+    if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
         gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
@@ -258,7 +237,7 @@ void QueryOracle::generateExportQuery(
             buf += fmt::format(
                 "{}{} {}{}{}{}",
                 first ? "" : ", ",
-                entry.getBottomName(),
+                entry.columnPathRef(),
                 entry.path.size() > 1 ? "Array(" : "",
                 entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
@@ -279,16 +258,16 @@ void QueryOracle::generateExportQuery(
     }
     if (rg.nextSmallNumber() < 10)
     {
-        const auto & settings = can_test_query_success ? serverSettings : formatSettings;
+        const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
         gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
         const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_query_success; i++)
+        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
         {
             const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
-            can_test_query_success &= !ochs.changes_behavior;
+            can_test_oracle_result &= !ochs.changes_behavior;
         }
     }
     /// Set the table on select
@@ -329,8 +308,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf
-        = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
+    const InFormat & inf = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
+                                                                                 : StatementGenerator::outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -348,7 +327,7 @@ void QueryOracle::generateImportQuery(
         iff->set_fcomp(ff.fcomp());
     }
 
-    if (!can_test_query_success && rg.nextSmallNumber() < 10)
+    if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
     {
         /// If can't test success, swap settings sometimes
         svs = nins->mutable_setting_values();
@@ -359,7 +338,7 @@ void QueryOracle::generateImportQuery(
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());
     }
-    if ((can_test_query_success && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
+    if ((can_test_oracle_result && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
     {
         svs = svs ? svs : nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -387,13 +366,14 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 10);
+        const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
         {
-            const auto & toPickFrom = rg.nextMediumNumber() < 5 ? hotSettings : queryOracleSettings;
+            const auto & toPickFrom = rg.nextMediumNumber() < 6 ? hotSettings : queryOracleSettings;
             const String & setting = rg.pickRandomly(toPickFrom);
             const CHSetting & chs = queryOracleSettings.at(setting);
             SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
@@ -417,7 +397,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
                 setv->set_value(rg.pickRandomly(chs.oracle_values));
                 nsettings.push_back(rg.pickRandomly(chs.oracle_values));
             }
-            can_test_query_success &= !chs.changes_behavior;
+            can_test_oracle_result &= !chs.changes_behavior;
         }
     }
     return use_settings;
@@ -475,7 +455,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(outIn);
+        OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
         if (!std::filesystem::remove(qcfile, ec) && ec)
         {
@@ -488,6 +468,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             outf = OutFormat::OUT_CSV;
         }
         ff->set_outformat(outf);
+        ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = ins->mutable_select();
     }
 
@@ -707,7 +688,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
                         }
                         found_tables.insert(tname);
                         res = !t.hasClickHousePeer();
-                        can_test_query_success &= t.hasClickHousePeer();
+                        can_test_oracle_result &= t.hasClickHousePeer();
                     }
                 }
             }
@@ -802,7 +783,7 @@ void QueryOracle::resetOracleValues()
     peer_query = PeerQuery::AllPeers;
     measure_performance = false;
     first_success = other_steps_sucess = true;
-    can_test_query_success = fc.compare_success_results;
+    can_test_oracle_result = fc.compare_success_results;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
 }
@@ -830,9 +811,9 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
 
 void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalIntegrations & ei, const String & oracle_name)
 {
-    if (other_steps_sucess)
+    if (other_steps_sucess && can_test_oracle_result)
     {
-        if (can_test_query_success && first_success != success)
+        if (first_success != success)
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
         }

@@ -1620,6 +1620,8 @@ def test_create_alter_sleeping(started_cluster, engine):
     assert "n_idx" in dummy_node.query(
         """
         SYSTEM SYNC DATABASE REPLICA create_alter_sleeping;
+        -- In case DDL task has been executed on another replica we need to sync the table
+        SYSTEM SYNC REPLICA create_alter_sleeping.t;
         SHOW CREATE TABLE create_alter_sleeping.t;
         """, timeout=10
     )

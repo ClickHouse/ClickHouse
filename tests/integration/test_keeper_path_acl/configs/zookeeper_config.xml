@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>node</host>
+            <port>9181</port>
+        </node>
+
+        <!-- Add identity for authentication to get auth ACL -->
+        <identity>testuser:testpass</identity>
+
+        <!-- Test path_acls configuration -->
+        <path_acls>
+            <acl1>
+                <path>/test_path</path>
+                <scheme>digest</scheme>
+                <id>user1:password1</id>
+                <permissions>read,write</permissions>
+            </acl1>
+        </path_acls>
+    </zookeeper>
+</clickhouse>

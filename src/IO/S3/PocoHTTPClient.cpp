@@ -6,7 +6,7 @@
 
 #if USE_AWS_S3
 
-#include "PocoHTTPClient.h"
+#include <IO/S3/PocoHTTPClient.h>
 
 #include <utility>
 #include <algorithm>
@@ -16,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
+#include <IO/Expect404ResponseScope.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -436,7 +437,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
         case Aws::Http::HttpMethod::HTTP_HEAD:
             if (get_request_throttler)
             {
-                UInt64 sleep_us = get_request_throttler->add(1, ProfileEvents::S3GetRequestThrottlerCount, ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
+                UInt64 sleep_us = get_request_throttler->add(1);
                 if (for_disk_s3)
                 {
                     ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerCount);
@@ -449,7 +450,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
         case Aws::Http::HttpMethod::HTTP_PATCH:
             if (put_request_throttler)
             {
-                UInt64 sleep_us = put_request_throttler->add(1, ProfileEvents::S3PutRequestThrottlerCount, ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
+                UInt64 sleep_us = put_request_throttler->add(1);
                 if (for_disk_s3)
                 {
                     ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerCount);
@@ -590,10 +591,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
-            else
+            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
-                LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
+                LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
@@ -679,9 +680,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
@@ -695,9 +694,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));

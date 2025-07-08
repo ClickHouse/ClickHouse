@@ -1,4 +1,4 @@
-#include "LocalConnection.h"
+#include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -59,7 +59,9 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    session->makeSessionContext();
+    ContextMutablePtr session_context = session->makeSessionContext();
+    /// Re-apply settings from the command line arguments
+    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
 }
 
 LocalConnection::LocalConnection(
@@ -686,9 +688,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                /// Send external table name (empty name is the main table)
-                /// (see TCPHandler::sendTableColumns)
-                packet.multistring_message = {"", state->columns_description->toString()};
+                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
             }
 
             if (state->block)

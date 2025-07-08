@@ -81,6 +81,9 @@ public:
     Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
 
+    /// Returns true if all disks are readonly.
+    virtual bool isReadOnly() const;
+
     /// Returns effective value of whether merges are allowed on this volume (false) or not (true).
     virtual bool areMergesAvoided() const { return false; }
 

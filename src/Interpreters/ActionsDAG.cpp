@@ -136,7 +136,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-size_t ActionsDAG::Node::getHash() const
+UInt64 ActionsDAG::Node::getHash() const
 {
     SipHash hash_state;
     updateHash(hash_state);
@@ -210,11 +210,11 @@ ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
         outputs.push_back(&addInput(input.name, input.type));
 }
 
-ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
+ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns)
 {
     for (const auto & input : inputs_)
     {
-        if (input.column && isColumnConst(*input.column))
+        if (input.column && isColumnConst(*input.column) && duplicate_const_columns)
         {
             addInput(input);
 
