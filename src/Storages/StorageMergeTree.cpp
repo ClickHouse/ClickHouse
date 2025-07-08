@@ -45,8 +45,8 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include "Core/BackgroundSchedulePool.h"
-#include "Core/Names.h"
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Names.h>
 
 namespace DB
 {
