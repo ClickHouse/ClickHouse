@@ -25,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <filesystem>
 
@@ -35,6 +36,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hdfs_replication;
+}
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
 namespace ErrorCodes
@@ -144,15 +150,14 @@ ObjectStoragePtr ObjectStorageFactory::create(
 namespace
 {
 
-S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context, S3UriStyle uri_style)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     String endpoint_subpath;
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    auto uri_style_indetifier_mode =  SettingFieldS3UriStyleTraits::fromString(config.getString(config_prefix + ".s3_uri_style_identifier_mode", "auto"));
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, uri_style_indetifier_mode);
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -182,10 +187,10 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -207,10 +212,10 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -233,10 +238,10 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* skip_access_check */) -> ObjectStoragePtr
         {
-            auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
             auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+            auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 

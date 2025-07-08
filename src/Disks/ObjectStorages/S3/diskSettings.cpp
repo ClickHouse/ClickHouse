@@ -33,7 +33,6 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsS3UriStyle s3_uri_style_identifier_mode;
 }
 
 namespace S3AuthSetting
@@ -55,6 +54,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+    extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
 namespace ErrorCodes
@@ -83,9 +83,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        config.getBool(config_prefix + ".readonly", false),
-        SettingFieldS3UriStyleTraits::fromString(config.getString(config_prefix + ".s3_uri_style_identifier_mode", "auto"))
-    );
+        config.getBool(config_prefix + ".readonly", false));
 }
 
 std::unique_ptr<S3::Client> getClient(
@@ -94,7 +92,7 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     bool for_disk_s3)
 {
-    auto url = S3::URI(endpoint, false, settings.uri_style_identifier_mode);
+    auto url = S3::URI(endpoint, false, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
     return getClient(url, settings, context, for_disk_s3);
