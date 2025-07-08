@@ -34,7 +34,7 @@ struct Packet
 
     Block block;
     std::unique_ptr<Exception> exception;
-    String columns_description;
+    std::vector<String> multistring_message;
     Progress progress;
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;

@@ -33,7 +33,7 @@ CREATE TABLE my_events (
     start UInt32,
     end UInt32
 )
-ENGINE = MergeTree
+Engine = MergeTree
 ORDER BY tuple();
 
 INSERT INTO my_events VALUES

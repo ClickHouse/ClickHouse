@@ -1,5 +1,5 @@
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionaryFactory.h"
+#include "DictionarySourceFactory.h"
 
 namespace DB
 {

@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {

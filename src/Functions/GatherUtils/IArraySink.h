@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/GatherUtils/ArraySinkVisitor.h>
+#include "ArraySinkVisitor.h"
 #include <Common/Exception.h>
 
 namespace DB

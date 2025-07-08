@@ -8,7 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ExternalResultDescription.h>
 #include <IO/ReadHelpers.h>
-#include <Dictionaries/CassandraSource.h>
+#include "CassandraSource.h"
 
 
 namespace DB

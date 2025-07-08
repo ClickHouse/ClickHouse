@@ -1,11 +1,11 @@
-#include <Dictionaries/NullDictionarySource.h>
+#include "NullDictionarySource.h"
 #include <Interpreters/Context.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/registerDictionaries.h>
+#include "DictionarySourceFactory.h"
+#include "DictionarySourceHelpers.h"
+#include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 
 namespace DB
@@ -34,8 +34,7 @@ std::string NullDictionarySource::toString() const
 void registerDictionarySourceNull(DictionarySourceFactory & factory)
 {
     auto create_table_source
-        = [=](const String & /*name*/,
-              const DictionaryStructure & /* dict_struct */,
+        = [=](const DictionaryStructure & /* dict_struct */,
               const Poco::Util::AbstractConfiguration & /* config */,
               const std::string & /* config_prefix */,
               Block & sample_block,

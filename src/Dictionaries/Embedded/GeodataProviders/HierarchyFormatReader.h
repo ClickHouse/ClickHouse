@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "IHierarchiesProvider.h"
 
 namespace DB
 {

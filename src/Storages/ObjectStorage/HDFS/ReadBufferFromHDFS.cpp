@@ -1,16 +1,22 @@
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
+#include "HDFSCommon.h"
+#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
-#include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
+#include <mutex>
 
+
+namespace ProfileEvents
+{
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -135,7 +141,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_read);
+                read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
             return true;
         }
@@ -178,7 +184,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         if (bytes_read && read_settings.remote_throttler)
         {
-            read_settings.remote_throttler->add(bytes_read);
+            read_settings.remote_throttler->add(
+                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
         }
         return bytes_read;
     }

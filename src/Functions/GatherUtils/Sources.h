@@ -13,9 +13,9 @@
 
 #include <DataTypes/EnumValues.h>
 
-#include <Functions/GatherUtils/IArraySource.h>
-#include <Functions/GatherUtils/IValueSource.h>
-#include <Functions/GatherUtils/Slices.h>
+#include "IArraySource.h"
+#include "IValueSource.h"
+#include "Slices.h"
 #include <Functions/FunctionHelpers.h>
 
 

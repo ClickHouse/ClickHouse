@@ -1,10 +1,10 @@
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
+#include "RegionsHierarchy.h"
 
 #include <IO/WriteHelpers.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "GeodataProviders/IHierarchiesProvider.h"
 
 
 namespace DB

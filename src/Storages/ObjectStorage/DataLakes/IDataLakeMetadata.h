@@ -2,7 +2,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
-#include <Interpreters/ActionsDAG.h>
+#include "Interpreters/ActionsDAG.h"
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 
@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -51,9 +50,6 @@ public:
     virtual bool update(const ContextPtr &) { return false; }
 
     virtual bool supportsSchemaEvolution() const { return false; }
-    virtual bool supportsWrites() const { return false; }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }

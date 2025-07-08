@@ -1,5 +1,22 @@
-from helpers.kafka.common_direct import *
-import helpers.kafka.common as k
+import logging
+import time
+
+import pytest
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.kafka_common import (
+    kafka_create_topic,
+    kafka_delete_topic,
+    get_kafka_producer,
+    producer_serializer,
+    kafka_produce,
+)
+
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -49,7 +66,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
     ]:
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_err")
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         instance.query(
             f"""
@@ -71,7 +88,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
         )
 
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-        k.kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -83,7 +100,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
 
         assert rows == len(messages)
 
-        k.kafka_delete_topic(admin_client, f"{format_name}_err")
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
     protobuf_schema = """
 syntax = "proto3";
@@ -119,10 +136,10 @@ message Message {
 
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_err")
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
-        k.kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -134,7 +151,7 @@ message Message {
 
         assert rows == len(messages)
 
-        k.kafka_delete_topic(admin_client, f"{format_name}_err")
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
     capn_proto_schema = """
 @0xd9dd7b35452d1c4f;
@@ -169,10 +186,10 @@ struct Message
 
     print("CapnProto")
 
-    k.kafka_create_topic(admin_client, "CapnProto_err")
+    kafka_create_topic(admin_client, "CapnProto_err")
 
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    k.kafka_produce(kafka_cluster, "CapnProto_err", messages)
+    kafka_produce(kafka_cluster, "CapnProto_err", messages)
 
     attempt = 0
     rows = 0
@@ -184,7 +201,7 @@ struct Message
 
     assert rows == len(messages)
 
-    k.kafka_delete_topic(admin_client, "CapnProto_err")
+    kafka_delete_topic(admin_client, "CapnProto_err")
 
 
 def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
@@ -198,7 +215,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     ]:
         print(format_name)
 
-        k.kafka_create_topic(admin_client, f"{format_name}_parsing_err")
+        kafka_create_topic(admin_client, f"{format_name}_parsing_err")
 
         instance.query(
             f"""
@@ -220,7 +237,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
         """
         )
 
-        k.kafka_produce(
+        kafka_produce(
             kafka_cluster,
             f"{format_name}_parsing_err",
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
@@ -245,7 +262,7 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: wh
         "Avro",
         "JSONEachRow",
     ]:
-        k.kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
+        kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
 
 
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
@@ -253,7 +270,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    k.kafka_create_topic(admin_client, "tomv")
+    kafka_create_topic(admin_client, "tomv")
 
     instance.query(
         f"""
@@ -279,7 +296,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     """
     )
 
-    k.kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
+    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
     expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
 """
@@ -294,7 +311,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
 
     assert result_system_kafka_consumers.replace("\t", "|") == expected_result
 
-    k.kafka_delete_topic(admin_client, "tomv")
+    kafka_delete_topic(admin_client, "tomv")
 
 
 if __name__ == "__main__":
