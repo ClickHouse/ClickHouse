@@ -1,16 +1,16 @@
 #include <iostream>
 #include <string>
 
-#include <Common/Arena.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
+#include <Common/Arena.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 
 using namespace DB;
 ContextMutablePtr context;
@@ -30,7 +30,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 namespace DB
 {
-    CompressionCodecPtr getCompressionCodecSZ3(UInt8 gcd_bytes_size);
+CompressionCodecPtr getCompressionCodecSZ3(UInt8 gcd_bytes_size);
 }
 
 struct AuxiliaryRandomData
@@ -63,7 +63,8 @@ try
     DB::Memory<> memory;
     memory.resize(output_buffer_size + codec->getAdditionalSizeAtTheEndOfBuffer());
 
-    codec->doDecompressData(reinterpret_cast<const char *>(data), static_cast<UInt32>(size), memory.data(), static_cast<UInt32>(output_buffer_size));
+    codec->doDecompressData(
+        reinterpret_cast<const char *>(data), static_cast<UInt32>(size), memory.data(), static_cast<UInt32>(output_buffer_size));
 
     return 0;
 }
