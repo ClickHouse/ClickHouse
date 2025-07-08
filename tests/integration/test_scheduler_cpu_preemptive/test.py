@@ -191,7 +191,7 @@ class QueryPool:
             while not self.stop_event.is_set():
                 mylog(f"Running query in workload {self.workload}")
                 node.query(
-                    f"with (select rand64() % {max_billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
+                    f"WITH {max_billions * 1000000000} AS T, (SELECT (T / 2) + (rand64() % T) / 2)::UInt64 AS N SELECT count(*) FROM numbers_mt(N) SETTINGS "
                     f"workload='{self.workload}', max_threads={max_threads}"
                 )
 
