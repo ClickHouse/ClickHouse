@@ -254,7 +254,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         // }
 
         scattered_block = current_block->cut(num_lhs_rows);
-        data = std::move(current_data);
+        std::swap(data, current_data);
 
         current_data.offsets_to_replicate.resize(num_lhs_rows);
         for (size_t row = 0; row < num_lhs_rows; ++row)
