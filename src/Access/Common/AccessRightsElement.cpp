@@ -323,6 +323,10 @@ void AccessRightsElement::replaceDeprecated()
         case AccessType::KAFKA:
         case AccessType::NATS:
         case AccessType::RABBITMQ:
+            if (!anyDatabase())
+                /// This will leave statements like `REVOKE S3 ON system.*` untouched
+                /// These statements will be deleted afterwards with `eraseNotGrantable()`
+                break;
             access_flags = AccessType::READ | AccessType::WRITE;
             parameter = DB::toString(current_access_type);
             break;
@@ -380,6 +384,8 @@ void AccessRightsElement::makeBackwardCompatible()
                     parameter.clear();
                 }
             }
+
+            eraseNotGrantable();
         }
     }
 }
