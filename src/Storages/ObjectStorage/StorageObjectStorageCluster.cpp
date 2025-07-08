@@ -212,7 +212,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
-        ids_of_hosts,
+        std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
     auto callback = std::make_shared<TaskIterator>(

@@ -13,12 +13,12 @@ namespace ErrorCodes
 
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
-    std::vector<std::string> ids_of_nodes_,
+    std::vector<std::string> && ids_of_nodes_,
     bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
     , connection_to_files(ids_of_nodes_.size())
-    , ids_of_nodes(ids_of_nodes_)
+    , ids_of_nodes(std::move(ids_of_nodes_))
     , iterator_exhausted(false)
 {
 }

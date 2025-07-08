@@ -43,15 +43,12 @@ def create_buckets_s3(cluster):
             file_path=os.path.join(SCRIPT_DIR, file),
         )
 
-    for obj in minio.list_objects(cluster.minio_bucket, recursive=True):
-        print(obj.object_name)
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        # clickhouse0 not a member of cluster_XXX
+        # clickhouse0 is not a member of cluster_XXX
         for i in range(6):
             cluster.add_instance(
                 f"clickhouse{i}",

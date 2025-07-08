@@ -17,7 +17,7 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(
         std::shared_ptr<IObjectIterator> iterator_,
-        std::vector<std::string> ids_of_nodes_,
+        std::vector<std::string> && ids_of_nodes_,
         bool send_over_whole_archive_);
 
     ObjectInfoPtr getNextTask(size_t number_of_current_replica);
