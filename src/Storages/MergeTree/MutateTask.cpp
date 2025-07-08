@@ -156,7 +156,7 @@ static void splitAndModifyMutationCommands(
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
-    LOG_TRACE(log, "splitAndModifyMutationCommands, Splitting mutation commands for part {}, commands: {} alter_conversions: {}", part->name, commands.toString(), alter_conversions->printMutationCommands());
+    LOG_TRACE(log, "splitAndModifyMutationCommands, Splitting mutation commands for part {}, commands: {}", part->name, commands.toString());
 
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
