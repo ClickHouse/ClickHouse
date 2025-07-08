@@ -108,6 +108,12 @@ AND
     c2.key = c1.key - 1
 LIMIT 10;
 
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size
+FROM system.parts
+WHERE table = 'tab' AND active = 1;
+
 DROP TABLE tab;
 
 SELECT 'Test with custom settings';
