@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <IO/Operators.h>
@@ -44,6 +45,13 @@ std::string DataTypeDateTime64::doGetName() const
     WriteBufferFromOwnString out;
     out << "DateTime64(" << this->scale << ", " << quote << getDateLUTTimeZone(time_zone) << ")";
     return out.str();
+}
+
+void DataTypeDateTime64::updateHashImpl(SipHash & hash) const
+{
+    Base::updateHashImpl(hash);
+    if (has_explicit_time_zone)
+        hash.update(getDateLUTTimeZone(time_zone));
 }
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
