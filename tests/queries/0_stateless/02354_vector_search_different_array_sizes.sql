@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-SET allow_experimental_vector_similarity_index = 1;
+SET enable_vector_similarity_index = 1;
 
 -- Tests that vector similarity indexes reject INSERTs of Arrays with sizes != than the size specified in the index
 

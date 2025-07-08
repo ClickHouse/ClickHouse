@@ -6727,12 +6727,12 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
-Allow experimental vector similarity index
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
+Enable vector similarity index.
+)", BETA, enable_vector_similarity_index) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", BETA) \

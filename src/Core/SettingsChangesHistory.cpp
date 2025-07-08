@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_if_final", 0, 1, "Change in default value of setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 1, "Change in default value of setting"},
             {"allow_experimental_time_series_aggregate_functions", false, false, "New setting to enable experimental timeSeries* aggregate functions."},
+            {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},

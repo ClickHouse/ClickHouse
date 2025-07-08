@@ -177,13 +177,13 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_full_text_index;
-    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool materialize_ttl_after_modify;
@@ -1007,14 +1007,14 @@ void MergeTreeData::checkProperties(
     }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
-    ///     SET allow_experimental_vector_similarity_index = 1;
+    ///     SET enable_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
     if (new_metadata.secondary_indices.hasType("vector_similarity") && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+            "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     if (!new_metadata.projections.empty())
     {
@@ -3943,17 +3943,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Experimental vector similarity index is disabled (turn on setting 'allow_experimental_vector_similarity_index')");
+            "Vector similarity index is disabled (turn on setting 'enable_vector_similarity_index')");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
-    ///     SET allow_experimental_vector_similarity_index = 1;
+    ///     SET enable_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+            "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
