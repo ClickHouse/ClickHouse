@@ -168,6 +168,14 @@ def test_independent_pools():
     assert_query(node, 'test_admin', 5)
 
 
+# For debugging purposes
+LOG = []
+def mylog(message: str, *args) -> None:
+    # Format a human-readable timestamp and append a tuple to LOG
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    LOG.append((timestamp, message, args))
+
+
 class QueryPool:
     def __init__(self, num_queries: int, workload: str) -> None:
         self.num_queries: int = num_queries
@@ -181,6 +189,7 @@ class QueryPool:
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}")
                 node.query(
                     f"with (select rand64() % {max_billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
                     f"workload='{self.workload}', max_threads={max_threads}"
@@ -196,6 +205,7 @@ class QueryPool:
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}")
                 node.query(
                     f"with (select {billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
                     f"workload='{self.workload}', max_threads={max_threads}"
@@ -207,12 +217,14 @@ class QueryPool:
             thread.start()
 
     def stop(self) -> None:
+        mylog(f"Stopping workload {self.workload}")
         self.stop_event.set()
         for thread in self.threads:
             thread.join()
         self.threads.clear()
         self.stop_event = threading.Event()
         self.stopped = True
+        mylog(f"Workload {self.workload} stopped")
 
 
 def get_all_dequeued_costs() -> dict[str, float]:
@@ -224,115 +236,73 @@ def get_all_dequeued_costs() -> dict[str, float]:
 
 # Checks that each workload receives specified share of CPU nanoseconds (dequeued_cost)
 def ensure_shares(minimum_runtime: float, assertions: list[tuple[str, float]]) -> None:
+    mylog("Starting ensure_shares")
+    time.sleep(0.2) # Give opportunity to all workloads to start participation
     initial_costs = get_all_dequeued_costs()
+    mylog(f"Initial costs: {initial_costs}")
     time.sleep(minimum_runtime)
     while True:
         time.sleep(0.1)
         current_costs = get_all_dequeued_costs()
         deltas = {workload: current_costs[workload] - initial_costs[workload] for workload, _ in assertions}
         total_delta = sum(deltas.values())
+        mylog(f"Current deltas: {deltas}, total delta: {total_delta}")
         if total_delta > 0 and all(
             abs(deltas[workload] / total_delta - share) / share < 0.1
             for workload, share in assertions
         ):
             break
+    mylog("Finished ensure_shares")
 
 
-def test_cpu_time_fairness_fixed_queries():
+def test_threads_oversubscription():
+    node.query(
+        f"""
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=1;
+        create workload production in all;
+    """
+    )
+
+    production = QueryPool(10, "production")
+    production.start_fixed(1, 2)
+    time.sleep(2)
+    production.stop()
+
+
+@pytest.mark.parametrize(
+    "queries,threads,production_length,development_length,randomize",
+    [
+        pytest.param(10, 2, 1, 1, False, id="fixed_equal"),
+        pytest.param(10, 2, 4, 0.5, False, id="fixed_longer_prd"),
+        pytest.param(10, 2, 0.5, 4, False, id="fixed_longer_dev"),
+        pytest.param(10, 2, 1, 1, True, id="random_equal"),
+        pytest.param(10, 2, 4, 0.5, True, id="random_longer_prd"),
+        pytest.param(10, 2, 0.5, 4, True, id="random_longer_dev"),
+    ]
+)
+def test_cpu_time_fairness_fixed_queries(queries, threads, production_length, development_length, randomize):
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=8;
         create workload production in all settings weight=3;
         create workload development in all;
-        create workload admin in all settings priority=-1;
     """
     )
 
-    admin = QueryPool(6, "admin")
-    production = QueryPool(6, "production")
-    development = QueryPool(6, "development")
+    production = QueryPool(queries, "production")
+    development = QueryPool(queries, "development")
 
-    production.start_fixed(10, 2)
-    development.start_fixed(10, 2)
+    if randomize:
+        production.start_random(production_length, threads)
+        development.start_random(development_length, threads)
+    else:
+        production.start_fixed(production_length, threads)
+        development.start_fixed(development_length, threads)
+
     ensure_shares(
         0.4,
-        [
-            ("production", 0.75),
-            ("development", 0.25),
-        ],
-    )
-    production.stop()
-    development.stop()
-
-    production.start_fixed(100, 2)
-    development.start_fixed(10, 2)
-    ensure_shares(
-        0.2,
-        [
-            ("production", 0.75),
-            ("development", 0.25),
-        ],
-    )
-    production.stop()
-    development.stop()
-
-    production.start_fixed(10, 2)
-    development.start_fixed(100, 2)
-    ensure_shares(
-        0.2,
-        [
-            ("production", 0.75),
-            ("development", 0.25),
-        ],
-    )
-    production.stop()
-    development.stop()
-
-
-def test_cpu_time_fairness_random_queries():
-    node.query(
-        f"""
-        create resource cpu (master thread, worker thread);
-        create workload all settings max_concurrent_threads=8;
-        create workload production in all settings weight=3;
-        create workload development in all;
-        create workload admin in all settings priority=-1;
-    """
-    )
-
-    admin = QueryPool(6, "admin")
-    production = QueryPool(6, "production")
-    development = QueryPool(6, "development")
-
-    production.start_random(10, 2)
-    development.start_random(10, 2)
-    ensure_shares(
-        0.4,
-        [
-            ("production", 0.75),
-            ("development", 0.25),
-        ],
-    )
-    production.stop()
-    development.stop()
-
-    production.start_random(100, 2)
-    development.start_random(10, 2)
-    ensure_shares(
-        0.2,
-        [
-            ("production", 0.75),
-            ("development", 0.25),
-        ],
-    )
-    production.stop()
-    development.stop()
-
-    production.start_random(10, 2)
-    development.start_random(100, 2)
-    ensure_shares(
-        0.2,
         [
             ("production", 0.75),
             ("development", 0.25),
