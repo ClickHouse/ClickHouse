@@ -108,6 +108,7 @@ AND
     c2.key = c1.key - 1
 LIMIT 10;
 
+-- This query needs to check that data is really compressed
 SELECT
     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size
