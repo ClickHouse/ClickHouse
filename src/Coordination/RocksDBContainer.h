@@ -296,22 +296,17 @@ public:
         kv->key = key;
         kv->value.decodeFromString(buffer_str);
         updater(kv->value);
-        insertOrReplace(key.toString(), kv->value);
+        insertOrReplace(key.toString(), kv->value, /*update=*/true);
         return const_iterator(kv);
     }
 
     bool insert(const std::string & key, Node & value)
     {
-        std::string value_str;
-        rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &value_str);
-        if (status.IsNotFound())
+        auto status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
+        if (status.ok())
         {
-            status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
-            if (status.ok())
-            {
-                counter++;
-                return true;
-            }
+            counter++;
+            return true;
         }
 
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
@@ -320,6 +315,8 @@ public:
     void startLoading(size_t batch_size_)
     {
         batch_size = batch_size_;
+        if (batch_size == 0)
+            return;
         if (rocksdb_ptr != nullptr)
             rocksdb_ptr->Close();
 
@@ -345,6 +342,8 @@ public:
 
     void finishLoading()
     {
+        if (batch_size == 0)
+            return;
         commitBatch();
 
         if (rocksdb_ptr != nullptr)
@@ -361,7 +360,8 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 
-        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
+        auto * it = rocksdb_ptr->NewIterator(rocksdb::ReadOptions{});
+        counter = 0;
         for (it->SeekToFirst(); it->Valid(); it->Next())
         {
             ++counter;
@@ -385,10 +385,8 @@ public:
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
     }
 
-    void insertOrReplace(const std::string & key, Node & value)
+    void insertOrReplace(const std::string & key, Node & value, bool update = false)
     {
-        rocksdb::Status status;
-
         if (write_batch)
         {
             write_batch->Put(key, value.getEncodedString());
@@ -404,9 +402,10 @@ public:
             return;
         }
 
-        status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
+        auto status = rocksdb_ptr->Put(write_options, key, value.getEncodedString());
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
+        counter += !update;
     }
 
     using KeyPtr = std::unique_ptr<char[]>;
@@ -420,7 +419,7 @@ public:
     void insertOrReplace(KeyPtr key_data, size_t key_size, Node value)
     {
         std::string key(key_data.get(), key_size);
-        insertOrReplace(key, value);
+        insertOrReplace(key, value, /*update=*/false);
     }
 
     bool erase(const std::string & key)
