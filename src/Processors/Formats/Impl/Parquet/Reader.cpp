@@ -481,8 +481,9 @@ void Reader::prefilterAndInitRowGroups()
 
     if (need_to_find_bloom_filter_lengths_the_hard_way)
     {
-        /// Parquet metadata doesn't have bloom filter sizes, but we want to know them (at least an
-        /// upper bound) in advance, so that Prefetcher can coalesce it with other reads if it's small.
+        /// Parquet metadata is missing information about bloom filter sizes, but we want to know
+        /// them (at least an upper bound) in advance, so that Prefetcher can coalesce it with other
+        /// reads if it's small.
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
         std::vector<size_t> all_offsets;
@@ -640,7 +641,11 @@ void Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
     parq::PageHeader header;
     size_t header_size = deserializeThriftStruct(header, data.data(), data.size());
-    data = data.subspan(header_size);
+    decodeDictionaryPageImpl(header, data.subspan(header_size), column, column_info);
+}
+
+void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+{
     /// TODO [parquet]: Check checksum.
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > data.size())
@@ -915,11 +920,11 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     /// Validate.
 
     const auto & meta = column.meta->meta_data;
-    int64_t end_offset = std::min({
+    int64_t end_offset = meta.total_compressed_size + std::min({
             meta.data_page_offset,
             meta.__isset.dictionary_page_offset ? meta.dictionary_page_offset : INT64_MAX,
             meta.__isset.index_page_offset ? meta.index_page_offset : INT64_MAX
-        }) + meta.total_compressed_size;
+        });
     int64_t num_rows = row_group.meta->num_rows;
 
     int64_t prev_offset = meta.data_page_offset;
@@ -1361,7 +1366,14 @@ bool Reader::initializePage(const char * & data_ptr, const char * data_end, size
     }
     else if (header.type == parq::PageType::DICTIONARY_PAGE)
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary page");
+        if (column.dictionary.isInitialized())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk has multiple dictionary pages or inaccurate data_page_offset");
+
+        /// If we got here, this is a weird parquet file that has a dictionary page but no
+        /// dictionary_page_offset in ColumnMetaData. Not sure whether this is allowed, but spark
+        /// can output such files, so we have to support it.
+        decodeDictionaryPageImpl(header, page.data, column, column_info);
+        return false;
     }
     else if (header.type == parq::PageType::INDEX_PAGE)
     {

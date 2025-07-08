@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -17,11 +18,11 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int DUPLICATE_COLUMN;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int TYPE_MISMATCH;
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace DB::Parquet
@@ -68,7 +69,7 @@ void SchemaConverter::prepareForReading()
     for (size_t i = 0; i < found_columns.size(); ++i)
     {
         if (!found_columns[i])
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
     }
 }
 
@@ -246,6 +247,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
         const IDataType * primitive_type_hint = type_hint.get();
         bool output_nullable = false;
+        bool output_nullable_if_not_json = false;
         if (primitive_type_hint)
         {
             if (primitive_type_hint->lowCardinality())
@@ -258,12 +260,18 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType().get();
             }
         }
-        else
+        else if (!options.schema_inference_force_not_nullable)
         {
-            if ((levels.back().is_array == false || options.schema_inference_force_nullable) && !options.schema_inference_force_not_nullable)
+            if (levels.back().is_array == false)
             {
                 /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
                 output_nullable = true;
+            }
+            else if (options.schema_inference_force_nullable)
+            {
+                /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
+                /// to JSON columns for some reason. Keep this behavior for compatibility.
+                output_nullable_if_not_json = true;
             }
         }
 
@@ -293,7 +301,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         primitive.schema_idx = schema_idx - 1;
         primitive.name = name;
         primitive.levels = levels;
-        primitive.output_nullable = output_nullable;
+        primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
         primitive.decoder = std::move(decoder);
         primitive.raw_decoded_type = raw_decoded_type;
         for (const auto & level : levels)
@@ -504,7 +512,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             for (size_t i = 0; i < elements.size(); ++i)
             {
                 if (elements[i] == UINT64_MAX)
-                    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Requested tuple element {} of column {} was not found in parquet schema", tuple_type_hint->getNameByPosition(i), name);
+                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema", tuple_type_hint->getNameByPosition(i), name);
             }
             output.type = type_hint;
         }
@@ -658,17 +666,44 @@ void SchemaConverter::processPrimitiveColumn(
         return size == expected_size;
     };
 
-    auto is_output_type_fixed_string = [&](size_t expected_size) -> bool
-    {
-        const IDataType * output_type = type_hint ? type_hint : out_inferred_type.get();
-        const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(output_type);
-        return fixed_string_type && fixed_string_type->getN() == expected_size;
-    };
-
     auto is_output_type_string = [&]() -> bool
     {
         return get_output_type_index() == TypeIndex::String;
     };
+
+    /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
+    /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
+    /// matching size, use a trivial FixedSizeConverter.
+    /// E.g. don't do Decimal endianness conversion of INT96 timestamp conversion.
+    if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint))
+    {
+        size_t size = 0;
+        bool found = true;
+        switch (type)
+        {
+            case parq::Type::BOOLEAN: size = 1; break;
+            case parq::Type::INT32: size = 4; break;
+            case parq::Type::INT64: size = 8; break;
+            case parq::Type::INT96: size = 12; break;
+            case parq::Type::FLOAT: size = 4; break;
+            case parq::Type::DOUBLE: size = 8; break;
+            case parq::Type::FIXED_LEN_BYTE_ARRAY: size = size_t(element.type_length); break;
+
+            /// BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY fall through to normal type dispatch.
+            default:
+                found = false;
+                break;
+        }
+        if (found && size == fixed_string_type->getN())
+        {
+            out_inferred_type = std::make_shared<DataTypeFixedString>(size);
+            auto converter = std::make_shared<FixedStringConverter>();
+            converter->input_size = size;
+            out_decoder.allow_stats = type == parq::Type::FIXED_LEN_BYTE_ARRAY && !element.__isset.converted_type && !element.__isset.logicalType;
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+    }
 
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
@@ -741,52 +776,52 @@ void SchemaConverter::processPrimitiveColumn(
                 : std::static_pointer_cast<IDataType>(std::make_shared<DataTypeUInt64>());
         }
         else if (bits == 8)
-            converter->truncate_output = 1;
+            converter->output_size = 1;
         else if (bits == 16)
-            converter->truncate_output = 2;
+            converter->output_size = 2;
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
     }
-    else if (logical.__isset.TIME || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
+    else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// ClickHouse doesn't have data types for time of day.
-        /// Fall through to dispatch by physical type only (as plain integer).
-    }
-    else if (logical.__isset.TIMESTAMP || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS)
-    {
+        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
+        /// types as timestamps, since clickhouse doesn't have time-of-day type.
+        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
+
         UInt32 scale;
-        if (logical.TIMESTAMP.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS)
+        if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
-        else if (logical.TIMESTAMP.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS)
+        else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
             scale = 6;
-        else if (logical.TIMESTAMP.unit.__isset.NANOS)
+        else if (logical.TIMESTAMP.unit.__isset.NANOS || logical.TIME.unit.__isset.NANOS)
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
 
-        if (type != parq::Type::INT64)
+        if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
         out_inferred_type = std::make_shared<DataTypeDateTime64>(scale);
         auto converter = std::make_shared<IntConverter>();
-        converter->input_size = 8;
-        if (is_output_type_decimal(8, scale))
+        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
+        /// (i.e. time of day rather than timestamp).
+        converter->input_size = type == parq::Type::INT32 ? 4 : 8;
+
+        if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
         {
-            converter->field_decimal_scale = scale;
-            out_decoder.allow_stats = true;
-        }
-        else if (scale == 3 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
-        {
-            /// We generally don't use stats when nontrivial type cast is required, but we make an
-            /// exception for casting DateTime64(3) to DateTime. This comes up when round-tripping
-            /// DateTime values through parquet. Our writer writes DateTime (seconds) as
-            /// TIMESTAMP_MILLIS (milliseconds) because parquet doesn't have a more suitable type.
-            /// It's probably common to then read it back with DateTime type hint. It's pretty
-            /// important for min/max stats to work with timestamps, so we add this special case.
+            /// Special case: converting milliseconds to seconds.
+            /// We generally don't do such conversions during decoding, leaving it to castColumn.
+            /// And we usually don't use stats when a nontrivial castColumn is needed.
+            /// But in this case it's important to make stats work.
+            /// This comes up when round-tripping DateTime values through parquet. Our writer writes
+            /// DateTime (seconds) as TIMESTAMP_MILLIS (milliseconds) because parquet doesn't have
+            /// a more suitable type. It's probably common to then read it back with DateTime type
+            /// hint. It's pretty important for min/max stats to work with timestamps, so we add
+            /// this special case.
             ///
             /// We could generalize it and allow arbitrary Decimal scale and signedness conversions,
             /// but it doesn't seem worth the complexity and risk of bugs.
@@ -794,6 +829,16 @@ void SchemaConverter::processPrimitiveColumn(
             converter->field_signed = false;
             out_decoder.allow_stats = true;
         }
+        else
+        {
+            converter->field_decimal_scale = scale;
+            out_decoder.allow_stats = is_output_type_decimal(8, scale);
+            if (converter->input_size == 4)
+                /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
+                /// particular cast is not supported for some reason.
+                converter->output_size = 8;
+        }
+
         out_decoder.fixed_size_converter = std::move(converter);
 
         return;
@@ -862,9 +907,9 @@ void SchemaConverter::processPrimitiveColumn(
                 max_precision = 18;
                 out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int64>>(input_size, scale);
             }
-            else if (precision <= 36 && input_size <= 16)
+            else if (precision <= 38 && input_size <= 16)
             {
-                max_precision = 36;
+                max_precision = 38;
                 out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int128>>(input_size, scale);
             }
             else
@@ -885,9 +930,9 @@ void SchemaConverter::processPrimitiveColumn(
                 max_precision = 18;
                 out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int64>>(scale);
             }
-            else if (precision <= 36)
+            else if (precision <= 38)
             {
-                max_precision = 36;
+                max_precision = 38;
                 out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int128>>(scale);
             }
             else
@@ -970,10 +1015,12 @@ void SchemaConverter::processPrimitiveColumn(
             return;
         }
         case parq::Type::INT96:
-            /// TODO [parquet]:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INT96 not implemented");
-            //(leave allow_stats == false, INT96 sort order is undefined)
-            //return;
+        {
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(9);
+            out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
+            /// (Leaving allow_stats == false because INT96 sort order is undefined.)
+            return;
+        }
         case parq::Type::FLOAT:
         {
             out_inferred_type = std::make_shared<DataTypeFloat32>();
@@ -996,6 +1043,14 @@ void SchemaConverter::processPrimitiveColumn(
             auto converter = std::make_shared<TrivialStringConverter>();
             out_decoder.allow_stats = is_output_type_string();
             out_decoder.string_converter = std::move(converter);
+
+            if ((logical.__isset.JSON || converted == CONV::JSON) && options.enable_json)
+            {
+                /// Just output ColumnString and leave json parsing to castColumn.
+                /// Alternatively, we could add a custom StringConverter to avoid copying the strings.
+                out_decoded_type = std::move(out_inferred_type);
+                out_inferred_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            }
             return;
         }
         case parq::Type::FIXED_LEN_BYTE_ARRAY:
@@ -1003,7 +1058,6 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
-            out_decoder.allow_stats = is_output_type_fixed_string(converter->input_size) || is_output_type_string();
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }

@@ -321,6 +321,8 @@ struct Reader
         /// May be loaded early if we decide to use it for filtering (instead of bloom filter).
         /// Otherwise, loaded just before the first dictionary-encoded data page (so if we end up
         /// skipping all dictionary-encoded data pages, we never read the dictionary).
+        /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
+        /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
@@ -503,7 +505,8 @@ private:
     };
 
     void getHyperrectangleForRowGroup(const std::vector</*idx_in_output_block*/ std::optional<size_t>> & key_condition_columns, const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
-double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
+    double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
+    void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);

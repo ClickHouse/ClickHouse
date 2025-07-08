@@ -3,6 +3,7 @@
 #include <arrow/util/bit_stream_utils.h>
 
 #include <IO/VarInt.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB::ErrorCodes
 {
@@ -39,7 +40,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             requireRemainingBytes(1);
             bit_width = size_t(UInt8(*data));
             data += 1;
-            if (bit_width < 1 || bit_width > 8 * sizeof(T))
+            if (bit_width > 8 * sizeof(T) || (bit_width == 0 && limit > 1))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
         }
         else
@@ -48,7 +49,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             bit_width = 32 - __builtin_clz(UInt32(limit - 1));
         }
 
-        chassert(bit_width > 0 && bit_width <= 32);
+        chassert(bit_width <= 32);
     }
 
     void skip(size_t num_values) override
@@ -103,6 +104,14 @@ struct BitPackedRLEDecoder : public PageDecoder
     template <bool SKIP>
     void skipOrDecode(size_t num_values, T * out)
     {
+        if (bit_width == 0)
+        {
+            /// bit_width == 0 can be used for dictionary indices if the dictionary has only one value.
+            if constexpr (!SKIP)
+                memset(out, 0, num_values * sizeof(T));
+            return;
+        }
+
         const T value_mask = T((1ul << bit_width) - 1);
         /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
         ///                 which is very common as def levels for nullables.
@@ -388,8 +397,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     {
         switch (converter->input_size)
         {
-            case 32: decodeImpl<UInt32, true>(num_values, nullptr, [](UInt32 x) { return x; }); break;
-            case 64: decodeImpl<UInt64, true>(num_values, nullptr, [](UInt64 x) { return x; }); break;
+            case 4: decodeImpl<UInt32, true>(num_values, nullptr, [](UInt32 x) { return x; }); break;
+            case 8: decodeImpl<UInt64, true>(num_values, nullptr, [](UInt64 x) { return x; }); break;
             default: chassert(false);
         }
     }
@@ -414,8 +423,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 
         switch (converter->input_size)
         {
-            case 32: decodeImpl<UInt32, false>(num_values, to, [](UInt32 x) { return x; }); break;
-            case 64: decodeImpl<UInt64, false>(num_values, to, [](UInt64 x) { return x; }); break;
+            case 4: decodeImpl<UInt32, false>(num_values, to, [](UInt32 x) { return x; }); break;
+            case 8: decodeImpl<UInt64, false>(num_values, to, [](UInt64 x) { return x; }); break;
             default: chassert(false);
         }
 
@@ -1006,17 +1015,25 @@ static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_
 
 void IntConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
-    if (truncate_output.has_value())
+    if (output_size.has_value())
     {
         chassert(input_size == 4);
         auto to = col.insertRawUninitialized(num_values);
-        chassert(to.size() == num_values * truncate_output.value());
+        chassert(to.size() == num_values * output_size.value());
         /// Signedness doesn't matter here, we just need to copy the first 1 or 2 bytes of each
         /// group of 4 bytes.
-        if (*truncate_output == 1)
+        if (*output_size == 1)
             convertIntColumnImpl<UInt32, UInt8>(data.data(), to.data(), num_values);
-        else if (*truncate_output == 2)
+        else if (*output_size == 2)
             convertIntColumnImpl<UInt32, UInt16>(data.data(), to.data(), num_values);
+        else if (*output_size == 8)
+        {
+            chassert(input_signed == field_signed);
+            if (input_signed)
+                convertIntColumnImpl<Int32, Int64>(data.data(), to.data(), num_values);
+            else
+                convertIntColumnImpl<UInt32, UInt64>(data.data(), to.data(), num_values);
+        }
         else
             chassert(false);
     }
@@ -1031,7 +1048,7 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
         for (size_t i = values.size() - num_values; i < values.size(); ++i)
         {
             Int32 & days_num = values[i];
-            if (days_num     > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+            if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
             {
                 if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
@@ -1086,7 +1103,7 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     }
     else if (field_decimal_scale.has_value())
     {
-        switch (input_size)
+        switch (output_size.value_or(input_size))
         {
             case 4: out = DecimalField<Decimal32>(Int32(val), *field_decimal_scale); break;
             case 8: out = DecimalField<Decimal64>(val, *field_decimal_scale); break;
@@ -1296,5 +1313,49 @@ template struct BigEndianDecimalStringConverter<Int32>;
 template struct BigEndianDecimalStringConverter<Int64>;
 template struct BigEndianDecimalStringConverter<Int128>;
 template struct BigEndianDecimalStringConverter<Int256>;
+
+Int96Converter::Int96Converter()
+{
+    input_size = 12;
+}
+
+void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    std::span<char> to_span = col.insertRawUninitialized(num_values);
+    Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        const Int64 nanos = unalignedLoad<Int64>(data.data() + i * 12);
+        const Int64 julian_day = Int64(unalignedLoad<Int32>(data.data() + i * 12 + 8));
+
+        const Int64 DAY_NANOS = 86400'000'000'000;
+        /// (Allow negative values just in case. Maybe someone uses them to correct for the fact
+        ///  that julian days start at noon while unix days start at midnight.)
+        if (nanos < -DAY_NANOS || nanos > DAY_NANOS)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: time of day component {} is outside [0, {}]", nanos, DAY_NANOS);
+
+        /// Parquet says it uses julian day number, but it seems to be off by half a day.
+        /// For normal julian day number:
+        ///   unix time = (JD − 2440587.5) × 86400
+        /// Notice the ".5"; unix days start at midnight, but julian days start at noon.
+        /// But for parquet "julian" day number:
+        ///   unix time = (JD − 2440588) × 86400
+        /// I.e. parquet "julian" days seem to start at midnight instead of noon.
+        ///
+        /// This interpretation is consistent with the arrow reader code (DecodeInt96Timestamp in
+        /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
+        /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
+        bool overflow = false;
+        Int64 x;
+        overflow |= common::subOverflow(julian_day, 2440588l, x); // unix day number
+        overflow |= common::mulOverflow(x, DAY_NANOS, x); // unix nanoseconds
+        overflow |= common::addOverflow(x, nanos, x);
+
+        if (overflow)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+
+        to[i] = x;
+    }
+}
 
 }

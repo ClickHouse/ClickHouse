@@ -164,8 +164,9 @@ struct IntConverter : public FixedSizeConverter
 {
     bool input_signed = true;
 
-    /// If input_size == 4, this may be 1 or 2 to cast from INT32 to [U]Int8 or [U]Int16.
-    std::optional<size_t> truncate_output;
+    /// Cast to an integer of this size (in bytes). If nullopt, leave input_size.
+    /// Only allowed if input_size is 4.
+    std::optional<size_t> output_size;
 
     /// These determine the type of Field produced by convertField (when parsing min/max stats).
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
@@ -178,7 +179,7 @@ struct IntConverter : public FixedSizeConverter
 
     bool isTrivial() const override
     {
-        return !truncate_output.has_value() && date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
+        return !output_size.has_value() && date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
@@ -290,6 +291,13 @@ extern template struct BigEndianDecimalStringConverter<Int32>;
 extern template struct BigEndianDecimalStringConverter<Int64>;
 extern template struct BigEndianDecimalStringConverter<Int128>;
 extern template struct BigEndianDecimalStringConverter<Int256>;
+
+struct Int96Converter : public FixedSizeConverter
+{
+    Int96Converter();
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+};
 
 
 void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);

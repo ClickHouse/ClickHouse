@@ -31,6 +31,7 @@ struct ReadOptions
     bool schema_inference_force_not_nullable = false;
     bool null_as_default = true;
     bool schema_inference_skip_unsupported_columns = false;
+    bool enable_json = false;
 
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
