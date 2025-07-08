@@ -125,6 +125,7 @@ public:
             request->failed(std::make_exception_ptr(
                 Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed")));
         }
+        event_queue->cancelActivation(this);
     }
 
     bool isActive() override
