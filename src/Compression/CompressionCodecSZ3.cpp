@@ -302,5 +302,13 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
 }
 
+CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size, 
+    SZ3::ALGO algorithm = SZ3::ALGO_INTERP_LORENZO,
+    SZ3::EB error_bound_mode = SZ3::EB_REL,
+    double error_value = 0.001)
+{
+    return std::make_shared<CompressionCodecSZ3>(float_bytes_size, algorithm, error_bound_mode, error_value);
+}
+
 }
 #endif
