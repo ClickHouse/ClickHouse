@@ -42,7 +42,7 @@ namespace ErrorCodes
 
 namespace Setting 
 { 
-    extern const SettingsBool use_variant_as_common_type; 
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
