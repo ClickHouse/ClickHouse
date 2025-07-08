@@ -170,16 +170,36 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         /// Read segment metadata
         using GinSegmentDictionaries = std::unordered_map<UInt32, DB::GinSegmentDictionaryPtr>;
         GinSegmentDictionaries segment_dictionaries(number_of_segments);
+        if (version == DB::GinIndexStore::Format::v1)
+        {
+            struct GinIndexSegmentV1
+            {
+                UInt32 segment_id;
+                UInt32 next_row_id;
+                UInt64 postings_start_offset;
+                UInt64 dict_start_offset;
+            };
+            std::vector<GinIndexSegmentV1> segments(number_of_segments);
+            segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segments.data()), number_of_segments * sizeof(GinIndexSegmentV1));
+            for (UInt32 i = 0; i < number_of_segments; ++i)
+            {
+                auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
+                seg_dict->postings_start_offset = segments[i].postings_start_offset;
+                seg_dict->dict_start_offset = segments[i].dict_start_offset;
+                segment_dictionaries[segments[i].segment_id] = seg_dict;
+            }
+        }
+        else if (version == DB::GinIndexStore::Format::v2)
         {
             std::vector<DB::GinIndexSegment> segments(number_of_segments);
             segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segments.data()), number_of_segments * sizeof(DB::GinIndexSegment));
             for (UInt32 i = 0; i < number_of_segments; ++i)
             {
-                auto seg_id = segments[i].segment_id;
                 auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
                 seg_dict->postings_start_offset = segments[i].postings_start_offset;
                 seg_dict->dict_start_offset = segments[i].dict_start_offset;
-                segment_dictionaries[seg_id] = seg_dict;
+                seg_dict->fst_start_offset = segments[i].fst_start_offset;
+                segment_dictionaries[segments[i].segment_id] = seg_dict;
             }
         }
 
@@ -195,27 +215,45 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 }
 
                 const auto & segment_dict = it->second;
-                fmt::println(
-                    "[Segment {}]: dictionary data offset = {}, postings offset = {}",
-                    segment_id,
-                    segment_dict->dict_start_offset,
-                    segment_dict->postings_start_offset);
-
                 dictionary_read_buffer->seek(segment_dict->dict_start_offset, SEEK_SET);
                 if (version == DB::GinIndexStore::Format::v1)
                 {
+                    fmt::println(
+                        "[Segment {}]: dictionary data offset = {}, postings offset = {}",
+                        segment_id,
+                        segment_dict->dict_start_offset,
+                        segment_dict->postings_start_offset);
+
                     /// Read uncompressed FST size
                     size_t fst_size = 0;
                     readVarUInt(fst_size, *dictionary_read_buffer);
 
                     /// Read uncompressed FST blob
-                    segment_dict->offsets.getData().clear();
-                    segment_dict->offsets.getData().resize(fst_size);
-                    dictionary_read_buffer->readStrict(reinterpret_cast<char *>(segment_dict->offsets.getData().data()), fst_size);
+                    segment_dict->fst = std::make_unique<DB::FST::FiniteStateTransducer>();
+                    segment_dict->fst->getData().clear();
+                    segment_dict->fst->getData().resize(fst_size);
+                    dictionary_read_buffer->readStrict(reinterpret_cast<char *>(segment_dict->fst->getData().data()), fst_size);
                     fmt::println("[Segment {}]: FST size = {}", segment_id, formatReadableSizeWithBinarySuffix(fst_size));
                 }
                 else if (version == DB::GinIndexStore::Format::v2)
                 {
+                    fmt::println(
+                        "[Segment {}]: dictionary data offset = {}, term dictionary (FST) offset = {}, postings offset = {}",
+                        segment_id,
+                        segment_dict->dict_start_offset,
+                        segment_dict->dict_start_offset + segment_dict->fst_start_offset, // FST offset is relative
+                        segment_dict->postings_start_offset);
+
+                    /// Read bloom filter
+                    segment_dict->bloom_filter = std::make_unique<DB::GinSegmentDictionaryBloomFilter>();
+                    segment_dict->bloom_filter->deserialize(*dictionary_read_buffer);
+
+                    fmt::println(
+                        "[Segment {}]: bloom filter size = {}",
+                        segment_id,
+                        formatReadableSizeWithBinarySuffix(segment_dict->fst_start_offset));
+
+
                     /// Read FST size header
                     UInt64 fst_size_header = 0;
                     readVarUInt(fst_size_header, *dictionary_read_buffer);
@@ -223,8 +261,9 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     /// Get uncompressed FST size
                     size_t uncompressed_fst_size = fst_size_header >> 1;
 
-                    segment_dict->offsets.getData().clear();
-                    segment_dict->offsets.getData().resize(uncompressed_fst_size);
+                    segment_dict->fst = std::make_unique<DB::FST::FiniteStateTransducer>();
+                    segment_dict->fst->getData().clear();
+                    segment_dict->fst->getData().resize(uncompressed_fst_size);
                     if (fst_size_header & 0x1) /// FST is compressed
                     {
                         /// Read compressed FST size
@@ -239,7 +278,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                         codec->decompress(
                             buf.get(),
                             static_cast<UInt32>(compressed_fst_size),
-                            reinterpret_cast<char *>(segment_dict->offsets.getData().data()));
+                            reinterpret_cast<char *>(segment_dict->fst->getData().data()));
                         fmt::println(
                             "[Segment {}]: FST uncompressed size = {} | compressed size = {}",
                             segment_id,
@@ -249,7 +288,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     else
                     {
                         dictionary_read_buffer->readStrict(
-                            reinterpret_cast<char *>(segment_dict->offsets.getData().data()), uncompressed_fst_size);
+                            reinterpret_cast<char *>(segment_dict->fst->getData().data()), uncompressed_fst_size);
                         fmt::println(
                             "[Segment {}]: FST uncompressed size = {}",
                             segment_id,
@@ -322,7 +361,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
             for (const auto & [segment_id, segment_dict] : segment_dictionaries)
             {
-                const auto data = segment_dict->offsets.getData();
+                const auto data = segment_dict->fst->getData();
 
                 DB::ReadBufferFromMemory read_buffer(data.data(), data.size());
                 read_buffer.seek(data.size() - 1, SEEK_SET);
