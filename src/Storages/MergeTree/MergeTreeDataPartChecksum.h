@@ -5,6 +5,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Core/Types_fwd.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 #include <map>
 #include <optional>
@@ -60,6 +62,13 @@ struct MergeTreeDataPartChecksums
     bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
+
+    void addExistingFile(const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to)
+    {
+        LOG_DEBUG(getLogger("MergeTreeDataPartChecksums"), "Add existing file {} as {}", file_from, file_to);
+        if (auto it = source.files.find(file_from); it != source.files.end())
+            files.emplace(file_to, it->second);
+    }
 
     bool empty() const { return files.empty(); }
 

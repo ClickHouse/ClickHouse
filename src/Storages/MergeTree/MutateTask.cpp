@@ -391,7 +391,7 @@ static void splitAndModifyMutationCommands(
         }
         return result;
     }();
-    LOG_DEBUG(getLogger("AlterConversions"),
+    LOG_DEBUG(getLogger("splitAndModifyMutationCommands"),
         "for_file_renames: {}",
         fmt::join(renames, ", "));
 
@@ -1864,10 +1864,13 @@ private:
         auto settings = ctx->source_part->storage.getSettings();
 
         NameSet hardlinked_files;
+        NameSet renamed_droped_files;
 
         /// NOTE: Renames must be done in order
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            renamed_droped_files.insert(rename_from);
+
             if (rename_to.empty()) /// It's DROP COLUMN
             {
                 /// pass
@@ -1877,8 +1880,11 @@ private:
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
                     ctx->source_part->getDataPartStorage(), rename_from, rename_to);
                 hardlinked_files.insert(rename_from);
+
+                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, rename_from, rename_to);
             }
         }
+
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
@@ -1887,14 +1893,9 @@ private:
             if (ctx->files_to_skip.contains(file_name))
                 continue;
 
-            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
+            if (renamed_droped_files.contains(file_name))
             {
-                return rename_pair.first == file_name;
-            });
-
-            if (rename_it != ctx->files_to_rename.end())
-            {
-                /// RENAMEs and DROPs already processed
+                /// Already renamed or dropped
                 continue;
             }
 
@@ -1914,6 +1915,8 @@ private:
 
                     hardlinked_files.insert(it->name());
                 }
+
+                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, it->name(), it->name());
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
@@ -1940,6 +1943,8 @@ private:
                         hardlinked_files.insert(file_name_with_projection_prefix);
                     }
                 }
+
+                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, it->name(), it->name());
             }
         }
 
@@ -1952,12 +1957,13 @@ private:
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
-        ctx->new_data_part->checksums = ctx->source_part->checksums;
+        /// ctx->new_data_part->checksums = ctx->source_part->checksums;
 
-        for (const auto & file_to_skip : ctx->files_to_skip)
-            ctx->new_data_part->checksums.remove(file_to_skip);
+        // for (const auto & file_to_skip : ctx->files_to_skip)
+        //     ctx->new_data_part->checksums.remove(file_to_skip);
 
         LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: source part {} checksums files: {}", ctx->source_part->name, fmt::join(ctx->source_part->checksums.getFileNamesWithSizes(), ", "));
+        LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: new part {} checksums files: {}", ctx->new_data_part->name, fmt::join(ctx->new_data_part->checksums.getFileNamesWithSizes(), ", "));
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
@@ -2033,10 +2039,12 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            ctx->new_data_part->checksums.files.erase(rename_from);
+            LOG_DEBUG(ctx->log, "MutateSomePartColumnsTask: rename {} to {} for part {}", rename_from, rename_to, ctx->new_data_part->name);
+            // ctx->new_data_part->checksums.files.erase(rename_from);
 
-            if (!rename_to.empty())
-                ctx->new_data_part->checksums.files[rename_to] = ctx->source_part->checksums.files.at(rename_from);
+            // if (!rename_to.empty())
+            //    ctx->new_data_part->checksums.files[rename_to] = ctx->source_part->checksums.files.at(rename_from);
+            chassert(rename_to.empty() || ctx->new_data_part->checksums.files.contains(rename_to));
         }
 
         constexpr std::string proj_suffix = ".proj";

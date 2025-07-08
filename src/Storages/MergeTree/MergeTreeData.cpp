@@ -5077,7 +5077,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
 
     LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
             "checksums.txt file has {} files, part '{}' has {} files, "
-            "files in checksums: {}, files in part: {}"
+            "files in checksums: {}, files in part: {} "
             "Missed files in part: {}, Extra files in part: {}",
             part->checksums.files.size(),
             part->name,
