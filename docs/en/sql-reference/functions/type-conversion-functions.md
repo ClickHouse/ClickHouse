@@ -6236,7 +6236,7 @@ Result:
 
 ## reinterpret {#reinterpret}
 
-Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type. Destination type can be an array of fixed size type.
+Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
 
 **Syntax**
 
@@ -6247,7 +6247,7 @@ reinterpret(x, type)
 **Arguments**
 
 - `x` — Any type.
-- `type` — Destination type.
+- `type` — Destination type. If it is an array, then the array element type must be a fixed length type.
 
 **Returned value**
 
@@ -6270,6 +6270,7 @@ Result:
 └─────────────┴──────────────┴───────────────┘
 ```
 
+Query:
 ```sql
 SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS string_to_array_of_Float32;
 ```

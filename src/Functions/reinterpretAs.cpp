@@ -9,16 +9,16 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 
 #include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
@@ -107,9 +107,14 @@ public:
         else if (result_reinterpret_type.isArray())
         {
             WhichDataType from_data_type(from_type);
-            if (!from_data_type.isStringOrFixedString() || !to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            if (!from_data_type.isStringOrFixedString())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Cannot reinterpret {} as {} because only String or FixedString can be reinterpreted as Array of fixed length data type",
+                    "Cannot reinterpret {} as {} because only String or FixedString can be reinterpreted as array",
+                    from_type->getName(),
+                    to_type->getName());
+            if (!to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {} because the array element type is not fixed length",
                     from_type->getName(),
                     to_type->getName());
         }
