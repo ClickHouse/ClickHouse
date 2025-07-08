@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-// #include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
