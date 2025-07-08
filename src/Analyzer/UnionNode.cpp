@@ -41,7 +41,7 @@ namespace ErrorCodes
 }
 
 namespace Setting 
-{ 
+{
     extern const SettingsBool use_variant_as_common_type;
 }
 
