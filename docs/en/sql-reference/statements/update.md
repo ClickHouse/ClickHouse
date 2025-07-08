@@ -7,6 +7,16 @@ slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
+<ExperimentalBadge/>
+
+:::note
+Lightweight update is currently beta.
+To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
+If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+:::
+
 The lightweight `UPDATE` statement updates rows in a table `[db.]table` that match the expression `filter_expr`.
 It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) query, which is a heavyweight process that rewrites entire columns in data parts.
 It is only available for the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table engine family.
