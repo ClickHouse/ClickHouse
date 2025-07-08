@@ -197,7 +197,7 @@ public:
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-            "Column {} is not under aggregate function and not in GROUP BY keys. In query {}",
+            "Column '{}' is not under aggregate function and not in GROUP BY keys. In query {}",
             column_node->formatConvertedASTForErrorMessage(),
             query_node->formatASTForErrorMessage());
     }
