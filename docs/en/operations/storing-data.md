@@ -565,7 +565,7 @@ For example, when ClickHouse writes data from some table to a file `store/all_1_
 
 When writing the same file to `disk2`, it will actually be written to the physical disk at the path `/path1/path2/store/all_1_1_0/data.bin` in encrypted mode.
 
-### Required Parameters
+### Required Parameters {#required-parameters-encrypted-disk}
 
 | Parameter  | Type   | Description                                                                                                                                  |
 |------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------|
@@ -573,7 +573,7 @@ When writing the same file to `disk2`, it will actually be written to the physic
 | `disk`     | String | Type of disk to use for underlying storage.                                                                                                  |
 | `key`      | Uint64 | Key for encryption and decryption. Can be specified in hexadecimal using `key_hex`. Multiple keys can be specified using the `id` attribute. |
 
-### Optional Parameters
+### Optional Parameters {#optional-parameters-encrypted-disk}
 
 | Parameter        | Type   | Default        | Description                                                                                                                             |
 |------------------|--------|----------------|-----------------------------------------------------------------------------------------------------------------------------------------|
@@ -687,7 +687,7 @@ These settings should be defined in the disk configuration section.
 
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
 
-## File Cache Query/Profile Settings
+## File Cache Query/Profile Settings {#file-cache-query-profile-settings}
 
 | Setting                                                       | Type    | Default                 | Description                                                                                                                                                    |
 |---------------------------------------------------------------|---------|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -703,20 +703,20 @@ Cache configuration settings and cache query settings correspond to the latest C
 for earlier versions something might not be supported.
 :::
 
-#### Cache system tables
+#### Cache system tables {#cache-system-tables-file-cache}
 
 | Table Name                    | Description                                         | Requirements                                  |
 |-------------------------------|-----------------------------------------------------|-----------------------------------------------|
 | `system.filesystem_cache`     | Displays the current state of the filesystem cache. | None                                          |
 | `system.filesystem_cache_log` | Provides detailed cache usage statistics per query. | Requires `enable_filesystem_cache_log = true` |
 
-#### Cache commands
+#### Cache commands {#cache-commands-file-cache}
 
-##### `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` 
+##### `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-drop-filesystem-cache-on-cluster}
 
 This command is only supported when no `<cache_name>` is provided
 
-##### `SHOW FILESYSTEM CACHES` 
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 Show a list of filesystem caches which were configured on the server. 
 (For versions less than or equal to `22.8` the command is named `SHOW CACHES`)
@@ -731,7 +731,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 Show cache configuration and some general statistics for a specific cache. 
 Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions less
