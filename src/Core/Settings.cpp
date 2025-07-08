@@ -5649,7 +5649,7 @@ Use cache for remote filesystem. This setting does not turn on/off cache for dis
 Filesystem cache name to use for stateless table engines or data lakes
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_on_write_operations, false, R"(
-Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's disk configuration section.
+Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's cache disk configuration section.
 See ["Using local cache"](/operations/storing-data#using-local-cache) for more details.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
