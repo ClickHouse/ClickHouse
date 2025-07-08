@@ -33,6 +33,7 @@ class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+using CheckTaskFunc = std::function<bool(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -52,6 +53,7 @@ public:
     struct Extension
     {
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
+        std::optional<std::shared_ptr<CheckTaskFunc>> has_pending_task_checker = {};
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
