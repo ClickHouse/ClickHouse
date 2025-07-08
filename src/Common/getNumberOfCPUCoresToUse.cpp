@@ -1,4 +1,4 @@
-#include "getNumberOfCPUCoresToUse.h"
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #if defined(OS_LINUX)
 #    include <cmath>

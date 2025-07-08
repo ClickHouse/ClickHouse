@@ -6,7 +6,6 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Core/Field.h>
 
 namespace DB
 {
