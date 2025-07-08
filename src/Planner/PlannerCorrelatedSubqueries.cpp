@@ -55,7 +55,7 @@ namespace Setting
 
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
-extern const SettingsBool use_variant_as_common_type; 
+extern const SettingsBool use_variant_as_common_type;
 
 }
 
