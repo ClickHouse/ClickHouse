@@ -221,7 +221,8 @@ public:
     size_t recordQueryRun(const Key & key);
 
     /// For debugging and system tables
-    std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
+    std::vector<QueryResultCache::Cache::KeyMapped> dumpMemoryCache() const;
+    std::vector<QueryResultCache::DiskCache::KeyMapped> dumpDiskCache() const;
 
 private:
     void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const;

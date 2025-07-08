@@ -1211,9 +1211,14 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
     return times;
 }
 
-std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
+std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dumpMemoryCache() const
 {
     return memory_cache.dump();
+}
+
+std::vector<QueryResultCache::DiskCache::KeyMapped> QueryResultCache::dumpDiskCache() const
+{
+    return disk_cache.dump();
 }
 
 }
