@@ -45,6 +45,41 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
     return getAnyUnprocessedFile(number_of_current_replica);
 }
 
+bool StorageObjectStorageStableTaskDistributor::hasNextTask(size_t number_of_current_replica)
+{
+    LOG_TRACE(log, "Received request from replica {} check has a file task", number_of_current_replica);
+
+    if (connection_to_files.size() <= number_of_current_replica)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Received request with invalid replica number {}, max possible replica number {}",
+            number_of_current_replica,
+            connection_to_files.size() - 1);
+
+    {
+        std::lock_guard lock(mutex);
+        auto & files = connection_to_files[number_of_current_replica];
+        if (!files.empty())
+        {
+            return true;
+        }
+    }
+
+    if (auto file = getMatchingFileFromIterator(number_of_current_replica))
+    {
+        std::lock_guard lock(mutex);
+        String file_path = getPathFromObjectInfo(file);
+        connection_to_files[number_of_current_replica].push_back(file);
+        unprocessed_files.emplace(file_path, file);
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+
 size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path)
 {
     return ConsistentHashing(sipHash64(file_path), connection_to_files.size());
@@ -105,19 +140,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             }
         }
 
-        String file_path;
-        if (send_over_whole_archive && object_info->isArchive())
-        {
-            file_path = object_info->getPathOrPathToArchiveIfArchive();
-            LOG_TEST(log, "Will send over the whole archive {} to replicas. "
-                     "This will be suboptimal, consider turning on "
-                     "cluster_function_process_archive_on_multiple_nodes setting", file_path);
-        }
-        else
-        {
-            file_path = object_info->getPath();
-        }
-
+        String file_path = getPathFromObjectInfo(object_info);
         size_t file_replica_idx = getReplicaForFile(file_path);
         if (file_replica_idx == number_of_current_replica)
         {
@@ -169,6 +192,23 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     }
 
     return {};
+}
+
+String StorageObjectStorageStableTaskDistributor::getPathFromObjectInfo(ObjectInfoPtr object_info) {
+
+    String file_path;
+    if (send_over_whole_archive && object_info->isArchive())
+    {
+        file_path = object_info->getPathOrPathToArchiveIfArchive();
+        LOG_TEST(log, "Will send over the whole archive {} to replicas. "
+                      "This will be suboptimal, consider turning on "
+                      "cluster_function_process_archive_on_multiple_nodes setting", file_path);
+    }
+    else
+    {
+        file_path = object_info->getPath();
+    }
+    return file_path;
 }
 
 }

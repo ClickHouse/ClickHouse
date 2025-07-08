@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool skip_non_cache_locality_shards;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
@@ -197,6 +198,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     size_t replica_index = 0;
     auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
+    bool skip_non_cache_locality_shards = current_settings[Setting::skip_non_cache_locality_shards];
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
@@ -207,6 +209,16 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (pipes.size() >= max_replicas_to_use)
             break;
 
+        if (skip_non_cache_locality_shards && this->extension->has_pending_task_checker.has_value())
+        {
+            LOG_DEBUG(log, "Check replica if has {} locality tasks", replica_index);
+            // If this shard no belong task skip create shard level RemoteQueryExecutor
+            if (!(*this->extension->has_pending_task_checker.value())(replica_index)) {
+                LOG_DEBUG(log, " Skip replica {} because it has no locality tasks", replica_index);
+                replica_index++;
+                continue;
+            }
+        }
         /// We're taking all replicas as shards,
         /// so each shard will have only one address to connect to.
         auto try_results = shard_info.pool->getMany(

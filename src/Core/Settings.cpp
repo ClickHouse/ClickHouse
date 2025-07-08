@@ -1096,6 +1096,20 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
+   DECLARE(Bool, skip_non_cache_locality_shards, false, R"(
+Enables or disables .
+
+Possible values:
+
+- 1 — skipping enabled.
+
+    If a shard has no read file task after consistency hash assginment, skip assgin read task to this shard.
+
+- 0 — skipping disabled.
+
+    All available shards will get read task from schduler.
+)", 0) \
+    \
     DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 

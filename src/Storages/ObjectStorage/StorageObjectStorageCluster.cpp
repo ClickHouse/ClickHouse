@@ -212,7 +212,13 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+    auto check_task_callback = std::make_shared<CheckTaskFunc>(
+        [task_distributor](size_t number_of_current_replica) mutable -> bool
+        {
+            return task_distributor->hasNextTask(number_of_current_replica);
+        });
+
+    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback), .has_pending_task_checker = std::move(check_task_callback)};
 }
 
 }

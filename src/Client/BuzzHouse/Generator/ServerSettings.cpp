@@ -840,6 +840,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"skip_download_if_exceeds_query_cache", trueOrFalseSetting},
     {"skip_redundant_aliases_in_udf", trueOrFalseSettingNoOracle},
     {"skip_unavailable_shards", trueOrFalseSettingNoOracle},
+    {"skip_non_cache_locality_shards", trueOrFalseSettingNoOracle},
     /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
     {"splitby_max_substrings_includes_remaining_string", trueOrFalseSettingNoOracle},
     {"storage_file_read_method",
