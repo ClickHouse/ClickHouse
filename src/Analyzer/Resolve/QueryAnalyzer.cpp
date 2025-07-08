@@ -4491,6 +4491,11 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 if (resolved_identifier_query_node || resolved_identifier_union_node)
                 {
+                    bool is_cte = (resolved_identifier_query_node != nullptr && resolved_identifier_query_node->isCTE())
+                                || (resolved_identifier_union_node != nullptr && resolved_identifier_union_node->isCTE());
+                    if (is_cte)
+                        cte_copy_to_original_map.emplace(resolved_identifier.get(), table_identifier_resolve_result.resolved_identifier);
+
                     if (table_expression_modifiers.has_value())
                     {
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -5484,13 +5489,27 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 {
     auto from_node_type = join_tree_node->getNodeType();
 
+    auto try_get_original_cte_node = [this](const QueryTreeNodePtr & node) -> QueryTreeNodePtr
+    {
+        auto cte_it = cte_copy_to_original_map.find(node.get());
+        return cte_it != cte_copy_to_original_map.end() ? cte_it->second : QueryTreeNodePtr{};
+    };
+
     switch (from_node_type)
     {
         case QueryTreeNodeType::QUERY:
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
+            QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
+
+            if (original_cte_node)
+                ctes_in_resolve_process.insert(original_cte_node);
+
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+            if (original_cte_node)
+                ctes_in_resolve_process.erase(original_cte_node);
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -5612,9 +5631,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       */
     if (query_node_typed.isResolved())
         return;
-
-    if (query_node_typed.isCTE())
-        ctes_in_resolve_process.emplace(query_node);
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
@@ -5959,9 +5975,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
-
-    if (query_node_typed.isCTE())
-        ctes_in_resolve_process.erase(query_node);
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
@@ -5970,9 +5983,6 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
     if (union_node_typed.isResolved())
         return;
-
-    if (union_node_typed.isCTE())
-        ctes_in_resolve_process.insert(union_node);
 
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
 
@@ -6051,9 +6061,6 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }
-
-    if (union_node_typed.isCTE())
-        ctes_in_resolve_process.erase(union_node);
 }
 
 }
