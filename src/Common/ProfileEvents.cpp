@@ -128,34 +128,17 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
-    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server' throttler.", ValueType::Bytes) \
-    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
-    M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
-    M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
-    M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
-    M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
-    M(QueryLocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth' throttling.", ValueType::Microseconds) \
-    M(QueryLocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
-    M(QueryLocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
+    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
+    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
+    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
+    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
+    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
+    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttling.", ValueType::Microseconds) \
+    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
+    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
-    M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
-    M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
-    M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
-    M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
-    M(ApplyPatchesMicroseconds, "Total time spent applying patch parts to blocks", ValueType::Number) \
-    M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
-    M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
-    M(BuildPatchesJoinMicroseconds, "Total time spent building indexes and hash tables for applying patch parts with Join mode", ValueType::Number) \
-    M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
-    M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
-    M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
+    M(ReadTasksWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
+    M(MutationsAppliedOnFlyInAllReadTasks, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -247,10 +230,9 @@
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     \
-    M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
+    M(IcebergPartitionPrunnedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
-    M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
-    M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergMinMaxIndexPrunnedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
@@ -282,9 +264,6 @@
     M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
-    M(MarkCacheEvictedBytes, "Number of bytes evicted from the mark cache.", ValueType::Bytes) \
-    M(MarkCacheEvictedMarks, "Number of marks evicted from the mark cache.", ValueType::Number) \
-    M(MarkCacheEvictedFiles, "Number of mark files evicted from the mark cache.", ValueType::Number) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
@@ -308,7 +287,6 @@
     \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
     M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
-    M(CoalescingSortedMilliseconds, "Total time spent while coalescing sorted columns", ValueType::Milliseconds) \
     M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns", ValueType::Milliseconds) \
     M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns", ValueType::Milliseconds) \
     M(SummingSortedMilliseconds, "Total time spent while summing sorted columns", ValueType::Milliseconds) \
@@ -317,7 +295,6 @@
     \
     M(MutationTotalParts, "Number of total parts for which mutations tried to be applied", ValueType::Number) \
     M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate", ValueType::Number) \
-    M(MutationCreatedEmptyParts, "Number of total parts which were replaced to empty parts instead of running mutation", ValueType::Number) \
     M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation", ValueType::Number) \
     M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.", ValueType::Bytes) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
@@ -612,7 +589,6 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
-    M(FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease, "Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -775,7 +751,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
-    M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -857,6 +832,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCachePrecomputeRangesMicroseconds, "Distributed Cache read buffer event. Time spent to precompute read ranges", ValueType::Microseconds) \
     M(DistrCacheNextImplMicroseconds, "Distributed Cache read buffer event. Time spend in ReadBufferFromDistributedCache::nextImpl", ValueType::Microseconds) \
     M(DistrCacheStartRangeMicroseconds, "Distributed Cache read buffer event. Time spent to start a new read range with distributed cache", ValueType::Microseconds) \
+    M(DistrCacheIgnoredBytesWhileWaitingProfileEvents, "Distributed Cache read buffer event. Ignored bytes while waiting for profile events in distributed cache", ValueType::Number) \
     M(DistrCacheRangeChange, "Distributed Cache read buffer event. Number of times we changed read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
@@ -869,9 +845,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceiveResponseErrors, "Distributed Cache client event. Number of distributed cache errors when receiving response a request", ValueType::Number) \
     \
     M(DistrCachePackets, "Distributed Cache client event. Total number of packets received from distributed cache", ValueType::Number) \
-    M(DistrCacheDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were not ignored", ValueType::Bytes) \
+    M(DistrCachePacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were not ignored", ValueType::Bytes) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
-    M(DistrCacheUnusedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
+    M(DistrCacheUnusedPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
     M(DistrCacheUnusedPacketsBufferAllocations, "Distributed Cache client event. The number of extra buffer allocations in case we could not reuse existing buffer", ValueType::Number) \
     \
     M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
@@ -879,6 +855,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRegistryUpdates, "Distributed Cache registry event. Number of distributed cache registry updates", ValueType::Number) \
     M(DistrCacheHashRingRebuilds, "Distributed Cache registry event. Number of distributed cache hash ring rebuilds", ValueType::Number) \
     \
+    M(DistrCacheReadBytesFromCache, "Distributed Cache read buffer event. Bytes read from distributed cache", ValueType::Bytes) \
     M(DistrCacheReadBytesFromFallbackBuffer, "Distributed Cache read buffer event. Bytes read from fallback buffer", ValueType::Number) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
@@ -892,11 +869,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerContinueRequestPackets, "Distributed Cache server event. Number of ContinueRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerEndRequestPackets, "Distributed Cache server event. Number of EndRequest packets in DistributedCacheServer", ValueType::Number) \
-    M(DistrCacheServerReceivedCredentialsRefreshPackets, "Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerAckRequestPackets, "Distributed Cache server event. Number of AckRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
     M(DistrCacheServerReusedS3CachedClients, "Distributed Cache server event. The number of reused cached s3 clients", ValueType::Number) \
-    M(DistrCacheServerCredentialsRefresh, "Distributed Cache server event. The number of expired credentials were refreshed", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -968,7 +943,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromS3, "How many times we fetch data parts from S3", ValueType::Number) \
     \
-    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
+    M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number)                                                                                                                                                                                                                       \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
@@ -989,56 +964,27 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
     \
-    M(HTTPConnectionsCreated, "Number of created client HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsReset, "Number of reset client HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsPreserved, "Number of preserved client HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsExpired, "Number of expired client HTTP connections", ValueType::Number) \
-    M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
-    M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
+    M(HTTPConnectionsCreated, "Number of created http connections", ValueType::Number) \
+    M(HTTPConnectionsReused, "Number of reused http connections", ValueType::Number) \
+    M(HTTPConnectionsReset, "Number of reset http connections", ValueType::Number) \
+    M(HTTPConnectionsPreserved, "Number of preserved http connections", ValueType::Number) \
+    M(HTTPConnectionsExpired, "Number of expired http connections", ValueType::Number) \
+    M(HTTPConnectionsErrors, "Number of cases when creation of a http connection failed", ValueType::Number) \
+    M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating http connections", ValueType::Microseconds) \
     \
-    M(HTTPServerConnectionsCreated, "Number of created server HTTP connections", ValueType::Number) \
-    M(HTTPServerConnectionsReused, "Number of reused server HTTP connections", ValueType::Number) \
-    M(HTTPServerConnectionsPreserved, "Number of preserved server HTTP connections. Connection kept alive successfully", ValueType::Number) \
-    M(HTTPServerConnectionsExpired, "Number of expired server HTTP connections.", ValueType::Number) \
-    M(HTTPServerConnectionsClosed, "Number of closed server HTTP connections. Keep alive has not been negotiated", ValueType::Number) \
-    M(HTTPServerConnectionsReset, "Number of reset server HTTP connections. Server closes connection", ValueType::Number) \
-    \
-    M(AddressesDiscovered, "Total count of new addresses in DNS resolve results for HTTP connections", ValueType::Number) \
-    M(AddressesExpired, "Total count of expired addresses which is no longer presented in DNS resolve results for HTTP connections", ValueType::Number) \
-    M(AddressesMarkedAsFailed, "Total count of addresses which have been marked as faulty due to connection errors for HTTP connections", ValueType::Number) \
+    M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections", ValueType::Number) \
+    M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections", ValueType::Number) \
+    M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections", ValueType::Number) \
     \
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP", ValueType::Number) \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
-    M(WriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by WriteBufferFromHTTP", ValueType::Number) \
-    M(WriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by WriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
-    \
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
     M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
-    M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
+    M(ConcurrencyControlSlotsAcquired, "Total number of CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
-    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots", ValueType::Microseconds) \
-    \
-    M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
-    M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
-    \
-    M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
-    M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds, "Total time spend on fetching fresh metadata inside merge coordinator", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeCoordinatorFilterMicroseconds, "Total time spend on filtering prepared merges inside merge coordinator", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeCoordinatorSelectMergesMicroseconds, "Total time spend on finding merge using merge selectors inside merge coordinator", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeCoordinatorLockStateForShareCount, "Total number of for share captures of coordinator state lock", ValueType::Number) \
-    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyCount, "Total number of exclusive captures of coordinator state lock", ValueType::Number) \
-    M(CoordinatedMergesMergeCoordinatorLockStateForShareMicroseconds, "Total time spend on locking coordinator state mutex for share", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeCoordinatorLockStateExclusivelyMicroseconds, "Total time spend on locking coordinator state mutex exclusively", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeWorkerUpdateCount, "Total number merge worker updates", ValueType::Number) \
-    M(CoordinatedMergesMergeWorkerUpdateMicroseconds, "Total time spend on updating local state of assigned merges on worker", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeAssignmentRequest, "Total number of merge assignment requests", ValueType::Number) \
-    M(CoordinatedMergesMergeAssignmentResponse, "Total number of merge assignment requests", ValueType::Number) \
-    M(CoordinatedMergesMergeAssignmentRequestMicroseconds, "Total time spend in merge assignment client", ValueType::Microseconds) \
-    M(CoordinatedMergesMergeAssignmentResponseMicroseconds, "Total time spend in merge assignment handler", ValueType::Microseconds) \
+    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
@@ -1051,21 +997,9 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
-    M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
-    M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
-    M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
-    M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
-    M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
-    M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
-    \
-    M(RefreshableViewRefreshSuccess, "How many times refreshable materialized views refreshed", ValueType::Number) \
-    M(RefreshableViewRefreshFailed, "How many times refreshable materialized views failed to refresh", ValueType::Number) \
-    M(RefreshableViewSyncReplicaSuccess, "How many times a SELECT from refreshable materialized view did an implicit SYNC REPLICA", ValueType::Number) \
-    M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
-    M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
@@ -1201,8 +1135,6 @@ Event end() { return END; }
 
 bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw)
 {
-    if ((max_ratio <= 0.0) || (max_ratio <= min_ratio))
-        return false;
     double cpu_load = global_counters.getCPUOverload(os_cpu_busy_time_threshold);
 
     if (cpu_load > DBL_EPSILON)

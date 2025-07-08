@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-async-insert
+-- Tags: no-parallel
 -- no-parallel because the test uses FLUSH ASYNC INSERT QUEUE
 
 SET wait_for_async_insert = 0;

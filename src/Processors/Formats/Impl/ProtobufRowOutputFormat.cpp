@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ProtobufRowOutputFormat.h>
+#include "ProtobufRowOutputFormat.h"
 
 #if USE_PROTOBUF
 #   include <Formats/FormatFactory.h>
@@ -69,7 +69,6 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
                     settings, with_length_delimiter);
             });
         factory.markOutputFormatNotTTYFriendly(name);
-        factory.setContentType(name, "application/octet-stream");
     }
 }
 

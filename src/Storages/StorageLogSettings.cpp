@@ -1,4 +1,4 @@
-#include <Storages/StorageLogSettings.h>
+#include "StorageLogSettings.h"
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>

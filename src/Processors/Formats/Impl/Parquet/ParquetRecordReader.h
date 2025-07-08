@@ -8,7 +8,7 @@
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
 
-#include <Processors/Formats/Impl/Parquet/ParquetColumnReader.h>
+#include "ParquetColumnReader.h"
 
 namespace DB
 {

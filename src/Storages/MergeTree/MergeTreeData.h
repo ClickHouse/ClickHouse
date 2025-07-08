@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
@@ -180,26 +179,11 @@ public:
     /// Auxiliary structure for index comparison
     struct DataPartStateAndPartitionID
     {
-        DataPartStateAndPartitionID(DataPartState state_, const String & partition_id_)
-            : state(state_), kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
-        {
-        }
-
         DataPartState state;
-        MergeTreePartInfo::Kind kind;
         String partition_id;
     };
 
-    struct PartitionID
-    {
-        explicit PartitionID(const String & partition_id_)
-            : kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
-        {
-        }
-
-        MergeTreePartInfo::Kind kind;
-        String partition_id;
-    };
+    STRONG_TYPEDEF(String, PartitionID)
 
     struct LessDataPart
     {
@@ -208,16 +192,8 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
-
-        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const
-        {
-            return std::forward_as_tuple(lhs.getKind(), lhs.getPartitionId()) < std::forward_as_tuple(rhs.kind, rhs.partition_id);
-        }
-
-        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const
-        {
-            return std::forward_as_tuple(lhs.kind, lhs.partition_id) < std::forward_as_tuple(rhs.getKind(), rhs.getPartitionId());
-        }
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
     };
 
     struct LessStateDataPart
@@ -242,14 +218,14 @@ public:
 
         bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getKind(), lhs.info.getPartitionId())
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.kind, rhs.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
         }
 
         bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.kind, lhs.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getKind(), rhs.info.getPartitionId());
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
         }
     };
 
@@ -263,6 +239,7 @@ public:
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
@@ -338,8 +315,6 @@ public:
         /// Renames part from old_name to new_name
         void tryRenameAll();
 
-        void rollBackAll();
-
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
@@ -370,7 +345,6 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
-            Coalescing          = 8,
         };
 
         Mode mode;
@@ -434,7 +408,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
-        const RangesInDataParts & parts,
+        const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
@@ -526,7 +500,7 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        RangesInDataParts parts;
+        DataPartsVector parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
 
@@ -816,15 +790,14 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
+    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc)
     /// and we have unfinished mutation which need this column to finish.
-    void checkDropOrRenameCommandDoesntAffectInProgressMutations(
+    void checkDropCommandDoesntAffectInProgressMutations(
         const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
-
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
@@ -978,8 +951,6 @@ public:
         return storage_settings.get();
     }
 
-    StorageMetadataPtr getInMemoryMetadataPtr() const override;
-
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
@@ -1116,7 +1087,7 @@ public:
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     Block getBlockWithVirtualsForFilter(
-        const StorageMetadataPtr & metadata, const RangesInDataParts & parts, bool ignore_empty = false) const;
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1166,7 +1137,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/frozen part
+    /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1209,10 +1180,6 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
-    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
-
-    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
-    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1248,8 +1215,6 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
-    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
-
     void resetColumnSizes()
     {
         column_sizes.clear();
@@ -1351,12 +1316,16 @@ protected:
 
     boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state) const
     {
-        return data_parts_by_state_and_info.equal_range(state, LessStateDataPart());
+        auto begin = data_parts_by_state_and_info.lower_bound(state, LessStateDataPart());
+        auto end = data_parts_by_state_and_info.upper_bound(state, LessStateDataPart());
+        return {begin, end};
     }
 
     boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
     {
-        return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
+        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
+        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
+        return {begin, end};
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
@@ -1364,7 +1333,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1755,8 +1724,6 @@ private:
 
     mutable TemporaryParts temporary_parts;
 
-    MultiVersionVirtualsDescriptionPtr projection_virtuals;
-
     /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
     /// Note: it could be very rough.
     bool canUseParallelReplicasBasedOnPKAnalysis(
@@ -1766,9 +1733,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

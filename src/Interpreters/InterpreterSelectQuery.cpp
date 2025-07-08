@@ -1,4 +1,3 @@
-#include <ranges>
 #include <Access/AccessControl.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -45,7 +44,6 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Interpreters/Context.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -96,6 +94,7 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/map.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -142,7 +141,7 @@ namespace Setting
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -194,7 +193,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ServerSetting
@@ -357,7 +355,6 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     Settings subquery_settings = context->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 0;
     subquery_settings[Setting::max_result_bytes] = 0;
-    subquery_settings[Setting::implicit_table_at_top_level] = "";
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
@@ -573,11 +570,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->updateExternalDynamicMetadataIfExists(context))
+        if (storage->hasExternalDynamicMetadata())
         {
+            storage->updateExternalDynamicMetadata(context);
             metadata_snapshot = storage->getInMemoryMetadataPtr();
         }
-
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
@@ -1908,8 +1905,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         joined_plan->getCurrentHeader(),
                         expressions.join,
                         settings[Setting::max_block_size],
-                        /* min_block_size_rows_ */ 0,
-                        /* min_block_size_bytes_ */ 0,
+                        0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
                         analysis_result.optimize_read_in_order,
@@ -2188,6 +2184,7 @@ static void executeMergeAggregatedImpl(
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && is_remote_storage && !has_grouping_sets,
+        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -2398,8 +2395,8 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 
-            required_columns_after_prewhere_set = NameSet{
-                std::from_range_t{}, required_columns_after_prewhere | std::views::transform([](const auto & it) { return it.name; })};
+            required_columns_after_prewhere_set
+                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
         }
 
         auto syntax_result
