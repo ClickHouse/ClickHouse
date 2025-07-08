@@ -1,4 +1,4 @@
-#include "StorageObjectStorageSource.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>
@@ -9,6 +9,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -54,6 +55,7 @@ namespace Setting
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
 namespace ErrorCodes
@@ -138,11 +140,24 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (distributed_processing)
     {
-        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
-            local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+        const bool expect_whole_archive = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
-        if (is_archive)
-            return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(
+            local_context->getClusterFunctionReadTaskCallback(),
+            local_context->getSettingsRef()[Setting::max_threads],
+            /*is_archive_=*/is_archive && !expect_whole_archive,
+            object_storage,
+            local_context);
+
+        if (is_archive && expect_whole_archive)
+        {
+            return std::make_shared<ArchiveIterator>(
+                object_storage,
+                configuration,
+                std::move(distributed_iterator),
+                local_context,
+                /* read_keys */nullptr);
+        }
 
         return distributed_iterator;
     }
@@ -501,7 +516,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)
             transformer = object_info->data_lake_metadata->transform;
-        else
+        if (!transformer)
             transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
 
         if (transformer)
@@ -573,6 +588,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
+    modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -583,7 +599,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_prefetch;
 
     bool use_async_buffer = false;
-    ReadSettings nested_buffer_read_settings;
+    ReadSettings nested_buffer_read_settings = modified_read_settings;
     if (use_prefetch || use_cache)
     {
         nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
@@ -615,15 +631,13 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
             };
 
-            modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
-
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
                 object_info.getPath(),
                 cache_key,
                 cache,
                 FileCache::getCommonUser(),
                 read_buffer_creator,
-                use_async_buffer ? nested_buffer_read_settings : effective_read_settings,
+                use_async_buffer ? nested_buffer_read_settings : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
                 object_size,
                 /* allow_seeks */true,
@@ -651,7 +665,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
         : effective_read_settings.remote_fs_buffer_size;
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
@@ -908,46 +922,102 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
-    const ReadTaskCallback & callback_, size_t max_threads_count)
-    : callback(callback_)
+    const ClusterFunctionReadTaskCallback & callback_,
+    size_t max_threads_count,
+    bool is_archive_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_)
+    : WithContext(context_)
+    , callback(callback_)
+    , is_archive(is_archive_)
+    , object_storage(object_storage_)
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
         CurrentMetrics::StorageObjectStorageThreadsActive,
         CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "ReadTaskIter");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, "ReadTaskIter");
 
-    std::vector<std::future<String>> keys;
-    keys.reserve(max_threads_count);
+    std::vector<std::future<ObjectInfoPtr>> objects;
+    objects.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
-        keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
+        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
+        {
+            auto task = callback();
+            if (!task || task->isEmpty())
+                return nullptr;
+            return task->getObjectInfo();
+        }, Priority{}));
 
     pool.wait();
     buffer.reserve(max_threads_count);
-    for (auto & key_future : keys)
+    for (auto & object_future : objects)
     {
-        auto key = key_future.get();
-        if (key.empty())
-            continue;
-
-        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        auto object = object_future.get();
+        if (object)
+            buffer.push_back(object);
     }
 }
 
 StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+
+    ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
-        auto key = callback();
-        if (key.empty())
+        auto task = callback();
+        if (!task || task->isEmpty())
             return nullptr;
-
-        return std::make_shared<ObjectInfo>(key, std::nullopt);
+        object_info = task->getObjectInfo();
+    }
+    else
+    {
+        object_info =  buffer[current_index];
     }
 
-    return buffer[current_index];
+    if (!is_archive)
+        return object_info;
+
+    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(object_info->getPath());
+    if (!path_in_archive.has_value())
+        return object_info;
+
+    return createObjectInfoInArchive(path_to_archive, path_in_archive.value());
+}
+
+ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
+    const std::string & path_to_archive,
+    const std::string & path_in_archive)
+{
+    auto archive_object = std::make_shared<ObjectInfo>(path_to_archive, std::nullopt);
+    if (!archive_object->metadata)
+        archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+
+    std::shared_ptr<IArchiveReader> archive_reader;
+    {
+        std::lock_guard lock(archive_readers_mutex);
+        if (auto it = archive_readers.find(path_to_archive); it != archive_readers.end())
+        {
+            archive_reader = it->second;
+        }
+        else
+        {
+            archive_reader = DB::createArchiveReader(
+                path_to_archive,
+                [=, this]()
+                {
+                    return StorageObjectStorageSource::createReadBuffer(*archive_object, object_storage, getContext(), log);
+                },
+                archive_object->metadata->size_bytes);
+
+            archive_readers.emplace(path_to_archive, archive_reader);
+        }
+    }
+
+    return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
+        archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
 }
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
@@ -1015,7 +1085,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             {
                 archive_object = archives_iterator->next(processor);
                 if (!archive_object)
+                {
+                    LOG_TEST(log, "Archives are processed");
                     return {};
+                }
 
                 if (!archive_object->metadata)
                     archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
@@ -1032,6 +1105,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             }
 
             path_in_archive = file_enumerator->getFileName();
+            LOG_TEST(log, "Path in archive: {}", path_in_archive);
             if (!filter(path_in_archive))
                 continue;
             current_file_info = file_enumerator->getFileInfo();

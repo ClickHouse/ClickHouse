@@ -775,7 +775,7 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 
@@ -834,7 +834,7 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 
@@ -1678,8 +1678,8 @@ Result:
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
 The behavior of this function depends on the ClickHouse version:
-- in versions < v25.7, `countMatches` would stop counting at the first empty match even if a pattern accepts.
-- in versions >= 25.7, `countMatches` would continue its execution when an empty match occurs.
+- in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
+- in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
   The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
 
 **Syntax**
@@ -1894,7 +1894,7 @@ Query:
 **Examples**
 
 ```sql
-select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
@@ -1929,7 +1929,7 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 Query:
 
 ```sql
-select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:

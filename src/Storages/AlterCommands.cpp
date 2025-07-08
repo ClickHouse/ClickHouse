@@ -1153,10 +1153,14 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropSomething() const
+bool AlterCommand::isDropOrRename() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
-        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
+    return type == Type::DROP_COLUMN
+        || type == Type::DROP_INDEX
+        || type == Type::DROP_STATISTICS
+        || type == Type::DROP_CONSTRAINT
+        || type == Type::DROP_PROJECTION
+        || type == Type::RENAME_COLUMN;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -1234,36 +1238,6 @@ bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
     for (const auto & index : metadata.secondary_indices)
     {
         if (index.type == TEXT_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyGinIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == GIN_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == FULL_TEXT_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == INVERTED_INDEX_NAME)
             return true;
     }
     return false;

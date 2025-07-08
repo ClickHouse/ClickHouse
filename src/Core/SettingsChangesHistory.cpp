@@ -1,43 +1,15 @@
-#include <Core/Defines.h>
 #include <Core/SettingsChangesHistory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <boost/algorithm/string.hpp>
+
 #include <Core/SettingsEnums.h>
 
-#include <fmt/ranges.h>
-
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-ClickHouseVersion::ClickHouseVersion(std::string_view version)
-{
-    Strings split;
-    boost::split(split, version, [](char c){ return c == '.'; });
-    components.reserve(split.size());
-    if (split.empty())
-        throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-
-    for (const auto & split_element : split)
-    {
-        size_t component;
-        ReadBufferFromString buf(split_element);
-        if (!tryReadIntText(component, buf) || !buf.eof())
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-        components.push_back(component);
-    }
-}
-
-String ClickHouseVersion::toString() const
-{
-    return fmt::format("{}", fmt::join(components, "."));
 }
 
 static void addSettingsChanges(
@@ -69,10 +41,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-            {"format_schema_source", "file", "file", "New setting"},
-            {"format_schema_message_name", "", "", "New setting"},
+            {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
+            {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"vector_search_with_rescoring", true, false, "New setting."},
+            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
+            {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
+            {"table_engine_read_through_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -96,6 +72,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_outstreams_per_resize_after_split", 0, 24, "New setting."},
             {"count_matches_stop_at_empty_match", true, false, "New setting."},
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
+            {"format_schema_source", "file", "file", "New setting"},
+            {"format_schema_message_name", "", "", "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -168,6 +146,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
@@ -429,7 +408,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
             {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
             {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
-            {"allow_experimental_full_text_index", false, false, "Enable experimental full-text index"},
+            {"allow_experimental_full_text_index", false, false, "Enable experimental text index"},
             {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
             {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
             {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},

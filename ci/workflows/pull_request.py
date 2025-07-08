@@ -19,13 +19,12 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
-        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
                     JobNames.STYLE_CHECK,
                     JobNames.FAST_TEST,
-                    JobConfigs.tidy_build_jobs[0].name,
+                    *[j.name for j in JobConfigs.tidy_build_jobs],
                 ]
             )
             for job in JobConfigs.build_jobs
@@ -66,7 +65,6 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.lexer_test,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,

@@ -43,7 +43,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/OpenTelemetryTraceContext.h"
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -73,10 +73,11 @@
 #endif
 
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
-#include "TCPHandler.h"
+#include <Server/TCPHandler.h>
 
 #include <Common/config_version.h>
 
@@ -166,7 +167,6 @@ namespace DB::ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
-    extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
@@ -658,7 +658,7 @@ void TCPHandler::runImpl()
             customizeContext(query_state->query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-            query_state->query_context->setReadTaskCallback([this, &query_state]() -> String
+            query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
@@ -670,7 +670,9 @@ void TCPHandler::runImpl()
                 sendReadTaskRequest();
 
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
-                auto res = receiveReadTaskResponse(query_state.value());
+
+                auto res = receiveClusterFunctionReadTaskResponse(query_state.value());
+
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                 return res;
@@ -1494,7 +1496,6 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     state.block_out->write(totals);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1512,7 +1513,6 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     state.block_out->write(extremes);
     state.maybe_compressed_out->next();
-
     out->finishChunk();
     out->next();
 }
@@ -1530,7 +1530,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-
+        state.profile_events_block_out->flush();
         out->finishChunk();
         out->next();
 
@@ -1947,6 +1947,11 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
 
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
+    {
+        writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    }
+
     out->next();
 }
 
@@ -1965,7 +1970,7 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 }
 
 
-String TCPHandler::receiveReadTaskResponse(QueryState & state)
+ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1978,13 +1983,9 @@ String TCPHandler::receiveReadTaskResponse(QueryState & state)
 
         case Protocol::Client::ReadTaskResponse:
         {
-            UInt64 version = 0;
-            readVarUInt(version, *in);
-            if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-                throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
-            String response;
-            readStringBinary(response, *in);
-            return response;
+            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+            task->deserialize(*in);
+            return task;
         }
 
         default:
@@ -2440,19 +2441,26 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 }
 
 
+void TCPHandler::initMaybeCompressedOut(QueryState & state)
+{
+    const Settings & query_settings = state.query_context->getSettingsRef();
+    if (!state.maybe_compressed_out)
+    {
+        if (auto codec = getCompressionCodec(query_settings, state.compression))
+            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+        else
+            state.maybe_compressed_out = out;
+    }
+}
+
+
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
     {
-        const Settings & query_settings = state.query_context->getSettingsRef();
-        if (!state.maybe_compressed_out)
-        {
-            if (auto codec = getCompressionCodec(query_settings, state.compression))
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
-            else
-                state.maybe_compressed_out = out;
-        }
+        initMaybeCompressedOut(state);
 
+        const Settings & query_settings = state.query_context->getSettingsRef();
         state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
@@ -2467,10 +2475,17 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.logs_block_out)
     {
+        WriteBuffer * logs_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            logs_buf = state.maybe_compressed_out.get();
+        }
+
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *logs_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2479,9 +2494,16 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 {
     if (!state.profile_events_block_out)
     {
+        WriteBuffer * profile_events_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            profile_events_buf = state.maybe_compressed_out.get();
+        }
+
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2625,20 +2647,28 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-
+    state.logs_block_out->flush();
     out->finishChunk();
     out->next();
 }
 
 
-void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & columns)
+void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
 {
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *out);
-    writeStringBinary(columns.toString(), *out);
+    WriteBuffer * columns_buf = out.get();
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedOut(state);
+        columns_buf = state.maybe_compressed_out.get();
+    }
 
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *columns_buf);
+    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+
+    columns_buf->next();
     out->finishChunk();
     out->next();
 }
