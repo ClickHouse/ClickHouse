@@ -3136,7 +3136,7 @@ namespace
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
                 /* columns_are_reordered_outside = */ false,
-                /* check_nested_while_filling_missing_columns  = */ true);
+                /* check_nested_while_filling_missing_columns = */ true);
 
             if (!message_serializer)
             {
@@ -3249,7 +3249,6 @@ namespace
             for (int i : collections::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
-
                 if (columnNameEqualsToFieldName(column_name, field_descriptor))
                 {
                     std::string_view suffix =
@@ -3262,9 +3261,7 @@ namespace
             }
 
             if (!out_field_descriptors_with_suffixes.empty())
-            {
                 return true; /// We have an exact match, no need to compare prefixes.
-            }
 
             /// Find all fields which name is used as prefix in column's name; i.e. we're checking
             /// column_name == field_name + '.' + nested_message_field_name
@@ -3343,7 +3340,7 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns )
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -3361,7 +3358,7 @@ namespace
                 parent_field_descriptor,
                 used_column_indices,
                 columns_are_reordered_outside,
-                check_nested_while_filling_missing_columns );
+                check_nested_while_filling_missing_columns);
         }
 
         std::unique_ptr<ProtobufSerializer> buildMessageSerializerImpl(
@@ -3375,7 +3372,7 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns )
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -3480,7 +3477,6 @@ namespace
                     auto field_serializer = buildFieldSerializer(column_name, data_type,
                         field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment, oneof_presence);
 
-
                     if (field_serializer)
                     {
                         std::vector<size_t> idxs = {column_idx};
@@ -3552,7 +3548,6 @@ namespace
                     std::vector<size_t> used_column_indices_in_nested;
                     auto attempt_build_serializer = [&](const DataTypes & passed_nested_data_types)
                     {
-
                         std::unique_ptr<ProtobufSerializer> message_serializer =  buildMessageSerializerImpl(
                             nested_column_names.size(),
                             nested_column_names.data(),
@@ -3563,8 +3558,8 @@ namespace
                             oneof_presence,
                             field_descriptor,
                             used_column_indices_in_nested,
-                            /* columns_are_reordered_outside = */  true,
-                            /* check_nested_while_filling_missing_columns  = */ false);
+                            /* columns_are_reordered_outside = */ true,
+                            /* check_nested_while_filling_missing_columns = */ false);
 
                         /// `columns_are_reordered_outside` is true because column indices are
                         /// going to be transformed and then written to the outer message,
@@ -3678,7 +3673,7 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                if (check_nested_while_filling_missing_columns )
+                if (check_nested_while_filling_missing_columns)
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
                 else
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
@@ -3832,7 +3827,7 @@ namespace
                                 &field_descriptor,
                                 used_column_indices,
                                 /* columns_are_reordered_outside = */ false,
-                                /* check_nested_while_filling_missing_columns  = */ false);
+                                /* check_nested_while_filling_missing_columns = */ false);
 
                             if (!message_serializer)
                                 return nullptr;
@@ -3898,7 +3893,7 @@ namespace
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
-                            /* check_nested_while_filling_missing_columns  = */ false);
+                            /* check_nested_while_filling_missing_columns = */ false);
 
                         if (!message_serializer)
                         {
@@ -4177,7 +4172,6 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
 
     std::set<std::string_view> known_oneofs;
 
-
     for (int i = 0; i != message_descriptor->field_count(); ++i)
     {
         if (auto name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields))
@@ -4194,6 +4188,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
 
                         for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
                         {
+                            /// collect set of values with their tags
                             const FieldDescriptor * field_descriptor = oneof_descriptor->field(fnum);
                             values.emplace_back(field_descriptor->name(), field_descriptor->number());
                         }
