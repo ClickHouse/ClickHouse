@@ -40,7 +40,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting 
+namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
 }
