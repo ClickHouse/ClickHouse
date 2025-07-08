@@ -1209,9 +1209,9 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
     while (true)
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        LOG_DEBUG(&Poco::Logger::get("next()"), "Taken index: {}", current_index);
         if (current_index >= data_files.size())
             return nullptr;
+        LOG_DEBUG(&Poco::Logger::get("next()"), "Taken index: {}", current_index);
 
         auto key = data_files[current_index].file_path;
         auto object_metadata = object_storage->getObjectMetadata(key);
