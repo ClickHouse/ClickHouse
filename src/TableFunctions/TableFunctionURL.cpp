@@ -1,6 +1,6 @@
 #include <TableFunctions/TableFunctionURL.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -8,7 +8,6 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
@@ -138,8 +137,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 {
     if (structure == "auto")
     {
-        if (const auto access_object = getSourceAccessObject())
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+        context->checkAccess(getSourceAccessType());
         if (format == "auto")
             return StorageURL::getTableStructureAndFormatFromData(
                        filename,

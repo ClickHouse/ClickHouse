@@ -1,14 +1,12 @@
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Processors/Chunk.h>
-#include <Storages/MergeTree/MarkRange.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 namespace ProfileEvents
@@ -67,7 +65,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_)
+    std::optional<size_t> condition_hash_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -77,7 +75,7 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , condition(condition_)
+    , condition_hash(condition_hash_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -88,7 +86,7 @@ FilterTransform::FilterTransform(
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
 
-    if (condition.has_value())
+    if (condition_hash.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
@@ -111,9 +109,6 @@ IProcessor::Status FilterTransform::prepare()
     /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
     if (status != IProcessor::Status::PortFull)
         are_prepared_sets_initialized = true;
-
-    if (status == IProcessor::Status::Finished)
-        writeIntoQueryConditionCache({});
 
     return status;
 }
@@ -170,7 +165,20 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_false)
     {
-        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+        if (query_condition_cache)
+        {
+            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+            if (!mark_info)
+                return;
+
+            query_condition_cache->write(
+                        mark_info->table_uuid,
+                        mark_info->part_name,
+                        *condition_hash,
+                        mark_info->mark_ranges,
+                        mark_info->marks_count,
+                        mark_info->has_final_mark);
+        }
         incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
     }
@@ -220,7 +228,20 @@ void FilterTransform::doTransform(Chunk & chunk)
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {
-        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+        if (query_condition_cache)
+        {
+            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+            if (!mark_info)
+                return;
+
+            query_condition_cache->write(
+                        mark_info->table_uuid,
+                        mark_info->part_name,
+                        *condition_hash,
+                        mark_info->mark_ranges,
+                        mark_info->marks_count,
+                        mark_info->has_final_mark);
+        }
         /// SimpleTransform will skip it.
         return;
     }
@@ -255,59 +276,5 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
-void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
-{
-    if (!query_condition_cache)
-        return;
-
-    if (!mark_ranges_info)
-    {
-        /// FilterTransform has finished, we need to flush to the query result cache.
-
-        if (!buffered_mark_ranges_info)
-            return;
-
-        query_condition_cache->write(
-            buffered_mark_ranges_info->table_uuid,
-            buffered_mark_ranges_info->part_name,
-            condition->first,
-            condition->second,
-            buffered_mark_ranges_info->mark_ranges,
-            buffered_mark_ranges_info->marks_count,
-            buffered_mark_ranges_info->has_final_mark);
-
-        buffered_mark_ranges_info = nullptr;
-
-        return;
-    }
-
-    if (!buffered_mark_ranges_info)
-    {
-        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
-    }
-    else
-    {
-        /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
-        /// Otherwise write to the query condition cache and reset the buffer.
-
-        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
-        {
-            query_condition_cache->write(
-                buffered_mark_ranges_info->table_uuid,
-                buffered_mark_ranges_info->part_name,
-                condition->first,
-                condition->second,
-                buffered_mark_ranges_info->mark_ranges,
-                buffered_mark_ranges_info->marks_count,
-                buffered_mark_ranges_info->has_final_mark);
-
-            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
-        }
-        else
-        {
-            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
-        }
-    }
-}
 
 }

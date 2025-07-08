@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -20,7 +21,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -35,6 +35,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -234,15 +235,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
-        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.safeGet<String>();
-        return command;
-    }
-    if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = MODIFY_DATABASE_COMMENT;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
         command.comment = ast_comment.value.safeGet<String>();
         return command;
@@ -1153,14 +1145,10 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropOrRename() const
+bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN
-        || type == Type::DROP_INDEX
-        || type == Type::DROP_STATISTICS
-        || type == Type::DROP_CONSTRAINT
-        || type == Type::DROP_PROJECTION
-        || type == Type::RENAME_COLUMN;
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
+        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -1233,11 +1221,21 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == TEXT_INDEX_NAME)
+        if (index.type == FULL_TEXT_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
+bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
     }
     return false;

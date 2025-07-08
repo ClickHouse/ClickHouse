@@ -3,7 +3,6 @@
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -185,53 +184,22 @@ namespace
         {
             ASTs & engine_args = args.engine_args;
 
-            String connection_string;
-            String database_or_schema;
-            String table;
+            if (engine_args.size() != 3)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
 
-            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
-            {
-                if (name == "JDBC")
-                {
-                    validateNamedCollection<>(*named_collection, {"datasource", "schema", "table"}, {});
-                    connection_string = named_collection->get<String>("datasource");
-                    database_or_schema = named_collection->get<String>("schema");
-                    table = named_collection->get<String>("table");
-                }
-                else
-                {
-                    validateNamedCollection<>(*named_collection, {"connection_settings", "external_database", "external_table"}, {});
-                    connection_string = named_collection->get<String>("connection_settings");
-                    database_or_schema = named_collection->get<String>("external_database");
-                    table = named_collection->get<String>("external_table");
-                }
-            }
-            else
-            {
-                if (engine_args.size() != 3)
-                    throw Exception(
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)",
-                        name,
-                        name);
-
-                for (size_t i = 0; i < 3; ++i)
-                    engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
-
-                connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string");
-                database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "database_name");
-                table = checkAndGetLiteralArgument<String>(engine_args[2], "table_name");
-            }
+            for (size_t i = 0; i < 3; ++i)
+                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
                 args.getContext(),
                 args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
-                connection_string,
+                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
                 args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                database_or_schema,
-                table,
+                checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
+                checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
                 args.columns,
                 args.constraints,
                 args.comment,
@@ -240,7 +208,7 @@ namespace
 
         },
         {
-            .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
+            .source_access_type = BridgeHelperMixin::getSourceAccessType(),
         });
     }
 }

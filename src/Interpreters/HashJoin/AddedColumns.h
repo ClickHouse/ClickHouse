@@ -94,14 +94,12 @@ public:
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
-        const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_)
         : src_block(left_block_)
         , left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
-        , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
         , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
@@ -181,11 +179,10 @@ public:
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
-    const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos;
 
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
-    IColumn::Offsets offsets_to_replicate;
+    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
     bool output_by_row_list = false;
     size_t join_data_avg_perkey_rows = 0;
@@ -195,10 +192,6 @@ public:
 
     void reserve(bool need_replicate)
     {
-        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
-        if constexpr (lazy)
-            return;
-
         if (!max_joined_block_rows)
             return;
 
@@ -215,11 +208,11 @@ public:
 
 private:
 
-    void checkColumns(const Columns & to_check)
+    void checkBlock(const Block & block)
     {
         for (size_t j = 0; j < right_indexes.size(); ++j)
         {
-            const auto * column_from_block = to_check.at(right_indexes[j]).get();
+            const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
             const auto * dest_column = columns[j].get();
             if (auto * nullable_col = nullable_column_ptrs[j])
             {
@@ -258,6 +251,7 @@ private:
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
 
+
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
@@ -271,6 +265,7 @@ private:
     template<bool from_row_list>
     void buildOutputFromBlocks();
 
+    template<bool join_data_sorted>
     void buildOutputFromRowRefLists();
 };
 

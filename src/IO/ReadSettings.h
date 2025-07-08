@@ -8,7 +8,7 @@
 #include <Interpreters/Cache/UserInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 
 namespace DB
 {
@@ -68,8 +68,6 @@ struct ReadSettings
     [[ maybe_unused ]] bool use_page_cache_with_distributed_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
-    size_t page_cache_block_size = 1 << 20;
-    size_t page_cache_lookahead_blocks = 16;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
@@ -95,10 +93,23 @@ struct ReadSettings
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheUserInfo> filecache_user_info;
-    bool enable_hdfs_pread = true;
 
-    ReadSettings adjustBufferSize(size_t file_size) const;
-    ReadSettings withNestedBuffer() const;
+    ReadSettings adjustBufferSize(size_t file_size) const
+    {
+        ReadSettings res = *this;
+        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
+        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
+        return res;
+    }
+
+    ReadSettings withNestedBuffer() const
+    {
+        ReadSettings res = *this;
+        res.remote_read_buffer_restrict_seek = true;
+        res.remote_read_buffer_use_external_buffer = true;
+        return res;
+    }
 };
 
 ReadSettings getReadSettings();

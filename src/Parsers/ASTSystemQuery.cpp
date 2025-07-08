@@ -1,10 +1,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -115,10 +116,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
-
-        if (if_exists)
-            print_keyword(" IF EXISTS");
-
         return ostr;
     };
 
@@ -331,8 +328,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_server_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
+            else if (!distributed_cache_servive_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
         case Type::UNFREEZE:
@@ -458,10 +455,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:

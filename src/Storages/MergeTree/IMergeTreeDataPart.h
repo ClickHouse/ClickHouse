@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -22,7 +21,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -76,6 +74,10 @@ public:
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
+    using ValueSizeMap = std::map<std::string, double>;
+    using VirtualFields = std::unordered_map<String, Field>;
+
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
@@ -94,9 +96,23 @@ public:
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
+    virtual MergeTreeReaderPtr getReader(
+        const NamesAndTypesList & columns_,
+        const StorageSnapshotPtr & storage_snapshot,
+        const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
+        UncompressedCache * uncompressed_cache,
+        MarkCache * mark_cache,
+        DeserializationPrefixesCache * deserialization_prefixes_cache,
+        const AlterConversionsPtr & alter_conversions,
+        const MergeTreeReaderSettings & reader_settings_,
+        const ValueSizeMap & avg_value_size_hints_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
+
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
+
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
@@ -131,19 +147,14 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
-
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
-    void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
-    void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
     NameAndTypePair getColumn(const String & name) const;
@@ -166,7 +177,7 @@ public:
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     void loadRowsCountFileForUnexpectedPart();
 
@@ -237,7 +248,6 @@ public:
     std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
-
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
@@ -296,20 +306,19 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state.load(std::memory_order_relaxed); }
+    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
     static std::string_view stateString(MergeTreeDataPartState state);
-    std::string_view stateString() const { return stateString(state.load(std::memory_order_relaxed)); }
+    constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
     {
-        auto current_state = state.load(std::memory_order_relaxed);
         for (auto affordable_state : affordable_states)
         {
-            if (current_state == affordable_state)
+            if (state == affordable_state)
                 return true;
         }
         return false;
@@ -348,16 +357,12 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files);
-        /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
-        /// For Load
-        static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
@@ -449,9 +454,6 @@ public:
     String getRelativePathOfActivePart() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
-
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
-    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -650,10 +652,6 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
 
-    /// List of substreams in order of serialization/deserialization for each column.
-    /// Used only in Compact parts.
-    ColumnsSubstreams columns_substreams;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -662,10 +660,7 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded();
-
-    /// Set of source parts for patch parts. Empty for regular parts.
-    SourcePartsSetForPatch source_parts_set;
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -691,7 +686,7 @@ protected:
 
 private:
     String mutable_name;
-    mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
@@ -713,11 +708,9 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-    /// Reads columns names and types from columns.txt
-    void loadColumns(bool require, bool load_metadata_version);
 
-    /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
-    void loadColumnsSubstreams();
+    /// Reads columns names and types from columns.txt
+    void loadColumns(bool require);
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
@@ -750,7 +743,6 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;

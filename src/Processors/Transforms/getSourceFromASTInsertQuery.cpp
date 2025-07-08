@@ -1,6 +1,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
@@ -8,9 +9,11 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/CompressionMethod.h>
+#include <Processors/Formats/IInputFormat.h>
+#include "IO/CompressionMethod.h"
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 

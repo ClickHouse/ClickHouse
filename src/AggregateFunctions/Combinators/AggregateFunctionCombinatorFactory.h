@@ -1,8 +1,9 @@
 #pragma once
 
-#include <AggregateFunctions/Combinators/IAggregateFunctionCombinator.h>
+#include "IAggregateFunctionCombinator.h"
 
 #include <string>
+#include <unordered_map>
 
 
 namespace DB

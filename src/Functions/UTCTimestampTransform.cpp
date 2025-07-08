@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
@@ -83,48 +82,16 @@ namespace
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
                 using ColVecTo = DataTypeDateTime::ColumnType;
-
                 typename ColVecTo::MutablePtr result_column = ColVecTo::create(input_rows_count);
                 typename ColVecTo::Container & result_data = result_column->getData();
-
-                auto safe_add = [](UInt32 value, UInt32 offset) -> UInt32
-                {
-                    if (value > std::numeric_limits<UInt32>::max() - offset)
-                        return std::numeric_limits<UInt32>::max();
-                    return value + offset;
-                };
-
-                auto safe_subtract = [](UInt32 value, UInt32 offset) -> UInt32
-                {
-                    if (value < offset)
-                        return 0;
-                    return value - offset;
-                };
-
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
-                    UInt32 abs_offset = static_cast<UInt32>(std::abs(time_zone_offset));
-
                     if constexpr (toUTC)
-                    {
-                        // Convert from local time to UTC
-                        // UTC = Local - Offset (for positive offsets like UTC+3)
-                        // UTC = Local + |Offset| (for negative offsets like UTC-5)
-                        result_data[i] = (time_zone_offset >= 0)
-                            ? safe_subtract(date_time_val, abs_offset)
-                            : safe_add(date_time_val, abs_offset);
-                    }
+                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
                     else
-                    {
-                        // Convert from UTC to local time
-                        // Local = UTC + Offset (for positive offsets like UTC+3)
-                        // Local = UTC - |Offset| (for negative offsets like UTC-5)
-                        result_data[i] = (time_zone_offset >= 0)
-                            ? safe_add(date_time_val, abs_offset)
-                            : safe_subtract(date_time_val, abs_offset);
-                    }
+                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
                 }
                 return result_column;
             }

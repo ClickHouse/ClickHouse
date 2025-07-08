@@ -26,7 +26,7 @@ There is an exception to this rule, which are the functions [`first_value`](../.
 
 Consider this table:
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -38,7 +38,7 @@ Consider this table:
 
 Let's say you need to total the values in the `y` column:
 
-```sql
+``` sql
 SELECT sum(y) FROM t_null_big
 ```
 
@@ -50,11 +50,11 @@ SELECT sum(y) FROM t_null_big
 
 Now you can use the `groupArray` function to create an array from the `y` column:
 
-```sql
+``` sql
 SELECT groupArray(y) FROM t_null_big
 ```
 
-```text
+``` text
 ┌─groupArray(y)─┐
 │ [2,2,3]       │
 └───────────────┘
@@ -64,14 +64,14 @@ SELECT groupArray(y) FROM t_null_big
 
 You can use [COALESCE](../../sql-reference/functions/functions-for-nulls.md#coalesce) to change NULL into a value that makes sense in your use case. For example: `avg(COALESCE(column, 0))` with use the column value in the aggregation or zero if NULL:
 
-```sql
+``` sql
 SELECT
     avg(y),
     avg(coalesce(y, 0))
 FROM t_null_big
 ```
 
-```text
+``` text
 ┌─────────────avg(y)─┬─avg(coalesce(y, 0))─┐
 │ 2.3333333333333335 │                 1.4 │
 └────────────────────┴─────────────────────┘
@@ -116,15 +116,15 @@ And here is an example of first_value with `RESPECT NULLS` where we can see that
 
 ```sql
 SELECT
-    col || '_' || ((col + 1) * 5 - 1) AS range,
-    first_value(odd_or_null) AS first,
+    col || '_' || ((col + 1) * 5 - 1) as range,
+    first_value(odd_or_null) as first,
     first_value(odd_or_null) IGNORE NULLS as first_ignore_null,
     first_value(odd_or_null) RESPECT NULLS as first_respect_nulls
 FROM
 (
     SELECT
         intDiv(number, 5) AS col,
-        if(number % 2 == 0, NULL, number) AS odd_or_null
+        if(number % 2 == 0, NULL, number) as odd_or_null
     FROM numbers(15)
 )
 GROUP BY col

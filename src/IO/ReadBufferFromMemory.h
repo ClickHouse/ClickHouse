@@ -1,7 +1,7 @@
 #pragma once
 
-#include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromFileBase.h>
+#include "SeekableReadBuffer.h"
+#include "ReadBufferFromFileBase.h"
 
 
 namespace DB

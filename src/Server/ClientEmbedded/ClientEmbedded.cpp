@@ -4,11 +4,9 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/Context.h>
-#include <Common/setThreadName.h>
-#include <Common/Config/ConfigHelper.h>
+#include <boost/algorithm/string/replace.hpp>
+#include "Common/setThreadName.h"
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <iomanip>
 
@@ -28,22 +26,6 @@ namespace Setting
 }
 
 
-ClientEmbedded::ClientEmbedded(
-    std::unique_ptr<Session> && session_,
-    int in_fd_,
-    int out_fd_,
-    int err_fd_,
-    std::istream & input_stream_,
-    std::ostream & output_stream_,
-    std::ostream & error_stream_)
-    : ClientBase(in_fd_, out_fd_, err_fd_, input_stream_, output_stream_, error_stream_), session(std::move(session_))
-{
-    global_context = session->makeSessionContext();
-    configuration = ConfigHelper::createEmpty();
-    layered_configuration = new Poco::Util::LayeredConfiguration();
-    layered_configuration->addWriteable(configuration, 0);
-}
-
 void ClientEmbedded::printHelpMessage(const OptionsDescription & options_description)
 {
     output_stream << "Welcome to the ClickHouse embedded client!" << "\n";
@@ -61,7 +43,7 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(std::string_view) const
+void ClientEmbedded::processError(const String &) const
 {
     if (ignore_error)
         return;
@@ -183,7 +165,7 @@ try
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
-    global_context->setSettings(*cmd_settings);
+    global_context->setSettings(cmd_settings);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:
@@ -201,7 +183,7 @@ try
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
     server_display_name = getFQDNOrHostName();
-    prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
+    prompt = fmt::format("{} :) ", server_display_name);
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = getClientConfiguration().getBool("highlight", true);
@@ -215,8 +197,8 @@ try
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
     initKeystrokeInterceptor();
 
-    initClientContext(session->sessionContext());
-    /// Note, QueryScope will be initialized in the LocalConnection
+    client_context = session->sessionContext();
+    initClientContext();
 
     if (is_interactive)
     {

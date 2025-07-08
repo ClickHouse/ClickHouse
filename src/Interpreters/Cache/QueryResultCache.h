@@ -5,7 +5,7 @@
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
-#include <Parsers/IASTHash.h>
+#include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,8 +16,6 @@
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Does AST contain non-deterministic functions like rand() and now()?
@@ -48,7 +46,7 @@ public:
 
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
-        IASTHash ast_hash;
+        IAST::Hash ast_hash;
 
         /// Note: For a transactionally consistent cache, we would need to include the system settings in the cache key or invalidate the
         /// cache whenever the settings change. This is because certain settings (e.g. "additional_table_filters") can affect the query
@@ -129,7 +127,7 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct EntryWeight
+    struct QueryResultCacheEntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
@@ -141,7 +139,7 @@ private:
 
 public:
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
