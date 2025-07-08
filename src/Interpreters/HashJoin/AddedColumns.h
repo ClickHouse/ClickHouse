@@ -199,6 +199,10 @@ public:
 
     void reserve(bool need_replicate)
     {
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (lazy)
+            return;
+
         if (!max_joined_block_rows)
             return;
 
@@ -248,7 +252,6 @@ private:
 
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
-
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {

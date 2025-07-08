@@ -12,10 +12,12 @@ namespace
 
 MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx)
 {
+    MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
+
     if (!tx)
     {
         /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage();
+        return data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
     }
 
     /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
@@ -30,8 +32,8 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
 
     {
         auto lock = data.lockParts();
-        active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, lock);
-        outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, lock);
+        active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
+        outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, affordable_kinds, lock);
     }
 
     ActiveDataPartSet active_parts_set{data.format_version};

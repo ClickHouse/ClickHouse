@@ -400,7 +400,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
-    s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
     keys = {url.key};
 }
