@@ -22,7 +22,10 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
 
 template <typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
+    const String & path_prefix_,
+    const String & temp_path,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper_,
+    const T & deduplication_path,
     const std::optional<String> & znode_data)
 {
     static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
@@ -158,11 +161,15 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
 
 
 EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
-    const String & block_numbers_path, const String & path_prefix, const String & temp_path,
+    const String & block_numbers_path,
+    const String & path_prefix,
+    const String & temp_path,
+    const std::optional<String> & znode_data,
     zkutil::ZooKeeper & zookeeper_)
     : zookeeper(&zookeeper_)
 {
-    String holder_path = temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER;
+    String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER);
+
     while (true)
     {
         Coordination::Stat partitions_stat;
@@ -175,6 +182,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             lock_ops.push_back(zkutil::makeCreateRequest(
                     partition_path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential));
         }
+
         lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, partitions_stat.version));
 
         Coordination::Responses lock_responses;

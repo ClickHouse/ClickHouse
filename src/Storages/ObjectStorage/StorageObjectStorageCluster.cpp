@@ -1,4 +1,4 @@
-#include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -21,6 +21,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
 namespace ErrorCodes
@@ -193,7 +194,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         virtual_columns,
         nullptr,
         local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/true,
+        /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
     std::vector<std::string> ids_of_hosts;
@@ -209,14 +210,17 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         }
     }
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, ids_of_hosts);
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+        iterator,
+        ids_of_hosts,
+        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task));
+                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 

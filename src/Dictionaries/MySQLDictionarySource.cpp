@@ -1,4 +1,4 @@
-#include "MySQLDictionarySource.h"
+#include <Dictionaries/MySQLDictionarySource.h>
 
 
 #if USE_MYSQL
@@ -6,9 +6,9 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
@@ -25,7 +25,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB

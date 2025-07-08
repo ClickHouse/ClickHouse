@@ -1,6 +1,6 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
-#include "MatchImpl.h"
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/MatchImpl.h>
 
 
 namespace DB

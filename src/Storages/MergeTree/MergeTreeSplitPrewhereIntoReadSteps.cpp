@@ -349,6 +349,7 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
