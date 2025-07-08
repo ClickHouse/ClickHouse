@@ -32,6 +32,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 namespace DB
 {
@@ -1368,13 +1369,12 @@ private:
             {
                 const auto & mapped_block = *it;
 
-                JoinStuff::JoinUsedFlags::UsedFlagsHolder used_flags_holder
-                    = parent.getUsedFlagsHolder(mapped_block->columns);
+                auto used_flags_holder = parent.getUsedFlagsHolder(&mapped_block.columns);
 
-                for (size_t i = 0; i < mapped_block->selector.rows(); ++i)
+                for (size_t i = 0; i < mapped_block.selector.size(); ++i)
                 {
-                    size_t row = mapped_block->selector[i];
-                    if (!used_flags_holder.isUsed(row))
+                    size_t row = mapped_block.selector[i];
+                    if (!used_flags_holder->isUsed(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
@@ -1404,7 +1404,7 @@ private:
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (used_flags_holder.isUsed(offset))
+                if (used_flags_holder->isUsed(offset))
                     continue;
 
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
@@ -1620,6 +1620,16 @@ bool HashJoin::isUsed(size_t off) const
 bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 {
     return used_flags->getUsedSafe(columns_ptr, row_idx);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder(const Columns * columns) const
+{
+    return used_flags->getUsedFlagsHolder(columns);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder() const
+{
+    return used_flags->getUsedFlagsHolder();
 }
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const

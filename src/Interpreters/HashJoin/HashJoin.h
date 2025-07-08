@@ -14,7 +14,6 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -35,7 +34,9 @@ namespace JoinStuff
 {
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags;
+class UsedFlagsHolder;
 }
+
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
@@ -433,13 +434,8 @@ public:
 
     bool isUsed(size_t off) const;
     bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
-
-    JoinStuff::JoinUsedFlags::UsedFlagsHolder getUsedFlagsHolder(const Columns * columns) const
-    {
-        return used_flags->getUsedFlagsHolder(columns);
-    }
-
-    JoinStuff::JoinUsedFlags::UsedFlagsHolder getUsedFlagsHolder() const { return used_flags->getUsedFlagsHolder(); }
+    std::unique_ptr<JoinStuff::UsedFlagsHolder> getUsedFlagsHolder(const Columns * columns) const;
+    std::unique_ptr<JoinStuff::UsedFlagsHolder> getUsedFlagsHolder() const;
 
     void debugKeys() const;
 
