@@ -384,8 +384,6 @@ void AccessRightsElement::makeBackwardCompatible()
                     parameter.clear();
                 }
             }
-
-            eraseNotGrantable();
         }
     }
 }
