@@ -102,7 +102,10 @@ public:
             requests.erase(requests.iterator_to(*request));
 
             if (requests.empty())
+            {
                 busy_periods++;
+                event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
+            }
             queue_cost -= request->cost;
             canceled_requests++;
             canceled_cost += request->cost;
