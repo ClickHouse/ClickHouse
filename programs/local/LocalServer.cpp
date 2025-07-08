@@ -16,7 +16,7 @@
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabasesOverlay.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -38,6 +38,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
@@ -283,7 +284,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 

@@ -1,4 +1,4 @@
-#include "StorageObjectStorageSink.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>

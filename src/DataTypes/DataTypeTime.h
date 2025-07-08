@@ -39,6 +39,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
+    void updateHashImpl(SipHash & hash) const override;
     TypeIndex getTypeId() const override { return TypeIndex::Time; }
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
 
