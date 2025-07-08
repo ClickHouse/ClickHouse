@@ -67,7 +67,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<size_t, String>> condition_)
+    std::optional<std::pair<UInt64, String>> condition_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),

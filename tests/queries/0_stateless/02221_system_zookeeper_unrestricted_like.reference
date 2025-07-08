@@ -11,11 +11,13 @@ creator_info
 failed_parts
 flags
 host
+in_progress
 is_active
 is_lost
 last_part
 leader_election
 leader_election-0
+lightweight_updates
 log
 log_pointer
 lost_part_count
@@ -54,11 +56,13 @@ creator_info
 failed_parts
 flags
 host
+in_progress
 is_active
 is_lost
 last_part
 leader_election
 leader_election-0
+lightweight_updates
 log
 log_pointer
 lost_part_count
