@@ -186,11 +186,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> String {
-            return task_distributor->getNextTask(number_of_current_replica).value_or("");
-        });
+        [task_distributor](size_t number_of_current_replica) mutable -> String
+        { return task_distributor->getNextTask(number_of_current_replica).value_or(""); });
 
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 
 }
