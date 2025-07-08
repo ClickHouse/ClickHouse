@@ -5,6 +5,7 @@
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <roaring.hh>
@@ -108,8 +109,32 @@ struct GinIndexSegment
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset = 0;
 
-    /// .gin_dict file offset of this segment's dictionaries
+    /// .gin_dict file offset of this segment's dictionary data (header)
     UInt64 dict_start_offset = 0;
+
+    /// offset of this segment's term dictionaries relative to the data start offset
+    UInt64 fst_start_offset = 0;
+};
+
+class GinSegmentDictionaryBloomFilter
+{
+public:
+    GinSegmentDictionaryBloomFilter() = default;
+
+    explicit GinSegmentDictionaryBloomFilter(UInt64 seed_, UInt64 max_token_size_ = 3, UInt64 filter_size_ = 128, UInt64 hashes_ = 3);
+
+    void add(const char * token, size_t size);
+    bool contains(const char * token, size_t size);
+
+    UInt64 serialize(WriteBuffer & write_buffer);
+    void deserialize(ReadBuffer & read_buffer);
+
+private:
+    std::unique_ptr<BloomFilter> bloom_filter;
+    UInt64 seed;
+    UInt64 filter_size;
+    UInt64 hashes;
+    UInt64 max_token_size;
 };
 
 struct GinSegmentDictionary
@@ -117,12 +142,18 @@ struct GinSegmentDictionary
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
 
-    /// .gin_dict file offset of this segment's dictionaries
+    /// .gin_dict file offset of this segment's dictionary data (header)
     UInt64 dict_start_offset;
+
+    /// .gin_dict file offset of this segment's term dictionaries
+    UInt64 fst_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
-    FST::FiniteStateTransducer offsets;
+    std::unique_ptr<FST::FiniteStateTransducer> fst;
+
+    /// Bloom filter created from the segment's dictionary
+    std::unique_ptr<GinSegmentDictionaryBloomFilter> bloom_filter;
 };
 
 using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
@@ -262,6 +293,9 @@ public:
 
     /// Read dictionary for given segment id
     void readSegmentDictionary(UInt32 segment_id);
+
+    /// Read FST for given segment id
+    void readSegmentFST(GinSegmentDictionaryPtr segment_dictionary);
 
     /// Read postings lists for the term
     GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
