@@ -1,7 +1,7 @@
 -- Tags: long
 
 set optimize_read_in_order=1;
-set allow_experimental_json_type=1;
+set enable_json_type=1;
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 
@@ -45,4 +45,3 @@ select trimLeft(explain) from (explain indexes=1 select * from test where json.a
 drop table test;
 
 {% endfor -%}
-

@@ -14,6 +14,8 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 
 
 namespace DB
@@ -33,7 +35,7 @@ namespace ErrorCodes
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
-    resolveParametrizedAlias(ast);
+    resolveParameterizedAlias(ast);
 
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
@@ -43,6 +45,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
+        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
+        {
+            ASTPtr names = create_user_query->names;
+            visitChildren(names);
+        }
         else
             visitChildren(ast);
     }
@@ -157,7 +164,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     ast_identifier->children.clear();
 }
 
-void ReplaceQueryParameterVisitor::resolveParametrizedAlias(ASTPtr & ast)
+void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
 {
     auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)

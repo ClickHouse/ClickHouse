@@ -1,9 +1,8 @@
 #pragma once
 
-#include <IO/Progress.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
+
 #include <list>
 
 namespace DB

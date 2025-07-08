@@ -39,8 +39,8 @@ bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return data_type.isInt() || data_type.isNativeUInt() || data_type.isNativeFloat() || data_type.isDate() || data_type.isDate32()
-        || data_type.isDateTime() || data_type.isEnum() || data_type.isDecimal() || data_type.isDateTime64();
+    return data_type.isInt() || data_type.isUInt() || data_type.isNativeFloat() || data_type.isDate() || data_type.isDate32()
+        || data_type.isDateTime() || data_type.isEnum() || data_type.isDecimal() || data_type.isDateTime64() || data_type.isTime();
 }
 
 bool canBeNativeType(const DataTypePtr & type)
@@ -64,7 +64,7 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt8Ty();
     if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
         return builder.getInt16Ty();
-    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime() || data_type.isDecimal32())
+    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime() || data_type.isDecimal32() || data_type.isTime())
         return builder.getInt32Ty();
     if (data_type.isInt64() || data_type.isUInt64() || data_type.isDecimal64() || data_type.isDateTime64())
         return builder.getInt64Ty();
@@ -218,6 +218,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
     GET_NUMERIC_CONSTANT(Int8, Int8)
     GET_NUMERIC_CONSTANT(Int16, Int16)
     GET_NUMERIC_CONSTANT(Int32, Int32)
+    GET_NUMERIC_CONSTANT(Time, Int32)
     GET_NUMERIC_CONSTANT(Int64, Int64)
     GET_NUMERIC_CONSTANT(UInt8, UInt8)
     GET_NUMERIC_CONSTANT(UInt16, UInt16)

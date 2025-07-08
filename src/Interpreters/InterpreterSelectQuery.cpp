@@ -1,3 +1,4 @@
+#include <ranges>
 #include <Access/AccessControl.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -22,6 +23,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -43,7 +45,7 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/Context.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -94,8 +96,6 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <base/map.h>
-#include <base/find_symbols.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -142,7 +142,7 @@ namespace Setting
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -191,6 +191,10 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ServerSetting
@@ -353,6 +357,7 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     Settings subquery_settings = context->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 0;
     subquery_settings[Setting::max_result_bytes] = 0;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
@@ -427,7 +432,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
             /// Try to parse expression
             ParserExpression parser;
             const auto & settings = context.getSettingsRef();
-            auto query_ast = parseQuery(
+            return parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
@@ -435,13 +440,6 @@ ASTPtr parseAdditionalFilterConditionForTable(
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
-
-            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && !context.getQueryParameters().empty())
-            {
-                ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
-                visitor.visit(query_ast);
-            }
-            return query_ast;
         }
     }
 
@@ -575,11 +573,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->hasExternalDynamicMetadata())
+        if (storage->updateExternalDynamicMetadataIfExists(context))
         {
-            storage->updateExternalDynamicMetadata(context);
             metadata_snapshot = storage->getInMemoryMetadataPtr();
         }
+
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
@@ -1910,7 +1908,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         joined_plan->getCurrentHeader(),
                         expressions.join,
                         settings[Setting::max_block_size],
-                        0,
+                        /* min_block_size_rows_ */ 0,
+                        /* min_block_size_bytes_ */ 0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
                         analysis_result.optimize_read_in_order,
@@ -2189,7 +2188,6 @@ static void executeMergeAggregatedImpl(
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings[Setting::distributed_aggregation_memory_efficient] && is_remote_storage && !has_grouping_sets,
-        settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
@@ -2400,8 +2398,8 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 
-            required_columns_after_prewhere_set
-                = collections::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+            required_columns_after_prewhere_set = NameSet{
+                std::from_range_t{}, required_columns_after_prewhere | std::views::transform([](const auto & it) { return it.name; })};
         }
 
         auto syntax_result
@@ -2472,7 +2470,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(settings);
+        return storage->totalRows(context);
     }
 
     // It's possible to optimize count() given only partition predicates
@@ -2657,8 +2655,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     else if (storage)
     {
         /// Table.
-        if (max_streams == 0)
-            max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
@@ -2672,6 +2668,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
                     streams_with_ratio);
         }
+
+        if (max_streams == 0)
+            max_streams = 1;
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
@@ -3347,10 +3346,15 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     if (!subqueries.empty())
     {
+        const auto & settings = context->getSettingsRef();
+        SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        auto prepared_sets_cache = context->getPreparedSetsCache();
+
         auto step = std::make_unique<DelayedCreatingSetsStep>(
                 query_plan.getCurrentHeader(),
                 std::move(subqueries),
-                context);
+                network_transfer_limits,
+                prepared_sets_cache);
 
         query_plan.addStep(std::move(step));
     }

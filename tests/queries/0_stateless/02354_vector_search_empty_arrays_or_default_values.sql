@@ -6,7 +6,7 @@ SET allow_experimental_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE tab (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1)) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO tab VALUES (1, []); -- { serverError INCORRECT_DATA }
 INSERT INTO tab (id) VALUES (1); -- { serverError INCORRECT_DATA }
 

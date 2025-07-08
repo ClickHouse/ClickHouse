@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS float_vs_decimal
    my_float Float64,
    my_decimal Decimal64(3)
 )
-Engine=MergeTree
+ENGINE=MergeTree
 ORDER BY tuple();
 
 # Generate 1 000 000 random numbers with 2 decimal places and store them as a float and as a decimal
@@ -57,7 +57,7 @@ When creating tables, numeric parameters for floating point numbers can be set (
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 1 - 0.9
 
 ┌───────minus(1, 0.9)─┐
@@ -77,7 +77,7 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0.5 / 0
 
 ┌─divide(0.5, 0)─┐
@@ -89,7 +89,7 @@ SELECT 0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT -0.5 / 0
 
 ┌─divide(-0.5, 0)─┐
@@ -101,7 +101,7 @@ SELECT -0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0 / 0
 
 ┌─divide(0, 0)─┐

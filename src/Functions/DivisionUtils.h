@@ -150,6 +150,21 @@ struct DivideIntegralImpl
 };
 
 template <typename A, typename B>
+struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+
+    template<typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return DivideIntegralImpl<A, B>::apply(a, b);
+    }
+};
+
+template <typename A, typename B>
 struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
@@ -234,6 +249,21 @@ struct ModuloLegacyImpl : ModuloImpl<A, B>
 };
 
 template <typename A, typename B>
+struct ModuloOrNullImpl : ModuloImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return ModuloImpl<A, B>::apply(a, b);
+    }
+};
+
+template <typename A, typename B>
 struct PositiveModuloImpl : ModuloImpl<A, B>
 {
     using OriginResultType = typename ModuloImpl<A, B>::ResultType;
@@ -289,6 +319,21 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     }
 #endif
 
+};
+
+template <typename A, typename B>
+struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return PositiveModuloImpl<A, B>::apply(a, b);
+    }
 };
 
 }

@@ -420,6 +420,10 @@ public:
                             memcpy(offset_res.data(), offset_col.data(), offset_res.size() * sizeof(UInt64));
 
                             FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col, vec_res);
+                            /// Restore zero terminator for strings rows
+                            /// (since FixedStringUnaryOperationImpl works on the whole chars array, ignoring the row boundaries)
+                            for (const auto & offset : offset_res)
+                                vec_res[offset - 1] = 0;
                             result_column = std::move(col_res);
                             return true;
                         }

@@ -1,18 +1,19 @@
+#include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Parsers/ASTShowTablesQuery.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-#include <DataTypes/DataTypeString.h>
-#include <Storages/ColumnsDescription.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Access/Common/AccessFlags.h>
+#include <Storages/ColumnsDescription.h>
+#include <Common/Macros.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -58,7 +59,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTER/CLUSTERS
+    /// SHOW CLUSTERS
     if (query.clusters)
     {
         WriteBufferFromOwnString rewritten_query;
@@ -81,12 +82,17 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
+
+    /// SHOW CLUSTER
     if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT * FROM system.clusters";
+        rewritten_query
+            << "SELECT cluster, shard_num, replica_num, host_name, host_address, port FROM system.clusters";
 
-        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
+        auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
+
+        rewritten_query << " WHERE cluster = " << DB::quote << cluster_name_expanded;
 
         /// (*)
         rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";

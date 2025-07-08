@@ -1,5 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include "Common/ObjectStorageKey.h"
+#include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
 
@@ -243,8 +243,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
-    if (path != "/")
-        request.SetPrefix(path);
+    request.SetPrefix(path);
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
@@ -276,7 +275,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (max_keys)
         {
-            size_t keys_left = max_keys - children.size();
+            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
             if (keys_left <= 0)
                 break;
             request.SetMaxKeys(static_cast<int>(keys_left));
@@ -504,23 +503,6 @@ void S3ObjectStorage::applyNewSettings(
         client.set(std::move(new_client));
     }
     s3_settings.set(std::move(modified_settings));
-}
-
-std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    const auto & settings = context->getSettingsRef();
-    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings[Setting::s3_validate_request_settings]);
-    auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
-
-    auto new_uri{uri};
-    new_uri.bucket = new_namespace;
-
-    return std::make_unique<S3ObjectStorage>(
-        std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
 }
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const

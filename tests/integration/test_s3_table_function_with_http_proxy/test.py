@@ -11,13 +11,14 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-
+        # Disable `with_remote_database_disk` as the test uses proxy, which might not work with the default configs of the remote database disk
         cluster.add_instance(
             "remote_proxy_node",
             main_configs=[
                 "configs/config.d/proxy_remote.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -26,6 +27,7 @@ def cluster():
                 "configs/config.d/proxy_remote_no_proxy.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -34,6 +36,7 @@ def cluster():
                 "configs/config.d/proxy_list.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -42,6 +45,7 @@ def cluster():
                 "configs/config.d/proxy_list_no_proxy.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -51,6 +55,7 @@ def cluster():
                 "http_proxy": "http://proxy1",
             },
             instance_env_variables=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -61,6 +66,7 @@ def cluster():
                 "no_proxy": "not_important_host,,  minio1  ,",
             },
             instance_env_variables=True,
+            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")

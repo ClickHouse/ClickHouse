@@ -33,14 +33,14 @@ Columns:
 
 The following example shows how to get information about settings which name contains `min_i`.
 
-``` sql
+```sql
 SELECT *
 FROM system.settings
 WHERE name LIKE '%min_insert_block_size_%'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Row 1:
 ──────
 name:        min_insert_block_size_rows
@@ -137,7 +137,7 @@ Using of `WHERE changed` can be useful, for example, when you want to check:
 
 <!-- -->
 
-``` sql
+```sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 

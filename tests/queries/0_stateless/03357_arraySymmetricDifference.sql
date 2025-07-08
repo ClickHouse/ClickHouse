@@ -27,4 +27,33 @@ SELECT arraySymmetricDifference(f, s);
 WITH
     materialize([(1, ['a', 'b']::Array(LowCardinality(String))), (NULL, ['c']::Array(LowCardinality(String)))]) AS f,
     materialize([(2, ['c', NULL]::Array(LowCardinality(Nullable(String)))), (1, ['a', 'b']::Array(LowCardinality(String)))]) AS s
-SELECT arraySymmetricDifference(f, s)
+SELECT arraySymmetricDifference(f, s);
+
+-- Table with batch inserts
+DROP TABLE IF EXISTS test_arraySymmetricDifference;
+CREATE TABLE test_arraySymmetricDifference
+(
+    `id` Int8,
+    `arr1` Array(String),
+    `arr2` Array(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test_arraySymmetricDifference
+VALUES
+(1, ['1'], ['2']),
+(2, ['2'], ['2']),
+(3, ['3'], ['3', '2']),
+(4, ['4'], ['1']),
+(5, ['5'], []),
+(6, ['6', '4'], ['5', '6']),
+(7, ['7', '0'], []),
+(8, ['8', '9', '10'], []),
+(9, ['9'], ['-1']),
+(10, ['10'], ['5']);
+
+SELECT
+	ta.id AS id,
+	arraySymmetricDifference(ta.arr1, ta.arr2) AS symmetricDifference
+FROM test_arraySymmetricDifference ta;

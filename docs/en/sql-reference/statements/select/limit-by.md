@@ -27,18 +27,18 @@ If you want to use column numbers instead of column names in the `LIMIT BY` clau
 
 Sample table:
 
-``` sql
+```sql
 CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
 INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
 ```
 
 Queries:
 
-``` sql
+```sql
 SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
 ```
 
-``` text
+```text
 ┌─id─┬─val─┐
 │  1 │  10 │
 │  1 │  11 │
@@ -47,11 +47,11 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
 └────┴─────┘
 ```
 
-``` sql
+```sql
 SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 ```
 
-``` text
+```text
 ┌─id─┬─val─┐
 │  1 │  11 │
 │  1 │  12 │
@@ -63,7 +63,7 @@ The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query retur
 
 The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
 
-``` sql
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,

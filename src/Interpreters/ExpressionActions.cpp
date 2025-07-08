@@ -19,6 +19,7 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Core/SettingsEnums.h>
 
 
@@ -522,6 +523,11 @@ std::string ExpressionActions::Action::toString() const
         case ActionsDAG::ActionType::INPUT:
             out << "INPUT " << arguments.front();
             break;
+
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            out << "PLACEHOLDER " << node->result_name;
+            break;
+
     }
 
     out << " -> " << node->result_name
@@ -738,6 +744,11 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             }
 
             break;
+        }
+
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to execute PLACEHOLDER action");
         }
     }
 }

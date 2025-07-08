@@ -1,4 +1,4 @@
-#include "StoragePostgreSQL.h"
+#include <Storages/StoragePostgreSQL.h>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -88,7 +88,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , log(getLogger("StoragePostgreSQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -617,7 +617,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getContext()->getSettingsRef();
+        const auto & settings = args.getLocalContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
             settings[Setting::postgresql_connection_pool_size],

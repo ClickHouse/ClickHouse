@@ -1,4 +1,4 @@
-#include "HTTPDictionarySource.h"
+#include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
@@ -11,9 +11,9 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
 
@@ -206,7 +206,8 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,

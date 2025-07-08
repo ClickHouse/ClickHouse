@@ -36,7 +36,7 @@ If you rename multiple tables in one query, the operation is not atomic. It may 
 
 **Syntax**
 
-``` sql
+```sql
 RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
 ```
 

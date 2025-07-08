@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache, no-parallel-replicas
+
+# no-fasttest -- test uses s3_dick
+# no-parallel-replicas -- do not run url functions as StorageURLCluster
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,14 +15,14 @@ CREATE TABLE test_s3 (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
 
-INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1e7);
+INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1);
 "
 
 # This (reusing connections from the pool) is not guaranteed to always happen,
 # (due to random time difference between the queries and random activity in parallel)
 # but should happen most of the time.
 
-while true
+for _ in {0..9}
 do
     query="SELECT a, b FROM test_s3"
     query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
@@ -33,34 +36,31 @@ do
         AND query_id='$query_id';
     ")
 
-    [[ $RES -eq 1 ]] && echo "$RES" && break;
+    [[ $RES -eq 1 ]] && echo "DiskConnectionsPreserved $RES" && break;
 done
 
 
 # Test connection pool in ReadWriteBufferFromHTTP
 
-while true
+# LIMIT 1 here is important part
+# processor StorageURLSource releases the HTTP session either when all data is fully read in the last generate call or at d-tor of the processor instance
+# with LIMIT 1 the HTTP session is released at pipeline d-tor because not all the data is read from HTTP connection inside StorageURLSource processor
+# this tests covers the case when profile events have to be gathered and logged to the query_log only after pipeline is destroyed
+
+for _ in {0..9}
 do
     query_id=$(${CLICKHOUSE_CLIENT} -q "
-    create table if not exists mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
-    set insert_keeper_fault_injection_probability=0;
-    set parallel_replicas_for_cluster_engines=0;
-    insert into mut values (1, 2, 3), (10, 20, 30);
+    SELECT queryID() FROM(
+        SELECT *
+        FROM url(
+            'http://localhost:8123/?query=' || encodeURLComponent('select 1'),
+            'LineAsString',
+            's String')
+        ) LIMIT 1 SETTINGS max_threads=1, http_make_head_request=0;
+    ")
 
-    system stop merges mut;
-    alter table mut delete where n = 10;
-
-    select queryID() from(
-        -- a funny way to wait for a MUTATE_PART to be assigned
-        select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
-            'select 1 where ''MUTATE_PART'' not in (select type from system.replication_queue where database=''' || currentDatabase() || ''' and table=''mut'')'
-            ), 'LineAsString', 's String')
-        -- queryID() will be returned for each row, since the query above doesn't return anything we need to return a fake row
-        union all
-        select 1
-    ) limit 1 settings max_threads=1;
-    " 2>&1)
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
     FROM system.query_log
@@ -69,5 +69,5 @@ do
         AND query_id='$query_id';
     ")
 
-    [[ $RES -eq 1 ]] && echo "$RES" && break;
+    [[ $RES -eq 1 ]] && echo "StorageConnectionsPreserved $RES" && break;
 done

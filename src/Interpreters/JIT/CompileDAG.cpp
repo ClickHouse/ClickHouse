@@ -1,4 +1,4 @@
-#include "CompileDAG.h"
+#include <Interpreters/JIT/CompileDAG.h>
 
 #if USE_EMBEDDED_COMPILER
 

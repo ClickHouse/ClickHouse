@@ -10,15 +10,23 @@ title: 'odbc'
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-``` sql
+## Syntax {#syntax}
+
+```sql
 odbc(connection_settings, external_database, external_table)
+odbc(connection_settings, external_table)
+odbc(named_collection)
 ```
 
-Parameters:
+## Arguments {#arguments}
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+| Argument            | Description                                                            |
+|---------------------|------------------------------------------------------------------------|
+| `connection_settings` | Name of the section with connection settings in the `odbc.ini` file. |
+| `external_database` | Name of a database in an external DBMS.                                |
+| `external_table`    | Name of a table in the `external_database`.                            |
+
+These parameters can also be passed using [named collections](operations/named-collections.md).
 
 To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
 
@@ -34,18 +42,18 @@ Ensure that unixODBC and MySQL Connector are installed.
 
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
 
-``` bash
+```bash
 $ sudo mysql
 ```
 
-``` sql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-``` bash
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -58,7 +66,7 @@ PASSWORD = clickhouse
 
 You can check the connection using the `isql` utility from the unixODBC installation.
 
-``` bash
+```bash
 $ isql -v mysqlconn
 +-------------------------+
 | Connected!                            |
@@ -68,7 +76,7 @@ $ isql -v mysqlconn
 
 Table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -91,17 +99,17 @@ mysql> select * from test;
 
 Retrieving data from the MySQL table in ClickHouse:
 
-``` sql
+```sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 ```
 
-``` text
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │            0 │     2 │              0 │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## Related {#see-also}
 
 - [ODBC dictionaries](/sql-reference/dictionaries#dbms)
 - [ODBC table engine](/engines/table-engines/integrations/odbc).

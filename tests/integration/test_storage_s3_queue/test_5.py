@@ -58,7 +58,6 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -66,6 +65,10 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
+                "configs/disable_streaming.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
             ],
             stay_alive=True,
         )
@@ -88,6 +91,7 @@ def started_cluster():
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
+                "configs/compatibility.xml",
             ],
             main_configs=[
                 "configs/s3queue_log.xml",
@@ -104,6 +108,7 @@ def started_cluster():
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
+                "configs/compatibility.xml",
             ],
             main_configs=[
                 "configs/s3queue_log.xml",
@@ -209,7 +214,8 @@ def test_upgrade_3(started_cluster):
 
 
 @pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
-def test_migration(started_cluster, setting_prefix):
+@pytest.mark.parametrize("buckets_num", [3, 1])
+def test_migration(started_cluster, setting_prefix, buckets_num):
     node1 = started_cluster.instances["instance_24.5"]
     node2 = started_cluster.instances["instance2_24.5"]
 
@@ -220,7 +226,7 @@ def test_migration(started_cluster, setting_prefix):
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{buckets_num}"
     files_path = f"{table_name}_data"
 
     for node in [node1, node2]:
@@ -281,7 +287,7 @@ def test_migration(started_cluster, setting_prefix):
             )
 
         last_processed_path[0] = f"{use_prefix}_{expected_rows[0] - 1}.csv"
-        for _ in range(20):
+        for _ in range(50):
             if expected_rows[0] == get_count():
                 break
             time.sleep(1)
@@ -303,7 +309,6 @@ def test_migration(started_cluster, setting_prefix):
             )
         )
 
-    buckets_num = 3
     assert (
         "Changing setting buckets is not allowed only with detached dependencies"
         in node1.query_and_get_error(
@@ -321,34 +326,47 @@ def test_migration(started_cluster, setting_prefix):
         )
     )
 
-    node1.query(
-        f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
-    )
-
-    for node in [node1, node2]:
-        assert buckets_num == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
+    def migrate_to_buckets(value):
+        node1.query(
+            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={value} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
         )
 
-    metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-    assert buckets_num == metadata["buckets"]
+    def check_keeper_state_changed():
+        for node in [node1, node2]:
+            assert buckets_num == int(
+                node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
+                )
+            )
 
-    try:
-        zk.get(f"{keeper_path}/processed")
-        assert False
-    except NoNodeError:
-        pass
+        metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
+        assert buckets_num == metadata["buckets"]
 
-    buckets = zk.get_children(f"{keeper_path}/buckets/")
+        try:
+            zk.get(f"{keeper_path}/processed")
+            assert False
+        except NoNodeError:
+            pass
 
-    assert len(buckets) == buckets_num
-    assert sorted(buckets) == [str(i) for i in range(buckets_num)]
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
 
-    for i in range(buckets_num):
-        metadata = json.loads(zk.get(f"{keeper_path}/buckets/{i}/processed")[0])
-        assert metadata["file_path"].endswith(last_processed_path[0])
+        assert len(buckets) == buckets_num
+        assert sorted(buckets) == [str(i) for i in range(buckets_num)]
+
+        for i in range(buckets_num):
+            path = f"{keeper_path}/buckets/{i}/processed"
+            print(f"Checking {path}")
+            metadata = json.loads(zk.get(path)[0])
+            assert metadata["file_path"].endswith(last_processed_path[0])
+
+    migrate_to_buckets(buckets_num)
+    check_keeper_state_changed()
+
+    if buckets_num == 1:
+        correct_value = 3
+        migrate_to_buckets(correct_value)
+        buckets_num = correct_value
+        check_keeper_state_changed()
 
     for node in [node1, node2]:
         node.query(f"ATTACH TABLE {mv_name}")
@@ -673,3 +691,132 @@ def test_failure_in_the_middle(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+
+
+def test_macros_support(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_macros_{uuid.uuid4().hex[:8]}"
+    files_path = f"{table_name}_data"
+
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS a;
+        DROP DATABASE IF EXISTS r;
+        CREATE DATABASE a ENGINE=Atomic;
+        CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1');
+        """
+    )
+
+    res = create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": "{table}/{uuid}",
+        },
+        database_name="a",
+        expect_error=True,
+    )
+
+    assert "Macro 'uuid' in engine arguments is only supported" in res
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": "{table}/{uuid}",
+        },
+        database_name="r",
+    )
+
+    table_uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = 'r' AND name = '{table_name}'"
+    ).strip()
+    keeper_path = f"/clickhouse/s3queue/{table_name}/{table_uuid}/"
+
+    assert node.query(f"SELECT count() > 0 FROM system.zookeeper WHERE path = '{keeper_path}'") == "1\n"
+    assert f"keeper_path = \\'{table_name}/{{uuid}}\\'" in node.query(f"SHOW CREATE TABLE r.{table_name}")
+
+
+def test_disable_streaming(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_disable_streaming_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    assert (
+        "false"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/disable_streaming.xml",
+        "0",
+        "1",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert (
+        "true"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "processing_threads_num": 1,
+            "keeper_path": keeper_path,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
+    )
+    assert 0 == get_count()
+
+    assert (
+        "true"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/disable_streaming.xml",
+        "1",
+        "0",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert (
+        "false"
+        == node.query("SELECT getServerSetting('s3queue_disable_streaming')").strip()
+    )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()

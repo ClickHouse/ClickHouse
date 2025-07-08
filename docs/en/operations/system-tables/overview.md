@@ -114,7 +114,77 @@ WHERE `table` = 'pypi'
 
 Conversely, other system tables are node-specific e.g. in-memory or persisting their data using the MergeTree table engine. This is typical for data such as logs and metrics. This persistence ensures that historical data remains available for analysis. However, these node-specific tables are inherently unique to each node.
 
-To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function. This function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
+In general, the following rules can be applied when determining if a system table is node-specific:
+
+- System tables with a `_log` suffix.
+- System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
+- System tables that expose ongoing processes e.g. `processes`, `merges`.
+
+Additionally, new versions of system tables may be created as a result of upgrades or changes to their schema. These versions are named using a numerical suffix.
+
+For example, consider the `system.query_log` tables, which contain a row for each query executed by the node:
+
+```sql
+SHOW TABLES FROM system LIKE 'query_log%'
+
+┌─name─────────┐
+│ query_log    │
+│ query_log_1  │
+│ query_log_10 │
+│ query_log_2  │
+│ query_log_3  │
+│ query_log_4  │
+│ query_log_5  │
+│ query_log_6  │
+│ query_log_7  │
+│ query_log_8  │
+│ query_log_9  │
+└──────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+### Querying multiple versions {#querying-multiple-versions}
+
+We can query across these tables using the [`merge`](/sql-reference/table-functions/merge) function. For example, the query below identifies the latest query issued to the target node in each `query_log` table:
+
+```sql
+SELECT
+    _table,
+    max(event_time) AS most_recent
+FROM merge('system', '^query_log')
+GROUP BY _table
+ORDER BY most_recent DESC
+
+┌─_table───────┬─────────most_recent─┐
+│ query_log    │ 2025-04-13 10:59:29 │
+│ query_log_1  │ 2025-04-09 12:34:46 │
+│ query_log_2  │ 2025-04-09 12:33:45 │
+│ query_log_3  │ 2025-04-07 17:10:34 │
+│ query_log_5  │ 2025-03-24 09:39:39 │
+│ query_log_4  │ 2025-03-24 09:38:58 │
+│ query_log_6  │ 2025-03-19 16:07:41 │
+│ query_log_7  │ 2025-03-18 17:01:07 │
+│ query_log_8  │ 2025-03-18 14:36:07 │
+│ query_log_10 │ 2025-03-18 14:01:33 │
+│ query_log_9  │ 2025-03-18 14:01:32 │
+└──────────────┴─────────────────────┘
+
+11 rows in set. Elapsed: 0.373 sec. Processed 6.44 million rows, 25.77 MB (17.29 million rows/s., 69.17 MB/s.)
+Peak memory usage: 28.45 MiB.
+```
+
+:::note Don't rely on the numerical suffix for ordering
+While the numeric suffix on tables can suggest the order of data, it should never be relied upon. For this reason, always use the merge table function combined with a date filter when targeting specific date ranges.
+:::
+
+Importantly, these tables are still **local to each node**.
+
+### Querying across nodes {#querying-across-nodes}
+
+To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster. 
+
+This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
 
 :::note
 ClickHouse Cloud provides clusters of multiple replicas for redundancy and failover. This enables its features, such as dynamic autoscaling and zero-downtime upgrades. At a certain moment in time, new nodes could be in the process of being added to the cluster or removed from the cluster. To skip these nodes, add `SETTINGS skip_unavailable_shards = 1` to queries using `clusterAllReplicas` as shown below.
@@ -127,42 +197,54 @@ SELECT
     hostname() AS host,
     count()
 FROM system.query_log
-WHERE (event_time >= '2024-12-20 12:30:00') AND (event_time <= '2024-12-20 14:30:00')
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
 GROUP BY host
 
 ┌─host──────────────────────────┬─count()─┐
-│ c-ecru-oc-31-server-ectk72m-0 │   84132 │
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
 └───────────────────────────────┴─────────┘
 
-1 row in set. Elapsed: 0.010 sec. Processed 154.63 thousand rows, 618.55 KB (16.12 million rows/s., 64.49 MB/s.)
-
+1 row in set. Elapsed: 0.010 sec. Processed 17.87 thousand rows, 71.51 KB (1.75 million rows/s., 7.01 MB/s.)
 
 SELECT
     hostname() AS host,
     count()
 FROM clusterAllReplicas('default', system.query_log)
-WHERE (event_time >= '2024-12-20 12:30:00') AND (event_time <= '2024-12-20 14:30:00')
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
 GROUP BY host SETTINGS skip_unavailable_shards = 1
 
 ┌─host──────────────────────────┬─count()─┐
-│ c-ecru-oc-31-server-ectk72m-0 │   84132 │
-│ c-ecru-oc-31-server-myt0lr4-0 │   81473 │
-│ c-ecru-oc-31-server-5mp9vn3-0 │   84292 │
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
+│ c-ecru-qn-34-server-6em4y4t-0 │  656029 │
+│ c-ecru-qn-34-server-iejrkg0-0 │  641155 │
 └───────────────────────────────┴─────────┘
 
-3 rows in set. Elapsed: 0.309 sec. Processed 686.09 thousand rows, 2.74 MB (2.22 million rows/s., 8.88 MB/s.)
-Peak memory usage: 6.07 MiB.
+3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-In general, the following rules can be applied when determining if a system table is node-specific:
+### Querying across nodes and versions {#querying-across-nodes-and-versions}
 
-- System tables with a `_log` suffix.
-- System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
-- System tables that expose ongoing processes e.g. `processes`, `merges`.
+Due to system table versioning this still does not represent the full data in the cluster. When combining the above with the `merge` function we get an accurate result for our date range:
+
+```sql
+SELECT
+    hostname() AS host,
+    count()
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host SETTINGS skip_unavailable_shards = 1
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │ 3008000 │
+│ c-ecru-qn-34-server-6em4y4t-0 │ 3659443 │
+│ c-ecru-qn-34-server-iejrkg0-0 │ 1078287 │
+└───────────────────────────────┴─────────┘
+
+3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
+```
 
 ## Related content {#related-content}
 
 - Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 - Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
 - Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
-

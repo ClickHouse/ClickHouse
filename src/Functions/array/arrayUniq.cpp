@@ -9,8 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/ColumnsHashing.h>
-#include <Interpreters/AggregationCommon.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -319,10 +317,49 @@ void FunctionArrayUniq::executeHashed(
     executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
 }
 
-
 REGISTER_FUNCTION(ArrayUniq)
 {
-    factory.registerFunction<FunctionArrayUniq>();
-}
+    FunctionDocumentation::Description description = R"(
+For a single argument passed, counts the number of different elements in the array.
+For multiple arguments passed, it counts the number of different **tuples** made of elements at matching positions across multiple arrays.
 
+For example `SELECT arrayUniq([1,2], [3,4], [5,6])` will form the following tuples:
+* Position 1: (1,3,5)
+* Position 2: (2,4,6)
+
+It will then count the number of unique tuples. In this case `2`.
+
+All arrays passed must have the same length.
+
+:::tip
+If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "arrayUniq(arr1[, arr2, ..., arrN])";
+    FunctionDocumentation::Arguments arguments = {
+        {
+            "arr1",
+            "Array for which to count the number of unique elements.",
+            {"Array(T)"}
+        },
+        {
+            "[, arr2, ..., arrN]",
+            "Optional. Additional arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays.",
+            {"Array(T)"}
+        }
+    };
+    FunctionDocumentation::Examples examples =
+{{"Single argument", "SELECT arrayUniq([1, 1, 2, 2])", "2"},
+{"Multiple argument", "SELECT arrayUniq([1, 2, 3, 1], [4, 5, 6, 4])", "3"}};
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+For a single argument returns the number of unique
+elements. For multiple arguments returns the number of unique tuples made from
+elements at corresponding positions across the arrays.
+)", {"UInt32"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayUniq>(documentation);
+}
 }

@@ -6,10 +6,9 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -24,6 +23,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsBool distributed_aggregation_memory_efficient;
 }
 
 namespace ErrorCodes
@@ -100,11 +100,6 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
-}
-
-void IStorage::updateExternalDynamicMetadata(ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
 }
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
@@ -186,7 +181,15 @@ void IStorage::read(
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
+
+    /// For distributed_aggregation_memory_efficient with Two-Level-Hash aggregation, the `GroupingAggregatedTransform`
+    /// need to receive buckets from Remote in order of bucket number, while resize here will break the buckets order
+    /// return from `RemoteSource`. See https://github.com/ClickHouse/ClickHouse/issues/76934.
+    const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
+        && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
+
+    if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
+        && output_ports < num_streams)
         pipe.resize(num_streams);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
@@ -364,7 +367,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
 {
 }
 

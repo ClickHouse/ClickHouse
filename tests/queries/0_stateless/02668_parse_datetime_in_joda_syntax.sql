@@ -11,7 +11,7 @@ select parseDateTimeInJodaSyntax('AD 1999 2000', 'G YYYY yyyy', 'UTC') = toDateT
 select parseDateTimeInJodaSyntax('AD 1999 2000', 'G yyyy YYYY', 'UTC') = toDateTime('2000-01-01', 'UTC');
 select parseDateTimeInJodaSyntax('AD 1999', 'G Y'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTimeInJodaSyntax('AD 1999', 'G YY'); -- { serverError CANNOT_PARSE_DATETIME }
-select parseDateTimeInJodaSyntax('AD 1999', 'G YYY'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTimeInJodaSyntax('AD 1999', 'G YYY', 'UTC');
 select parseDateTimeInJodaSyntax('BC', 'G'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTimeInJodaSyntax('AB', 'G'); -- { serverError CANNOT_PARSE_DATETIME }
 
@@ -334,6 +334,11 @@ select parseDateTime64InJodaSyntax('2106-02-07 06:28:15', 'yyyy-MM-dd HH:mm:ss')
 select parseDateTime64InJodaSyntax('2106-02-07 16:28:15', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('2106-02-07 16:28:15', 0);
 select parseDateTime64InJodaSyntax('2299-12-31 23:59:59', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('2299-12-31 23:59:59', 0);
 select parseDateTime64InJodaSyntax('2300-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss'); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- Test parseDateTimeInJodaSyntax with 3 repetitions in format and 4 digits year
+select parseDateTimeInJodaSyntax('2025', 'YYY', 'UTC') = toDateTime('2025-01-01', 'UTC');
+select parseDateTimeInJodaSyntax('2025', 'xxx', 'UTC') = toDateTime('2024-12-30', 'UTC');
+select parseDateTimeInJodaSyntax('2025', 'yyy', 'UTC') = toDateTime('2025-01-01', 'UTC');
 
 -- -------------------------------------------------------------------------------------------------------------------------
 

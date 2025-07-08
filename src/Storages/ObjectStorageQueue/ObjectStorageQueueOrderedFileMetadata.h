@@ -49,7 +49,7 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value);
+    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(

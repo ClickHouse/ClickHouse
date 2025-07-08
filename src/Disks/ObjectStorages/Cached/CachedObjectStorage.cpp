@@ -1,4 +1,4 @@
-#include "CachedObjectStorage.h"
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -191,15 +191,6 @@ void CachedObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
-}
-
-std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

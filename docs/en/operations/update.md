@@ -81,7 +81,7 @@ byte-identical to data on another replicas.
 
 If ClickHouse was installed from `deb` packages, execute the following commands on the server:
 
-``` bash
+```bash
 $ sudo apt-get update
 $ sudo apt-get install clickhouse-client clickhouse-server
 $ sudo service clickhouse-server restart

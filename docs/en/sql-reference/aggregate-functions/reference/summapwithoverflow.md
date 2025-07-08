@@ -39,7 +39,7 @@ First we create a table called `sum_map`, and insert some data into it. Arrays o
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -63,7 +63,7 @@ for the `sumMapWithOverflow` function, the data type of the summed values array 
 
 Query:
 
-``` sql
+```sql
 SELECT
     timeslot,
     toTypeName(sumMap(statusMap.status, statusMap.requests)),
@@ -74,7 +74,7 @@ GROUP BY timeslot
 
 Equivalently we could have used the tuple syntax with for the same result.
 
-``` sql
+```sql
 SELECT
     timeslot,
     toTypeName(sumMap(statusMapTuple)),
@@ -85,7 +85,7 @@ GROUP BY timeslot
 
 Result:
 
-``` text
+```text
    ┌────────────timeslot─┬─toTypeName(sumMap(statusMap.status, statusMap.requests))─┬─toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))─┐
 1. │ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │
 2. │ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │

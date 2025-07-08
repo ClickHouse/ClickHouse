@@ -47,7 +47,7 @@ UUID=`$CLICKHOUSE_CLIENT -q "
     WHERE database = currentDatabase() AND table = 'test_empty_blobs'"`;
 
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS text_log;
 
     -- Check logs for skipping empty blob
     SELECT 'Skipped empty blobs after 1 insert:',  count() FROM system.text_log
@@ -86,7 +86,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM test_empty_blobs ORDER BY key;
 
     -- Check logs for skipping empty blob
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS text_log;
     SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE 
         message LIKE 'Skipping writing empty blob for path %$UUID/%/arr.bin%' AND
         event_date >= yesterday() AND event_time > now() - interval 10 minute;

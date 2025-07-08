@@ -65,6 +65,8 @@ CREATE TABLE large_alter_table_00804 (
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
+SET max_execution_time = 300;
+
 INSERT INTO large_alter_table_00804 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 
 CREATE TABLE store_of_hash_00804 (hash UInt64) ENGINE = Memory();

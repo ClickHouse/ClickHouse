@@ -87,8 +87,8 @@ public:
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-        SlotCount grantedCount() const override;
-        SlotCount allocatedCount() const override;
+        // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
+        [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     private:
         friend struct Slot; // for release()
@@ -178,8 +178,8 @@ public:
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-        SlotCount grantedCount() const override;
-        SlotCount allocatedCount() const override;
+        // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
+        [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     private:
         friend struct Slot; // for release()

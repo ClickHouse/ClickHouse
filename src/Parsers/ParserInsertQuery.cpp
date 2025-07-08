@@ -13,7 +13,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -306,7 +306,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = end;
+    query->end = data ? end : nullptr;
 
     if (columns)
         query->children.push_back(columns);

@@ -20,7 +20,7 @@ The full SQL parser is used in all cases except for the `INSERT` query, which us
 
 Let's examine the query below:
 
-``` sql
+```sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -386,7 +386,7 @@ Functions and operators, in turn, can have expressions as arguments.
 
 An alias is a user-defined name for an [expression](#expressions) in a query.
 
-``` sql
+```sql
 expr AS alias
 ```
 
@@ -420,7 +420,7 @@ SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 - Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     a Int,

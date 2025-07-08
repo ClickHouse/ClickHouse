@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ConfigProcessor.h"
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>

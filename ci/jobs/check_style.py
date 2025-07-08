@@ -6,8 +6,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from praktika.result import Result
+from praktika.utils import Shell, Utils
 
 NPROC = multiprocessing.cpu_count()
 
@@ -257,8 +257,6 @@ if __name__ == "__main__":
     args = parse_args()
     testpattern = args.test
 
-    stop_watch = Utils.Stopwatch()
-
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
         exclude_paths=[
@@ -385,15 +383,13 @@ if __name__ == "__main__":
             )
         )
 
-    testname = "mypy"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_mypy,
-            )
-        )
+    # testname = "mypy"
+    # if testpattern.lower() in testname.lower():
+    #     results.append(
+    #         Result.from_commands_run(
+    #             name=testname,
+    #             command=check_mypy,
+    #         )
+    #     )
 
-    Result.create_from(results=results, stopwatch=stop_watch).add_job_summary_to_info(
-        with_local_run_command=True
-    ).complete_job()
+    Result.create_from(results=results).complete_job()

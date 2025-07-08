@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-/** Get scalar value of sub queries from query context via IAST::Hash.
+/** Get scalar value of sub queries from query context via IASTHash.
   */
 class FunctionGetScalar : public IFunction, WithContext
 {

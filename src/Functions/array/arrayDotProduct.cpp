@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
@@ -386,7 +385,35 @@ using FunctionArrayDotProduct = FunctionArrayScalarProduct<DotProduct>;
 
 REGISTER_FUNCTION(ArrayDotProduct)
 {
-    factory.registerFunction<FunctionArrayDotProduct>();
+    FunctionDocumentation::Description description = R"(
+Returns the dot product of two arrays.
+
+:::note
+The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"v1", "First vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v2", "Second vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+The dot product of the two vectors.
+
+:::note
+The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::
+
+)", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::Examples examples = {
+        {"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
+        {"Tuple example", "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);", "32    Float64"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDotProduct>(documentation);
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp

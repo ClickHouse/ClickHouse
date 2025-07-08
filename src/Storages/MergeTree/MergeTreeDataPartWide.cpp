@@ -1,4 +1,4 @@
-#include "MergeTreeDataPartWide.h"
+#include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -35,7 +36,8 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 {
 }
 
-IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
+MergeTreeReaderPtr createMergeTreeReaderWide(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
@@ -43,12 +45,10 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
         columns_to_read,

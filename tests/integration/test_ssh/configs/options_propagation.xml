@@ -1,0 +1,5 @@
+<clickhouse>
+    <ssh_server>
+       <enable_client_options_passing>true</enable_client_options_passing>
+    </ssh_server>
+</clickhouse>
