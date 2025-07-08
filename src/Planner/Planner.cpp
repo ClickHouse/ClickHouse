@@ -144,7 +144,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_parallel_blocks_marshalling;
-    extern const SettingsBool use_variant_as_common_type; 
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ServerSetting
