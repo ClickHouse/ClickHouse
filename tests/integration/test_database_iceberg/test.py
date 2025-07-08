@@ -11,6 +11,7 @@ import pyarrow as pa
 import pytest
 import requests
 import urllib3
+import pytz
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -24,10 +25,11 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
-from helpers.config_cluster import minio_secret_key
+from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
@@ -60,7 +62,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -85,9 +87,9 @@ def load_catalog_impl(started_cluster):
         **{
             "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
-            "s3.endpoint": f"http://localhost:9002",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "ClickHouse_Minio_P@ssw0rd",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 
@@ -103,7 +105,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse/data",
+        location=f"s3://warehouse-rest/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -125,7 +127,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
     settings.update(additional_settings)
@@ -138,22 +140,9 @@ CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_s
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-
-
-def print_objects():
-    minio_client = Minio(
-        f"localhost:9002",
-        access_key="minio",
-        secret_key=minio_secret_key,
-        secure=False,
-        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-    )
-
-    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
-    names = [x.object_name for x in objects]
-    names.sort()
-    for name in names:
-        print(f"Found object: {name}")
+    show_result = node.query(f"SHOW DATABASE {name}")
+    assert minio_secret_key not in show_result
+    assert "HIDDEN" in show_result
 
 
 @pytest.fixture(scope="module")
@@ -162,7 +151,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -318,6 +307,8 @@ def test_select(started_cluster):
         node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
     )
 
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
+
 
 def test_hide_sensitive_info(started_cluster):
     node = started_cluster.instances["node1"]
@@ -384,3 +375,120 @@ def test_tables_with_same_location(started_cluster):
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
+
+
+def test_backup_database(started_cluster):
+    node = started_cluster.instances["node1"]
+    create_clickhouse_iceberg_database(started_cluster, node, "backup_database")
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node.query("SHOW DATABASES")
+
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    assert (
+        node.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
+    )
+
+
+def test_non_existing_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}.A.B.C"
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}.A",
+        f"{root_namespace}.A.B",
+        f"{root_namespace}.A.B.C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 10
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+    assert expected == node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+    )
+
+    try:
+        node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.qweqwe`"
+        )
+    except Exception as e:
+        assert "DB::Exception: Table" in str(e)
+        assert "doesn't exist" in str(e)
+
+    try:
+        node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`qweqwe.qweqwe`"
+        )
+    except Exception as e:
+        assert "DB::Exception: Table" in str(e)
+        assert "doesn't exist" in str(e)
+
+
+def test_timestamps(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="timestamp", field_type=TimestampType(), required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="timestamptz",
+            field_type=TimestamptzType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    data = [
+        {
+            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+            "timestamptz": datetime(
+                2024,
+                1,
+                1,
+                hour=12,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=pytz.timezone("UTC"),
+            )
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"

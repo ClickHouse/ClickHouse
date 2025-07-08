@@ -48,7 +48,7 @@
        (info node "ZK restarting")
        (c/exec :service :zookeeper :restart)
        (info "Connecting to zk" (name node))
-       (zk-connect (name node) 2181 1000)
+       (zk-connect (name node) 2181 1000 false)
        (info node "ZK ready")))
 
     (teardown! [_ test node]

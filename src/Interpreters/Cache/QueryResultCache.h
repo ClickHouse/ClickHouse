@@ -153,12 +153,12 @@ public:
         size_t operator()(const Key & key) const;
     };
 
-    struct QueryResultCacheEntryWeight
+    struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
 
-    struct QueryResultCacheDiskEntryWeight
+    struct DiskEntryWeight
     {
         size_t operator()(const DiskEntry & entry) const;
     };
@@ -169,9 +169,9 @@ public:
     };
 
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
-    using DiskCache = CacheBase<Key, DiskEntry, KeyHasher, QueryResultCacheDiskEntryWeight>;
+    using DiskCache = CacheBase<Key, DiskEntry, KeyHasher, DiskEntryWeight>;
 
     QueryResultCache(
         size_t max_size_in_bytes, 

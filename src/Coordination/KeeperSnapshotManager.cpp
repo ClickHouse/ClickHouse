@@ -101,7 +101,7 @@ namespace
     }
 
     template<typename Node>
-    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
+    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map, bool cleanup_acl)
     {
         readVarUInt(node.stats.data_size, in);
         if (node.stats.data_size != 0)
@@ -113,6 +113,9 @@ namespace
         if (version >= SnapshotVersion::V1)
         {
             readBinary(node.acl_id, in);
+
+            if (cleanup_acl)
+                node.acl_id = 0;
         }
         else if (version == SnapshotVersion::V0)
         {
@@ -128,7 +131,9 @@ namespace
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            node.acl_id = acl_map.convertACLs(acls);
+
+            if (!cleanup_acl)
+                node.acl_id = acl_map.convertACLs(acls);
         }
 
         /// Some strange ACLID during deserialization from ZooKeeper
@@ -309,7 +314,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 }
 
 template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context) TSA_NO_THREAD_SAFETY_ANALYSIS
+void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     uint8_t version;
     readBinary(version, in);
@@ -373,7 +378,9 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            storage.acl_map.addMapping(acl_id, acls);
+
+            if (!keeper_context->shouldBlockACL())
+                storage.acl_map.addMapping(acl_id, acls);
             current_map_size++;
         }
     }
@@ -396,7 +403,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         std::string_view path{path_data.get(), path_size};
 
         typename Storage::Node node{};
-        readNode(node, in, current_version, storage.acl_map);
+        readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
+
+        if (!load_full_storage)
+        {
+            deserialization_result.paths.push_back(std::string{path});
+            continue;
+        }
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
@@ -770,7 +783,7 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
 }
 
 template<typename Storage>
-SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -784,8 +797,9 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
 
     SnapshotDeserializationResult<Storage> result;
     result.storage = std::make_unique<Storage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
-    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context);
-    result.storage->initializeSystemNodes();
+    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context, load_full_storage);
+    if (load_full_storage)
+        result.storage->initializeSystemNodes();
     return result;
 }
 

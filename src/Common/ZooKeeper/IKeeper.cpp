@@ -80,6 +80,7 @@ const char * errorMessage(Error code)
         case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
         case Error::ZBADARGUMENTS:            return "Bad arguments";
         case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
+        case Error::ZOUTOFMEMORY:             return "Out of Memory";
         case Error::ZAPIERROR:                return "API error";
         case Error::ZNONODE:                  return "No node";
         case Error::ZNOAUTH:                  return "Not authenticated";
@@ -106,7 +107,8 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
         || zk_return_code == Error::ZOPERATIONTIMEOUT
-        || zk_return_code == Error::ZNOTREADONLY;
+        || zk_return_code == Error::ZNOTREADONLY
+        || zk_return_code == Error::ZNOAUTH;
 }
 
 bool isUserError(Error zk_return_code)

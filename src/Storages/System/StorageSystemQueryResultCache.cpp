@@ -1,4 +1,4 @@
-#include "StorageSystemQueryResultCache.h"
+#include <Storages/System/StorageSystemQueryResultCache.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -78,11 +78,11 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
     };
 
     fill_cache_entries(query_result_cache->dumpMemoryCache(),
-        QueryResultCache::QueryResultCacheEntryWeight(),
+        QueryResultCache::EntryWeight(),
         StorageLevel::Memory);
         
     fill_cache_entries(query_result_cache->dumpDiskCache(),
-        QueryResultCache::QueryResultCacheDiskEntryWeight(),
+        QueryResultCache::DiskEntryWeight(),
         StorageLevel::Disk);
 }
 

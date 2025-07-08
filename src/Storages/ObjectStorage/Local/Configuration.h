@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "Disks/ObjectStorages/Local/LocalObjectStorage.h"
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -54,8 +54,6 @@ public:
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
-
-    ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
     {

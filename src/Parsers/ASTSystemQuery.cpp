@@ -115,6 +115,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
+
+        if (if_exists)
+            print_keyword(" IF EXISTS");
+
         return ostr;
     };
 
@@ -327,8 +331,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_servive_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
+            else if (!distributed_cache_server_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
             break;
         }
         case Type::UNFREEZE:
@@ -400,7 +404,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {

@@ -1,4 +1,4 @@
-#include "HashedArrayDictionary.h"
+#include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>

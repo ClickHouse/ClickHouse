@@ -102,11 +102,6 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     return lock;
 }
 
-void IStorage::updateExternalDynamicMetadata(ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
-}
-
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     auto lock = tryLockForAlter(acquire_timeout);
@@ -280,6 +275,16 @@ bool IStorage::optimize(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
 }
 
+std::expected<void, PreformattedMessage> IStorage::supportsLightweightUpdate() const
+{
+    return std::unexpected(PreformattedMessage::create("Table with engine {} doesn't support lightweight updates", getName()));
+}
+
+QueryPipeline IStorage::updateLightweight(const MutationCommands &, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported by storage {}", getName());
+}
+
 void IStorage::mutate(const MutationCommands &, ContextPtr)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -372,7 +377,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
 {
 }
 

@@ -26,6 +26,8 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
+    bool canContainRocksDBTables() const override { return false; }
+
     void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/) override;
 
     void createTable(

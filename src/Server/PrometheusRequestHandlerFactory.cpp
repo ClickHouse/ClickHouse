@@ -137,14 +137,15 @@ namespace
         IServer & server,
         const AsynchronousMetrics & async_metrics,
         const PrometheusRequestHandlerConfig & config,
-        bool for_keeper)
+        bool for_keeper,
+        std::unordered_map<String, String> headers = {})
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
         auto metric_writer = createPrometheusMetricWriter(for_keeper);
-        auto creator = [&server, &async_metrics, config, metric_writer]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer);
+            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
         };
         return std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     }
@@ -206,10 +207,13 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const AsynchronousMetrics & asynchronous_metrics)
+    const AsynchronousMetrics & asynchronous_metrics,
+    std::unordered_map<String, String> & common_headers)
 {
+    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
+
     auto parsed_config = parseExposeMetricsConfig(config, config_prefix + ".handler");
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
     return handler;

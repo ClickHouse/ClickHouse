@@ -16,6 +16,7 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
@@ -36,7 +37,13 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-};
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric QueryCacheBytes;
+    extern const Metric QueryCacheEntries;
+}
 
 namespace DB
 {
@@ -461,7 +468,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return key.ast_hash.low64;
 }
 
-size_t QueryResultCache::QueryResultCacheEntryWeight::operator()(const Entry & entry) const
+size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
 {
     size_t res = 0;
     for (const auto & chunk : entry.chunks)
@@ -471,7 +478,7 @@ size_t QueryResultCache::QueryResultCacheEntryWeight::operator()(const Entry & e
     return res;
 }
 
-size_t QueryResultCache::QueryResultCacheDiskEntryWeight::operator()(const DiskEntry & entry) const
+size_t QueryResultCache::DiskEntryWeight::operator()(const DiskEntry & entry) const
 {
     return entry.bytes_on_disk;
 }
@@ -661,7 +668,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return res;
     };
 
-    size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
+    size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -761,9 +768,9 @@ QueryResultCache::QueryResultCache(
     size_t max_disk_entries,
     DiskPtr & disk_,
     const String & path_)
-    : memory_cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
+    : memory_cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
-    , disk_cache(std::make_unique<TTLCachePolicy<Key, DiskEntry, KeyHasher, QueryResultCacheDiskEntryWeight, IsStale>>(
+    , disk_cache(std::make_unique<TTLCachePolicy<Key, DiskEntry, KeyHasher, DiskEntryWeight, IsStale>>(
         std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , disk(disk_)
     , path(path_)

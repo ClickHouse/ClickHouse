@@ -1,7 +1,11 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 
 
@@ -11,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -139,16 +144,40 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
 
 void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
 {
+    auto is_enabled_user_name_access_type = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+    }
+
     buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
     if (isGlobalWithParameter())
     {
-        if (anyParameter())
-            buffer << "*";
+        /// Special check for backward compatibility.
+        /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
+        /// This will allow us to run old replicas in the same cluster.
+        if (access_flags.getParameterType() == AccessFlags::USER_NAME
+            && !is_enabled_user_name_access_type)
+        {
+            if (!anyParameter())
+                LOG_WARNING(getLogger("AccessRightsElement"),
+                    "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
+                    "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
+                    parameter);
+
+            buffer << "*.*";
+        }
         else
         {
-            buffer << backQuoteIfNeed(parameter);
-            if (wildcard)
+            if (anyParameter())
                 buffer << "*";
+            else
+            {
+                buffer << backQuoteIfNeed(parameter);
+                if (wildcard)
+                    buffer << "*";
+            }
         }
     }
     else if (anyDatabase())
@@ -267,6 +296,94 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
         database = current_database;
 }
 
+void AccessRightsElement::replaceDeprecated()
+{
+    if (!access_flags)
+        return;
+
+    if (access_flags.toAccessTypes().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
+
+    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
+    {
+        case AccessType::FILE:
+        case AccessType::URL:
+        case AccessType::REMOTE:
+        case AccessType::MONGO:
+        case AccessType::REDIS:
+        case AccessType::MYSQL:
+        case AccessType::POSTGRES:
+        case AccessType::SQLITE:
+        case AccessType::ODBC:
+        case AccessType::JDBC:
+        case AccessType::HDFS:
+        case AccessType::S3:
+        case AccessType::HIVE:
+        case AccessType::AZURE:
+        case AccessType::KAFKA:
+        case AccessType::NATS:
+        case AccessType::RABBITMQ:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            parameter = DB::toString(current_access_type);
+            break;
+        case AccessType::SOURCES:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            break;
+        default:
+            break;
+    }
+}
+
+void AccessRightsElement::makeBackwardCompatible()
+{
+    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
+        {"FILE", AccessType::FILE},
+        {"URL", AccessType::URL},
+        {"REMOTE", AccessType::REMOTE},
+        {"MONGO", AccessType::MONGO},
+        {"REDIS", AccessType::REDIS},
+        {"MYSQL", AccessType::MYSQL},
+        {"POSTGRES", AccessType::POSTGRES},
+        {"SQLITE", AccessType::SQLITE},
+        {"ODBC", AccessType::ODBC},
+        {"JDBC", AccessType::JDBC},
+        {"HDFS", AccessType::HDFS},
+        {"S3", AccessType::S3},
+        {"HIVE", AccessType::HIVE},
+        {"AZURE", AccessType::AZURE},
+        {"KAFKA", AccessType::KAFKA},
+        {"NATS", AccessType::NATS},
+        {"RABBITMQ", AccessType::RABBITMQ},
+    };
+
+    auto is_enabled_read_write_grants = false;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    if (!is_enabled_read_write_grants)
+    {
+        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
+        {
+            if (anyParameter())
+            {
+                access_flags = AccessType::SOURCES;
+            }
+            else
+            {
+                auto it = string_to_accessType.find(parameter);
+                if (it != string_to_accessType.end())
+                {
+                    access_flags = it->second;
+                    parameter.clear();
+                }
+            }
+        }
+    }
+}
+
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
@@ -302,6 +419,12 @@ void AccessRightsElements::eraseNotGrantable()
     });
 }
 
+void AccessRightsElements::replaceDeprecated()
+{
+    for (auto & element : *this)
+        element.replaceDeprecated();
+}
+
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 {
     for (auto & element : *this)
@@ -316,7 +439,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
     bool no_output = true;
     for (size_t i = 0; i != size(); ++i)
     {
-        const auto & element = (*this)[i];
+        auto element = (*this)[i];
+        element.makeBackwardCompatible();
+
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
