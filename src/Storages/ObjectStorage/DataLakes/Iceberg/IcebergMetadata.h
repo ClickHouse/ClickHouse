@@ -161,8 +161,8 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
     explicit IcebergDataObjectInfo(
         const IcebergMetadata & iceberg_metadata,
         Iceberg::ManifestFileEntry data_object_,
-        std::optional<ObjectMetadata> metadata_ = std::nullopt,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {});
+        std::optional<ObjectMetadata> metadata_,
+        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_);
 
     const Iceberg::ManifestFileEntry data_object;
     std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;

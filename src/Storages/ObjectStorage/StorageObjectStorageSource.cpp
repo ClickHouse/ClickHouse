@@ -30,6 +30,7 @@
 #include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
+#include <Poco/Logger.h>
 
 
 namespace fs = std::filesystem;
@@ -239,6 +240,14 @@ Chunk StorageObjectStorageSource::generate()
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
 
+            LOG_DEBUG(
+                &Poco::Logger::get("StorageObjectStorageSource, generate"),
+                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}",
+                num_rows,
+                reader.getObjectInfo()->getPath(),
+                configuration->getTypeName(),
+                total_rows_in_file);
+
             size_t chunk_size = 0;
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = input_format->getApproxBytesReadForChunk();
@@ -404,6 +413,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
 
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource, createReader"),
+        "Creating reader for object: {}, size: {}",
+        object_info->getPath(),
+        object_info->metadata->size_bytes);
+
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -454,7 +469,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            std::optional<size_t> assumed_size = dynamic_cast<ReadBufferFromFileBase *>(read_buf.get())->tryGetFileSize();
+            LOG_DEBUG(
+                &Poco::Logger::get("StorageObjectStorageSource, createReader"),
+                "Creating read buffer for object: {}, has assumed size: {}, assumed size: {}",
+                object_info->getPath(),
+                assumed_size.has_value(),
+                assumed_size.value_or(0));
         }
+
 
         Block initial_header = read_from_format_info.format_header;
 
@@ -490,6 +513,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (configuration->hasPositionDeleteTransformer(object_info))
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("StorageObjectStorageSource"),
+                "Adding position delete transformer for object: {}",
+                object_info->getPath());
             builder.addSimpleTransform(
                 [&](const Block & header)
                 { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
@@ -501,6 +528,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             transformer = object_info->data_lake_metadata->transform;
         if (!transformer)
             transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
+
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, createReader"),
+            "Has schema transformer {} for path {}",
+            transformer != nullptr,
+            object_info->getPath());
 
         if (transformer)
         {
