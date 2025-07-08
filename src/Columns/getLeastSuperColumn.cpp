@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 static bool sameConstants(const IColumn & a, const IColumn & b)
@@ -41,7 +41,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithType
             ++num_const;
     }
 
-    result.type = use_variant_as_common_type?getLeastSupertypeOrVariant(types): getLeastSupertype(types);
+    result.type = use_variant_as_common_type ? getLeastSupertypeOrVariant(types) : getLeastSupertype(types);
 
     /// Create supertype column saving constness if possible.
 
