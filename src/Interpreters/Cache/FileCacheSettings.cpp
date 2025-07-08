@@ -222,7 +222,7 @@ void FileCacheSettings::loadFromConfigsWithPriority(
     const std::string & cache_path_prefix_if_relative,
     const std::string & default_cache_path)
 {
-    for (auto&& config_prefix : config_prefixes) {
+    for (const auto & config_prefix : config_prefixes) {
         loadFromConfigNoPathCheck(config, config_prefix);
     }
     checkPath(cache_path_prefix_if_relative, default_cache_path);

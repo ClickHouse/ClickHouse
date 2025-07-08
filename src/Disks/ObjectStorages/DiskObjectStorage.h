@@ -228,7 +228,7 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    void wrapWithCache(const FileCachesHolder & holder, const String & layer_name);
+    void wrapWithCache(FileCachesHolder && holder, const String & layer_name);
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;

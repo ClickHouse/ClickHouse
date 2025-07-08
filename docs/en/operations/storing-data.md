@@ -693,7 +693,7 @@ Cache profile events:
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
 
 ### Split local cache {#split-local-cache}
-It is possible to split local cache into two parts: system cache(stores system information: metadata, index, etc.) and data cache(stores table data information). The settings for both caches could be independently defined.
+It is possible to split local cache into two parts: system cache (stores system information: metadata, index, etc.) and data cache (stores table data information). The settings for both caches could be independently defined.
 ```xml
 <clickhouse>
     <storage_configuration>

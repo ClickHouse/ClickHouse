@@ -20,7 +20,7 @@ namespace DB
 class CachedObjectStorage final : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage_, const FileCachesHolder & holder_, const String & cache_config_name_);
+    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachesHolder && holder_, const String & cache_config_name_);
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
@@ -117,8 +117,6 @@ public:
     ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
-
-    const FileCacheSettings & getCacheSettings(SplitCacheType cache_type) const { return holder.getCacheSetting(cache_type); }
 
 #if USE_AZURE_BLOB_STORAGE
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override

@@ -23,10 +23,10 @@ namespace FileCacheSetting
 
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
-    const FileCachesHolder & holder_,
+    FileCachesHolder && holder_,
     const std::string & cache_config_name_)
     : object_storage(object_storage_)
-    , holder(holder_)
+    , holder(std::move(holder_))
     , cache_config_name(cache_config_name_)
     , log(getLogger(getName()))
 {

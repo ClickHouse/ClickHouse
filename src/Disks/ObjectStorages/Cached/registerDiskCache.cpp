@@ -204,8 +204,8 @@ FileCachesHolder getSplittedCaches(
     );
 
     return {
-        {SplitCacheType::SystemCache, std::move(system_cache), std::move(system_cache_settings)},
-        {SplitCacheType::DataCache, std::move(data_cache), std::move(data_cache_settings)}
+        {SplitCacheType::SystemCache, std::move(system_cache)},
+        {SplitCacheType::DataCache, std::move(data_cache)}
     };
 }
 
@@ -247,11 +247,12 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         else
         {
             auto [cache, cache_settings] = getCache(config, config_prefix, context, name, attach, custom_disk);
-            caches_holder.setCache(SplitCacheType::GeneralCache, cache, std::move(cache_settings));
+            caches_holder.setCache(SplitCacheType::GeneralCache, cache);
         }
+        caches_holder.checkCorrectness();
 
         auto disk_object_storage = disk->createDiskObjectStorage();
-        disk_object_storage->wrapWithCache(caches_holder, name);
+        disk_object_storage->wrapWithCache(std::move(caches_holder), name);
 
         LOG_INFO(
             getLogger("DiskCache"),

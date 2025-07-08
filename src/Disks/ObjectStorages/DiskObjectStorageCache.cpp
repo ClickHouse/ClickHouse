@@ -8,9 +8,9 @@
 namespace DB
 {
 
-void DiskObjectStorage::wrapWithCache(const FileCachesHolder & holder, const String & layer_name)
+void DiskObjectStorage::wrapWithCache(FileCachesHolder && holder, const String & layer_name)
 {
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, holder, layer_name);
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, std::move(holder), layer_name);
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const

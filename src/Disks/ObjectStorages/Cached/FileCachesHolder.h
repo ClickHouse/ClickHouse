@@ -14,24 +14,27 @@ enum SplitCacheType
     DataCache, // cache table data
 };
 
-constexpr std::array<std::string, 1> data_cache_type = {".bin"};
+std::string getSplitCacheTypeStr(SplitCacheType cache_type);
 
-bool isDataCacheType(const std::string & file_path);
 SplitCacheType defineCacheType(const std::string & file_path);
 
-
+/// A class, which can store several FileCache objects
+/// with a SplitCacheType defining access to them.
 class FileCachesHolder
 {
 public:
     FileCachesHolder() = default;
-    FileCachesHolder(std::initializer_list<std::tuple<SplitCacheType, FileCachePtr, FileCacheSettings>> caches_);
-    void setCache(SplitCacheType cache_type, const FileCachePtr & system_cache_, FileCacheSettings&& system_cache_settings_);
+    FileCachesHolder(std::initializer_list<std::tuple<SplitCacheType, FileCachePtr>> caches_);
+    FileCachesHolder(FileCachesHolder && file_caches_holder_) = default;
+    FileCachesHolder & operator=(FileCachesHolder && file_caches_holder_) = default;
+
+    void setCache(SplitCacheType cache_type, const FileCachePtr & system_cache_);
     FileCachePtr getCache(SplitCacheType cache_type) const;
-    const FileCacheSettings & getCacheSetting(SplitCacheType cache_type) const;
+    bool hasCache(SplitCacheType cache_type) const;
     void initializeAll();
     void checkCorrectness() const;
 private:
-    std::unordered_map<SplitCacheType, std::pair<FileCachePtr, FileCacheSettings>> holder;
+    std::unordered_map<SplitCacheType, FileCachePtr> holder;
 };
 
 }
