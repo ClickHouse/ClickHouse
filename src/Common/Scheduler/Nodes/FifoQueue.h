@@ -78,7 +78,10 @@ public:
         ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
+        {
             busy_periods++;
+            event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
+        }
         queue_cost -= result->cost;
         incrementDequeued(result->cost);
         return {result, !requests.empty()};
