@@ -734,7 +734,7 @@ It is possible to split local cache into two parts: system cache (stores system 
 
 In the example above, splitting the cache creates two separate caches named `s3_cache_system` and `s3_cache_data` (derived from the base disk name "s3_cache" with "_system" and "_data" suffixes):
 
-```
+```txt
 :) SHOW FILESYSTEM CACHE
    ┌─Caches──────────────────────┐
 1. │ s3_cache_system             │
