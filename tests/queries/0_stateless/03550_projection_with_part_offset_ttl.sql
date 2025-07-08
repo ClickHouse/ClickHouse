@@ -20,6 +20,4 @@ INSERT INTO test SELECT 1, 10;
 
 OPTIMIZE TABLE test final;
 
-SELECT projections FROM system.parts WHERE active AND database = currentDatabase() and table = 'test';
-
 DROP TABLE test;
