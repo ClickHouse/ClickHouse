@@ -395,36 +395,35 @@ std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_bloc
     const auto & patch_data_version = getColumnUInt64Data(patch_block, PartDataVersionColumn::name);
 
     auto data = std::make_shared<PatchJoinSharedData>();
+    if (num_patch_rows == 0)
+        return data;
+
     data->hash_map.reserve(num_patch_rows);
-    bool is_first = true;
+    UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
+    OffsetsHashMap * offsets_hash_map = nullptr;
+
+    data->min_block = prev_block_number;
+    data->max_block = 0;
 
     for (size_t i = 0; i < num_patch_rows; ++i)
     {
         UInt64 block_number = patch_block_number[i];
         UInt64 block_offset = patch_block_offset[i];
 
-        auto & block_hash_map = data->hash_map[block_number];
-        auto [it, inserted] = block_hash_map.emplace(block_offset, i);
+        if (block_number != prev_block_number)
+        {
+            prev_block_number = block_number;
+            offsets_hash_map = &data->hash_map[block_number];
+
+            data->min_block = std::min(data->min_block, block_number);
+            data->max_block = std::max(data->max_block, block_number);
+        }
+
+        auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
 
         /// Keep only the row with the highest version.
-        if (!inserted && patch_data_version[i] <= patch_data_version[it->second])
-            continue;
-
-        it->second = i;
-
-        if (std::exchange(is_first, false))
-        {
-            data->min_block = patch_block_number[i];
-            data->max_block = patch_block_number[i];
-        }
-        else if (patch_block_number[i] < data->min_block)
-        {
-            data->min_block = patch_block_number[i];
-        }
-        else if (patch_block_number[i] > data->max_block)
-        {
-            data->max_block = patch_block_number[i];
-        }
+        if (inserted || patch_data_version[i] > patch_data_version[it->second])
+            it->second = i;
     }
 
     auto elapsed = watch.elapsedMicroseconds();
