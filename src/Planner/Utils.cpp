@@ -72,7 +72,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsBool use_variant_as_common_type; 
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
