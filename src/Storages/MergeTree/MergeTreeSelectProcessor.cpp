@@ -252,7 +252,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (add_part_level)
                 chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
 
-            if (query_condition_cache_writer)
+            if (reader_settings.use_query_condition_cache)
             {
                 String part_name = data_part->isProjectionPart()
                     ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
