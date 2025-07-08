@@ -112,7 +112,7 @@ SELECT
     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size
 FROM system.parts
-WHERE table = 'tab' AND active = 1;
+WHERE database = currentDatabase() AND table = 'tab' AND active = 1;
 
 DROP TABLE tab;
 
