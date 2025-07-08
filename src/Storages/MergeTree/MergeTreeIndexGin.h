@@ -102,6 +102,8 @@ private:
             /// Constants
             ALWAYS_FALSE,
             ALWAYS_TRUE,
+            /// Index Functions
+            FUNCTION_EQUALS_INDEX,
         };
 
         RPNElement( /// NOLINT
@@ -129,6 +131,8 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
+
+    bool traverseASTEqualsIndex(const RPNBuilderFunctionTreeNode & function, RPNElement & out);
 
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 

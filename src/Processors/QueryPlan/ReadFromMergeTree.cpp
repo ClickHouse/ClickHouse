@@ -1836,8 +1836,13 @@ static void buildIndexes(
         return false; // right is min max but left is not
     });
 
+    /// TODO: JAM This is a temporal solution which copies the skip_indexes into the context throw a shared_pointer.
+    /// That's because the indexes destructor is released with the planner, way before the functions execute, as we need to access the index
+    /// from the function, we cannot create a reference to the same object.
+    /// If this finally works, the we can consider to not copy, but create a shared_pointer between both. The issue with that is that
+    /// shared_ptr are not thread safe so a thread save approach needs to be implemented to avoid calling the destructor concurrently.
+    context->setSkippingIndices(std::make_shared<UsefulSkipIndexes>(skip_indexes));
     indexes->skip_indexes = std::move(skip_indexes);
-    context->setSkippingIndices(&indexes->skip_indexes); // TODO: JAM use reference wrapper
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)

@@ -565,7 +565,7 @@ protected:
     mutable std::mutex storage_snapshot_cache_mutex;
 
     mutable std::shared_mutex skip_indexes_mutex;
-    mutable const UsefulSkipIndexes* skip_indexes {};
+    mutable std::shared_ptr<const UsefulSkipIndexes> skip_indexes;
     
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1455,11 +1455,11 @@ public:
     std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
     /// The skipping indices. These are set at the end of buildIndexes which happen at a delayed moment respect to the ReadFromMergeTree.
-    std::pair<const UsefulSkipIndexes *, std::shared_lock<std::shared_mutex>> getStorageSnapshot() const
+    std::pair<std::shared_ptr<const UsefulSkipIndexes>, std::shared_lock<std::shared_mutex>> getStorageSnapshot() const
     {
         return std::make_pair(skip_indexes, std::shared_lock(skip_indexes_mutex));
     }
-    void setSkippingIndices(const UsefulSkipIndexes *_skip_indexes) const
+    void setSkippingIndices(std::shared_ptr<const UsefulSkipIndexes> _skip_indexes) const
     {
         chassert(_skip_indexes != nullptr);
         std::lock_guard lk(skip_indexes_mutex);

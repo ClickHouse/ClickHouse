@@ -61,7 +61,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 4; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
@@ -69,14 +69,18 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (arguments.size() < 2)
+        if (arguments.size() != getNumberOfArguments())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects at least 2 arguments", getName());
 
         const ColumnWithTypeAndName & index_argument = arguments[0];
         const ColumnWithTypeAndName & token_argument = arguments[1];
+        const ColumnWithTypeAndName & part_index_argument = arguments[2];
+        const ColumnWithTypeAndName & part_offset_argument = arguments[3];
 
         chassert(index_argument.column->size() == input_rows_count);
         chassert(token_argument.column->size() == input_rows_count);
+        chassert(part_index_argument.column->size() == input_rows_count);
+        chassert(part_offset_argument.column->size() == input_rows_count);
 
         printf("input_rows_count = %zu index->size() = %zu token->size() = %zu context = %p, index_argument %s, token_argument %s\n",
             input_rows_count,
@@ -101,6 +105,27 @@ public:
         auto const [skip_indexes, skip_indexes_mutex] = context->getStorageSnapshot();
         if (skip_indexes == nullptr)
             throw Exception(ErrorCodes::NOT_INITIALIZED, "Index function: {} cannot access skip_indexes.", getName());
+
+
+        const ColumnUInt64 * col_part_index_vector = checkAndGetColumn<ColumnUInt64>(&*part_index_argument.column);
+        if (!col_part_index_vector)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                part_index_argument.type->getName(),
+                3,
+                getName());
+
+        const ColumnUInt64 * col_part_offset_vector = checkAndGetColumn<ColumnUInt64>(&*part_offset_argument.column);
+        if (!col_part_offset_vector)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                part_offset_argument.type->getName(),
+                4,
+                getName());
+
+        printf(" skip_indexes->useful_indices %zu\n", skip_indexes->useful_indices.size());
 
         // RangesInDataParts parts_with_ranges = indexInfo.parts;
         // UsefulSkipIndexes & skip_indexes = indexInfo.indexes->skip_indexes
