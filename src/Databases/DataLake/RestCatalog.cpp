@@ -426,7 +426,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         Poco::Dynamic::Var json = parser.parse(json_str);
         if (json.type() == typeid(Poco::JSON::Object::Ptr))
         {
-            Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
+            const Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
             if (obj->size() == 0)
                 return {};
         }
