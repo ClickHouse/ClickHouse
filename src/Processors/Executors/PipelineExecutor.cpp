@@ -41,6 +41,7 @@ namespace Setting
 {
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
+    extern const SettingsBool opentelemetry_trace_cpu_scheduling;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsString workload;
 }
@@ -59,6 +60,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
         profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
             && process_list_element->getContext()->getProcessorsProfileLog();
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
+        trace_cpu_scheduling = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_cpu_scheduling];
     }
     try
     {
@@ -374,7 +376,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 }
 
 /// Properly allocate CPU slots or lease for the thread pool
-static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control)
+static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool trace_cpu_scheduling)
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks.
@@ -432,6 +434,7 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
                             .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
                             .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
                             .workload = query_context->getSettingsRef()[Setting::workload],
+                            .trace_cpu_scheduling = trace_cpu_scheduling,
                         });
                 }
                 else
@@ -457,7 +460,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCPU(num_threads, concurrency_control);
+    cpu_slots = allocateCPU(num_threads, concurrency_control, trace_cpu_scheduling);
 
     Queue queue;
     Queue async_queue;

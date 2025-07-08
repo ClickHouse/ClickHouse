@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 
 #include <atomic>
@@ -68,6 +69,11 @@ CPULeaseAllocation::Lease::~Lease()
 void CPULeaseAllocation::Lease::startConsumption()
 {
     last_report_ns = clock_gettime_ns(CLOCK_THREAD_CPUTIME_ID);
+    if (parent && parent->settings.trace_cpu_scheduling)
+    {
+        OpenTelemetry::SpanHolder span("CPU_LEASE_START");
+        span.addAttribute("thread_number", slot_id);
+    }
 }
 
 bool CPULeaseAllocation::Lease::renew()
@@ -76,6 +82,11 @@ bool CPULeaseAllocation::Lease::renew()
         return parent->renew(*this);
     else
         return false;
+}
+
+void CPULeaseAllocation::Lease::reset()
+{
+    parent.reset();
 }
 
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_)
@@ -328,11 +339,21 @@ bool CPULeaseAllocation::renew(Lease & lease)
         return true; // Not enough time passed to report
     lease.last_report_ns = thread_time_ns;
 
+    std::optional<OpenTelemetry::SpanHolder> report_span;
+    if (settings.trace_cpu_scheduling)
+    {
+        report_span.emplace("CPU_LEASE_REPORT");
+        report_span->addAttribute("thread_number", lease.slot_id);
+        report_span->addAttribute("delta_ns", delta_ns);
+    }
+
     std::unique_lock lock{mutex};
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
 
     consume(lock, delta_ns);
+
+    report_span.reset();
 
     // Check if we need to decrease number of running threads (i.e. `acquired`).
     // We want number of `acquired` slots to be less than number of `allocated` slots.
@@ -353,6 +374,18 @@ bool CPULeaseAllocation::renew(Lease & lease)
             // It is better to run less threads, but utilize CPU better to avoid frequent context switches. This is how down-scaling works.
             setPreempted(thread_num);
 
+            std::optional<OpenTelemetry::SpanHolder> preemption_span;
+            if (settings.trace_cpu_scheduling)
+            {
+                preemption_span.emplace("CPU_LEASE_PREEMPTION");
+                preemption_span->addAttribute("thread_number", thread_num);
+                preemption_span->addAttribute("consumed_ns", consumed_ns);
+                preemption_span->addAttribute("requested_ns", requested_ns);
+                preemption_span->addAttribute("enqueued", enqueued);
+                preemption_span->addAttribute("allocated", allocated);
+                preemption_span->addAttribute("running", threads.running_count);
+            }
+
             auto preemption_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlPreemptedMicroseconds);
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
@@ -361,7 +394,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
             {
                 // Timeout - worker thread should stop, but query continues
                 downscale(thread_num);
-                lease.parent.reset();
+                lease.reset();
                 return false;
             }
 
@@ -463,7 +496,7 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Release the slot
     downscale(lease.slot_id);
-    lease.parent.reset();
+    lease.reset();
 }
 
 bool CPULeaseAllocation::isRequesting() const

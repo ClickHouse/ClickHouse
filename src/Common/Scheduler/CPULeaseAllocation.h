@@ -37,6 +37,9 @@ struct CPULeaseSettings
 
     /// For debugging purposes, not used in production
     String workload;
+
+    /// Enable OpenTelemetry tracing for CPU scheduling
+    bool trace_cpu_scheduling = false;
 };
 
 class CPULeaseAllocation;
@@ -91,6 +94,7 @@ private:
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
+        void reset();
 
     private:
         friend class CPULeaseAllocation;

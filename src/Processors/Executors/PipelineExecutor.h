@@ -92,6 +92,7 @@ private:
     bool profile_processors = false;
     /// system.opentelemetry_span_log
     bool trace_processors = false;
+    bool trace_cpu_scheduling = false;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
