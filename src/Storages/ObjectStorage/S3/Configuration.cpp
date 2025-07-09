@@ -125,18 +125,13 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     if (!headers_from_ast.empty())
-    {
-        s3_settings->auth_settings.headers.insert(
-            s3_settings->auth_settings.headers.end(),
-            headers_from_ast.begin(), headers_from_ast.end());
-    }
+        client_getter->addHeaders(headers_from_ast);
 
-    auto client_getter = std::make_shared<ClientGetterFromAuthSettings>(s3_settings->auth_settings);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
         client_getter,
-        std::make_unique<S3::S3RequestSettings>(s3_settings->request_settings),
+        std::make_unique<S3::S3RequestSettings>(*s3_request_settings),
         context,
         url,
         *s3_capabilities,
@@ -158,7 +153,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     const auto & config = context->getConfigRef();
 
-    s3_settings = std::make_unique<S3Settings>();
+    auto s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
@@ -181,6 +176,9 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
 
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+
+    client_getter = std::make_shared<S3ClientGetterFromAuthSettings>(s3_settings->auth_settings);
+    s3_request_settings = std::make_unique<S3::S3RequestSettings>(s3_settings->request_settings);
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
 
@@ -363,7 +361,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     /// This argument is always the first
     url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
 
-    s3_settings = std::make_unique<S3Settings>();
+    auto s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
@@ -387,7 +385,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     if (engine_args_to_idx.contains("compression_method"))
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
-
     if (engine_args_to_idx.contains("access_key_id"))
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
 
@@ -399,6 +396,9 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (no_sign_request)
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+
+    client_getter = std::make_shared<S3ClientGetterFromAuthSettings>(s3_settings->auth_settings);
+    s3_request_settings = std::make_unique<S3::S3RequestSettings>(s3_settings->request_settings);
 
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 

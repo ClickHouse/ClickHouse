@@ -68,7 +68,7 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     S3::URI getURL() const { return url; }
-    const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
+    bool isNoSignRequest() const { return client_getter->isNoSignRequest(); }
 
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
@@ -103,7 +103,8 @@ private:
     S3::URI url;
     std::vector<String> keys;
 
-    std::unique_ptr<S3Settings> s3_settings;
+    ClientGetterPtr client_getter;
+    std::shared_ptr<S3::S3RequestSettings> s3_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.

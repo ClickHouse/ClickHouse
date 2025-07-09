@@ -168,7 +168,6 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::S3:
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
-            const auto & auth_settings = s3_conf->getAuthSettings();
             const auto & s3_client = object_storage->getS3StorageClient();
             const auto & s3_credentials = s3_client->getCredentials();
             const auto & url = s3_conf->getURL();
@@ -183,7 +182,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
                 s3_credentials.GetAWSSecretKey(),
                 std::move(region),
                 s3_credentials.GetSessionToken(),
-                auth_settings[S3AuthSetting::no_sign_request]);
+                s3_conf->isNoSignRequest());
         }
         case DB::ObjectStorageType::Local:
         {
