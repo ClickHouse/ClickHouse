@@ -9,13 +9,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user1="user02884_1_${CLICKHOUSE_DATABASE}_$RANDOM"
 user2="user02884_2_${CLICKHOUSE_DATABASE}_$RANDOM"
 user3="user02884_3_${CLICKHOUSE_DATABASE}_$RANDOM"
+user4="user02884_4_${CLICKHOUSE_DATABASE}_$RANDOM"
+user5="user02884_5_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.test_table (s String) ENGINE = MergeTree ORDER BY s;
 
-DROP USER IF EXISTS $user1, $user2, $user3;
-CREATE USER $user1, $user2, $user3;
+DROP USER IF EXISTS $user1, $user2, $user3, $user4, $user5;
+CREATE USER $user1, $user2, $user3, $user4, $user5;
 GRANT SELECT ON $db.* TO $user1;
 EOF
 
@@ -224,6 +226,11 @@ ALTER TABLE $db.mv1 MODIFY DEFINER=default SQL SECURITY DEFINER;
 CREATE MATERIALIZED VIEW $db.mv2 TO $db.destination2
 AS SELECT *
 FROM $db.destination1;
+
+CREATE MATERIALIZED VIEW $db.mv3 TO $db.destination2
+DEFINER = $user4 SQL SECURITY DEFINER
+AS SELECT *
+FROM $db.destination1
 EOF
 
 echo "insert into source"
@@ -249,6 +256,23 @@ echo "create view"
   DEFINER $user2
   AS SELECT * FROM $db.test_table;
 " 2>&1 | grep -c "Syntax error") >= 1 )) && echo "Syntax error" || echo "UNEXPECTED"
+
+echo "insert with not enough rights"
+${CLICKHOUSE_CLIENT} <<EOF
+GRANT SELECT ON $db.destination1 TO $user4;
+GRANT INSERT ON $db.destination1 TO $user4;
+GRANT SELECT ON $db.destination2 TO $user4;
+GRANT NONE ON $db.destination2 TO $user4;
+
+GRANT SELECT ON $db.mv3 TO $user5;
+GRANT INSERT ON $db.mv3 TO $user5;
+GRANT SELECT ON $db.destination1 TO $user5;
+GRANT INSERT ON $db.destination1 TO $user5;
+GRANT SELECT ON $db.destination2 TO $user5;
+GRANT INSERT ON $db.destination2 TO $user5;
+EOF
+
+(( $(${CLICKHOUSE_CLIENT} --user $user5 --query "INSERT INTO $db.mv3 VALUES (10)" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
