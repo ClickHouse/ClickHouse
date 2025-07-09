@@ -57,6 +57,8 @@ rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.a
 rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.lib
 rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/windows*/lib/*.lib
 
+find "$CH_TOP_DIR"/contrib/rust_vendor -name Cargo.toml.orig -type f -delete
+
 echo "*"
 echo "* Do not forget to check contrib/corrosion-cmake/config.toml.in"
 echo "* You need to make sure that it contains everything that is printed under"
