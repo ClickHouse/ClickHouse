@@ -334,6 +334,11 @@ namespace ErrorCodes
     extern const int STARTUP_SCRIPTS_ERROR;
 }
 
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
+}
+
 }
 
 namespace CurrentMetrics
@@ -1636,13 +1641,33 @@ try
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
+
+    const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
+
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings[ServerSetting::tmp_policy].value.empty())
     {
         global_context->setTemporaryStoragePolicy(server_settings[ServerSetting::tmp_policy], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
-    else if (!server_settings[ServerSetting::temporary_data_in_cache].value.empty())
+    else if (!cache_disk_name.empty())
     {
+        /// When cache is used as a temporary data storage with load_metadata_asynchronously
+        /// the cache might not be fully ready when setTemporaryStorageInCache() is called
+        /// below which might try to use the cache before it's fully loaded leading to
+        /// `File cache is not initialized` errors. Instead disallow load_metadata_asynchronously
+        /// for cache disks used as temporary storage.
+        auto cache_name = global_context->getDisk(cache_disk_name)->getCacheName();
+        if (!cache_name.empty())
+        {
+            auto cache_data = FileCacheFactory::instance().getByName(cache_name);
+            if (cache_data->getSettings()[FileCacheSetting::load_metadata_asynchronously])
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Cache disk '{}' is used as a temporary storage, load_metadata_asynchronously is disallowed.",
+                    cache_name);
+            }
+        }
         global_context->setTemporaryStorageInCache(server_settings[ServerSetting::temporary_data_in_cache], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
     else
