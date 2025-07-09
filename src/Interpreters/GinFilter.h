@@ -71,7 +71,8 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+    template <GinSearchMode search_mode = GinSearchMode::All>
+    bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)

@@ -227,7 +227,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             bool exists_in_gin_filter = false;
             for (const GinFilter & gin_filter : gin_filters)
             {
-                if (granule->gin_filter.contains(gin_filter, cache_store, GinSearchMode::Any))
+                if (granule->gin_filter.contains<GinSearchMode::Any>(gin_filter, cache_store))
                 {
                     exists_in_gin_filter = true;
                     break;
@@ -242,7 +242,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             bool exists_in_gin_filter = true;
             for (const GinFilter & gin_filter : gin_filters)
             {
-                if (!granule->gin_filter.contains(gin_filter, cache_store, GinSearchMode::All))
+                if (!granule->gin_filter.contains<GinSearchMode::All>(gin_filter, cache_store))
                 {
                     exists_in_gin_filter = false;
                     break;
@@ -253,7 +253,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
+            rpn_stack.emplace_back(granule->gin_filter.contains<>(*element.gin_filter, cache_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -267,7 +267,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             {
                 const auto & gin_filters = element.set_gin_filters[column];
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filter.contains(gin_filters[row], cache_store);
+                    result[row] = result[row] && granule->gin_filter.contains<>(gin_filters[row], cache_store);
             }
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
@@ -281,7 +281,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
+                result[row] = granule->gin_filter.contains<>(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
@@ -295,13 +295,13 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 const auto & gin_filters = element.set_gin_filters[0];
 
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = granule->gin_filter.contains(gin_filters[row], cache_store);
+                    result[row] = granule->gin_filter.contains<>(gin_filters[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
             else if (element.gin_filter)
             {
-                rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
+                rpn_stack.emplace_back(granule->gin_filter.contains<>(*element.gin_filter, cache_store), true);
             }
 
         }
