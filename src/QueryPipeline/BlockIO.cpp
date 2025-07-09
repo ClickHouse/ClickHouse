@@ -49,9 +49,9 @@ BlockIO::~BlockIO()
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
     if (finish_callback)
-        finish_callback(pipeline, finish_time);
-
-    pipeline.reset();
+        finish_callback(std::move(pipeline), finish_time);
+    else
+        pipeline.reset();
 }
 
 void BlockIO::onException(bool log_as_error)

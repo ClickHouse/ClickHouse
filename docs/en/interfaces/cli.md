@@ -28,7 +28,7 @@ To also install it, run:
 sudo ./clickhouse install
 ```
 
-See [Install ClickHouse](../getting-started/install.md) for more installation options.
+See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
 

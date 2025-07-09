@@ -1,4 +1,5 @@
 #include <optional>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #include <Poco/JSON/Array.h>
@@ -7,7 +8,8 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
-#include "base/scope_guard.h"
+#include <Common/SharedLockGuard.h>
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -38,6 +40,8 @@ extern const int UNSUPPORTED_METHOD;
 
 namespace
 {
+
+using namespace Iceberg;
 
 template <typename T>
 bool equals(const T & first, const T & second)
@@ -70,10 +74,9 @@ bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & secon
 
 bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
-    static String fields_key = "fields";
-    if (!first.isArray(fields_key) || !second.isArray(fields_key))
+    if (!first.isArray(f_fields) || !second.isArray(f_fields))
         return false;
-    return *(first.getArray(fields_key)) == *(second.getArray(fields_key));
+    return *(first.getArray(f_fields)) == *(second.getArray(f_fields));
 }
 
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
@@ -95,7 +98,9 @@ std::string IcebergSchemaProcessor::default_link{};
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
 {
-    Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
+    std::lock_guard lock(mutex);
+
+    Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
@@ -105,19 +110,19 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     else
     {
         iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
-        auto fields = schema_ptr->get("fields").extract<Poco::JSON::Array::Ptr>();
+        auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
         for (size_t i = 0; i != fields->size(); ++i)
         {
             auto field = fields->getObject(static_cast<UInt32>(i));
-            auto name = field->getValue<String>("name");
-            bool required = field->getValue<bool>("required");
+            auto name = field->getValue<String>(f_name);
+            bool required = field->getValue<bool>(f_required);
             current_full_name = name;
-            auto type = getFieldType(field, "type", required, current_full_name, true);
+            auto type = getFieldType(field, f_type, required, current_full_name, true);
             clickhouse_schema->push_back(NameAndTypePair{name, type});
-            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}] = NameAndTypePair{current_full_name, type};
-            clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>("id");
+            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
+            clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
@@ -126,6 +131,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
 
 NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
@@ -134,6 +141,8 @@ NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_ver
 
 std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         return {};
@@ -142,6 +151,8 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
 
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_ids_by_source_names.find({schema_id, name});
     if (it == clickhouse_ids_by_source_names.end())
         return {};
@@ -150,6 +161,8 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_i
 
 NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
 {
+    SharedLockGuard lock(mutex);
+
     NamesAndTypesList fields;
     for (const auto & source_id : source_ids)
     {
@@ -162,27 +175,27 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
 
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {
-    if (type_name == "boolean")
+    if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
-    if (type_name == "int")
+    if (type_name == f_int)
         return std::make_shared<DataTypeInt32>();
-    if (type_name == "long" || type_name == "bigint")
+    if (type_name == f_long || type_name == f_bigint)
         return std::make_shared<DataTypeInt64>();
-    if (type_name == "float")
+    if (type_name == f_float)
         return std::make_shared<DataTypeFloat32>();
-    if (type_name == "double")
+    if (type_name == f_double)
         return std::make_shared<DataTypeFloat64>();
-    if (type_name == "date")
+    if (type_name == f_date)
         return std::make_shared<DataTypeDate>();
-    if (type_name == "time")
+    if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
-    if (type_name == "timestamp")
+    if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
-    if (type_name == "timestamptz")
+    if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
-    if (type_name == "string" || type_name == "binary")
+    if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
-    if (type_name == "uuid")
+    if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
 
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
@@ -206,47 +219,51 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
-    String type_name = type->getValue<String>("type");
-    if (type_name == "list")
+    String type_name = type->getValue<String>(f_type);
+    if (type_name == f_list)
     {
         bool element_required = type->getValue<bool>("element-required");
-        auto element_type = getFieldType(type, "element", element_required);
+        auto element_type = getFieldType(type, f_element, element_required);
         return std::make_shared<DataTypeArray>(element_type);
     }
 
-    if (type_name == "map")
+    if (type_name == f_map)
     {
-        auto key_type = getFieldType(type, "key", true);
+        auto key_type = getFieldType(type, f_key, true);
         auto value_required = type->getValue<bool>("value-required");
-        auto value_type = getFieldType(type, "value", value_required);
+        auto value_type = getFieldType(type, f_value, value_required);
         return std::make_shared<DataTypeMap>(key_type, value_type);
     }
 
-    if (type_name == "struct")
+    if (type_name == f_struct)
     {
         DataTypes element_types;
         Names element_names;
-        auto fields = type->get("fields").extract<Poco::JSON::Array::Ptr>();
+        auto fields = type->get(f_fields).extract<Poco::JSON::Array::Ptr>();
         element_types.reserve(fields->size());
         element_names.reserve(fields->size());
         for (size_t i = 0; i != fields->size(); ++i)
         {
             auto field = fields->getObject(static_cast<Int32>(i));
-            element_names.push_back(field->getValue<String>("name"));
-            auto required = field->getValue<bool>("required");
+            element_names.push_back(field->getValue<String>(f_name));
+            auto required = field->getValue<bool>(f_required);
             if (is_subfield_of_root)
             {
+                /// NOTE: getComplexTypeFromObject() with is_subfield_of_root==true called only from addIcebergTableSchema(), which already holds the exclusive lock
+                /// So it is OK to use TSA_SUPPRESS_WARNING_FOR_READ/TSA_SUPPRESS_WARNING_FOR_WRITE
+                Int32 schema_id = TSA_SUPPRESS_WARNING_FOR_READ(current_schema_id).value();
+
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
-                element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
-                clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
+                element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>(f_id)}]
                     = NameAndTypePair{current_full_name, element_types.back()};
 
-                clickhouse_ids_by_source_names[{current_schema_id.value(), current_full_name}] = field->getValue<Int32>("id");
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {
-                element_types.push_back(getFieldType(field, "type", required));
+                element_types.push_back(getFieldType(field, f_type, required));
             }
         }
 
@@ -283,8 +300,8 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
 {
     bool allowed_type_conversion = (old_type == new_type);
-    allowed_type_conversion |= (old_type == "int") && (new_type == "long");
-    allowed_type_conversion |= (old_type == "float") && (new_type == "double");
+    allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
+    allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
     if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
         auto [old_precision, old_scale] = parseDecimal(old_type);
@@ -299,30 +316,30 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id)
 {
     std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
-    auto old_schema_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto old_schema_fields = old_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
     auto & outputs = dag->getOutputs();
     for (size_t i = 0; i != old_schema_fields->size(); ++i)
     {
         auto field = old_schema_fields->getObject(static_cast<UInt32>(i));
-        size_t id = field->getValue<size_t>("id");
-        auto name = field->getValue<String>("name");
-        bool required = field->getValue<bool>("required");
-        old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, "type", required))};
+        size_t id = field->getValue<size_t>(f_id);
+        auto name = field->getValue<String>(f_name);
+        bool required = field->getValue<bool>(f_required);
+        old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, f_type, required))};
     }
-    auto new_schema_fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto new_schema_fields = new_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i != new_schema_fields->size(); ++i)
     {
         auto field = new_schema_fields->getObject(static_cast<UInt32>(i));
-        size_t id = field->getValue<size_t>("id");
-        auto name = field->getValue<String>("name");
-        bool required = field->getValue<bool>("required");
-        auto type = getFieldType(field, "type", required);
+        size_t id = field->getValue<size_t>(f_id);
+        auto name = field->getValue<String>(f_name);
+        bool required = field->getValue<bool>(f_required);
+        auto type = getFieldType(field, f_type, required);
         auto old_node_it = old_schema_entries.find(id);
         if (old_node_it != old_schema_entries.end())
         {
             auto [old_json, old_node] = old_node_it->second;
-            if (field->isObject("type"))
+            if (field->isObject(f_type))
             {
                 if (*old_json != *field)
                 {
@@ -341,7 +358,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             }
             else
             {
-                if (old_json->isObject("type"))
+                if (old_json->isObject(f_type))
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -350,27 +367,27 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
-                String old_type = old_json->getValue<String>("type");
-                String new_type = field->getValue<String>("type");
+                String old_type = old_json->getValue<String>(f_type);
+                String new_type = field->getValue<String>(f_type);
 
                 const ActionsDAG::Node * node = old_node;
                 if (old_type == new_type)
                 {
-                    if (old_json->getValue<String>("name") != name)
+                    if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, "type", required), name);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
                 }
                 outputs.push_back(node);
             }
         }
         else
         {
-            if (field->isObject("type"))
+            if (field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD,
@@ -402,32 +419,29 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
 std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
 {
     if (old_id == new_id)
-    {
         return nullptr;
-    }
+
     std::lock_guard lock(mutex);
     auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
     if (required_transform_dag_it != transform_dags_by_ids.end())
-    {
         return required_transform_dag_it->second;
-    }
 
     auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
     if (old_schema_it == iceberg_table_schemas_by_ids.end())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
-    }
+
     auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
     if (new_schema_it == iceberg_table_schemas_by_ids.end())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
-    }
+
     return transform_dags_by_ids[{old_id, new_id}]
         = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
+    SharedLockGuard lock(mutex);
+
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
@@ -436,6 +450,8 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
 
 bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
 {
-    return clickhouse_table_schemas_by_ids.find(id) != clickhouse_table_schemas_by_ids.end();
+    SharedLockGuard lock(mutex);
+
+    return clickhouse_table_schemas_by_ids.contains(id);
 }
 }

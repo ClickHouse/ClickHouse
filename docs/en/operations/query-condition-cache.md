@@ -50,6 +50,10 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+:::note
+The query condition cache only works when [allow_experimental_analyzer](https://clickhouse.com/docs/operations/settings/settings#allow_experimental_analyzer) is set to true, which is the default value.
+:::
+
 ## Administration {#administration}
 
 The query condition cache is not retained between restarts of ClickHouse.

@@ -1,0 +1,133 @@
+
+drop table if exists src;
+create table src (key Int, value Int) engine=Null();
+
+drop table if exists dst_1;
+create table dst_1 (key Int, value Int) engine=Null();
+
+drop table if exists mv_1;
+create materialized view mv_1 to dst_1 as select * from src;
+
+
+drop table if exists dst_2_1;
+create table dst_2_1 (key Int, value Int) engine=Null();
+
+drop table if exists mv_2_1;
+create materialized view mv_2_1 to dst_2_1 as select * from dst_1;
+
+drop table if exists dst_2_2;
+create table dst_2_2 (key Int, value Int) engine=Null();
+
+drop table if exists mv_2_2;
+create materialized view mv_2_2 to dst_2_2 as select intDiv(key, if(key == 50, 0, 1)) as key, value from dst_1;
+
+drop table if exists dst_2_3;
+create table dst_2_3 (key Int, value Int) engine=Null();
+
+drop table if exists mv_2_3;
+create materialized view mv_2_3 to dst_2_3 as select * from dst_1;
+
+
+drop table if exists dst_3_1;
+create table dst_3_1 (key Int, value Int) engine=Null();
+
+drop table if exists mv_3_1;
+create materialized view mv_3_1 to dst_3_1 as select * from dst_2_1;
+
+drop table if exists dst_3_2;
+create table dst_3_2 (key Int, value Int) engine=Null();
+
+drop table if exists mv_3_2;
+create materialized view mv_3_2 to dst_3_2 as select * from dst_2_2;
+
+drop table if exists dst_3_3;
+create table dst_3_3 (key Int, value Int) engine=Null();
+
+drop table if exists mv_3_3;
+create materialized view mv_3_3 to dst_3_3 as select * from dst_2_2;
+
+drop table if exists dst_3_4;
+create table dst_3_4 (key Int, value Int) engine=Null();
+
+drop table if exists mv_3_4;
+create materialized view mv_3_4 to dst_3_4 as select * from dst_2_3;
+
+
+set log_queries=1;
+set log_query_views=1;
+set insert_deduplicate=0;
+
+set max_block_size=10;
+set min_insert_block_size_rows=10;
+
+-- { echoOn }
+
+{% for parallel_view_processing in [0, 1] %}
+{% for max_insert_threads in [0, 5] %}
+{% for materialized_views_ignore_errors in [0, 1] %}
+
+{% if materialized_views_ignore_errors == 0 %}
+
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing={{ parallel_view_processing }},
+    max_insert_threads={{ max_insert_threads }},
+    materialized_views_ignore_errors={{ materialized_views_ignore_errors }}; -- { serverError ILLEGAL_DIVISION }
+
+{% else %}
+
+insert into src select number as key, number as value
+from numbers(100)
+settings
+    parallel_view_processing={{ parallel_view_processing }},
+    max_insert_threads={{ max_insert_threads }},
+    materialized_views_ignore_errors={{ materialized_views_ignore_errors }};
+
+{% endif %}
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+system flush logs query_views_log, query_log;
+
+set joined_subquery_requires_alias = 0;
+
+select
+    parallel_view_processing,
+    max_insert_threads,
+    materialized_views_ignore_errors,
+    view_name,
+    if(view_exception_code == '0', toString(written_rows), 'partial') as written_rows,
+    view_exception_code,
+    query_exception_code
+from (
+select
+    initial_query_id as query_id,
+    view_name,
+    written_rows,
+    exception_code as view_exception_code
+from system.query_views_log
+where
+    startsWith(view_name, currentDatabase() || '.mv')
+)
+JOIN
+(
+select
+    query_id,
+    exception_code as query_exception_code,
+    Settings['parallel_view_processing'] as parallel_view_processing,
+    Settings['max_insert_threads'] as max_insert_threads,
+    Settings['materialized_views_ignore_errors'] as materialized_views_ignore_errors
+from system.query_log
+where
+    type != 'QueryStart' and
+    query_kind = 'Insert' and
+    current_database = currentDatabase()
+)
+using query_id
+order by ALL
+format Vertical;
+
+-- { echoOff }

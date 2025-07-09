@@ -248,15 +248,15 @@ class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        const String & uri,
-        const String & format,
+        String uri_,
+        String format_,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         const ContextPtr & context,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers = {},
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
+        const CompressionMethod & compression_method,
+        HTTPHeaderEntries headers = {},
+        String method = Poco::Net::HTTPRequest::HTTP_POST);
 
     ~StorageURLSink() override;
 
@@ -268,6 +268,16 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    void initBuffers();
+
+    String uri;
+    String format;
+    std::optional<FormatSettings> format_settings;
+    ContextPtr context;
+    ConnectionTimeouts timeouts;
+    CompressionMethod compression_method;
+    HTTPHeaderEntries headers;
+    String http_method;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;

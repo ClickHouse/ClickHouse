@@ -4,9 +4,9 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 
 namespace Poco

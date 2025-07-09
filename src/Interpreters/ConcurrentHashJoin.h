@@ -98,6 +98,7 @@ private:
     bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
 

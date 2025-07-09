@@ -370,7 +370,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
         chassert(!ranges_in_partition.empty());
         chassert(!ranges_in_partition.front().empty());
 
-        auto merge_choice = chooseMergesFrom(
+        auto merge_choices = chooseMergesFrom(
             selector, *merge_predicate,
             ranges_in_partition, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
@@ -378,7 +378,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
         const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
-        if (!merge_choice.empty())
+        if (!merge_choices.empty())
             partitions_hint.insert(partition_id);
         else
             LOG_TRACE(log, "Nothing to merge in partition {} with max_merge_sizes = {} (looked up {} ranges)",
@@ -429,16 +429,16 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
-    auto merge_choice = chooseMergesFrom(
+    auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
         ranges, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges, current_time, log);
 
-    if (!merge_choice.empty())
+    if (!merge_choices.empty())
     {
-        updateTTLMergeTimes(merge_choice, settings, current_time);
-        return merge_choice;
+        updateTTLMergeTimes(merge_choices, settings, current_time);
+        return merge_choices;
     }
 
     const auto partitions_stats = calculateStatisticsForPartitions(ranges);

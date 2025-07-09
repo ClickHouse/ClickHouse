@@ -360,11 +360,13 @@ class ReleaseInfo:
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
         tag_message = f"Release {self.release_tag}"
-        Shell.check(
+        res = Shell.check(
             f"{GIT_PREFIX} tag -a -m '{tag_message}' {self.release_tag} {self.commit_sha}",
-            strict=True,
             verbose=True,
         )
+        if not res:
+            # rerun case - ignore existing tag (only for local repo)
+            print(f"WARNING: Tag [{self.release_tag}] already exists locally - ignore")
         cmd_push_tag = f"{GIT_PREFIX} push origin {self.release_tag}:{self.release_tag}"
         Shell.check(cmd_push_tag, dry_run=dry_run, strict=True, verbose=True)
 

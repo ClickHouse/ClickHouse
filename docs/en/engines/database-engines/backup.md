@@ -26,7 +26,7 @@ With `Disk` backup destination, query to create database from backup looks like 
 
 ```sql
 CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name')
+ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
 
 **Engine Parameters**

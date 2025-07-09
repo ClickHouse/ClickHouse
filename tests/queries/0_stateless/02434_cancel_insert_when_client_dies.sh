@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest, no-async-insert
 # no-fasttest: The test runs for 40 seconds
 # shellcheck disable=SC2009
 

@@ -9,7 +9,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageLoop.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
 {
@@ -149,7 +149,8 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}}
+                                                                                              "0"}},
+                 .category = FunctionDocumentation::Category::TableFunction
                         }});
     }
 

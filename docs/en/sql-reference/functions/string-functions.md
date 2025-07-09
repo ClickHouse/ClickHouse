@@ -50,7 +50,7 @@ Result:
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notEmpty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 
@@ -632,7 +632,7 @@ lowerUTF8(input)
 Query:
 
 ```sql
-SELECT lowerUTF8('MÜNCHEN') as Lowerutf8;
+SELECT lowerUTF8('MÜNCHEN') AS Lowerutf8;
 ```
 
 Result:
@@ -670,7 +670,7 @@ upperUTF8(input)
 Query:
 
 ```sql
-SELECT upperUTF8('München') as Upperutf8;
+SELECT upperUTF8('München') AS Upperutf8;
 ```
 
 Result:
@@ -1140,6 +1140,102 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 convertCharset(s, from, to)
 ```
 
+## base32Encode {#base32encode}
+
+Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
+
+**Syntax**
+
+```sql
+base32Encode(plaintext)
+```
+
+**Arguments**
+
+- `plaintext` — [String](../data-types/string.md) column or constant.
+
+**Returned value**
+
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+```sql
+SELECT base32Encode('Encoded');
+```
+
+Result:
+
+```result
+┌─base32Encode('Encoded')─┐
+│ IVXGG33EMVSA====        │
+└─────────────────────────┘
+```
+
+## base32Decode {#base32decode}
+
+Accepts a string and decodes it using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) encoding scheme.
+
+**Syntax**
+
+```sql
+base32Decode(encoded)
+```
+
+**Arguments**
+
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, an exception is thrown.
+
+**Returned value**
+
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
+
+**Example**
+
+```sql
+SELECT base32Decode('IVXGG33EMVSA====');
+```
+
+Result:
+
+```result
+┌─base32Decode('IVXGG33EMVSA====')─┐
+│ Encoded                          │
+└──────────────────────────────────┘
+```
+
+## tryBase32Decode {#trybase32decode}
+
+Like `base32Decode` but returns an empty string in case of error.
+
+**Syntax**
+
+```sql
+tryBase32Decode(encoded)
+```
+
+**Parameters**
+
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, returns an empty string in case of error.
+
+**Returned value**
+
+- A string containing the decoded value of the argument.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT tryBase32Decode('IVXGG33EMVSA====') AS res, tryBase32Decode('invalid') AS res_invalid;
+```
+
+```response
+┌─res─────┬─res_invalid─┐
+│ Encoded │             │
+└─────────┴─────────────┘
+```
+
 ## base58Encode {#base58encode}
 
 Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
@@ -1227,7 +1323,7 @@ tryBase58Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_invalid;
+SELECT tryBase58Decode('3dc8KtHrwM') AS res, tryBase58Decode('invalid') AS res_invalid;
 ```
 
 ```response
@@ -1391,7 +1487,7 @@ tryBase64Decode(encoded)
 Query:
 
 ```sql
-SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res_invalid;
+SELECT tryBase64Decode('RW5jb2RlZA==') AS res, tryBase64Decode('invalid') AS res_invalid;
 ```
 
 ```response
@@ -1423,7 +1519,7 @@ tryBase64URLDecode(encodedUrl)
 Query:
 
 ```sql
-SELECT tryBase64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t') as res, tryBase64Decode('aHR0cHM6Ly9jbGlja') as res_invalid;
+SELECT tryBase64URLDecode('aHR0cDovL2NsaWNraG91c2UuY29t') AS res, tryBase64Decode('aHR0cHM6Ly9jbGlja') AS res_invalid;
 ```
 
 ```response
@@ -1986,7 +2082,7 @@ soundex(val)
 **Example**
 
 ```sql
-select soundex('aksel');
+SELECT soundex('aksel');
 ```
 
 Result:
@@ -2019,7 +2115,7 @@ punycodeEncode(val)
 **Example**
 
 ```sql
-select punycodeEncode('München');
+SELECT punycodeEncode('München');
 ```
 
 Result:
@@ -2052,7 +2148,7 @@ punycodeEncode(val)
 **Example**
 
 ```sql
-select punycodeDecode('Mnchen-3ya');
+SELECT punycodeDecode('Mnchen-3ya');
 ```
 
 Result:
@@ -2090,7 +2186,7 @@ idnaEncode(val)
 **Example**
 
 ```sql
-select idnaEncode('straße.münchen.de');
+SELECT idnaEncode('straße.münchen.de');
 ```
 
 Result:
@@ -2128,7 +2224,7 @@ idnaDecode(val)
 **Example**
 
 ```sql
-select idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
+SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de');
 ```
 
 Result:
@@ -2431,7 +2527,7 @@ firstLine(val)
 **Example**
 
 ```sql
-select firstLine('foo\nbar\nbaz');
+SELECT firstLine('foo\nbar\nbaz');
 ```
 
 Result:
@@ -2473,9 +2569,9 @@ If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
 
 ```sql
 SELECT
-    stringCompare('alice', 'bob', 0, 0, 3) as result1,
-    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
-    stringCompare('bob', 'alice', 0, 0, 3) as result3
+    stringCompare('alice', 'bob', 0, 0, 3) AS result1,
+    stringCompare('alice', 'alicia', 0, 0, 3) AS result2,
+    stringCompare('bob', 'alice', 0, 0, 3) AS result3
 ```
 Result:
 ```result
@@ -2486,9 +2582,9 @@ Result:
 
 ```sql
 SELECT
-    stringCompare('alice', 'alicia') as result2,
-    stringCompare('alice', 'alice') as result1,
-    stringCompare('bob', 'alice') as result3
+    stringCompare('alice', 'alicia') AS result2,
+    stringCompare('alice', 'alice') AS result1,
+    stringCompare('bob', 'alice') AS result3
 ```
 Result:
 ```result
@@ -2637,3 +2733,76 @@ Result:
 1. │ [417784657,728683856,3071092609] │
    └──────────────────────────────────┘
 ```
+
+## stringBytesUniq {#stringbytesuniq}
+
+Counts the number of distinct bytes in a string.
+
+**Syntax**
+
+```sql
+stringBytesUniq(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+```sql
+SELECT stringBytesUniq('Hello');
+```
+
+Result:
+
+```result
+┌─stringBytesUniq('Hello')─┐
+│                        4 │
+└──────────────────────────┘
+```
+
+## stringBytesEntropy {#stringbytesentropy}
+
+Calculates Shannon's entropy of byte distribution in a string.
+
+**Syntax**
+
+```sql
+stringBytesEntropy(s)
+```
+
+**Arguments**
+
+- `s` — The string to analyze. [String](../data-types/string.md).
+
+**Returned value**
+
+- Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
+
+**Example**
+
+```sql
+SELECT stringBytesEntropy('Hello, world!');
+```
+
+Result:
+
+```result
+┌─stringBytesEntropy('Hello, world!')─┐
+│                         3.07049960  │
+└─────────────────────────────────────┘
+```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

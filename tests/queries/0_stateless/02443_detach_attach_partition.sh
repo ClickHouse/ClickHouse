@@ -32,7 +32,7 @@ function thread_attach()
 insert_type=$(($RANDOM % 3))
 
 engine=$($CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database=currentDatabase() AND table='alter_table0'")
-if [[ "$engine" == "ReplicatedMergeTree" ]]; then
+if [[ "$engine" == "ReplicatedMergeTree" || "$engine" == "SharedMergeTree" ]]; then
     insert_type=$(($RANDOM % 2))
 fi
 $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'insert_type $insert_type' FORMAT Null"
@@ -84,7 +84,7 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 
-if [[ "$engine" == "ReplicatedMergeTree" ]]; then
+if [[ "$engine" == "ReplicatedMergeTree" || "$engine" == "SharedMergeTree" ]]; then
     # ReplicatedMergeTree may duplicate data on ATTACH PARTITION (when one replica has a merged part and another replica has source parts only)
     $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE alter_table0 FINAL DEDUPLICATE"
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
