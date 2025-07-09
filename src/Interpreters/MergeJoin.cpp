@@ -2,9 +2,10 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Common/CurrentMetrics.h>
+
 #include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -17,12 +18,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric MergeJoinBlocksCacheBytes;
-    extern const Metric MergeJoinBlocksCacheCount;
-}
 
 namespace DB
 {
@@ -656,7 +651,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks.bytes * rows_limit / right_blocks.row_count;
 
-    cached_right_blocks = std::make_unique<Cache>(CurrentMetrics::MergeJoinBlocksCacheBytes, CurrentMetrics::MergeJoinBlocksCacheCount, memory_limit);
+    cached_right_blocks = std::make_unique<Cache>(memory_limit);
 }
 
 bool MergeJoin::saveRightBlock(Block && block)
@@ -1053,14 +1048,8 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            auto input = flushed_right_blocks[pos].getReadStream();
-            auto result = std::make_shared<Block>(input->read());
-            if (Block eof_block = input->read())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block per file, got block {} in file {}",
-                    eof_block.dumpStructure(), flushed_right_blocks[pos].getHolder()->describeFilePath());
-            }
-            return result;
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getAbsolutePath(), materializeBlock(right_sample_block));
+            return std::make_shared<Block>(input.block_in->read());
         };
 
         return cached_right_blocks->getOrSet(pos, load_func).first;
@@ -1071,8 +1060,9 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTempDataOnDisk(),
-                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge);
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getGlobalTemporaryVolume(),
+                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
+                    table_join->temporaryFilesCodec());
     disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
 }

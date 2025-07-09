@@ -1264,7 +1264,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 **Syntax**
 
-```sql
+``` sql
 uptime()
 ```
 
@@ -1276,13 +1276,13 @@ uptime()
 
 Query:
 
-```sql
-SELECT uptime() AS Uptime;
+``` sql
+SELECT uptime() as Uptime;
 ```
 
 Result:
 
-```response
+``` response
 ┌─Uptime─┐
 │  55867 │
 └────────┘
@@ -1516,7 +1516,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
 
 **Syntax**
 
-```sql
+``` sql
 normalizeQuery(x)
 ```
 
@@ -1532,7 +1532,7 @@ normalizeQuery(x)
 
 Query:
 
-```sql
+``` sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
 
@@ -1551,7 +1551,7 @@ or at least 36 bytes long such as UUIDs). This helps better analyze complex quer
 
 **Syntax**
 
-```sql
+``` sql
 normalizeQueryKeepNames(x)
 ```
 
@@ -1567,7 +1567,7 @@ normalizeQueryKeepNames(x)
 
 Query:
 
-```sql
+``` sql
 SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
 ```
 
@@ -1585,7 +1585,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 
 **Syntax**
 
-```sql
+``` sql
 normalizedQueryHash(x)
 ```
 
@@ -1601,7 +1601,7 @@ normalizedQueryHash(x)
 
 Query:
 
-```sql
+``` sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
 
@@ -1620,7 +1620,7 @@ or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can 
 
 **Syntax**
 
-```sql
+``` sql
 normalizedQueryHashKeepNames(x)
 ```
 
@@ -1634,7 +1634,7 @@ normalizedQueryHashKeepNames(x)
 
 **Example**
 
-```sql
+``` sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
 SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
 ```
@@ -2015,7 +2015,7 @@ blockSerializedSize(value[, value[, ...]])
 Query:
 
 ```sql
-SELECT blockSerializedSize(maxState(1)) AS x
+SELECT blockSerializedSize(maxState(1)) as x
 ```
 
 Result:
@@ -2538,7 +2538,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 
 ## finalizeAggregation {#finalizeaggregation}
 
@@ -2640,7 +2640,7 @@ Result:
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 - [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}
@@ -2676,7 +2676,7 @@ Consider how you can use `runningAccumulate` to find the cumulative sum of numbe
 Query:
 
 ```sql
-SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number AS k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
 ```
 
 Result:
@@ -2805,7 +2805,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
@@ -2839,7 +2839,7 @@ SELECT * FROM db_test.id_val_nulls;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
@@ -2903,7 +2903,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
@@ -4671,76 +4671,3 @@ Result:
 │                                         206 │
 └─────────────────────────────────────────────┘
 ```
-
-## getServerSetting {#getserversetting}
-
-Returns the current value of one of the server settings
-
-**Syntax**
-
-```sql
-getServerSetting('server_setting');
-```
-
-**Parameter**
-
-- `server_setting` — The setting name. [String](../data-types/string.md).
-
-**Returned value**
-
-- The server setting's current value.
-
-**Example**
-
-```sql
-SELECT getServerSetting('allow_use_jemalloc_memory');
-```
-
-Result:
-
-```text
-┌─getServerSetting('allow_use_jemalloc_memory')─┐
-│ true                                          │
-└───────────────────────────────────────────────┘
-```
-
-## getMergeTreeSetting {#getmergetreesetting}
-
-Returns the current value of one of the merge tree settings
-
-**Syntax**
-
-```sql
-getMergeTreeSetting('merge_tree_setting');
-```
-
-**Parameter**
-
-- `merge_tree_setting` — The setting name. [String](../data-types/string.md).
-
-**Returned value**
-
-- The merge tree setting's current value.
-
-**Example**
-
-```sql
-SELECT getMergeTreeSetting('index_granularity');
-```
-
-Result:
-
-```text
-┌─getMergeTree(index_granularity')─┐
-│                     8192         │
-└──────────────────────────────────┘
-```
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->

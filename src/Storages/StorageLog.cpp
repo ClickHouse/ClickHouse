@@ -11,15 +11,14 @@
 
 #include <Parsers/ASTCheckQuery.h>
 
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -267,7 +266,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 bool LogSource::isFinished()
@@ -403,9 +402,6 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
@@ -482,32 +478,6 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&default_codec](const auto & column_desc)
-    {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
-    };
-
-    const auto & columns = metadata_snapshot->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-}
-
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-
 void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
@@ -525,7 +495,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = getCodecOrDefault(name_and_type.name);
+            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -1017,7 +987,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
+std::optional<UInt64> StorageLog::totalRows(const Settings &) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -1028,7 +998,7 @@ std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 {
     return total_bytes;
 }

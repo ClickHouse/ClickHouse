@@ -16,7 +16,7 @@ This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -43,7 +43,7 @@ Engine settings:
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE test
 (
     `key` String,
@@ -173,9 +173,9 @@ PRIMARY KEY key
 ```sql
 INSERT INTO rdb
     SELECT
-        toUInt32(sipHash64(number) % 10) AS key,
-        [key, key+1] AS value,
-        ('val2' || toString(key)) AS value2
+        toUInt32(sipHash64(number) % 10) as key,
+        [key, key+1] as value,
+        ('val2' || toString(key)) as value2
     FROM numbers_mt(10);
 ```
 

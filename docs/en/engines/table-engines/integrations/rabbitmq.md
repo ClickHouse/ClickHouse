@@ -17,7 +17,7 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -93,7 +93,7 @@ Also format settings can be added along with rabbitmq-related settings.
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -109,7 +109,7 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
 
 Required configuration:
 
-```xml
+``` xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
@@ -118,7 +118,7 @@ Required configuration:
 
 Additional configuration:
 
-```xml
+``` xml
  <rabbitmq>
     <vhost>clickhouse</vhost>
  </rabbitmq>
@@ -165,7 +165,7 @@ Do not use the same table for inserts and materialized views.
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -194,7 +194,7 @@ Example:
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
 
-Additional virtual columns when `rabbitmq_handle_error_mode='stream'`:
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

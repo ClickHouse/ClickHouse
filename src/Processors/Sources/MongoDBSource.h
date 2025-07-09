@@ -3,9 +3,9 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Common/JSONBuilder.h>
 #include <Processors/ISource.h>
-#include <Storages/StorageMongoDB.h>
+#include <Interpreters/Context.h>
+#include <Common/JSONBuilder.h>
 
 #include <mongocxx/client.hpp>
 #include <mongocxx/collection.hpp>
@@ -32,8 +32,6 @@ public:
     String getName() const override { return "MongoDB"; }
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
     void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);
 
@@ -47,10 +45,9 @@ private:
     Block sample_block;
     std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
-    bool all_read = false;
 
-    const DB::FormatSettings db_json_format_settings;
-    const JSONBuilder::FormatSettings json_format_settings;
+    JSONBuilder::FormatSettings json_format_settings = {{}, 0, true, true};
+    bool all_read = false;
 };
 
 }

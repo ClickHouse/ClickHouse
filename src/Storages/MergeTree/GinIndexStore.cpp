@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
+#include <numeric>
 #include <algorithm>
 
 namespace DB
@@ -24,16 +25,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int NOT_IMPLEMENTED;
 };
-
-const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
-{
-    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
-    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
-
-    static auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
-    return codec;
-}
 
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
     : rowid_lst{}
@@ -94,7 +87,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
         auto buf = std::make_unique<char[]>(size);
         rowid_bitmap.write(buf.get());
 
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
+        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
         Memory<> memory;
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
         auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
@@ -136,7 +129,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
 
         Memory<> memory;
         memory.resize(size);
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
+        auto codec = CompressionCodecFactory::instance().get(GIN_COMPRESSION_CODEC, GIN_COMPRESSION_LEVEL);
         codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
 
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
@@ -158,6 +151,8 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)
     : name(name_)
     , storage(storage_)
 {
+    if (storage->getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
 
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_)
@@ -166,6 +161,8 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, 
     , data_part_storage_builder(data_part_storage_builder_)
     , max_digestion_size(max_digestion_size_)
 {
+    if (storage->getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INDEX {} with 'full_text' type supports only full storage", name);
 }
 
 bool GinIndexStore::exists() const
@@ -174,16 +171,48 @@ bool GinIndexStore::exists() const
     return storage->existsFile(segment_id_file_name);
 }
 
-UInt32 GinIndexStore::getNextSegmentIDRange(size_t n)
+UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 {
     std::lock_guard guard(mutex);
 
-    if (next_available_segment_id == 0)
-        initSegmentId();
+    /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
+    if (!storage->existsFile(file_name))
+    {
+        /// Create file
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
 
-    UInt32 segment_id = next_available_segment_id;
-    next_available_segment_id += n;
-    return segment_id;
+        /// Write version
+        writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
+
+        /// Write segment ID 1
+        writeVarUInt(1, *ostr);
+        ostr->sync();
+        ostr->finalize();
+    }
+
+    /// Read id in file
+    UInt32 result = 0;
+    {
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+
+        /// Skip version
+        istr->seek(1, SEEK_SET);
+
+        readVarUInt(result, *istr);
+    }
+
+    /// Save result + n
+    {
+        std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, 8, {});
+
+        /// Write version
+        writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
+
+        writeVarUInt(result + n, *ostr);
+        ostr->sync();
+        ostr->finalize();
+    }
+    return result;
 }
 
 UInt32 GinIndexStore::getNextRowIDRange(size_t numIDs)
@@ -195,35 +224,8 @@ UInt32 GinIndexStore::getNextRowIDRange(size_t numIDs)
 
 UInt32 GinIndexStore::getNextSegmentID()
 {
-    return getNextSegmentIDRange(1);
-}
-
-namespace
-{
-GinIndexStore::Format getFormatVersion(uint8_t version)
-{
-    using FormatAsInt = std::underlying_type_t<GinIndexStore::Format>;
-    switch (version)
-    {
-        case static_cast<FormatAsInt>(GinIndexStore::Format::v1):
-            return GinIndexStore::Format::v1;
-        case static_cast<FormatAsInt>(GinIndexStore::Format::v2):
-            return GinIndexStore::Format::v2;
-        default:
-            return GinIndexStore::Format::v0;
-    }
-}
-
-void verifyFormatVersionIsSupported(GinIndexStore::Format version)
-{
-    if ((version < GinIndexStore::Format::v1) || (version > GinIndexStore::Format::v2))
-        throw Exception(
-            ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Unsupported text index version: supported versions {} and {}, but got {}",
-            GinIndexStore::Format::v1,
-            GinIndexStore::Format::v2,
-            version);
-}
+    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+    return getNextSegmentIDRange(segment_id_file_name, 1);
 }
 
 UInt32 GinIndexStore::getNumOfSegments()
@@ -242,25 +244,14 @@ UInt32 GinIndexStore::getNumOfSegments()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        verifyFormatVersionIsSupported(getFormatVersion(version));
+        if (version > static_cast<std::underlying_type_t<Format>>(CURRENT_GIN_FILE_FORMAT_VERSION))
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported full-text index version {}", version);
 
         readVarUInt(result, *istr);
     }
 
     cached_segment_num = result - 1;
     return cached_segment_num;
-}
-
-GinIndexStore::Format GinIndexStore::getVersion()
-{
-    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->existsFile(segment_id_file_name))
-        return GinIndexStore::Format::v0;
-
-    std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
-    uint8_t version = 0;
-    readBinary(version, *istr);
-    return getFormatVersion(version);
 }
 
 bool GinIndexStore::needToWrite() const
@@ -272,10 +263,7 @@ bool GinIndexStore::needToWrite() const
 void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
-    {
         writeSegment();
-        writeSegmentId();
-    }
 
     if (metadata_file_stream)
         metadata_file_stream->finalize();
@@ -299,28 +287,6 @@ void GinIndexStore::cancel() noexcept
         postings_file_stream->cancel();
 }
 
-void GinIndexStore::initSegmentId()
-{
-    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-
-    UInt32 segment_id;
-    if (storage->existsFile(segment_id_file_name))
-    {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
-
-        uint8_t version = 0;
-        readBinary(version, *istr);
-
-        verifyFormatVersionIsSupported(getFormatVersion(version));
-
-        readVarUInt(segment_id, *istr);
-    }
-    else
-        segment_id = 1;
-
-    next_available_segment_id = segment_id;
-}
-
 void GinIndexStore::initFileStreams()
 {
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
@@ -330,19 +296,6 @@ void GinIndexStore::initFileStreams()
     metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-}
-
-void GinIndexStore::writeSegmentId()
-{
-    String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(segment_id_file_name, 8, {});
-
-    /// Write version
-    writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
-
-    writeVarUInt(next_available_segment_id, *ostr);
-    ostr->sync();
-    ostr->finalize();
 }
 
 void GinIndexStore::writeSegment()
@@ -395,36 +348,13 @@ void GinIndexStore::writeSegment()
     fst_builder.build();
     write_buf.finalize();
 
-    const size_t uncompressed_size = buffer.size();
-    const bool compress_fst = uncompressed_size >= FST_SIZE_COMPRESSION_THRESHOLD;
+    /// Write FST size
+    writeVarUInt(buffer.size(), *dict_file_stream);
+    current_segment.dict_start_offset += getLengthOfVarUInt(buffer.size());
 
-    /// Header contains the uncompressed size and a single bit to indicate whether FST is compressed or uncompressed.
-    UInt64 fst_size_header = (uncompressed_size << 1) | (compress_fst ? 0x1 : 0x0);
-    /// Write FST size header
-    writeVarUInt(fst_size_header, *dict_file_stream);
-    current_segment.dict_start_offset += getLengthOfVarUInt(fst_size_header);
-
-    if (compress_fst)
-    {
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
-        Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
-        auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
-
-        /// Write FST compressed size
-        writeVarUInt(compressed_size, *dict_file_stream);
-        current_segment.dict_start_offset += getLengthOfVarUInt(compressed_size);
-
-        /// Write FST compressed blob
-        dict_file_stream->write(memory.data(), compressed_size);
-        current_segment.dict_start_offset += compressed_size;
-    }
-    else
-    {
-        /// Write FST uncompressed blob
-        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
-        current_segment.dict_start_offset += uncompressed_size;
-    }
+    /// Write FST blob
+    dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), buffer.size());
+    current_segment.dict_start_offset += buffer.size();
 
     current_size = 0;
     current_postings.clear();
@@ -486,53 +416,19 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
-    /// Set file pointer of dictionary file
     assert(dict_file_stream != nullptr);
+
+    /// Set file pointer of dictionary file
     dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
 
-    switch (auto version = store->getVersion(); version)
-    {
-        case GinIndexStore::Format::v1: {
-            /// Read FST size
-            size_t fst_size = 0;
-            readVarUInt(fst_size, *dict_file_stream);
+    it->second->offsets.getData().clear();
+    /// Read FST size
+    size_t fst_size = 0;
+    readVarUInt(fst_size, *dict_file_stream);
 
-            /// Read FST blob
-            it->second->offsets.getData().clear();
-            it->second->offsets.getData().resize(fst_size);
-            dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
-            break;
-        }
-        case GinIndexStore::Format::v2: {
-            /// Read FST size header
-            UInt64 fst_size_header;
-            readVarUInt(fst_size_header, *dict_file_stream);
-
-            size_t uncompressed_fst_size = fst_size_header >> 1;
-            it->second->offsets.getData().clear();
-            it->second->offsets.getData().resize(uncompressed_fst_size);
-            if (fst_size_header & 0x1) /// FST is compressed
-            {
-                /// Read compressed FST size
-                size_t compressed_fst_size = 0;
-                readVarUInt(compressed_fst_size, *dict_file_stream);
-                /// Read compressed FST blob
-                auto buf = std::make_unique<char[]>(compressed_fst_size);
-                dict_file_stream->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
-                const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
-                codec->decompress(
-                    buf.get(), static_cast<UInt32>(compressed_fst_size), reinterpret_cast<char *>(it->second->offsets.getData().data()));
-            }
-            else
-            {
-                /// Read uncompressed FST blob
-                dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), uncompressed_fst_size);
-            }
-            break;
-        }
-        default:
-            verifyFormatVersionIsSupported(version);
-    }
+    /// Read FST blob
+    it->second->offsets.getData().resize(fst_size);
+    dict_file_stream->readStrict(reinterpret_cast<char *>(it->second->offsets.getData().data()), fst_size);
 }
 
 GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
@@ -622,11 +518,6 @@ void GinIndexStoreFactory::remove(const String & part_path)
         else
             ++it;
     }
-}
-
-bool isGinFile(const String & file_name)
-{
-    return file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid");
 }
 
 }

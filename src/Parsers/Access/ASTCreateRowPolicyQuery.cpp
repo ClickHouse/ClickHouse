@@ -3,7 +3,9 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <base/range.h>
 #include <boost/container/flat_set.hpp>
+#include <boost/range/algorithm/transform.hpp>
 
 
 namespace DB

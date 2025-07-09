@@ -2,9 +2,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
-#include <Interpreters/ActionsDAG.h>
+#include "Interpreters/ActionsDAG.h"
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {
@@ -14,7 +13,6 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
-
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
@@ -22,27 +20,26 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
+    /// List all data files.
+    /// For better parallelization, iterate() method should be used.
+    virtual Strings getDataFiles() const = 0;
+    /// Whether `iterate()` method is supported for the data lake.
+    virtual bool supportsFileIterator() const { return false; }
     /// Return iterator to `data files`.
-    using FileProgressCallback = std::function<void(FileProgress)>;
-    virtual ObjectIterator iterate(
-        const ActionsDAG * /* filter_dag */,
-        FileProgressCallback /* callback */,
-        size_t /* list_batch_size */,
-        ContextPtr context) const = 0;
+    virtual ObjectIterator iterate() const { throwNotImplemented("iterate()"); }
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context,
-        bool supports_subset_of_columns);
+    virtual NamesAndTypesList getReadSchema() const { return {}; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, const String & /* path */) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
+    virtual bool supportsPartitionPruning() { return false; }
+    virtual Strings makePartitionPruning(const ActionsDAG &) { throwNotImplemented("makePartitionPrunning()"); }
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
 
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
@@ -50,20 +47,10 @@ public:
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
 
-    virtual bool supportsSchemaEvolution() const { return false; }
-    virtual bool supportsWrites() const { return false; }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
-
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    /// Whether schema evolution is supported.
+    virtual bool supportsExternalMetadataChange() const { return false; }
 
 protected:
-    ObjectIterator createKeysIterator(
-        Strings && data_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_) const;
-
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented", method);
