@@ -272,11 +272,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
-            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            {
-                ostr << ' ';
-                print_keyword(magic_enum::enum_name(sync_replica_mode));
-            }
             break;
         }
         case Type::DROP_REPLICA:
@@ -336,8 +331,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_server_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
+            else if (!distributed_cache_servive_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
         case Type::UNFREEZE:

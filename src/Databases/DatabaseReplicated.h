@@ -8,7 +8,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 #include <Interpreters/QueryFlags.h>
-#include <Parsers/SyncReplicaMode.h>
 
 
 namespace zkutil
@@ -31,7 +30,6 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct ReplicaInfo
 {
     bool is_active;
-    bool unsynced_after_recovery;
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
@@ -41,7 +39,8 @@ class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
-    static constexpr auto REPLICA_UNSYNCED_MARKER = "\tUNSYNCED";
+    static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
+    static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
@@ -65,7 +64,7 @@ public:
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
-    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode = SyncReplicaMode::DEFAULT);
+    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.

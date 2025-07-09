@@ -1,8 +1,8 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/TestKeeper.h>
+#include "ZooKeeper.h"
+#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include "ZooKeeperImpl.h"
+#include "KeeperException.h"
+#include "TestKeeper.h"
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -1080,21 +1080,13 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
 void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
-    deleteEphemeralNodeIfContentMatches(path, [&fast_delete_if_equal_value](const std::string & actual_content)
-    {
-        return actual_content == fast_delete_if_equal_value;
-    });
-}
-
-void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition)
-{
     zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
     Coordination::Stat stat;
     if (!tryGet(path, content, &stat, eph_node_disappeared))
         return;
 
-    if (condition(content))
+    if (content == fast_delete_if_equal_value)
     {
         auto code = tryRemove(path, stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)

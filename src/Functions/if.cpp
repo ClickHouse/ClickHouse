@@ -1346,11 +1346,11 @@ SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)
 )";
     FunctionDocumentation::Syntax syntax = "if(cond, then, else)";
     FunctionDocumentation::Arguments arguments = {
-        {"cond", "The evaluated condition.", {"UInt8", "Nullable(UInt8)", "NULL"}},
-        {"then", "The expression returned if `cond` is true.", {}},
-        {"else", "The expression returned if `cond` is false or `NULL`.", {}}
+        {"cond", "The evaluated condition. [`UInt8`](/sql-reference/data-types/int-uint), `Nullable(UInt8)` or `NULL`."},
+        {"then", "The expression returned if `cond` is true."},
+        {"else", "The expression returned if `cond` is false or `NULL`."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The result of either the `then` or `else` expressions, depending on condition `cond`."};
+    FunctionDocumentation::ReturnedValue returned_value = "The result of either the `then` or `else` expressions, depending on condition `cond`.";
     FunctionDocumentation::Examples examples = {
         {"Example usage", R"(
 SELECT if(1, 2 + 2, 2 + 6) AS res;

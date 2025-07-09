@@ -2,7 +2,6 @@ import glob
 import json
 import logging
 import os
-import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
@@ -666,7 +665,6 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
 
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
-
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -1727,7 +1725,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})ReadStep"],
+            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})Source"],
         ]
 
         assert res == expected
@@ -2047,11 +2045,8 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     )
 
 
-@pytest.mark.parametrize(
-    "storage_type, run_on_cluster",
-    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
-)
-def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_partition_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2098,7 +2093,7 @@ def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=run_on_cluster
+        storage_type, TABLE_NAME, started_cluster, table_function=True
     )
 
     def check_validity_and_get_prunned_files(select_expression):
@@ -3126,7 +3121,6 @@ def test_cluster_table_function_with_partition_pruning(
         run_on_cluster=True,
     )
 
-    instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
 
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_compressed_metadata(started_cluster, storage_type):

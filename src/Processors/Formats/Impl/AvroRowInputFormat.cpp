@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include "AvroRowInputFormat.h"
 #if USE_AVRO
 
 #include <numeric>

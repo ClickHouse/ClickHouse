@@ -1,4 +1,4 @@
-#include <Processors/Transforms/ApplySquashingTransform.h>
+#include "ApplySquashingTransform.h"
 
 namespace DB
 {

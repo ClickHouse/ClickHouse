@@ -996,7 +996,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges =[&](const ActionsDAG::Node * dag)
     {
-        UInt64 condition_hash = dag->getHash();
+        size_t condition_hash = dag->getHash();
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {

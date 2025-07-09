@@ -201,9 +201,8 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQueryForInsert();
+    bool receiveEndOfQuery();
     void cancelQuery();
-    void sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
@@ -408,10 +407,9 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    /// Options for BuzzHouse
+    //Options for BuzzHouse
     String buzz_house_options_path;
     bool buzz_house = false;
-    int error_code = 0;
 
     struct
     {
