@@ -1566,10 +1566,11 @@ void Planner::buildPlanForQueryNode()
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        auto & query_node_typed = query_tree->as<QueryNode &>();
+        const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTree(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it.first->as<TableNode>();
+            auto * table_node = it->as<TableNode>();
             if (!table_node)
                 continue;
 
@@ -1582,6 +1583,7 @@ void Planner::buildPlanForQueryNode()
                 LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                break;
             }
         }
     }
