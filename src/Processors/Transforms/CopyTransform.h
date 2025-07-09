@@ -2,7 +2,6 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -22,7 +21,8 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
 
 private:
-    Port::Data data;
+    Chunk chunk;
+    bool has_data = false;
     std::vector<char> was_output_processed;
 
     Status prepareGenerate();

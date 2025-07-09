@@ -21,7 +21,6 @@
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -57,13 +56,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
-}
-
-void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
-{
-    // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
-    for (const auto & host : uri->hosts())
-        context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -606,7 +598,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
-        .source_access_type = AccessTypeObjects::Source::MONGO,
+        .source_access_type = AccessType::MONGO,
     });
 }
 

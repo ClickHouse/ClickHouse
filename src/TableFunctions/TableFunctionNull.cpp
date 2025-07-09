@@ -7,7 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

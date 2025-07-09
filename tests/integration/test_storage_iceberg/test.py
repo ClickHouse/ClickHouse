@@ -2,7 +2,6 @@ import glob
 import json
 import logging
 import os
-import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
@@ -666,7 +665,6 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
 
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
-
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -1727,7 +1725,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})ReadStep"],
+            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})Source"],
         ]
 
         assert res == expected
@@ -2047,11 +2045,8 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     )
 
 
-@pytest.mark.parametrize(
-    "storage_type, run_on_cluster",
-    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
-)
-def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_partition_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2098,7 +2093,7 @@ def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=run_on_cluster
+        storage_type, TABLE_NAME, started_cluster, table_function=True
     )
 
     def check_validity_and_get_prunned_files(select_expression):
@@ -2644,8 +2639,7 @@ def test_metadata_cache(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("is_table_function", [False, True])
-def test_minmax_pruning(started_cluster, storage_type, is_table_function):
+def test_minmax_pruning(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -2705,15 +2699,9 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     """
     )
 
-    if is_table_function:
-        creation_expression = get_creation_expression(
+    creation_expression = get_creation_expression(
         storage_type, TABLE_NAME, started_cluster, table_function=True
     )
-    else:
-        instance.query(get_creation_expression(
-            storage_type, TABLE_NAME, started_cluster, table_function=False
-        ))
-        creation_expression = TABLE_NAME
 
     def check_validity_and_get_prunned_files(select_expression):
         settings1 = {
@@ -2790,9 +2778,6 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
         )
         == 3
     )
-
-    if not is_table_function:
-        return
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 
@@ -3165,6 +3150,9 @@ def test_compressed_metadata(started_cluster, storage_type):
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE not ignore(*)") == "1\tAlice\n2\tBob\n"
+    
+    instance.query(f"SELECT * FROM {table_function_expr_cluster} WHERE a = 1")
+
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
