@@ -53,7 +53,7 @@ def threshold_generator(
             and isinstance(min_val, int)
             and isinstance(max_val, int)
         ):
-            return 2 ** bits - 1
+            return 2**bits - 1
 
         if isinstance(min_val, int) and isinstance(max_val, int):
             return random.randint(min_val, max_val)
