@@ -616,13 +616,13 @@ bool Client::buzzHouse()
             }
             else
             {
-                const uint32_t correctness_oracle = 30;
-                const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 30
+                const uint32_t correctness_oracle = 20;
+                const uint32_t settings_oracle = 20;
+                const uint32_t dump_oracle = 10
                     * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle > 0
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
-                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                    = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query;
