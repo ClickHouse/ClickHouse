@@ -83,6 +83,13 @@ void ObjectStorageQueueFactory::shutdown()
         shutdown_storages = std::vector<StorageID>(storages.begin(), storages.end());
     }
 
+    auto log = getLogger("ObjectStorageFactory::shutdown");
+    if (shutdown_storages.empty())
+    {
+        LOG_DEBUG(log, "There are no queue storages to shutdown");
+        return;
+    }
+
     static const auto default_shutdown_threads = 10;
     ThreadPool pool(
         CurrentMetrics::ObjectStorageQueueShutdownThreads,
@@ -91,6 +98,8 @@ void ObjectStorageQueueFactory::shutdown()
         std::min<size_t>(default_shutdown_threads, shutdown_storages.size()));
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "ObjectStorageQueueFactory::shutdown");
+
+    LOG_DEBUG(log, "Will shutdown {} queue storages", shutdown_storages.size());
 
     for (const auto & storage : shutdown_storages)
     {
