@@ -154,6 +154,7 @@ WHERE 1
     AND operation_name NOT LIKE '%Pipeline%'
     AND operation_name NOT LIKE 'TCPHandler%'
     AND operation_name NOT LIKE 'Query%'
+    AND operation_name NOT LIKE 'CPU_LEASE%'
 ORDER BY
     group ASC,
     parent_span_id ASC,
