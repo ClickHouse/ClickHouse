@@ -28,13 +28,12 @@ class SystemDatabaseReplicasSource : public ISource
 public:
     SystemDatabaseReplicasSource(
         Block header_,
-        size_t max_databases_,
         size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_readonly_,
         ContextPtr context_)
         : ISource(header_)
-        , max_databases(max_databases_)
+        , max_databases(col_database_->size())
         , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))
         , col_readonly(std::move(col_readonly_))
@@ -65,11 +64,9 @@ Chunk SystemDatabaseReplicasSource::generate()
 
     // if (query_status)
     //     query_status->checkTimeLimit();
-    // LOG_TEST(getLogger("source"), "col_database={}", (*col_database)[index].safeGet<String>());
 
     for(size_t row_count{}; index < max_databases && row_count < max_block_size; index++, row_count++)
     {
-        // @todo issue with filter
         res_columns[0]->insert((*col_database)[index]);
         res_columns[1]->insert((*col_readonly)[index]);
     }
@@ -83,8 +80,6 @@ Chunk SystemDatabaseReplicasSource::generate()
 class ReadFromSystemDatabaseReplicas : public SourceStepWithFilter
 {
 public:
-    
-
     ReadFromSystemDatabaseReplicas(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -124,6 +119,7 @@ void ReadFromSystemDatabaseReplicas::applyFilters(ActionDAGNodes added_filter_no
         Block block_to_filter
         {
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+            { ColumnString::create(), std::make_shared<DataTypeUInt8>(), "is_readonly" },
         };
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
@@ -148,7 +144,6 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
     ColumnPtr col_database = std::move(col_database_mut);
     ColumnPtr col_readonly = std::move(col_readonly_mut);
 
-    /// Determine what tables are needed by the conditions in the query.
     {
         Block filtered_block
         {
@@ -168,10 +163,9 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 
         col_database = filtered_block.getByName("database").column;
         col_readonly = filtered_block.getByName("is_readonly").column;
-
     }
 
-    pipeline.init(Pipe(std::make_shared<SystemDatabaseReplicasSource>(header, replicated_databases.size(), max_block_size, col_database, col_readonly, context)));
+    pipeline.init(Pipe(std::make_shared<SystemDatabaseReplicasSource>(header, max_block_size, col_database, col_readonly, context)));
 }
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
@@ -208,14 +202,9 @@ void StorageSystemDatabaseReplicas::read(
     std::map<String, DatabasePtr> replicated_databases;
     for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases())
     {
-        // @todo to const
-        if (db_data->getEngineName() != "Replicated") {
-            continue;
-        }
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get())) {
             continue;
         }
-            
 
         const bool check_access_for_db = !access->isGranted(AccessType::SHOW_DATABASES, db_name);
         if (!check_access_for_db) {
