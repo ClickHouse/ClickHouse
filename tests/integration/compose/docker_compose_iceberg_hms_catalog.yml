@@ -17,7 +17,7 @@ services:
       - 10001:10001
 
   hive:
-    image: integration-test-with-hms
+    image: clickhouse/integration-test-with-hms
     restart: unless-stopped
     depends_on:
       minio:
