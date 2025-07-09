@@ -3,6 +3,51 @@
 namespace DB
 {
 
+namespace
+{
+
+template <class T>
+std::pair<const T * const, const T * const> calcBorders(const std::vector<T> & array)
+{
+    return {array.data(), array.data() + array.size()};
+}
+
+template <class T>
+bool isInSegment(const std::vector<T> & array, const T * const point)
+{
+    const auto [left, right] = calcBorders(array);
+    return left <= point && point <= right;
+}
+
+template <class T>
+bool isInInterval(const std::vector<T> & array, const T * const point)
+{
+    const auto [left, right] = calcBorders(array);
+    return left <= point && point < right;
+}
+
+bool sanityCheck(const PartsRanges & uncovered_ranges, RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end)
+{
+    if (!isInInterval(uncovered_ranges, range_it.base()))
+        return false;
+
+    if (!isInInterval(*range_it, range_begin.base()))
+        return false;
+
+    if (!isInSegment(*range_it, range_end.base()))
+        return false;
+
+    if (range_begin == range_end)
+        return false;
+
+    if (range_begin.base() >= range_end.base())
+        return false;
+
+    return true;
+}
+
+}
+
 bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsRangeBoundaries & lhs, const PartsRangeBoundaries & rhs) const noexcept
 {
     return lhs.range_begin < rhs.range_begin;
@@ -48,8 +93,15 @@ bool DisjointPartsRangesSet::isCovered(const PartsIterator & part_it, const Sort
     return range_begin <= part_it && part_it < range_end;
 }
 
+DisjointPartsRangesSet::DisjointPartsRangesSet(const PartsRanges & uncovered_ranges_)
+    : uncovered_ranges(uncovered_ranges_)
+{
+}
+
 bool DisjointPartsRangesSet::isCovered(RangesIterator range_it, PartsIterator part_it) const
 {
+    chassert(sanityCheck(uncovered_ranges, range_it, part_it, range_it->end()));
+
     auto sorted_ranges_it = disjoint.find(range_it.base());
     if (sorted_ranges_it == disjoint.end())
         return false;
@@ -60,7 +112,8 @@ bool DisjointPartsRangesSet::isCovered(RangesIterator range_it, PartsIterator pa
 
 bool DisjointPartsRangesSet::addRangeIfPossible(RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end)
 {
-    chassert(range_begin != range_end);
+    chassert(sanityCheck(uncovered_ranges, range_it, range_begin, range_end));
+
     auto & sorted_ranges = disjoint[range_it.base()];
     PartsRangeBoundaries range_boundaries{std::move(range_begin), std::move(range_end)};
 

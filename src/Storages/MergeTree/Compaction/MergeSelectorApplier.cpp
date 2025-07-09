@@ -2,6 +2,10 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,25 +24,16 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
+    extern const MergeTreeSettingsBool apply_patches_on_merge;
 }
 
 namespace
 {
 
-MergeSelectorChoices pack(PartsRanges && ranges, MergeType type)
-{
-    MergeSelectorChoices choices;
-    choices.reserve(ranges.size());
-
-    for (auto & range : ranges)
-        choices.emplace_back(std::move(range), type);
-
-    return choices;
-}
-
 struct ChooseContext
 {
     const PartsRanges & ranges;
+    const IMergePredicate & predicate;
     const IMergeSelector::RangeFilter & range_filter;
     const IMergeSelector::MergeSizes & max_merge_sizes;
     const StorageInMemoryMetadata & metadata_snapshot;
@@ -48,6 +43,24 @@ struct ChooseContext
     const time_t current_time;
     const bool aggressive;
 };
+
+MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
+{
+    auto create_choice = [&](PartsRange && parts, MergeType merge_type)
+    {
+        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+        PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
+    };
+
+    MergeSelectorChoices choices;
+    choices.reserve(ranges.size());
+
+    for (auto & range : ranges)
+        choices.push_back(create_choice(std::move(range), type));
+
+    return choices;
+}
 
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
@@ -59,7 +72,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
-            return pack(std::move(merge_ranges), MergeType::TTLDelete);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Delete rows - 2 priority
@@ -68,7 +81,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
-            return pack(std::move(merge_ranges), MergeType::TTLDelete);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Recompression - 3 priority
@@ -77,7 +90,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
-            return pack(std::move(merge_ranges), MergeType::TTLRecompress);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
     return {};
@@ -116,7 +129,7 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
     }
 
     auto merge_ranges = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter);
-    return pack(std::move(merge_ranges), MergeType::Regular);
+    return pack(ctx, std::move(merge_ranges), MergeType::Regular);
 }
 
 }
@@ -137,6 +150,7 @@ MergeSelectorApplier::MergeSelectorApplier(
 
 MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartsRanges & ranges,
+    const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & merge_tree_settings,
     const PartitionIdToTTLs & next_delete_times,
@@ -146,6 +160,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
 {
     ChooseContext ctx{
         .ranges = ranges,
+        .predicate = predicate,
         .range_filter = range_filter,
         .max_merge_sizes = max_merge_sizes,
         .metadata_snapshot = *metadata_snapshot,

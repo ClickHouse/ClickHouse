@@ -6,6 +6,7 @@
 
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cassert>
 #include <random>
@@ -37,6 +38,11 @@ namespace
 class Estimator
 {
 public:
+    explicit Estimator(const PartsRanges & parts_ranges)
+        : disjoint_set(parts_ranges)
+    {
+    }
+
     void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
@@ -77,26 +83,26 @@ public:
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    void prepare(size_t count)
-    {
-        count = std::min(count, ranges.size());
-        std::partial_sort(ranges.rbegin(), ranges.rbegin() + count, ranges.rend(), [](const ScoredRange & lhs, const ScoredRange & rhs)
-        {
-            return lhs.score < rhs.score;
-        });
-        sorted_suffix_size = count;
-    }
-
     std::optional<PartsRange> buildMergeRange(size_t max_total_size_to_merge)
     {
+        constexpr static auto range_compare = [](const ScoredRange & lhs, const ScoredRange & rhs)
+        {
+            /// If the ranges have the same score, use the range that is most likely to have the lower merge level -
+            /// the right one, according to the block number sorting.
+            return lhs.score > rhs.score || (lhs.score == rhs.score && lhs.range_begin < rhs.range_begin);
+        };
+
+        if (!is_heap_constructed)
+        {
+            std::make_heap(ranges.begin(), ranges.end(), range_compare);
+            is_heap_constructed = true;
+        }
+
         while (!ranges.empty())
         {
-            if (sorted_suffix_size == 0)
-                prepare(ranges.size());
-
+            std::pop_heap(ranges.begin(), ranges.end(), range_compare);
             const auto [range_it, range_begin, range_end, size, _] = std::move(ranges.back());
             ranges.pop_back();
-            --sorted_suffix_size;
 
             if (size <= max_total_size_to_merge && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
                 return PartsRange(range_begin, range_end);
@@ -117,7 +123,7 @@ private:
 
     DisjointPartsRangesSet disjoint_set;
     std::vector<ScoredRange> ranges;
-    size_t sorted_suffix_size = 0;
+    bool is_heap_constructed = false;
 };
 
 
@@ -285,7 +291,7 @@ PartsRanges SimpleMergeSelector::select(
     const MergeSizes & max_merge_sizes,
     const RangeFilter & range_filter) const
 {
-    Estimator estimator;
+    Estimator estimator(parts_ranges);
 
     /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
@@ -294,8 +300,6 @@ PartsRanges SimpleMergeSelector::select(
     /// Using max size constraint to create more merge candidates
     for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
         selectWithinPartsRange(range_it, max_merge_sizes[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
-
-    estimator.prepare(max_merge_sizes.size());
 
     PartsRanges result;
     for (size_t max_merge_size : max_merge_sizes)

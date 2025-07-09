@@ -21,8 +21,8 @@ class ITTLMergeSelector::MergeRangesConstructor
             return std::nullopt;
 
         size_t usable_memory = max_total_size_to_merge - center->size;
-        PartsIterator left = merge_selector->findLeftRangeBorder(center_position, usable_memory, disjoint_set);
-        PartsIterator right = merge_selector->findRightRangeBorder(center_position, usable_memory, disjoint_set);
+        PartsIterator left = merge_selector.findLeftRangeBorder(center_position, usable_memory, disjoint_set);
+        PartsIterator right = merge_selector.findRightRangeBorder(center_position, usable_memory, disjoint_set);
 
         if (range_filter && !range_filter({left, right}))
             return std::nullopt;
@@ -34,33 +34,32 @@ class ITTLMergeSelector::MergeRangesConstructor
     }
 
 public:
-    explicit MergeRangesConstructor(const ITTLMergeSelector * merge_selector_, const RangeFilter & range_filter_, std::vector<CenterPosition> centers_)
+    explicit MergeRangesConstructor(const ITTLMergeSelector & merge_selector_, const PartsRanges & parts_ranges, const RangeFilter & range_filter_)
         : merge_selector(merge_selector_)
         , range_filter(range_filter_)
-        , centers(std::move(centers_))
+        , disjoint_set(parts_ranges)
+        , centers(merge_selector.findCenters(parts_ranges))
     {
-    }
-
-    void prepare(size_t count)
-    {
-        count = std::min(count, centers.size());
-        std::partial_sort(centers.rbegin(), centers.rbegin() + count, centers.rend(), [](const CenterPosition & lhs, const CenterPosition & rhs)
-        {
-            return lhs.ttl < rhs.ttl;
-        });
-        sorted_suffix_size = count;
     }
 
     std::optional<PartsRange> buildMergeRange(size_t max_total_size_to_merge)
     {
+        constexpr static auto range_compare = [](const CenterPosition & lhs, const CenterPosition & rhs)
+        {
+            return lhs.ttl > rhs.ttl;
+        };
+
+        if (!is_heap_constructed)
+        {
+            std::make_heap(centers.begin(), centers.end(), range_compare);
+            is_heap_constructed = true;
+        }
+
         while (!centers.empty())
         {
-            if (sorted_suffix_size == 0)
-                prepare(centers.size());
-
+            std::pop_heap(centers.begin(), centers.end(), range_compare);
             const auto center = std::move(centers.back());
             centers.pop_back();
-            --sorted_suffix_size;
 
             if (auto range = buildRange(center, max_total_size_to_merge))
                 return range;
@@ -70,12 +69,12 @@ public:
     }
 
 private:
-    const ITTLMergeSelector * merge_selector;
+    const ITTLMergeSelector & merge_selector;
     const RangeFilter & range_filter;
 
     DisjointPartsRangesSet disjoint_set;
     std::vector<CenterPosition> centers;
-    size_t sorted_suffix_size = 0;
+    bool is_heap_constructed = false;
 };
 
 bool ITTLMergeSelector::needToPostponePartition(const std::string & partition_id) const
@@ -93,8 +92,8 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
 
     for (auto range = parts_ranges.begin(); range != parts_ranges.end(); ++range)
     {
-        chassert(!range->empty());
-        const auto & range_partition = range->front().info.partition_id;
+        assert(!range->empty());
+        const auto & range_partition = range->front().info.getPartitionId();
 
         if (needToPostponePartition(range_partition))
             continue;
@@ -173,12 +172,7 @@ PartsRanges ITTLMergeSelector::select(
     const MergeSizes & max_merge_sizes,
     const RangeFilter & range_filter) const
 {
-    auto centers = findCenters(parts_ranges);
-    if (centers.empty())
-        return {};
-
-    MergeRangesConstructor constructor(this, range_filter, std::move(centers));
-    constructor.prepare(max_merge_sizes.size());
+    MergeRangesConstructor constructor(*this, parts_ranges, range_filter);
 
     PartsRanges result;
     for (size_t max_merge_size : max_merge_sizes)

@@ -34,6 +34,8 @@ class DisjointPartsRangesSet
     static bool isCovered(const PartsIterator & part_it, const SortedPartsRanges & sorted_ranges);
 
 public:
+    explicit DisjointPartsRangesSet(const PartsRanges & uncovered_ranges_);
+
     /// Check that specific point inside range is covered.
     bool isCovered(RangesIterator range_it, PartsIterator part_it) const;
 
@@ -41,6 +43,9 @@ public:
     bool addRangeIfPossible(RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end);
 
 private:
+    /// Expected source of disjoint ranges.
+    const PartsRanges & uncovered_ranges;
+
     std::unordered_map<const PartsRange *, SortedPartsRanges> disjoint;
 };
 
