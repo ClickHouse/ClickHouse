@@ -312,7 +312,7 @@ Names getUpdatedColumns(const Block & block, const IMergeTreeDataPartInfoForRead
             column_name = alter_conversions->getColumnOldName(column_name);
 
         if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            res.push_back(column_name);
+            res.push_back(std::move(column_name));
     }
 
     return res;
