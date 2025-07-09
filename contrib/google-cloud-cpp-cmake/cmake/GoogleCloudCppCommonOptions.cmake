@@ -24,19 +24,6 @@ option(GOOGLE_CLOUD_CPP_ENABLE_CLANG_ABI_COMPAT_17
        "If set, compiles with -fclang-abi-compat=17." OFF)
 mark_as_advanced(GOOGLE_CLOUD_CPP_ENABLE_CLANG_ABI_COMPAT_17)
 
-# Find out what flags turn on all available warnings and turn those warnings
-# into errors.
-include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag(-Wall GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WALL)
-check_cxx_compiler_flag(-Wextra GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WEXTRA)
-check_cxx_compiler_flag(-Wconversion
-                        GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WCONVERSION)
-check_cxx_compiler_flag(-Wno-sign-conversion
-                        GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WNO_SIGN_CONVERSION)
-check_cxx_compiler_flag(-Werror GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WERROR)
-check_cxx_compiler_flag(-fclang-abi-compat=17
-                        GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_CLANG_ABI_COMPAT_17)
-
 #[=======================================================================[.rst:
 google_cloud_cpp_add_common_options(target [NO_WARNINGS])
 ---------------------------------------------------------
