@@ -533,12 +533,13 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 
     /// Don't write statistics
-    if (!sel->has_setting_values())
+    if (!ins->select().has_setting_values())
     {
-        const auto * news = sel->mutable_setting_values();
+        Select & ssel = const_cast<Select &>(ins->select());
+        const auto * news = ssel.mutable_setting_values();
         UNUSED(news);
     }
-    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+    SettingValues & svs = const_cast<SettingValues &>(ins->select().setting_values());
     SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
     sv->set_property("output_format_write_statistics");
