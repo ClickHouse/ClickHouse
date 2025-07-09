@@ -173,7 +173,7 @@ The series are stored in Keeper nodes under the path, which can be configured in
         .arguments{
             {"series_identifier", "Series identifier, (a short constant String)"}
         },
-        .returned_value = "Sequential numbers starting from the previous counter value",
+        .returned_value = {"Returns sequential numbers starting from the previous counter value."},
         .examples{
             {"first call", "SELECT generateSerialID('id1')", R"(
 ┌─generateSerialID('id1')──┐

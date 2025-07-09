@@ -56,6 +56,10 @@ static struct InitFiu
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
     ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(smt_merge_task_sleep_in_prepare) \
+    ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(rmt_merge_task_sleep_in_prepare) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
@@ -88,6 +92,11 @@ static struct InitFiu
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(database_replicated_startup_pause) \
+    ONCE(keeper_leader_sets_invalid_digest) \
+    ONCE(parallel_replicas_wait_for_unused_replicas) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
 
 
 namespace FailPoints

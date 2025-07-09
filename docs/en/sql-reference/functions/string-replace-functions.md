@@ -344,7 +344,7 @@ printf(format, arg1, arg2, ...)
 Query:
 
 ```sql
-select printf('%%%s %s %d', 'Hello', 'World', 2024);
+SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
 
 

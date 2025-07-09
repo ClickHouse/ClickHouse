@@ -4,6 +4,7 @@ sidebar_label: 'Build on macOS for macOS'
 sidebar_position: 15
 slug: /development/build-osx
 title: 'Build on macOS for macOS'
+keywords: ['MacOS', 'Mac', 'build']
 ---
 
 # How to Build ClickHouse on macOS for macOS

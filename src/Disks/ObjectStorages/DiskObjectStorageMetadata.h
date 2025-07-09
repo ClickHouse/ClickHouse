@@ -111,6 +111,7 @@ public:
     {
         inline_data.clear();
         keys_with_meta.clear();
+        total_size = 0;
     }
 
     const std::string & getInlineData() const

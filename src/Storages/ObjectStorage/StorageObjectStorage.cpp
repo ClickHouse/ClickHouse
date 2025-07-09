@@ -11,6 +11,7 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -91,7 +92,7 @@ StorageObjectStorage::StorageObjectStorage(
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_,
-    bool is_table_function_,
+    bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
@@ -101,40 +102,50 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
-    update_configuration_on_read = !is_table_function_ || do_lazy_init;
-    bool failed_init = false;
-    auto do_init = [&]()
-    {
-        try
-        {
-            if (configuration->hasExternalDynamicMetadata())
-                configuration->updateAndGetCurrentSchema(object_storage, context);
-            else
-                configuration->update(object_storage, context);
-        }
-        catch (...)
-        {
-            // If we don't have format or schema yet, we can't ignore failed configuration update,
-            // because relevant configuration is crucial for format and schema inference
-            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
-            {
-                throw;
-            }
-            else
-            {
-                tryLogCurrentException(log);
-                failed_init = true;
-            }
-        }
-    };
+    const bool need_resolve_columns_or_format = columns_.empty() || (configuration->format == "auto");
+    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->withPartitionWildcard()
+        && !configuration->isDataLakeConfiguration();
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    if (!do_lazy_init)
-        do_init();
+    bool updated_configuration = false;
+    try
+    {
+        if (!do_lazy_init)
+        {
+            configuration->update(
+                object_storage,
+                context,
+                /* if_not_updated_before */is_table_function,
+                /* check_consistent_with_previous_metadata */true);
+
+            updated_configuration = true;
+        }
+    }
+    catch (...)
+    {
+        // If we don't have format or schema yet, we can't ignore failed configuration update,
+        // because relevant configuration is crucial for format and schema inference
+        if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
+        {
+            throw;
+        }
+        tryLogCurrentException(log);
+    }
+
+    /// We always update configuration on read for table engine,
+    /// but this is not needed for table function,
+    /// which exists only for the duration of a single query
+    /// (e.g. read always follows constructor immediately).
+    update_configuration_on_read_write = !is_table_function || !updated_configuration;
 
     std::string sample_path;
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    if (need_resolve_columns_or_format)
+        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    else
+        validateSupportedColumns(columns, *configuration);
+
     configuration->check(context);
 
     StorageInMemoryMetadata metadata;
@@ -144,27 +155,19 @@ StorageObjectStorage::StorageObjectStorage(
 
     /// FIXME: We need to call getPathSample() lazily on select
     /// in case it failed to be initialized in constructor.
-    if (!failed_init
-        && sample_path.empty()
-        && context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->withPartitionWildcard())
+    if (updated_configuration && sample_path.empty() && need_resolve_sample_path)
     {
-        if (do_lazy_init)
-            do_init();
-        if (!configuration->isDataLakeConfiguration())
+        try
         {
-            try
-            {
-                sample_path = getPathSample(context);
-            }
-            catch (...)
-            {
-                LOG_WARNING(
-                    log,
-                    "Failed to list object storage, cannot use hive partitioning. "
-                    "Error: {}",
-                    getCurrentExceptionMessage(true));
-            }
+            sample_path = getPathSample(context);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}",
+                getCurrentExceptionMessage(true));
         }
     }
 
@@ -193,154 +196,79 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
+bool StorageObjectStorage::Configuration::update( ///NOLINT
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context,
+    bool /* if_not_updated_before */,
+    bool /* check_consistent_with_previous_metadata */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
-}
-
-bool StorageObjectStorage::hasExternalDynamicMetadata() const
-{
-    return configuration->hasExternalDynamicMetadata();
+    return true;
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    return configuration->getExternalMetadata(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */false);
+
+    return configuration->getExternalMetadata();
 }
 
-void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
+bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
+    bool updated = configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */true,
+        /* check_consistent_with_previous_metadata */false);
+
+    if (!configuration->hasExternalDynamicMetadata())
+        return false;
+
+    if (!updated)
+    {
+        /// Force the update.
+        configuration->update(
+            object_storage,
+            query_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */false);
+    }
+
+    auto columns = configuration->tryGetTableStructureFromMetadata();
+    if (!columns.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
+
     StorageInMemoryMetadata metadata;
-    metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
+    metadata.setColumns(std::move(columns.value()));
     setInMemoryMetadata(metadata);
+    return true;
 }
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
-    return configuration->totalRows();
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
+
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(object_storage, query_context);
-    return configuration->totalBytes();
-}
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */true);
 
-namespace
-{
-class ReadFromObjectStorageStep : public SourceStepWithFilter
-{
-public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
-    ReadFromObjectStorageStep(
-        ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        const String & name_,
-        const Names & columns_to_read,
-        const NamesAndTypesList & virtual_columns_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const std::optional<DB::FormatSettings> & format_settings_,
-        bool distributed_processing_,
-        ReadFromFormatInfo info_,
-        const bool need_only_count_,
-        ContextPtr context_,
-        size_t max_block_size_,
-        size_t num_streams_)
-        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
-        , object_storage(object_storage_)
-        , configuration(configuration_)
-        , info(std::move(info_))
-        , virtual_columns(virtual_columns_)
-        , format_settings(format_settings_)
-        , name(name_ + "Source")
-        , need_only_count(need_only_count_)
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-        , distributed_processing(distributed_processing_)
-    {
-    }
-
-    std::string getName() const override { return name; }
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override
-    {
-        SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        createIterator();
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        createIterator();
-
-        Pipes pipes;
-        auto context = getContext();
-        const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
-        size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
-
-        if (estimated_keys_count > 1)
-            num_streams = std::min(num_streams, estimated_keys_count);
-        else
-        {
-            /// The amount of keys (zero) was probably underestimated.
-            /// We will keep one stream for this particular case.
-            num_streams = 1;
-        }
-
-        const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
-
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
-
-            source->setKeyCondition(filter_actions_dag, context);
-            pipes.emplace_back(std::move(source));
-        }
-
-        auto pipe = Pipe::unitePipes(std::move(pipes));
-        if (pipe.empty())
-            pipe = Pipe(std::make_shared<NullSource>(info.source_header));
-
-        for (const auto & processor : pipe.getProcessors())
-            processors.emplace_back(processor);
-
-        pipeline.init(std::move(pipe));
-    }
-
-private:
-    ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
-    std::shared_ptr<IObjectIterator> iterator_wrapper;
-
-    const ReadFromFormatInfo info;
-    const NamesAndTypesList virtual_columns;
-    const std::optional<DB::FormatSettings> format_settings;
-    const String name;
-    const bool need_only_count;
-    const size_t max_block_size;
-    size_t num_streams;
-    const bool distributed_processing;
-
-    void createIterator()
-    {
-        if (iterator_wrapper)
-            return;
-
-        const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
-            predicate = filter_actions_dag->getOutputs().at(0);
-
-        auto context = getContext();
-        iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
-    }
-};
+    return configuration->totalBytes(query_context);
 }
 
 ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
@@ -370,8 +298,14 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read)
-        configuration->update(object_storage, local_context);
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */true);
+    }
 
     if (partition_by && configuration->withPartitionWildcard())
     {
@@ -417,7 +351,15 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    configuration->update(object_storage, local_context);
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */false,
+            /* check_consistent_with_previous_metadata */true);
+    }
+
     const auto sample_block = metadata_snapshot->getSampleBlock();
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -528,20 +470,6 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (configuration->isDataLakeConfiguration())
-    {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
-
-        auto table_structure = configuration->tryGetTableStructureFromMetadata();
-        if (table_structure)
-        {
-            return table_structure.value();
-        }
-    }
-
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);

@@ -74,12 +74,15 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
     }
 
     EXPECT_EQ(metadata->getHardlinkCount("original_file"), 0);
+    EXPECT_EQ(metadata->getFileSize("original_file"), 111);
 
     {
         auto transaction = metadata->createTransaction();
         transaction->createHardLink("original_file", "hardlinked_file");
         transaction->commit();
     }
+
+    EXPECT_EQ(metadata->getFileSize("hardlinked_file"), 111);
 
     EXPECT_EQ(metadata->getHardlinkCount("original_file"), 1);
     EXPECT_EQ(metadata->getHardlinkCount("hardlinked_file"), 1);
@@ -92,6 +95,9 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
 
     EXPECT_EQ(metadata->getHardlinkCount("original_file"), 1);
     EXPECT_EQ(metadata->getHardlinkCount("hardlinked_file"), 1);
+
+    EXPECT_EQ(metadata->getFileSize("original_file"), 222);
+    EXPECT_EQ(metadata->getFileSize("hardlinked_file"), 222);
 
     auto original_blobs = metadata->getStorageObjects("original_file");
     auto hardlinked_blobs = metadata->getStorageObjects("hardlinked_file");

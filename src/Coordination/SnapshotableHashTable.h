@@ -21,8 +21,8 @@ struct ListNode
 
     struct
     {
-        bool active_in_map : 1;
-        bool free_key : 1;
+        uint64_t active_in_map : 1;
+        uint64_t free_key : 1;
         uint64_t version : 62;
     } node_metadata{false, false, 0};
 

@@ -110,7 +110,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
     },
     {
         .supports_settings = true,
-        .source_access_type = AccessType::YTSAURUS,
+        .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     });
 }

@@ -287,12 +287,12 @@ DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
 {
     if (!json->has("type_name"))
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('type_name' was not found)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse the YT json schema('type_name' was not found)");
     }
     auto data_type_var = json->get("type_name");
     if (!data_type_var.isString())
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('type_name' is not string)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse the YT json schema('type_name' is not string)");
     }
     auto data_type = data_type_var.extract<std::string>();
     DataTypePtr data_type_ptr;
@@ -341,7 +341,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
         {
             if (!json->has("required"))
             {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT json schema('required' was not found)");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse the YT json schema('required' was not found)");
             }
             bool required = json->getValue<bool>("required");
             if (required)
@@ -371,7 +371,7 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
 
     if (!json->has("type_v3"))
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Coudn't parse the YT schema json('type_v3' was not found)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse the YT schema json('type_v3' was not found)");
     }
     auto value = json->get("type_v3");
     try
