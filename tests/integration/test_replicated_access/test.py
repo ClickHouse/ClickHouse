@@ -35,13 +35,15 @@ def started_cluster():
 
 @pytest.fixture(scope="function", autouse=True)
 def prepare_test():
-    node1.query("DROP USER IF EXISTS test")
-    node1.query("DROP TABLE IF EXISTS table")
-    node1.query("DROP TABLE IF EXISTS secret")
     node1.query("CREATE USER test")
-    node1.query("CREATE TABLE table ON CLUSTER default (x UInt64) ENGINE=MergeTree ORDER BY x")
-    node1.query("CREATE TABLE secret ON CLUSTER default (value String) ENGINE=MergeTree ORDER BY value")
-    yield
+    node1.query("CREATE TABLE IF NOT EXISTS table ON CLUSTER default (x UInt64) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE IF NOT EXISTS secret ON CLUSTER default (value String) ENGINE=MergeTree ORDER BY value")
+    try:
+        yield
+    finally:
+        node1.query("DROP USER IF EXISTS test")
+        node1.query("DROP TABLE IF EXISTS table ON CLUSTER default")
+        node1.query("DROP TABLE IF EXISTS secret ON CLUSTER default")
 
 
 def test_initiator_user_in_ddl(started_cluster):
