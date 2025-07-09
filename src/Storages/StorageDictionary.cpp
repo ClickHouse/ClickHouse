@@ -352,7 +352,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
-            if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
+            if (args.mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
                 /// and throw an exception if the loading is failed.
