@@ -7,5 +7,10 @@ target_link_libraries (field PRIVATE dbms)
 clickhouse_add_executable (string_ref_hash string_ref_hash.cpp)
 target_link_libraries (string_ref_hash PRIVATE clickhouse_common_io clickhouse_common_config)
 
-clickhouse_add_executable (gcs gcs.cpp)
-target_link_libraries (gcs PRIVATE clickhouse_common_io clickhouse_common_config dbms)
+if (TARGET ch_contrib::google_cloud_cpp)
+    clickhouse_add_executable (gcloud_kms gcloud_kms.cpp)
+    target_link_libraries (gcloud_kms PRIVATE clickhouse_common_io clickhouse_common_config dbms)
+
+    clickhouse_add_executable (gcloud_storage gcloud_storage.cpp)
+    target_link_libraries (gcloud_storage PRIVATE clickhouse_common_io clickhouse_common_config dbms)
+endif()

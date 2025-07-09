@@ -178,7 +178,6 @@ def main():
         else:
             targets = "clickhouse-bundle"
 
-        targets += " gcs"
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
