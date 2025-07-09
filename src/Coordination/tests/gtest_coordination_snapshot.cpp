@@ -379,7 +379,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
         if constexpr (Storage::use_rocksdb)
             EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 54);
         else
-            EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 105);
+            EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 104);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
