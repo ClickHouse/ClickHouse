@@ -170,8 +170,11 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
-Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
@@ -5646,7 +5649,8 @@ Use cache for remote filesystem. This setting does not turn on/off cache for dis
 Filesystem cache name to use for stateless table engines or data lakes
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_on_write_operations, false, R"(
-Write into cache on write operations. To actually work this setting requires be added to disk config too
+Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's cache disk configuration section.
+See ["Using local cache"](/operations/storing-data#using-local-cache) for more details.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
@@ -5961,6 +5965,9 @@ Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 )", 0) \
     DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
+    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
@@ -6721,12 +6728,12 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
-Allow experimental vector similarity index
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
+Enable vector similarity index.
+)", BETA, enable_vector_similarity_index) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", BETA) \
@@ -6774,11 +6781,8 @@ Allows using statistics to optimize queries
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
-    DECLARE(Bool, allow_experimental_inverted_index, false, R"(
-If it is set to true, allow to use experimental inverted index.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental full-text index.
+If it is set to true, allow to use experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
@@ -6908,6 +6912,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

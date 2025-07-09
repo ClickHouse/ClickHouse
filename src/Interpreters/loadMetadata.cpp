@@ -23,7 +23,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "IO/ReadSettings.h"
+#include <IO/ReadSettings.h>
 
 #include <filesystem>
 

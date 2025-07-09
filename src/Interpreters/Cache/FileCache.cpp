@@ -1,4 +1,4 @@
-#include "FileCache.h"
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>

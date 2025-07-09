@@ -1,8 +1,8 @@
-#include "Loggers.h"
+#include <Loggers/Loggers.h>
 
-#include "OwnFormattingChannel.h"
-#include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <iostream>
 #include <sstream>

@@ -792,13 +792,11 @@ struct ContextSharedPart : boost::noncopyable
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
-        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
-          *  Note that part changes at shutdown won't be logged to part log.
-          */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
-
         LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown();
+        DatabaseCatalog::shutdown([this]()
+        {
+            SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
+        });
 
         NamedCollectionFactory::instance().shutdown();
 
