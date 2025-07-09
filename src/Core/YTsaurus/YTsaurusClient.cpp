@@ -175,7 +175,7 @@ Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path
 Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_path)
 {
     auto schema = getTableAttribute(cypress_path, "schema");
-    auto schema_json = schema.extract<Poco::JSON::Object::Ptr>();
+    const auto & schema_json = schema.extract<Poco::JSON::Object::Ptr>();
     if (!schema_json->has("$value"))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$value\" property in yt table schema");
