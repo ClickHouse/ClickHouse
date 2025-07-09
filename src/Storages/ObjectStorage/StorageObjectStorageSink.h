@@ -16,7 +16,7 @@ public:
         ObjectStoragePtr object_storage,
         ConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         ContextPtr context);
 
     ~StorageObjectStorageSink() override;
@@ -29,7 +29,7 @@ public:
 
 private:
     const String path;
-    const Block sample_block;
+    SharedHeader sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
 
@@ -47,7 +47,7 @@ public:
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         ContextPtr context_,
         const ASTPtr & partition_by);
 
@@ -62,7 +62,7 @@ private:
 
     const StorageObjectStorage::QuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
-    const Block sample_block;
+    SharedHeader sample_block;
     const ContextPtr context;
 };
 

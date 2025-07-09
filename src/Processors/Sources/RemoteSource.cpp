@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
-    : ISource(executor->getHeader(), false)
+    : ISource(executor->getSharedHeader(), false)
     , add_aggregation_info(add_aggregation_info_)
     , query_executor(std::move(executor))
     , async_read(async_read_)
@@ -254,7 +254,7 @@ void RemoteSource::onUpdatePorts()
 
 
 RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getHeader())
+    : ISource(executor->getSharedHeader())
     , query_executor(std::move(executor))
 {
 }
@@ -274,7 +274,7 @@ Chunk RemoteTotalsSource::generate()
 
 
 RemoteExtremesSource::RemoteExtremesSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getHeader())
+    : ISource(executor->getSharedHeader())
     , query_executor(std::move(executor))
 {
 }
@@ -316,7 +316,7 @@ Pipe createRemoteSourcePipe(
     chassert(parallel_marshalling_threads);
 
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AddSequenceNumber>(header); });
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
@@ -325,7 +325,7 @@ Pipe createRemoteSourcePipe(
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
     pipe.resize(parallel_marshalling_threads);
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
     pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;

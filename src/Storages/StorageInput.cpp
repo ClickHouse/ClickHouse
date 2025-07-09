@@ -32,7 +32,7 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 class StorageInputSource : public ISource, WithContext
 {
 public:
-    StorageInputSource(ContextPtr context_, Block sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
+    StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
 
     Chunk generate() override
     {
@@ -61,7 +61,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromInput(
-        Block sample_block,
+        SharedHeader sample_block,
         Pipe pipe_,
         StorageInput & storage_)
         : ISourceStep(std::move(sample_block))
@@ -86,7 +86,7 @@ void StorageInput::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
     Pipe input_source_pipe;
 
     auto query_context = context->getQueryContext();

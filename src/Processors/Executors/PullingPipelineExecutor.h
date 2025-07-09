@@ -1,6 +1,8 @@
 #pragma once
-#include <memory>
 #include <atomic>
+#include <memory>
+
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 namespace DB
 {
@@ -28,6 +30,7 @@ public:
 
     /// Get structure of returned block or chunk.
     const Block & getHeader() const;
+    const SharedHeader & getSharedHeader() const;
 
     /// Methods return false if query is finished.
     /// You can use any pull method.

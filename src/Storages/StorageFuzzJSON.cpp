@@ -468,10 +468,10 @@ class FuzzJSONSource : public ISource
 {
 public:
     FuzzJSONSource(
-        UInt64 block_size_, Block block_header_, const StorageFuzzJSON::Configuration & config_, std::shared_ptr<JSONNode> json_root_)
+        UInt64 block_size_, SharedHeader block_header_, const StorageFuzzJSON::Configuration & config_, std::shared_ptr<JSONNode> json_root_)
         : ISource(block_header_)
         , block_size(block_size_)
-        , block_header(std::move(block_header_))
+        , block_header(block_header_)
         , config(config_)
         , rnd(config.random_seed)
         , json_root(json_root_)
@@ -483,8 +483,8 @@ protected:
     Chunk generate() override
     {
         Columns columns;
-        columns.reserve(block_header.columns());
-        for (const auto & col : block_header)
+        columns.reserve(block_header->columns());
+        for (const auto & col : *block_header)
         {
             chassert(col.type->getTypeId() == TypeIndex::String);
             columns.emplace_back(createColumn());
@@ -497,7 +497,7 @@ private:
     ColumnPtr createColumn();
 
     UInt64 block_size;
-    Block block_header;
+    SharedHeader block_header;
 
     StorageFuzzJSON::Configuration config;
     pcg64 rnd;
@@ -572,7 +572,7 @@ Pipe StorageFuzzJSON::read(
     }
 
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<FuzzJSONSource>(max_block_size, block_header, config, parseJSON(config.json_str)));
+        pipes.emplace_back(std::make_shared<FuzzJSONSource>(max_block_size, std::make_shared<const Block>(block_header), config, parseJSON(config.json_str)));
 
     return Pipe::unitePipes(std::move(pipes));
 }

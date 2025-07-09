@@ -12,7 +12,7 @@ ISimpleTransform::ISimpleTransform(Block input_header_, Block output_header_, bo
 {
 }
 
-ISimpleTransform::ISimpleTransform(ConstBlockPtr input_header_, ConstBlockPtr output_header_, bool skip_empty_chunks_)
+ISimpleTransform::ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_)
     : IProcessor({std::move(input_header_)}, {std::move(output_header_)})
     , input(inputs.front())
     , output(outputs.front())

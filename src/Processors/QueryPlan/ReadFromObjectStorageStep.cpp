@@ -41,7 +41,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ContextPtr context_,
     size_t max_block_size_,
     size_t num_streams_)
-    : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -93,7 +93,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

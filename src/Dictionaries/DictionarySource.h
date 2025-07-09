@@ -88,7 +88,7 @@ private:
 
     bool getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns);
 
-    const Block & getHeader() const { return header; }
+    const SharedHeader & getHeader() const { return header; }
 
     const std::vector<std::string> & getAttributesNamesToRead() const { return attributes_names_to_read; }
 
@@ -109,7 +109,7 @@ private:
     ColumnsWithTypeAndName key_columns_with_type;
     ColumnsWithTypeAndName data_columns_with_type;
 
-    Block header;
+    SharedHeader header;
 
     std::vector<std::string> attributes_names_to_read;
     std::vector<DataTypePtr> attributes_types_to_read;

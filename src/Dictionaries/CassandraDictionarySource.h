@@ -62,7 +62,7 @@ public:
 
     DictionarySourcePtr clone() const override
     {
-        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, sample_block);
+        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
     }
 
     QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
@@ -80,7 +80,7 @@ private:
     LoggerPtr log;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
-    Block sample_block;
+    SharedHeader sample_block;
     ExternalQueryBuilder query_builder;
 
     CassClusterPtr cluster;

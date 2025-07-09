@@ -240,7 +240,7 @@ void LocalConnection::sendQuery(
         auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const Block & header)
+            pipe.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
             });

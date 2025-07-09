@@ -8,7 +8,7 @@ namespace DB
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
 VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column_,
@@ -21,7 +21,7 @@ VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_rows_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 1)
     , current_keys(max_rows_in_queue)
 {
-    sign_column_number = header_.getPositionByName(sign_column_);
+    sign_column_number = header_->getPositionByName(sign_column_);
 }
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)

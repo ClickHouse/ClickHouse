@@ -543,7 +543,7 @@ void addMergingAggregatedMemoryEfficientTransform(
 
     pipe.resize(num_merging_processors);
 
-    pipe.addSimpleTransform([params](const Block &)
+    pipe.addSimpleTransform([params](const SharedHeader &)
     {
         return std::make_shared<MergingAggregatedBucketTransform>(params);
     });

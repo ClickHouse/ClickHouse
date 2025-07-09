@@ -1212,7 +1212,7 @@ namespace
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    cur_pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);
                     });

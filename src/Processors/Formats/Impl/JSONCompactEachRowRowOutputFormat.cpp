@@ -11,7 +11,7 @@ namespace DB
 
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_)
@@ -129,7 +129,7 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
                 FormatSettings settings = format_settings;
                 settings.json.serialize_as_strings = yield_strings;
 
-                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, settings, with_names, with_types);
+                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, with_names, with_types);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);

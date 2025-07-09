@@ -273,7 +273,7 @@ public:
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -381,7 +381,7 @@ class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
-        Block header_,
+        SharedHeader header_,
         size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_table_,

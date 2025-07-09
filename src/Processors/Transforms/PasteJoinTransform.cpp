@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 PasteJoinAlgorithm::PasteJoinAlgorithm(
     JoinPtr table_join_,
-    const Blocks & input_headers,
+    const SharedHeaders & input_headers,
     size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
@@ -118,8 +118,8 @@ IMergingAlgorithm::Status PasteJoinAlgorithm::merge()
 
 PasteJoinTransform::PasteJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<PasteJoinAlgorithm>(

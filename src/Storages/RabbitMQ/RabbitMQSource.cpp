@@ -81,7 +81,7 @@ RabbitMQSource::RabbitMQSource(
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)

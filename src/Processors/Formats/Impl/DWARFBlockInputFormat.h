@@ -20,7 +20,7 @@ namespace DB
 class DWARFBlockInputFormat : public IInputFormat
 {
 public:
-    DWARFBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, size_t num_threads_);
+    DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_);
     ~DWARFBlockInputFormat() override;
 
     String getName() const override { return "DWARFBlockInputFormat"; }

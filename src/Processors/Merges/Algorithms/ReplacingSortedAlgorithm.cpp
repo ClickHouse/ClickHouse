@@ -30,7 +30,7 @@ ChunkSelectFinalIndices::ChunkSelectFinalIndices(MutableColumnPtr select_final_i
 }
 
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     const String & is_deleted_column,
@@ -45,10 +45,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_)
 {
     if (!is_deleted_column.empty())
-        is_deleted_column_number = header_.getPositionByName(is_deleted_column);
+        is_deleted_column_number = header_->getPositionByName(is_deleted_column);
 
     if (!version_column.empty())
-        version_column_number = header_.getPositionByName(version_column);
+        version_column_number = header_->getPositionByName(version_column);
 }
 
 void ReplacingSortedAlgorithm::insertRow()

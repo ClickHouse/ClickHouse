@@ -39,7 +39,7 @@ static void checkSource(const IProcessor & source)
             source.getOutputs().size());
 }
 
-static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, const Block & header, Processors & processors)
+static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, SharedHeader header, Processors & processors)
 {
     if (ports.empty())
         return nullptr;
@@ -73,7 +73,7 @@ static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, const Block &
     return extremes_port;
 }
 
-static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & header, Processors & processors)
+static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, SharedHeader & header, Processors & processors)
 {
     if (ports.empty())
         return nullptr;
@@ -123,7 +123,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
     if (output == totals || output == extremes || (totals && totals == extremes))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create Pipe from source because some of specified ports are the same");
 
-    header = output->getHeader();
+    header = output->getSharedHeader();
 
     /// Check that ports belong to source and all ports from source were specified.
     {
@@ -135,7 +135,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
             if (!port)
                 return;
 
-            assertBlocksHaveEqualStructure(header, port->getHeader(), name);
+            assertBlocksHaveEqualStructure(*header, port->getHeader(), name);
 
             ++num_specified_ports;
 
@@ -172,7 +172,7 @@ Pipe::Pipe(ProcessorPtr source)
         collected_processors->emplace_back(source);
 
     output_ports.push_back(&source->getOutputs().front());
-    header = output_ports.front()->getHeader();
+    header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));
     max_parallel_streams = 1;
 }
@@ -224,9 +224,9 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create Pipe because processors don't have any disconnected output ports");
 
-    header = output_ports.front()->getHeader();
+    header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipe");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
 
     max_parallel_streams = output_ports.size();
 
@@ -310,12 +310,12 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;
     res.collected_processors = collected_processors;
-    res.header = getCommonHeader(pipes);
+    res.header = std::make_shared<const Block>(getCommonHeader(pipes));
 
     for (auto & pipe : pipes)
     {
         if (!allow_empty_header || pipe.header)
-            assertCompatibleHeader(pipe.header, res.header, "Pipe::unitePipes");
+            assertCompatibleHeader(*pipe.header, *res.header, "Pipe::unitePipes");
 
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
@@ -346,12 +346,12 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 void Pipe::addSource(ProcessorPtr source)
 {
     checkSource(*source);
-    const auto & source_header = source->getOutputs().front().getHeader();
+    const auto & source_header_ptr = source->getOutputs().front().getSharedHeader();
 
     if (output_ports.empty())
-        header = source_header;
+        header = source_header_ptr;
     else
-        assertBlocksHaveEqualStructure(header, source_header, "Pipes");
+        assertBlocksHaveEqualStructure(*header, *source_header_ptr, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -373,7 +373,7 @@ void Pipe::addTotalsSource(ProcessorPtr source)
     checkSource(*source);
     const auto & source_header = output_ports.front()->getHeader();
 
-    assertBlocksHaveEqualStructure(header, source_header, "Pipes");
+    assertBlocksHaveEqualStructure(*header, source_header, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -393,7 +393,7 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     checkSource(*source);
     const auto & source_header = output_ports.front()->getHeader();
 
-    assertBlocksHaveEqualStructure(header, source_header, "Pipes");
+    assertBlocksHaveEqualStructure(*header, source_header, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -407,7 +407,7 @@ static void dropPort(OutputPort *& port, Processors & processors, Processors * c
     if (port == nullptr)
         return;
 
-    auto null_sink = std::make_shared<NullSink>(port->getHeader());
+    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
     connect(*port, null_sink->getPort());
 
     if (collected_processors)
@@ -558,16 +558,16 @@ void Pipe::addTransform(
             output_ports.emplace_back(&output);
     }
 
-    header = output_ports.front()->getHeader();
+    header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
 
     // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
     //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 
     if (extremes_port)
-        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, extremes_port->getHeader(), "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(transform);
@@ -589,7 +589,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
         if (!port)
             return;
 
-        auto transform = getter(port->getHeaderPtr(), stream_type);
+        auto transform = getter(port->getSharedHeader(), stream_type);
 
         if (transform)
         {
@@ -634,22 +634,12 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
     add_transform(totals_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
 
-    header = std::move(new_header);
+    header = std::make_shared<const Block>(std::move(new_header));
 }
 
 void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
 {
-    addSimpleTransform([&](const ConstBlockPtr & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
-}
-
-void Pipe::addSimpleTransform(const ProcessorGetter & getter)
-{
-    addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
-}
-
-void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
-{
-    addSimpleTransform([&](const ConstBlockPtr & stream_header_ptr, StreamType stream_type) { return getter(*stream_header_ptr,stream_type); });
+    addSimpleTransform([&](const SharedHeader & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
 }
 
 void Pipe::addChains(std::vector<Chain> chains)
@@ -689,7 +679,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         }
     }
 
-    header = std::move(new_header);
+    header = std::make_shared<const Block>(std::move(new_header));
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
@@ -709,9 +699,9 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
     {
         ProcessorPtr resize;
         if (strict)
-            resize = std::make_shared<StrictResizeProcessor>(getHeader(), instream_per_group, outstreams_per_group);
+            resize = std::make_shared<StrictResizeProcessor>(getSharedHeader(), instream_per_group, outstreams_per_group);
         else
-            resize = std::make_shared<ResizeProcessor>(getHeader(), instream_per_group, outstreams_per_group);
+            resize = std::make_shared<ResizeProcessor>(getSharedHeader(), instream_per_group, outstreams_per_group);
 
         for (auto it = resize->getInputs().begin(); it != resize->getInputs().end(); ++it)
         {
@@ -722,7 +712,7 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
             }
             else
             {
-                auto null_source = std::make_shared<NullSource>(getHeader());
+                auto null_source = std::make_shared<NullSource>(getSharedHeader());
                 connect(null_source->getPort(), *it);
                 processors->emplace_back(std::move(null_source));
             }
@@ -737,7 +727,7 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
             }
             else
             {
-                auto null_sink = std::make_shared<NullSink>(getHeader());
+                auto null_sink = std::make_shared<NullSink>(getSharedHeader());
                 connect(*it, null_sink->getPort());
                 processors->emplace_back(std::move(null_sink));
             }
@@ -750,9 +740,9 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
 
     output_ports = std::move(resize_output_ports);
 
-    header = output_ports.front()->getHeader();
+    header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
@@ -792,14 +782,14 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     ProcessorPtr resize;
 
     if (strict)
-        resize = std::make_shared<StrictResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+        resize = std::make_shared<StrictResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
     else
-        resize = std::make_shared<ResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+        resize = std::make_shared<ResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
 
     addTransform(std::move(resize));
 }
 
-void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
+void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set sink to empty Pipe");
@@ -809,7 +799,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
         if (!stream)
             return;
 
-        auto transform = getter(stream->getHeader(), stream_type);
+        auto transform = getter(stream->getSharedHeader(), stream_type);
 
         if (transform)
         {
@@ -829,7 +819,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
         }
 
         if (!transform)
-            transform = std::make_shared<NullSink>(stream->getHeader());
+            transform = std::make_shared<NullSink>(stream->getSharedHeader());
 
         connect(*stream, transform->getInputs().front());
         processors->emplace_back(std::move(transform));
@@ -842,7 +832,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
     add_transform(extremes_port, StreamType::Extremes);
 
     output_ports.clear();
-    header.clear();
+    header.reset();
 }
 
 void Pipe::transform(const Transformer & transformer, bool check_ports)
@@ -918,15 +908,15 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Transformation of Pipe is not valid because processors don't have any disconnected output ports");
 
-    header = output_ports.front()->getHeader();
+    header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipe");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
 
     if (totals_port)
-        assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, totals_port->getHeader(), "Pipes");
 
     if (extremes_port)
-        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, extremes_port->getHeader(), "Pipes");
 
     if (collected_processors)
     {

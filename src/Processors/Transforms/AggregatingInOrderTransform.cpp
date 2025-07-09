@@ -12,7 +12,7 @@ namespace DB
 {
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    Block header,
+    SharedHeader header,
     AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
@@ -25,7 +25,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    Block header, AggregatingTransformParamsPtr params_,
+    SharedHeader header, AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
@@ -340,10 +340,10 @@ void AggregatingInOrderTransform::generate()
     need_generate = false;
 }
 
-FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
-    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)
+    : ISimpleTransform({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())}, true)
     , params(params_)
-    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
+    , aggregates_mask(getAggregatesMask(getOutputPort().getHeader(), params->params.aggregates))
 {
 }
 

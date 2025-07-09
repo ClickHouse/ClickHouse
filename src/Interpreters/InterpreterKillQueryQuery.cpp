@@ -136,11 +136,11 @@ class SyncKillQuerySource : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
-                             const Block & res_sample_block_)
+                             SharedHeader res_sample_block_)
         : ISource(res_sample_block_)
         , process_list(process_list_)
         , processes_to_stop(std::move(processes_to_stop_))
-        , processes_block(std::move(processes_block_))
+        , processes_block(std::make_shared<const Block>(std::move(processes_block_)))
         , res_sample_block(res_sample_block_)
     {
         addTotalRowsApprox(processes_to_stop.size());
@@ -158,7 +158,7 @@ public:
         if (num_processed_queries >= num_result_queries)
             return {};
 
-        MutableColumns columns = res_sample_block.cloneEmptyColumns();
+        MutableColumns columns = res_sample_block->cloneEmptyColumns();
 
         do
         {
@@ -174,7 +174,7 @@ public:
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
                     curr_process.processed = true;
-                    insertResultRow(curr_process.source_num, code, processes_block, res_sample_block, columns);
+                    insertResultRow(curr_process.source_num, code, *processes_block, *res_sample_block, columns);
                     ++num_processed_queries;
                 }
                 /// Wait if CancelSent
@@ -197,8 +197,8 @@ public:
 
     ProcessList & process_list;
     QueryDescriptors processes_to_stop;
-    Block processes_block;
-    Block res_sample_block;
+    SharedHeader processes_block;
+    SharedHeader res_sample_block;
     size_t num_processed_queries = 0;
 };
 
@@ -240,12 +240,12 @@ BlockIO InterpreterKillQueryQuery::execute()
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
-            res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns))));
+            res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header.cloneWithColumns(std::move(res_columns)))));
         }
         else
         {
             res_io.pipeline = QueryPipeline(std::make_shared<SyncKillQuerySource>(
-                process_list, std::move(queries_to_stop), std::move(processes_block), header));
+                process_list, std::move(queries_to_stop), std::move(processes_block), std::make_shared<const Block>(header)));
         }
 
         break;
@@ -310,7 +310,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill mutation. "
                 "To execute this query, it's necessary to have the grant {}", required_access_rights.toString());
 
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header.cloneWithColumns(std::move(res_columns))))));
 
         break;
     }
@@ -374,7 +374,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill move partition. "
                 "To execute this query, it's necessary to have the grant {}", required_access_rights.toString());
 
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header.cloneWithColumns(std::move(res_columns))))));
 
         break;
     }
@@ -418,7 +418,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             insertResultRow(i, code, transactions_block, header, res_columns);
         }
 
-        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header.cloneWithColumns(std::move(res_columns))))));
         break;
     }
     }

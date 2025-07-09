@@ -35,7 +35,7 @@ DistributedAsyncInsertSource::DistributedAsyncInsertSource(const String & file_n
 }
 
 DistributedAsyncInsertSource::DistributedAsyncInsertSource(std::unique_ptr<Data> data_)
-    : ISource(data_->first_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(data_->first_block.cloneEmpty()))
     , data(std::move(data_))
 {
 }
