@@ -57,6 +57,8 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
