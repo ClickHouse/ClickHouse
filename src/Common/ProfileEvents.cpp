@@ -1085,35 +1085,6 @@ Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 
-size_t ShardedAtomicCounter::getShardIndex() noexcept
-{
-    static thread_local size_t shard_idx = std::hash<std::thread::id>{}(std::this_thread::get_id()) % NUM_SHARDS;
-    return shard_idx;
-}
-
-Count ShardedAtomicCounter::load(std::memory_order order) const noexcept
-{
-    Count total = 0;
-    for (const auto & shard : shards)
-    {
-        total += shard.counter.load(order);
-    }
-    return total;
-}
-
-void ShardedAtomicCounter::store(Count value, std::memory_order order) noexcept
-{
-    size_t current_shard = getShardIndex();
-    for (size_t i = 0; i < NUM_SHARDS; ++i)
-    {
-        shards[i].counter.store(i == current_shard ? value : 0, order);
-    }
-}
-
-void ShardedAtomicCounter::fetch_add(Count arg, std::memory_order order) noexcept
-{
-    shards[getShardIndex()].counter.fetch_add(arg, order);
-}
 
 Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
     : counters(counters_), timer_event(timer_event_), resolution(resolution_)
@@ -1271,8 +1242,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
 {
     /// It's possible that we'll have slightly inconsistent values between wait time and busy time. But since we take the value of CPU wait time first,
     /// it should not affect the situation a lot. In the worst case scenario we will have a slightly lower CPU overload value than it should be, but it's fine.
-    Int64 curr_cpu_wait_microseconds = Int64(counters[OSCPUWaitMicroseconds]);
-    Int64 curr_cpu_virtual_time_microseconds = Int64(counters[OSCPUVirtualTimeMicroseconds]);
+    Int64 curr_cpu_wait_microseconds = counters[OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = counters[OSCPUVirtualTimeMicroseconds];
 
     Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
     Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);

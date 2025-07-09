@@ -9,8 +9,7 @@
 #include <atomic>
 #include <memory>
 #include <cstddef>
-#include <array>
-#include <thread>
+
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -23,57 +22,11 @@ namespace ProfileEvents
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
-    class Counters;
-
-    /**
-     * A thread-safe atomic counter that uses sharding to reduce contention.
-     * Instead of having all threads compete for a single atomic variable,
-     * this implementation distributes operations across multiple shards,
-     * with each thread consistently using the same shard based on its thread ID.
-     */
-    class ShardedAtomicCounter
+    struct alignas(64) Counter : public std::atomic<Count>
     {
-    private:
-        /// Number of shards to distribute counter operations across
-        static constexpr size_t NUM_SHARDS = 16;
-        /**
-         * Individual shard containing an atomic counter.
-         * Aligned to cache line boundary (64 bytes) to prevent false sharing
-         * between different shards when accessed by different CPU cores.
-         */
-        struct Shard
-        {
-            alignas(64) std::atomic<Count> counter{0};
-        };
-        /// Array of shards, marked mutable to allow const methods to modify counters
-        mutable std::array<Shard, NUM_SHARDS> shards;
-        /**
-         * Returns the shard index for the current thread.
-         * Each thread gets a consistent shard based on its thread ID hash.
-         */
-        static size_t getShardIndex() noexcept;
-
-    public:
-        /// Default constructor - initializes all shards to zero
-        ShardedAtomicCounter() = default;
-        /// Atomically loads the total value across all shards.
-        Count load(std::memory_order order = std::memory_order_relaxed) const noexcept;
-        /// Stores a value by placing it in the current thread's shard and zeroing others.
-        void store(Count value, std::memory_order order = std::memory_order_relaxed) noexcept;
-        /// Atomically adds a value to the current thread's shard.
-        void fetch_add(Count arg, std::memory_order order = std::memory_order_relaxed) noexcept;
-
-        explicit operator Int64() const { return static_cast<Int64>(load()); }
-        explicit operator UInt64() const { return static_cast<UInt64>(load()); }
-
-        template<typename T>
-        bool operator==(T value) const noexcept
-        {
-            return load() == static_cast<Count>(value);
-        }
+        using std::atomic<Count>::atomic;
     };
-
-    using Counter = ShardedAtomicCounter;
+    class Counters;
 
     /// Counters - how many times each event happened
     extern Counters global_counters;
@@ -113,8 +66,8 @@ namespace ProfileEvents
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
         bool trace_profile_events = false;
-        Counter prev_cpu_wait_microseconds{};
-        Counter prev_cpu_virtual_time_microseconds{};
+        Counter prev_cpu_wait_microseconds = 0;
+        Counter prev_cpu_virtual_time_microseconds = 0;
 
     public:
 

@@ -54,7 +54,7 @@ void ExecutionSpeedLimits::throttle(
         && (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
     {
         /// Do not count sleeps in throttlers
-        UInt64 throttler_sleep_microseconds = UInt64(CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds]);
+        UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
 
         double elapsed_seconds = 0;
         if (total_elapsed_microseconds > throttler_sleep_microseconds)
