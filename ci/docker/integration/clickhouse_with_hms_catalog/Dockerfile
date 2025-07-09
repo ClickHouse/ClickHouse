@@ -1,4 +1,4 @@
-# docker build -t clickhouse/integration-test-with-hms .
+#  docker build -t clickhouse/integration-test-with-hms .
 ARG FROM_TAG=latest
 FROM openjdk:8-jre-slim AS build
 
