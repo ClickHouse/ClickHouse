@@ -153,6 +153,9 @@ public:
     // For tests only. Returns true iff resource request is enqueued in the scheduler
     bool isRequesting() const override;
 
+    /// For tracing purposes, returns unique identifier for this lease allocation.
+    size_t getLeaseId() const { return lease_id; }
+
 private:
     /// Helper to make a lease
     AcquiredSlotPtr acquireImpl(std::unique_lock<std::mutex> & lock);
@@ -255,6 +258,8 @@ private:
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
     std::optional<ProfileEvents::Timer> wait_timer;
+    const size_t lease_id; /// Unique identifier for this lease allocation, used for tracing
+    static std::atomic<size_t> lease_counter;
 };
 
 }

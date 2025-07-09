@@ -55,6 +55,8 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
+std::atomic<size_t> CPULeaseAllocation::lease_counter{0};
+
 CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t slot_id_)
     : ISlotLease(slot_id_)
     , parent(std::move(parent_))
@@ -63,7 +65,16 @@ CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t slot_i
 CPULeaseAllocation::Lease::~Lease()
 {
     if (parent)
+    {
+        std::optional<OpenTelemetry::SpanHolder> span;
+        if (parent->settings.trace_cpu_scheduling)
+        {
+            span.emplace("CPU_LEASE_STOP");
+            span->addAttribute("lease_id", parent->getLeaseId());
+            span->addAttribute("thread_number", slot_id);
+        }
         parent->release(*this);
+    }
 }
 
 void CPULeaseAllocation::Lease::startConsumption()
@@ -72,6 +83,7 @@ void CPULeaseAllocation::Lease::startConsumption()
     if (parent && parent->settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder span("CPU_LEASE_START");
+        span.addAttribute("lease_id", parent->getLeaseId());
         span.addAttribute("thread_number", slot_id);
     }
 }
@@ -86,6 +98,12 @@ bool CPULeaseAllocation::Lease::renew()
 
 void CPULeaseAllocation::Lease::reset()
 {
+    if (parent->settings.trace_cpu_scheduling)
+    {
+        OpenTelemetry::SpanHolder span("CPU_LEASE_DOWNSCALED");
+        span.addAttribute("lease_id", parent->getLeaseId());
+        span.addAttribute("thread_number", slot_id);
+    }
     parent.reset();
 }
 
@@ -101,6 +119,7 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , tail(head)
     , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
+    , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
     chassert(max_threads > 0);
     for (Request & request : requests)
@@ -343,6 +362,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     if (settings.trace_cpu_scheduling)
     {
         report_span.emplace("CPU_LEASE_REPORT");
+        report_span->addAttribute("lease_id", lease_id);
         report_span->addAttribute("thread_number", lease.slot_id);
         report_span->addAttribute("delta_ns", delta_ns);
     }
@@ -378,6 +398,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
             if (settings.trace_cpu_scheduling)
             {
                 preemption_span.emplace("CPU_LEASE_PREEMPTION");
+                preemption_span->addAttribute("lease_id", lease_id);
                 preemption_span->addAttribute("thread_number", thread_num);
                 preemption_span->addAttribute("consumed_ns", consumed_ns);
                 preemption_span->addAttribute("requested_ns", requested_ns);
@@ -496,7 +517,6 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Release the slot
     downscale(lease.slot_id);
-    lease.reset();
 }
 
 bool CPULeaseAllocation::isRequesting() const
