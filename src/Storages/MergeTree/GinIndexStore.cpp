@@ -1,15 +1,14 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
-#include <Common/randomSeed.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/BloomFilterHash.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -156,13 +155,13 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     return postings_list;
 }
 
-GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(UInt64 seed_, UInt64 max_token_size_, UInt64 filter_size_, UInt64 hashes_)
-    : bloom_filter(std::make_unique<BloomFilter>(filter_size_, hashes_, seed_))
-    , seed(seed_)
-    , filter_size(filter_size_)
-    , hashes(hashes_)
-    , max_token_size(max_token_size_)
+GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_)
+    : max_token_size(max_token_size_)
 {
+    const auto & [bits_per_row, num_hash_functions] = BloomFilterHash::calculationBestPractices(max_conflict_probability);
+    filter_size = bits_per_row;
+    hashes = num_hash_functions;
+    bloom_filter = std::make_unique<BloomFilter>(filter_size, hashes, 0);
 }
 
 void GinSegmentDictionaryBloomFilter::add(const char * token, size_t size)
@@ -179,21 +178,18 @@ UInt64 GinSegmentDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
 {
     writeVarUInt(filter_size, write_buffer);
     writeVarUInt(hashes, write_buffer);
-    writeVarUInt(seed, write_buffer);
     writeVarUInt(max_token_size, write_buffer);
     write_buffer.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), filter_size);
 
-    return filter_size + getLengthOfVarUInt(filter_size) + getLengthOfVarUInt(seed) + getLengthOfVarUInt(hashes)
-        + getLengthOfVarUInt(max_token_size);
+    return getLengthOfVarUInt(filter_size) + getLengthOfVarUInt(hashes) + getLengthOfVarUInt(max_token_size) + filter_size;
 }
 
 void GinSegmentDictionaryBloomFilter::deserialize(ReadBuffer & read_buffer)
 {
     readVarUInt(filter_size, read_buffer);
     readVarUInt(hashes, read_buffer);
-    readVarUInt(seed, read_buffer);
     readVarUInt(max_token_size, read_buffer);
-    bloom_filter = std::make_unique<BloomFilter>(filter_size, hashes, seed);
+    bloom_filter = std::make_unique<BloomFilter>(filter_size, hashes, 0);
     read_buffer.readStrict(reinterpret_cast<char *>(bloom_filter->getFilter().data()), filter_size);
 }
 
@@ -399,7 +395,7 @@ void GinIndexStore::writeSegment()
     TokenPostingsBuilderPairs token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
 
-    GinSegmentDictionaryBloomFilter bloom_filter(randomSeed());
+    GinSegmentDictionaryBloomFilter bloom_filter(0.001);
     for (const auto & [token, postings_list] : current_postings)
     {
         token_postings_list_pairs.push_back({token, postings_list});

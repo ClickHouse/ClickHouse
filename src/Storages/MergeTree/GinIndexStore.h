@@ -121,7 +121,7 @@ class GinSegmentDictionaryBloomFilter
 public:
     GinSegmentDictionaryBloomFilter() = default;
 
-    explicit GinSegmentDictionaryBloomFilter(UInt64 seed_, UInt64 max_token_size_ = 3, UInt64 filter_size_ = 128, UInt64 hashes_ = 3);
+    explicit GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_ = 4);
 
     void add(const char * token, size_t size);
     bool contains(const char * token, size_t size);
@@ -131,7 +131,6 @@ public:
 
 private:
     std::unique_ptr<BloomFilter> bloom_filter;
-    UInt64 seed;
     UInt64 filter_size;
     UInt64 hashes;
     UInt64 max_token_size;
