@@ -4,14 +4,14 @@ if(ENABLE_LIBRARIES)
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
 endif()
 
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+
 if(NOT ENABLE_GOOGLE_CLOUD_CPP)
     message(STATUS "Not using Google Cloud Cpp")
     return()
 endif()
 
-option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
-
-if (CLICKHOUSE_CLOUD AND OS_LINUX)
+if (CLICKHOUSE_CLOUD)
     set(ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT ON)
 endif()
 
