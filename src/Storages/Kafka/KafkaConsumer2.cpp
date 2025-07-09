@@ -26,6 +26,11 @@ extern const Event KafkaCommits;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+};
+
 using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
