@@ -3423,8 +3423,24 @@ namespace
                         index = sequential_column_index++;
                 }
 
-                field_descs.push_back({std::move(column_indices_to_pass_to_message_serializer), &field_descriptor_, std::move(field_serializer_)});
+                field_descs.push_back(
+                    {std::move(column_indices_to_pass_to_message_serializer), &field_descriptor_, std::move(field_serializer_)});
                 field_descriptors_in_use.emplace(&field_descriptor_, column_name_);
+            };
+
+            /// transform passed indexes to used indexes
+            auto oneof_adjust_column_nums = [&]()
+            {
+                for (auto & a_field_desc : field_descs)
+                {
+                    for (auto & index : a_field_desc.column_indices)
+                    {
+                        auto itused = used_column_indices_sorted.find(index);
+
+                        assert(itused != used_column_indices_sorted.end());
+                        index = std::distance(used_column_indices_sorted.begin(), itused);
+                    }
+                }
             };
 
             auto maybe_add_oneof_wrapper = [&](std::unique_ptr<ProtobufSerializer> & serializer_ptr_ref,
@@ -3583,8 +3599,6 @@ namespace
                         }
 
                         return message_serializer;
-
-
                     };
 
                     auto attempt_unwrap_and_build_array_serializer = [&]()
@@ -3678,7 +3692,10 @@ namespace
                 else
                     missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
                 if (columns_are_reordered_outside && oneof_presence)
+                {
                     ::sort(used_column_indices.begin(), used_column_indices.end());
+                    oneof_adjust_column_nums();
+                }
             }
 
             return std::make_unique<ProtobufSerializerMessage>(

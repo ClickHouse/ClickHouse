@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS inner_string_or_string_3447;
 SELECT '>> inner_string_or_string';
-CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string2\` String, \`inner.string.oneof\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string15_not_used\` String, \`inner.string2\` String, \`inner.string.oneof\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString2' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
