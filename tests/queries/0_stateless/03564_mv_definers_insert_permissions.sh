@@ -5,7 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
 user1="user03564_1_${CLICKHOUSE_DATABASE}_$RANDOM"
 user2="user03564_2_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
@@ -48,6 +47,6 @@ EOF
 
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.mv VALUES (10)" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.destination TO $user1";
-${CLICKHOUSE_CLIENT} --query --user $user2 "INSERT INTO $db.mv VALUES (10)";
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.mv VALUES (10)";
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2";
