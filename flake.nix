@@ -164,7 +164,7 @@
     contrib-abseil-cpp = { url = "github:ClickHouse/abseil-cpp/bc257a88f7c1939f24e0379f14a3589e926c950c"; flake = false; };
     contrib-dragonbox = { url = "github:ClickHouse/dragonbox/923705af6fd953aa948fc175f6020b15f7359838"; flake = false; };
     contrib-fast_float = { url = "github:fastfloat/fast_float/7eae925b51fd0f570ccd5c880c12e3e27a23b86f"; flake = false; };
-    contrib-NuRaft = { url = "github:ClickHouse/NuRaft/c01f5cd9e0edb90c4febf49685b962cf0de91833"; flake = false; };
+    contrib-NuRaft = { url = "github:ClickHouse/NuRaft/becb9b4b84cbb2e4b8dcf9aa0f1e0858f8178cad"; flake = false; };
     contrib-datasketches-cpp = { url = "github:apache/datasketches-cpp/76edd74f5db286b672c170a8ded4ce39b3a8800f"; flake = false; };
     contrib-yaml-cpp = { url = "github:ClickHouse/yaml-cpp/f91e938341273b5f9d341380ab17bcc3de5daa06"; flake = false; };
     contrib-cld2 = { url = "github:ClickHouse/cld2/217ba8b8805b41557faadaa47bb6e99f2242eea3"; flake = false; };
