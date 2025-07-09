@@ -13,6 +13,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
     InterpolateDescription::InterpolateDescription(ActionsDAG actions_, const Aliases & aliases)
         : actions(std::move(actions_))
     {
@@ -30,7 +35,11 @@ namespace DB
             if (const auto & p = aliases.find(name); p != aliases.end())
                 name = p->second->getColumnName();
 
-            result_columns_set.insert(name);
+            auto [it, was_inserted] = result_columns_set.insert(name);
+            if (!was_inserted)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate column name '{}' in an interpolate expression", name);
+            }
             result_columns_order.push_back(name);
         }
     }
