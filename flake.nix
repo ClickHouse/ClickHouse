@@ -189,7 +189,7 @@
     contrib-wyhash = { url = "github:wangyi-fudan/wyhash/991aa3dab624e50b066f7a02ccc9f6935cc740ec"; flake = false; };
     contrib-nats-io = { url = "github:ClickHouse/nats.c/cf441828d30fdd5de12d9da319e88d2586fdeeba"; flake = false; };
     contrib-vectorscan = { url = "github:VectorCamp/vectorscan/d29730e1cb9daaa66bda63426cdce83505d2c809"; flake = false; };
-    contrib-llvm-project = { url = "github:ClickHouse/llvm-project/7e72cd6d7ae4cfabf1cc4a77eb2787ece492bb8b"; flake = false; };
+    contrib-llvm-project = { url = "github:ClickHouse/llvm-project/ce3972c6e6cd3997c0e1034e9f0f582890a8940a"; flake = false; };
     contrib-corrosion = { url = "github:corrosion-rs/corrosion/c4840742d23d1c1a187152e2c5ae65886b9c9007"; flake = false; };
     contrib-libssh = { url = "github:ClickHouse/libssh/ed4011b91873836713576475a98cd132cd834539"; flake = false; };
     contrib-morton-nd = { url = "github:morton-nd/morton-nd/3795491a4aa3cdc916c8583094683f0d68df5bc0"; flake = false; };
