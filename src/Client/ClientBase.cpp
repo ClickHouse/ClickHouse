@@ -2120,8 +2120,8 @@ void ClientBase::sendCancel(std::exception_ptr exception_ptr)
         }
         error_stream << '\n';
     }
-
-    connection->sendCancel();
+    else
+        connection->sendCancel();
 }
 
 void ClientBase::cancelQuery()
