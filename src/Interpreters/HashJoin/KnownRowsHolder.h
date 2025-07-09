@@ -15,7 +15,7 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = std::pair<const Block *, DB::RowRef::SizeT>;
+    using Type = std::pair<const Columns *, DB::RowRef::SizeT>;
 
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
@@ -101,7 +101,7 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
+            if (!known_rows.isKnown(std::make_pair(it->columns, it->row_num)))
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
@@ -109,7 +109,7 @@ void addFoundRowAll(
                 {
                     new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
                 }
-                new_known_rows_ptr->push_back(std::make_pair(it->block, it->row_num));
+                new_known_rows_ptr->push_back(std::make_pair(it->columns, it->row_num));
                 if (used_flags)
                 {
                     used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, flag_per_row>(

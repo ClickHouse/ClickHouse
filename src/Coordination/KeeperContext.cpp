@@ -175,7 +175,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
 
-    inject_auth = config.getBool("keeper_server.inject_auth", false);
+    block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
 namespace
@@ -430,7 +430,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -457,7 +457,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -484,7 +484,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -586,6 +586,27 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
     return *coordination_settings;
+}
+
+int64_t KeeperContext::getPrecommitSleepMillisecondsForTesting() const
+{
+    return precommit_sleep_ms_for_testing;
+}
+
+double KeeperContext::getPrecommitSleepProbabilityForTesting() const
+{
+    chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
+    return precommit_sleep_probability_for_testing;
+}
+
+bool KeeperContext::shouldBlockACL() const
+{
+    return block_acl;
+}
+
+void KeeperContext::setBlockACL(bool block_acl_)
+{
+    block_acl = block_acl_;
 }
 
 bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const

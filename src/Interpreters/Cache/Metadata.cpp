@@ -2,7 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
-#include "Common/ProfileEvents.h"
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -756,7 +756,11 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
+    /// Reset reader to avoid
+    /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
+    file_segment.completePartAndResetDownloader();
+    file_segment.complete(/* allow_background_download */false);
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }

@@ -84,8 +84,8 @@ ENV NUM_TRIES=1
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
-ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
+ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
+ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
@@ -120,3 +120,6 @@ COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
   /opt/openssl-fips/fips.so \
   \
   /etc/ssl/
+
+# Make timezone and locale files writable to randomize them in tests
+RUN chmod 666 /etc/timezone /etc/localtime

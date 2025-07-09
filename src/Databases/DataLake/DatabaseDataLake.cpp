@@ -92,13 +92,15 @@ DatabaseDataLake::DatabaseDataLake(
     const std::string & url_,
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
-    ASTPtr table_engine_definition_)
+    ASTPtr table_engine_definition_,
+    UUID uuid)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
+    , db_uuid(uuid)
 {
     validateSettings();
 }
@@ -152,11 +154,10 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
-                settings[DatabaseDataLakeSetting::aws_access_key_id].value,
-                settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
-                settings[DatabaseDataLakeSetting::region].value,
                 url,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                settings,
+                table_engine_definition);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -451,7 +452,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog();
-    const auto iceberg_tables = catalog->getTables();
+    DB::Names iceberg_tables;
+
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
+    try
+    {
+        iceberg_tables = catalog->getTables();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
@@ -514,7 +526,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog();
-    const auto iceberg_tables = catalog->getTables();
+    DB::Names iceberg_tables;
+
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
+    try
+    {
+        iceberg_tables = catalog->getTables();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
@@ -712,7 +735,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Icerberg Rest catalog is experimental. "
+                                    "DatabaseDataLake with Iceberg Rest catalog is experimental. "
                                     "To allow its usage, enable setting allow_experimental_database_iceberg");
                 }
 
@@ -751,7 +774,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Icerberg Hive catalog is experimental. "
+                                    "DatabaseDataLake with Iceberg Hive catalog is experimental. "
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
@@ -765,7 +788,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url,
             database_settings,
             database_engine_define->clone(),
-            std::move(engine_for_tables));
+            std::move(engine_for_tables),
+            args.uuid);
     };
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }
