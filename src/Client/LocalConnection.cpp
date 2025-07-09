@@ -688,7 +688,9 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
+                /// Send external table name (empty name is the main table)
+                /// (see TCPHandler::sendTableColumns)
+                packet.multistring_message = {"", state->columns_description->toString()};
             }
 
             if (state->block)
