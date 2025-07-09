@@ -1,4 +1,8 @@
 <test>
+  <settings>
+      <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+  </settings>
+
   <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp(SearchPhrase) TYPE text(tokenizer = 'default')</fill_query>
   <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp</fill_query>
 
