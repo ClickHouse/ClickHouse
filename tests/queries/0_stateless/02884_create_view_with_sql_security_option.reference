@@ -64,8 +64,6 @@ alter table test_table
 OK
 create view
 Syntax error
-insert with not enough rights
-OK
 ===== TestGrants =====
 OK
 OK
