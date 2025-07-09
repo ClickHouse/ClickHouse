@@ -53,6 +53,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_join_condition;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -360,11 +361,14 @@ void buildJoinClauseImpl(
         }
         else
         {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns nullability will be changed later which make this expression not right.
-            if (!join_use_nulls)
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
                 join_clause.addResidualCondition(node);
             }

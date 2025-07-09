@@ -117,8 +117,7 @@ public:
 
     void flushImpl() override
     {
-        if (!auto_flush)
-            need_flush = true;
+        need_flush = true;
     }
 
     void writePrefix() override
@@ -136,6 +135,12 @@ public:
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
         started_suffix = true;
+    }
+
+    String getContentType() const override
+    {
+        NullWriteBuffer buffer;
+        return internal_formatter_creator(buffer)->getContentType();
     }
 
     bool supportsWritingException() const override

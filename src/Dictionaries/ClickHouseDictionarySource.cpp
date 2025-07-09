@@ -1,4 +1,4 @@
-#include <Dictionaries/ClickHouseDictionarySource.h>
+#include "ClickHouseDictionarySource.h"
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/DateLUTImpl.h>
@@ -12,18 +12,17 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/readInvalidateQuery.h>
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
+#include "readInvalidateQuery.h"
+#include "DictionaryFactory.h"
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -216,8 +215,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

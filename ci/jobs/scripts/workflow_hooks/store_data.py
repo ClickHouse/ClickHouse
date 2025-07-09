@@ -10,18 +10,16 @@ if __name__ == "__main__":
 
     # store changed files
     if info.pr_number > 0:
-        exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
+        changed_files_str = Shell.get_output(
             f"gh pr view {info.pr_number} --repo {info.repo_name} --json files --jq '.files[].path'",
+            strict=True,
         )
-        assert exit_code == 0, "Failed to retrive changed files list"
     else:
-        exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
+        changed_files_str = Shell.get_output(
             f"gh api repos/{info.repo_name}/commits/{info.sha} | jq -r '.files[].filename'",
         )
-        # not fail on master or release branches
-
-    if exit_code == 0:
-        changed_files = changed_files_str.split("\n") if changed_files_str else []
+    if changed_files_str:
+        changed_files = changed_files_str.split("\n")
         info.store_custom_data("changed_files", changed_files)
 
     # hack to get build digest

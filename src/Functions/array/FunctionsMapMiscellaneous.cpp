@@ -22,8 +22,7 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
-
-#include <ranges>
+#include <base/map.h>
 
 namespace DB
 {
@@ -290,44 +289,14 @@ private:
     FunctionLike impl;
 };
 
-/// A special function that works like the following:
-/// mapValueLike(pattern, key, value) <=> value LIKE pattern
-/// It is used to mimic lambda: (key, value) -> value LIKE pattern.
-class FunctionMapValueLike : public IFunction
-{
-public:
-FunctionMapValueLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
-    String getName() const override { return "mapValueLike"; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        DataTypes new_arguments{arguments[2], arguments[0]};
-        return impl.getReturnTypeImpl(new_arguments);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        ColumnsWithTypeAndName new_arguments{arguments[2], arguments[0]};
-        return impl.executeImpl(new_arguments, result_type, input_rows_count);
-    }
-
-private:
-    FunctionLike impl;
-};
-
 /// Adapter for map*KeyLike functions.
 /// It extracts nested Array(Tuple(key, value)) from Map columns
 /// and prepares ColumnFunction as first argument which works
 /// like lambda (k, v) -> k LIKE pattern to pass it to the nested
 /// function derived from FunctionArrayMapped.
-template <typename Name, bool returns_map, size_t position>
-struct MapLikeAdapter
+template <typename Name, bool returns_map>
+struct MapKeyLikeAdapter
 {
-    static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
-
     static void checkTypes(const DataTypes & types)
     {
         if (types.size() != 2)
@@ -342,10 +311,8 @@ struct MapLikeAdapter
         if (!isStringOrFixedString(types[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String or FixedString", Name::name);
 
-        auto subcolumn_type = position == 0 ? map_type->getKeyType() : map_type->getValueType();
-
-        if (!isStringOrFixedString(subcolumn_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} type of map for function {} must be String or FixedString", position == 0 ? "Key" : "Value", Name::name);
+        if (!isStringOrFixedString(map_type->getKeyType()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Key type of map for function {} must be String or FixedString", Name::name);
     }
 
     static void extractNestedTypes(DataTypes & types)
@@ -354,13 +321,7 @@ struct MapLikeAdapter
         const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
 
         DataTypes lambda_argument_types{types[1], map_type.getKeyType(), map_type.getValueType()};
-
-        DataTypePtr result_type;
-
-        if constexpr (position == 0)
-            result_type = FunctionMapKeyLike().getReturnTypeImpl(lambda_argument_types);
-        else
-            result_type = FunctionMapValueLike().getReturnTypeImpl(lambda_argument_types);
+        auto result_type = FunctionMapKeyLike().getReturnTypeImpl(lambda_argument_types);
 
         DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
@@ -371,19 +332,13 @@ struct MapLikeAdapter
 
     static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
     {
-        checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
+        checkTypes(collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }));
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
         const auto & pattern_arg = arguments[1];
 
         ColumnPtr function_column;
-
-        std::shared_ptr<IFunction> function;
-
-        if constexpr (position == 0)
-            function = std::make_shared<FunctionMapKeyLike>();
-        else
-            function = std::make_shared<FunctionMapValueLike>();
+        auto function = std::make_shared<FunctionMapKeyLike>();
 
         DataTypes lambda_argument_types{pattern_arg.type, map_type.getKeyType(), map_type.getValueType()};
         auto result_type = function->getReturnTypeImpl(lambda_argument_types);
@@ -399,7 +354,7 @@ struct MapLikeAdapter
             function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
         }
 
-        ColumnWithTypeAndName function_arg{function_column, function_type, position == 0 ? "__function_map_key_like" :  "__function_map_value_like"};
+        ColumnWithTypeAndName function_arg{function_column, function_type, "__function_map_key_like"};
         arguments = {function_arg, arguments[0]};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypesAndColumns(arguments);
     }
@@ -429,11 +384,8 @@ using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolu
 struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
-struct NameMapContainsKey { static constexpr auto name = "mapContainsKey"; };
-using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsKey>, MapToSubcolumnAdapter<NameMapContainsKey, 0>, NameMapContainsKey>;
-
-struct NameMapContainsValue { static constexpr auto name = "mapContainsValue"; };
-using FunctionMapContainsValue = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsValue>, MapToSubcolumnAdapter<NameMapContainsValue, 1>, NameMapContainsValue>;
+struct NameMapContains { static constexpr auto name = "mapContains"; };
+using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapContains, 0>, NameMapContains>;
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;
@@ -448,16 +400,10 @@ struct NameMapAll { static constexpr auto name = "mapAll"; };
 using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
 
 struct NameMapContainsKeyLike { static constexpr auto name = "mapContainsKeyLike"; };
-using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>;
-
-struct NameMapContainsValueLike { static constexpr auto name = "mapContainsValueLike"; };
-using FunctionMapContainsValueLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsValueLike, false, 1>, NameMapContainsValueLike>;
+using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapKeyLikeAdapter<NameMapContainsKeyLike, false>, NameMapContainsKeyLike>;
 
 struct NameMapExtractKeyLike { static constexpr auto name = "mapExtractKeyLike"; };
-using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractKeyLike, true, 0>, NameMapExtractKeyLike>;
-
-struct NameMapExtractValueLike { static constexpr auto name = "mapExtractValueLike"; };
-using FunctionMapExtractValueLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractValueLike, true, 1>, NameMapExtractValueLike>;
+using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapKeyLikeAdapter<NameMapExtractKeyLike, true>, NameMapExtractKeyLike>;
 
 struct NameMapSort { static constexpr auto name = "mapSort"; };
 struct NameMapReverseSort { static constexpr auto name = "mapReverseSort"; };
@@ -471,145 +417,103 @@ using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPar
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
-    constexpr auto category_map = FunctionDocumentation::Category::Map;
-
     factory.registerFunction<FunctionMapConcat>(
-        FunctionDocumentation{
-            .description="The same as arrayConcat.",
-            .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayConcat.",
+        .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapKeys>(
-        FunctionDocumentation{
-            .description="Returns an array with the keys of map.",
-            .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
-            .introduced_in = {21, 2},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="Returns an array with the keys of map.",
+        .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapValues>(
-        FunctionDocumentation{
-            .description="Returns an array with the values of map.",
-            .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
-            .introduced_in = {21, 2},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="Returns an array with the values of map.",
+        .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
+        .category{"Maps"},
+    });
 
-    factory.registerFunction<FunctionMapContainsKey>(
-        FunctionDocumentation{
-            .description="Checks whether the map has the specified key.",
-            .examples{{"mapContainsKey", "SELECT mapContainsKey(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
-
-    factory.registerAlias("mapContains", "mapContainsKey", FunctionFactory::Case::Sensitive);
-
-    factory.registerFunction<FunctionMapContainsValue>(
-        FunctionDocumentation{
-            .description="Checks whether the map has the specified value.",
-            .examples{{"mapContainsValue", "SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    factory.registerFunction<FunctionMapContains>(
+    FunctionDocumentation{
+        .description="Checks whether the map has the specified key.",
+        .examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapFilter>(
-        FunctionDocumentation{
-            .description="The same as arrayFilter.",
-            .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {22, 3},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayFilter.",
+        .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapApply>(
-        FunctionDocumentation{
-            .description="The same as arrayMap.",
-            .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {22, 3},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayMap.",
+        .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapExists>(
-        FunctionDocumentation{
-            .description="The same as arrayExists.",
-            .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayExists.",
+        .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapAll>(
-        FunctionDocumentation{
-            .description="The same as arrayAll.",
-            .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayAll.",
+        .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapSort>(
-        FunctionDocumentation{
-            .description="The same as arraySort.",
-            .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arraySort.",
+        .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapReverseSort>(
-        FunctionDocumentation{
-            .description="The same as arrayReverseSort.",
-            .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayReverseSort.",
+        .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapPartialSort>(
-        FunctionDocumentation{
-            .description="The same as arrayReverseSort.",
-            .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayReverseSort.",
+        .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapPartialReverseSort>(
-        FunctionDocumentation{
-            .description="The same as arrayPartialReverseSort.",
-            .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="The same as arrayPartialReverseSort.",
+        .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapContainsKeyLike>(
-        FunctionDocumentation{
-            .description="Checks whether map contains key LIKE specified pattern.",
-            .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
-
-    factory.registerFunction<FunctionMapContainsValueLike>(
-        FunctionDocumentation{
-            .description="Checks whether map contains value LIKE specified pattern.",
-            .examples{{"mapContainsValueLike", "SELECT mapContainsValueLike(map(1, 'v1-1', '2, 'v2-2'), 'v1%')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="Checks whether map contains key LIKE specified pattern.",
+        .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
+        .category{"Maps"},
+    });
 
     factory.registerFunction<FunctionMapExtractKeyLike>(
-        FunctionDocumentation{
-            .description="Returns a map with elements which key matches the specified pattern.",
-            .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
-
-    factory.registerFunction<FunctionMapExtractValueLike>(
-        FunctionDocumentation{
-            .description="Returns a map with elements which value matches the specified pattern.",
-            .examples{{"mapExtractValueLike", "SELECT mapExtractValueLike(map('k1-1', 'v1-1', 'k2-1', 'v2-1'), 'v1%')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    FunctionDocumentation{
+        .description="Returns a map with elements which key matches the specified pattern.",
+        .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
+        .category{"Maps"},
+    });
 }
 
 }

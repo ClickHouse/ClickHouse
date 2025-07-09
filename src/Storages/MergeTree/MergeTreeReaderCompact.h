@@ -44,19 +44,16 @@ protected:
         ColumnPtr & column,
         size_t rows_to_read,
         size_t rows_offset,
-        size_t from_mark,
         MergeTreeReaderStream & stream,
-        ISerialization::SubstreamsCache & columns_cache,
+        ISerialization::SubstreamsCache & cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
 
-    void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
+    void readPrefix(size_t column_idx, MergeTreeReaderStream & stream);
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
 
-    const ColumnsSubstreams & columns_substreams;
-
-    MergeTreeMarksLoaderPtr marks_loader;
+    const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
@@ -80,16 +77,12 @@ protected:
     /// when 'continue_reading' is true.
     size_t next_mark = 0;
 
-    /// True if we have marks per each substream and not per each column.
-    bool have_substream_marks;
-
 private:
     void readPrefix(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         ISerialization::DeserializeBinaryBulkStatePtr & state,
-        const InputStreamGetter & buffer_getter,
-        ISerialization::SubstreamsDeserializeStatesCache * cache);
+        const InputStreamGetter & buffer_getter);
 
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
     void findPositionForMissedNested(size_t pos);

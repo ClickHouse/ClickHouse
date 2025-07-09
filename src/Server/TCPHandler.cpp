@@ -7,23 +7,24 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Columns/ColumnBLOB.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -32,52 +33,44 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <base/defines.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
 
-#include <Columns/ColumnSparse.h>
-
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
-#    include <Poco/Net/SecureStreamSocket.h>
-#    include <Poco/Net/SecureStreamSocketImpl.h>
-#    include <Common/Crypto/X509Certificate.h>
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
 #include <Core/Protocol.h>
-#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
-#include <Server/TCPHandler.h>
+#include "TCPHandler.h"
 
 #include <Common/config_version.h>
 
@@ -167,10 +160,10 @@ namespace DB::ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_TABLE;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -265,26 +258,6 @@ struct TurnOffBoolSettingTemporary
     }
 };
 
-Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
-{
-    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
-        return block;
-
-    /// Until parallel marshalling is supported for aggregation w/o key states, this safeguard should be there.
-    if (block.rows() <= 1)
-        return block;
-
-    Block res;
-    res.info = block.info;
-    for (const auto & elem : block)
-    {
-        ColumnWithTypeAndName column = elem;
-        if (!elem.column->isConst() && !isTuple(elem.type->getTypeId()))
-            column.column = ColumnBLOB::create(column, codec, client_revision, format_settings);
-        res.insert(std::move(column));
-    }
-    return res;
-}
 }
 
 namespace DB
@@ -658,7 +631,7 @@ void TCPHandler::runImpl()
             customizeContext(query_state->query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-            query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
+            query_state->query_context->setReadTaskCallback([this, &query_state]() -> String
             {
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
@@ -670,9 +643,7 @@ void TCPHandler::runImpl()
                 sendReadTaskRequest();
 
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
-
-                auto res = receiveClusterFunctionReadTaskResponse(query_state.value());
-
+                auto res = receiveReadTaskResponse(query_state.value());
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                 return res;
@@ -708,16 +679,6 @@ void TCPHandler::runImpl()
                 ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
                 return res;
             });
-
-            query_state->query_context->setBlockMarshallingCallback(
-                [this, &query_state](const Block & block)
-                {
-                    return convertColumnsToBLOBs(
-                        block,
-                        getCompressionCodec(query_state->query_context->getSettingsRef(), query_state->compression),
-                        client_tcp_protocol_version,
-                        getFormatSettings(query_state->query_context));
-                });
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
@@ -815,7 +776,7 @@ void TCPHandler::runImpl()
         }
         catch (...)
         {
-            exception = std::make_unique<DB::Exception>(getCurrentExceptionMessageAndPattern(false), ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
 
         if (exception)
@@ -889,7 +850,7 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
             catch (...)
             {
@@ -1006,7 +967,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (!server.isCancelled() && tcp_server.isOpen())
     {
-        while (!in->poll(timeout_us))
+        if (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
@@ -1110,8 +1071,6 @@ void TCPHandler::startInsertQuery(QueryState & state)
             if (!table_id.empty())
             {
                 auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
-                if (!storage_ptr)
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
@@ -1155,7 +1114,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader().cloneWithoutColumns(), state.query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader(), state.query_context);
     }
 
     auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
@@ -1300,6 +1259,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+
                 {
                     std::lock_guard lock(callback_mutex);
                     receivePacketsExpectCancel(state);
@@ -1323,9 +1283,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     sendLogs(state);
 
-                    // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (block && !state.io.null_format)
-                        sendData(state, block);
+                    if (block)
+                    {
+                        if (!state.io.null_format)
+                            sendData(state, block);
+                    }
                 }
             }
         }
@@ -1782,7 +1744,7 @@ void TCPHandler::receiveHello()
             try
             {
                 session->authenticate(
-                    SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
+                    SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
                     getClientAddress(client_info));
                 return;
             }
@@ -1949,11 +1911,6 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
     }
 
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
-    {
-        writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    }
-
     out->next();
 }
 
@@ -1972,7 +1929,7 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 }
 
 
-ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
+String TCPHandler::receiveReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1985,9 +1942,13 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 
         case Protocol::Client::ReadTaskResponse:
         {
-            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            task->deserialize(*in);
-            return task;
+            UInt64 version = 0;
+            readVarUInt(version, *in);
+            if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+                throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
+            String response;
+            readStringBinary(response, *in);
+            return response;
         }
 
         default:
@@ -2159,8 +2120,8 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         }
         else
         {
-            // In a cluster, query originator may have an access to the external auth provider with role mapping (like LDAP server),
-            // that grants specific roles to the user. We want these roles to be granted to the effective user on other nodes of cluster when
+            // In a cluster, query originator may have an access to the external auth provider (like LDAP server),
+            // that grants specific roles to the user. We want these roles to be granted to the user on other nodes of cluster when
             // query is executed.
             Strings external_roles;
             if (!received_extra_roles.empty())
@@ -2202,16 +2163,6 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         [this, &state] (const Progress & value) { this->updateProgress(state.value(), value); });
     state->query_context->setFileProgressCallback(
         [this, &state](const FileProgress & value) { this->updateProgress(state.value(), Progress(value)); });
-
-    state->query_context->setBlockMarshallingCallback(
-        [this, &state](const Block & block)
-        {
-            return convertColumnsToBLOBs(
-                block,
-                getCompressionCodec(state->query_context->getSettingsRef(), state->compression),
-                client_tcp_protocol_version,
-                getFormatSettings(state->query_context));
-        });
 
     ///
     /// Settings
@@ -2419,30 +2370,6 @@ void TCPHandler::initBlockInput(QueryState & state)
 }
 
 
-CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_settings, Protocol::Compression compression)
-{
-    std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-    std::optional<int> level;
-    if (method == "ZSTD")
-        level = query_settings[Setting::network_zstd_compression_level];
-
-    if (compression == Protocol::Compression::Enable)
-    {
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs],
-            query_settings[Setting::enable_deflate_qpl_codec],
-            query_settings[Setting::enable_zstd_qat_codec]);
-
-        return CompressionCodecFactory::instance().get(method, level);
-    }
-
-    return nullptr;
-}
-
-
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
@@ -2450,8 +2377,24 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
         const Settings & query_settings = state.query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
-            if (auto codec = getCompressionCodec(query_settings, state.compression))
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+            std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
+            std::optional<int> level;
+            if (method == "ZSTD")
+                level = query_settings[Setting::network_zstd_compression_level];
+
+            if (state.compression == Protocol::Compression::Enable)
+            {
+                CompressionCodecFactory::instance().validateCodec(
+                    method,
+                    level,
+                    !query_settings[Setting::allow_suspicious_codecs],
+                    query_settings[Setting::allow_experimental_codecs],
+                    query_settings[Setting::enable_deflate_qpl_codec],
+                    query_settings[Setting::enable_zstd_qat_codec]);
+
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                    *out, CompressionCodecFactory::instance().get(method, level));
+            }
             else
                 state.maybe_compressed_out = out;
         }
@@ -2540,10 +2483,9 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     }
 }
 
+
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {
-    OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
-
     initBlockOutput(state, block);
 
     size_t prev_bytes_written_out = out->count();

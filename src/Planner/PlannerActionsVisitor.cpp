@@ -15,12 +15,12 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 
-#include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -215,7 +215,7 @@ public:
                     {
                         if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            if (type_tuple->hasExplicitNames())
+                            if (type_tuple->haveExplicitNames())
                             {
                                 const auto & names = type_tuple->getElementNames();
                                 size_t size = names.size();
@@ -332,18 +332,6 @@ public:
                 buffer << " -> " << calculateActionNodeName(lambda_node.getExpression());
 
                 result = buffer.str();
-                break;
-            }
-            case QueryTreeNodeType::QUERY:
-            {
-                auto & query_node = node->as<QueryNode &>();
-                if (query_node.isCorrelated())
-                    result = query_node.getAlias();
-                else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Only correlated QueryNode can be used as action query tree node, but got {}",
-                        node->formatASTForErrorMessage());
                 break;
             }
             default:
@@ -673,8 +661,6 @@ private:
 
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
-    NodeNameAndNodeMinLevel visitQuery(const QueryTreeNodePtr & node);
-
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     CorrelatedSubtrees correlated_subtrees;
@@ -723,21 +709,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto node_type = node->getNodeType();
 
-    switch (node_type)
-    {
-    case QueryTreeNodeType::COLUMN:
+    if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    case QueryTreeNodeType::CONSTANT:
+    if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    case QueryTreeNodeType::FUNCTION:
+    if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
-    case QueryTreeNodeType::QUERY:
-        return visitQuery(node);
-    default:
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Expected column, constant, function. Actual {} with type: {}",
-            node->formatASTForErrorMessage(), node_type);
-    }
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        "Expected column, constant, function. Actual {} with type: {}",
+        node->formatASTForErrorMessage(), node_type);
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
@@ -1155,44 +1136,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {function_node_name, levels};
-}
-
-PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitQuery(const QueryTreeNodePtr & node)
-{
-    auto & query_node = node->as<QueryNode &>();
-    if (!query_node.isCorrelated())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Only correlated QueryNode can be used as an action node, but got: {}",
-            node->formatASTForErrorMessage());
-
-    Levels levels(0);
-
-    auto correlated_subquery_name = action_node_name_helper.calculateActionNodeName(node);
-
-    size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 0; i < actions_stack_size; ++i)
-    {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
-    }
-
-    const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();
-
-    ColumnIdentifiers correlated_column_identifiers;
-    correlated_column_identifiers.reserve(correlated_columns.size());
-    for (const auto & column : correlated_columns)
-    {
-        correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
-    }
-
-    correlated_subtrees.subqueries.emplace_back(
-        node,
-        CorrelatedSubqueryKind::SCALAR,
-        correlated_subquery_name,
-        std::move(correlated_column_identifiers));
-
-    return { correlated_subquery_name, levels };
 }
 
 }
