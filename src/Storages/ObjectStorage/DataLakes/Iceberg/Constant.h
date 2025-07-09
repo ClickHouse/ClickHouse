@@ -53,6 +53,10 @@ DEFINE_ICEBERG_FIELD(deleted_files_count);
 DEFINE_ICEBERG_FIELD(added_rows_count);
 DEFINE_ICEBERG_FIELD(existing_rows_count);
 DEFINE_ICEBERG_FIELD(deleted_rows_count);
+DEFINE_ICEBERG_FIELD(record_count);
+DEFINE_ICEBERG_FIELD(file_path);
+DEFINE_ICEBERG_FIELD(file_format);
+DEFINE_ICEBERG_FIELD(file_size_in_bytes);
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
@@ -69,6 +73,19 @@ DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
+DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_spec, partition-spec);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_specs, partition-specs);
+DEFINE_ICEBERG_FIELD_ALIAS(spec_id, spec-id);
+DEFINE_ICEBERG_FIELD_ALIAS(added_records, added-records);
+DEFINE_ICEBERG_FIELD_ALIAS(added_data_files, added-data-files);
+DEFINE_ICEBERG_FIELD_ALIAS(added_files_size, added-files-size);
+DEFINE_ICEBERG_FIELD_ALIAS(total_data_files, total-data-files);
+DEFINE_ICEBERG_FIELD_ALIAS(changed_partition_count, changed-partition-count);
+DEFINE_ICEBERG_FIELD_ALIAS(total_delete_files, total-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
+DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
+DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);

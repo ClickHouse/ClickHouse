@@ -86,20 +86,6 @@ public:
     static constexpr const char * f_snapshots = "snapshots";
     static constexpr const char * f_snapshot_id = "snapshot-id";
     static constexpr const char * f_parent_snapshot_id = "parent-snapshot-id";
-    static constexpr const char * f_timestamp_ms = "timestamp-ms";
-    static constexpr const char * f_added_data_files = "added-data-files";
-    static constexpr const char * f_added_records = "added-records";
-    static constexpr const char * f_added_files_size = "add ed-files-size";
-    static constexpr const char * f_changed_partition_count = "changed-partition-count";
-    static constexpr const char * f_total_records = "total-records";
-    static constexpr const char * f_total_files_size = "total-files-size";
-    static constexpr const char * f_total_data_files = "total-data-files";
-    static constexpr const char * f_total_delete_files = "total-delete-files";
-    static constexpr const char * f_total_position_deletes = "total-position-deletes";
-    static constexpr const char * f_total_equality_deletes = "total-equality-deletes";
-    static constexpr const char * f_manifest_list = "manifest-list";
-    static constexpr const char * f_schema_id = "schema-id";
-    static constexpr const char * f_summary = "summary";
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
