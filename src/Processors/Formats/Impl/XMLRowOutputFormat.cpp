@@ -261,7 +261,6 @@ void registerOutputFormatXML(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("XML");
     factory.markFormatHasNoAppendSupport("XML");
-    factory.setContentType("XML", "application/xml; charset=UTF-8");
 }
 
 }

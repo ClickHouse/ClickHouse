@@ -1,6 +1,6 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include <Storages/PartitionedSink.h>
+#include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
 

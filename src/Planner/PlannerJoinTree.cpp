@@ -118,7 +118,6 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
-    extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
@@ -1106,6 +1105,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             auto result_ptr = reading->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
+                            reading->setAnalyzedResult(std::move(result_ptr));
+
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
@@ -1623,7 +1624,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             right_plan.getCurrentHeader(),
             join_algorithm,
             settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_rows],
             settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
             required_columns_after_join,

@@ -14,6 +14,7 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 
 #include <mutex>
 #include <filesystem>

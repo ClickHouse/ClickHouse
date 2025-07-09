@@ -16,19 +16,18 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Context.h>
 
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/ISource.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
@@ -47,7 +46,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/JSONBuilder.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
@@ -285,8 +283,13 @@ class StorageKeeperMapSource : public ISource, WithContext
 
     bool with_version_column = false;
 
-    static Block getHeader(Block header)
+    static Block getHeader(Block header, bool with_version_column)
     {
+        if (with_version_column)
+            header.insert(
+                    {DataTypeInt32{}.createColumn(),
+                    std::make_shared<DataTypeInt32>(), std::string{version_column_name}});
+
         return header;
     }
 
@@ -300,7 +303,7 @@ public:
         KeyContainerIter end_,
         bool with_version_column_,
         ContextPtr context_)
-        : ISource(getHeader(header))
+        : ISource(getHeader(header, with_version_column_))
         , WithContext(std::move(context_))
         , storage(storage_)
         , max_block_size(max_block_size_)
@@ -597,62 +600,25 @@ StorageKeeperMap::StorageKeeperMap(
         zk_root_path);
 }
 
-class ReadFromKeeperMap : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromKeeperMap"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-    void describeActions(FormatSettings & format_settings) const override;
-    void describeActions(JSONBuilder::JSONMap & map) const override;
 
-    ReadFromKeeperMap(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        const StorageKeeperMap & storage_,
-        size_t max_block_size_,
-        size_t num_streams_,
-        bool with_version_column_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
-        , storage(storage_)
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-        , with_version_column(with_version_column_)
-    {
-    }
-
-private:
-    const StorageKeeperMap & storage;
-
-    size_t max_block_size;
-    size_t num_streams;
-    bool with_version_column;
-
-    FieldVectorPtr keys;
-    bool all_scan = false;
-
-    template<typename KeyContainerPtr>
-    void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);
-
-    Strings getAllKeys() const;
-};
-
-void StorageKeeperMap::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context_,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t max_block_size,
-        size_t num_streams)
+Pipe StorageKeeperMap::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context_,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t num_streams)
 {
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
+
+    FieldVectorPtr filtered_keys;
+    bool all_scan;
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    auto primary_key_type = sample_block.getByName(primary_key).type;
+    std::tie(filtered_keys, all_scan) = getFilterKeys(primary_key, primary_key_type, query_info, context_);
 
     bool with_version_column = false;
     for (const auto & column : column_names)
@@ -664,110 +630,56 @@ void StorageKeeperMap::read(
         }
     }
 
-    if (with_version_column)
-        sample_block.insert({DataTypeInt32{}.createColumn(),
-                    std::make_shared<DataTypeInt32>(), std::string{version_column_name}});
+    const auto process_keys = [&]<typename KeyContainerPtr>(KeyContainerPtr keys) -> Pipe
+    {
+        if (keys->empty())
+            return {};
 
-    auto reading = std::make_unique<ReadFromKeeperMap>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams, with_version_column);
+        ::sort(keys->begin(), keys->end());
+        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
 
-    query_plan.addStep(std::move(reading));
-}
+        Pipes pipes;
 
-void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
+        size_t num_keys = keys->size();
+        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            using KeyContainer = typename KeyContainerPtr::element_type;
+            pipes.emplace_back(std::make_shared<StorageKeeperMapSource<KeyContainer>>(
+                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column, context_));
+        }
+        return Pipe::unitePipes(std::move(pipes));
+    };
+
     if (all_scan)
-        initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
-    else
-        initializePipelineImpl(pipeline, keys);
-}
-
-void ReadFromKeeperMap::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
-}
-
-template<typename KeyContainerPtr>
-void ReadFromKeeperMap::initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container)
-{
-    const auto & sample_block = getOutputHeader();
-
-    if (key_container->empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
-        return;
+        const auto & settings = context_->getSettingsRef();
+        ZooKeeperRetriesControl zk_retry{
+            getName(),
+            getLogger(getName()),
+            ZooKeeperRetriesInfo{
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                context_->getProcessListElement()}};
+
+        std::vector<std::string> children;
+        zk_retry.retryLoop([&]
+        {
+            auto client = getClient();
+            children = client->getChildren(zk_data_path);
+        });
+        return process_keys(std::make_shared<std::vector<std::string>>(std::move(children)));
     }
 
-    ::sort(key_container->begin(), key_container->end());
-    key_container->erase(std::unique(key_container->begin(), key_container->end()), key_container->end());
-
-    Pipes pipes;
-
-    size_t num_keys = key_container->size();
-    size_t num_threads = std::min<size_t>(num_streams, key_container->size());
-
-    chassert(num_keys <= std::numeric_limits<uint32_t>::max());
-    chassert(num_threads <= std::numeric_limits<uint32_t>::max());
-
-    for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
-    {
-        size_t begin = num_keys * thread_idx / num_threads;
-        size_t end = num_keys * (thread_idx + 1) / num_threads;
-
-        using KeyContainer = typename KeyContainerPtr::element_type;
-        pipes.emplace_back(std::make_shared<StorageKeeperMapSource<KeyContainer>>(
-            storage, sample_block, max_block_size, key_container, key_container->begin() + begin, key_container->begin() + end, with_version_column, context));
-    }
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-}
-
-Strings ReadFromKeeperMap::getAllKeys() const
-{
-    const auto & settings = context->getSettingsRef();
-    ZooKeeperRetriesControl zk_retry{
-        getName(),
-        getLogger(getName()),
-        ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            context->getProcessListElement()}};
-
-    Strings children;
-    zk_retry.retryLoop([&]
-    {
-        auto client = storage.getClient();
-        children = client->getChildren(storage.zk_data_path);
-    });
-
-    return children;
-}
-
-void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
-{
-    std::string prefix(format_settings.offset, format_settings.indent_char);
-    if (!all_scan)
-    {
-        format_settings.out << prefix << "ReadType: GetKeys\n";
-        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
-    }
-    else
-        format_settings.out << prefix << "ReadType: FullScan\n";
-}
-
-void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
-{
-    if (!all_scan)
-    {
-        map.add("Read Type", "GetKeys");
-        map.add("Keys", keys->size());
-    }
-    else
-        map.add("Read Type", "FullScan");
+    return process_keys(std::move(filtered_keys));
 }
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -825,11 +737,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
             break;
         }
         case ZNONODE:
-        {
-            size_t failed_op = zkutil::getFailedOpIndex(code, responses);
-            LOG_ERROR(log, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
-        }
         case ZNOTEMPTY:
             LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
             break;

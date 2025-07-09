@@ -23,8 +23,7 @@ public:
         /// List of partition key columns. They have to be excluded.
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes,
-        const String & sum_function_name);
+        size_t max_block_size_bytes);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -90,9 +89,7 @@ public:
 
         bool is_group_started = false;
 
-        Row current_row;
-        /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
-        std::vector<ColumnPtr> current_row_columns;
+        std::vector<ColumnPtr> current_row;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

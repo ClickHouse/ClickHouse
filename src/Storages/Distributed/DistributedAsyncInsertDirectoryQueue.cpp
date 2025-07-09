@@ -12,7 +12,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
@@ -430,7 +429,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             __PRETTY_FUNCTION__,
             storage.getContext()->getOpenTelemetrySpanLog());
 
-        Settings insert_settings = *distributed_header.insert_settings;
+        Settings insert_settings = distributed_header.insert_settings;
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
@@ -448,8 +447,6 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             distributed_header.insert_query,
             insert_settings,
             distributed_header.client_info};
-        remote.initialize();
-
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -623,7 +620,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
             }
 
             BatchHeader batch_header(
-                std::move(*distributed_header.insert_settings),
+                std::move(distributed_header.insert_settings),
                 std::move(distributed_header.insert_query),
                 std::move(distributed_header.client_info),
                 std::move(header)
