@@ -39,7 +39,7 @@ set(AI_SDK_ANTHROPIC_SOURCES
 )
 
 # Add nlohmann_json from submodule
-set(NLOHMANN_JSON_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/nlohmann_json")
+set(NLOHMANN_JSON_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/nlohmann_json_patched")
 add_library(_nlohmann_json INTERFACE)
 target_include_directories(_nlohmann_json SYSTEM INTERFACE 
     "${NLOHMANN_JSON_SOURCE_DIR}/include"
