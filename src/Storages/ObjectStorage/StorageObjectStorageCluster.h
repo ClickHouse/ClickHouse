@@ -49,6 +49,8 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
+    bool updateExternalDynamicMetadataIfExists(ContextPtr context) override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,

@@ -537,4 +537,11 @@ void StorageObjectStorageCluster::addInferredEngineArgsToCreateQuery(ASTs & args
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->getFormat(), context, /*with_structure=*/false);
 }
 
+bool StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr context)
+{
+    if (pure_storage)
+        return pure_storage->updateExternalDynamicMetadataIfExists(context);
+    return false;
+}
+
 }
