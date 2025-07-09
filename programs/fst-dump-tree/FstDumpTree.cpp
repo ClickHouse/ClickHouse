@@ -147,10 +147,6 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         {
             uint8_t ver;
             readBinary(ver, *segment_id_read_buffer);
-            readVarUInt(number_of_segments, *segment_id_read_buffer);
-            /// It contains the next segment id.
-            number_of_segments -= 1;
-
             using FormatAsInt = std::underlying_type_t<DB::GinIndexStore::Format>;
             switch (ver)
             {
@@ -161,8 +157,12 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     version = DB::GinIndexStore::Format::v2;
                     break;
                 default:
-                    version = DB::GinIndexStore::Format::v0;
+                    printAndExit("Segment id file is corrupted: unsupported version '{}'", DB::GinIndexStore::Format::v0);
             }
+
+            readVarUInt(number_of_segments, *segment_id_read_buffer);
+            /// It contains the next segment id.
+            number_of_segments -= 1;
 
             fmt::println("Segment version = {} and number of segments = {}", version, number_of_segments);
         }
