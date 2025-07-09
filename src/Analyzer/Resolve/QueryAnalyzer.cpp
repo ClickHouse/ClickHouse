@@ -2779,6 +2779,69 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    /* Early short-circuit for logical expressions.
+     * If   or()   already contains a constant TRUE,
+     * or   and()  already contains a constant FALSE,
+     * the result of the whole function is known.
+     * Replace the function with that constant right now,
+     * before we start resolving (and possibly executing)
+     * the remaining arguments – this prevents scalar
+     * sub-queries in those arguments from running.
+     */
+    if (function_name == "or" || function_name == "and")
+    {
+        const auto & args = function_node_ptr->getArguments().getNodes();
+
+        auto isBoolConst = [](const QueryTreeNodePtr & n, bool & out)->bool
+        {
+            const auto * lit = n->as<ConstantNode>();
+            if (!lit) return false;
+
+            UInt64 u = 0;  Int64 i = 0;
+            if (lit->getValue().tryGet<UInt64>(u))      { out = (u != 0); return true; }
+            if (lit->getValue().tryGet<Int64>(i))       { out = (i != 0); return true; }
+            bool tmp = false;
+            if (lit->getValue().tryGet<bool>(tmp))
+            {
+                out = tmp;
+                return true;
+            }
+            String s;
+            if (lit->getValue().tryGet<String>(s))
+            {
+                auto lc = Poco::toLower(s);
+                if (lc == "true" || lc == "false")
+                {
+                    out = (lc == "true");
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        bool decisive = false, found = false;
+        for (const auto & a : args)
+        {
+            bool v = false;
+            if (!isBoolConst(a, v)) continue;
+            if ((function_name == "or"  && v) ||
+                (function_name == "and" && !v))
+            { decisive = v; found = true; break; }
+        }
+
+        if (found)
+        {
+            UInt64 num = decisive ? 1u : 0u;
+            auto new_const = std::make_shared<ConstantNode>(Field(num),
+                                                            std::make_shared<DataTypeUInt8>());
+            if (!function_node_ptr->getAlias().empty())
+                new_const->setAlias(function_node_ptr->getAlias());
+
+            node = new_const;
+            return ProjectionNames{ new_const->getValueStringRepresentation() };
+        }
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
