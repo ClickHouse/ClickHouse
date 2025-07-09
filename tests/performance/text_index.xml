@@ -1,0 +1,13 @@
+<test>
+  <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp(SearchPhrase) TYPE text(tokenizer = 'default')</fill_query>
+  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp</fill_query>
+
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'yandex')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'google')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'world')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'video')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'market')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'mail')</query>
+
+  <drop_query>ALTER TABLE hits_10m_single DROP INDEX idx_sp</drop_query>
+</test>
