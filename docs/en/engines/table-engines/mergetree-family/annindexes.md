@@ -74,7 +74,7 @@ returns
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
-Vector similarity indexes are currently experimental.
+Vector similarity indexes are currently beta.
 To enable them, please first run `SET allow_experimental_vector_similarity_index = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::

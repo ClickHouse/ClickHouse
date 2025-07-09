@@ -6,6 +6,8 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Common/DimensionalMetrics.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -81,8 +83,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForMerge;
-    extern const Metric NonAbortedMergeFailures;
-    extern const Metric TotalMergeFailures;
 }
 
 namespace DB
@@ -150,6 +150,24 @@ ColumnsStatistics getStatisticsForColumns(
     }
     return all_statistics;
 }
+
+std::vector<DimensionalMetrics::LabelValues> getInitialLabelValuesForAllErrorCodes()
+{
+    std::vector<DimensionalMetrics::LabelValues> result;
+    for (ErrorCodes::ErrorCode i = 0, end = ErrorCodes::end(); i < end; ++i)
+    {
+        const std::string_view name = ErrorCodes::getName(i);
+        result.push_back({String(name)});
+    }
+    return result;
+}
+
+DimensionalMetrics::MetricFamily & merge_failures = DimensionalMetrics::Factory::instance().registerMetric(
+    "merge_failures",
+    "Number of all failed merges since startup.",
+    {"error_name"},
+    getInitialLabelValuesForAllErrorCodes()
+);
 
 }
 
@@ -1568,12 +1586,7 @@ try
 }
 catch (...)
 {
-    const auto error_code = getCurrentExceptionCode();
-    if (error_code != ErrorCodes::ABORTED)
-    {
-        CurrentMetrics::add(CurrentMetrics::NonAbortedMergeFailures);
-    }
-    CurrentMetrics::add(CurrentMetrics::TotalMergeFailures);
+    merge_failures.withLabels({String(ErrorCodes::getName(getCurrentExceptionCode()))}).increment();
     throw;
 }
 
