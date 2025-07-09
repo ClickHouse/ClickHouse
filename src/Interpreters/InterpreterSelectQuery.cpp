@@ -512,6 +512,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     PreparedSetsPtr prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
+    , source_header(std::make_shared<const Block>(Block{}))
     , storage(storage_)
     , input_pipe(std::move(input_pipe_))
     , log(getLogger("InterpreterSelectQuery"))
