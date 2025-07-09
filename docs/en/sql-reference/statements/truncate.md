@@ -14,10 +14,13 @@ The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
-- `IF EXISTS`: Prevents an error if the table does not exist. If omitted, the query returns an error if the table does not exist.
-- `db.name`: Optional database name.
-- `ON CLUSTER cluster`: Runs the command across a specified cluster.
-- `SYNC`: Makes the truncation synchronous across replicas when using replicated tables. If omitted, truncation happens asynchronously by default.
+<br/>
+| Parameter           | Description                                                                                       |
+|---------------------|---------------------------------------------------------------------------------------------------|
+| `IF EXISTS`         | Prevents an error if the table does not exist. If omitted, the query returns an error.            |
+| `db.name`           | Optional database name.                                                                           |
+| `ON CLUSTER cluster`| Runs the command across a specified cluster.                                                      |
+| `SYNC`              | Makes the truncation synchronous across replicas when using replicated tables. If omitted, truncation happens asynchronously by default. |
 
 You can use the [alter_sync](/operations/settings/settings#alter_sync) setting to set up waiting for actions to be executed on replicas.
 
@@ -29,21 +32,25 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
 
-- [View](../../engines/table-engines/special/view.md)
-- [File](../../engines/table-engines/special/file.md)
-- [URL](../../engines/table-engines/special/url.md)
-- [Buffer](../../engines/table-engines/special/buffer.md)
-- [Null](../../engines/table-engines/special/null.md)
+- [`View`](../../engines/table-engines/special/view.md)
+- [`File`](../../engines/table-engines/special/file.md)
+- [`URL`](../../engines/table-engines/special/url.md)
+- [`Buffer`](../../engines/table-engines/special/buffer.md)
+- [`Null`](../../engines/table-engines/special/null.md)
 
 ## TRUNCATE ALL TABLES {#truncate-all-tables}
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
 ```
-- `ALL`: Removes data from all tables in the database.
-- `IF EXISTS`: Prevents an error if the database does not exist.
-- `db`: The database name.
-- `LIKE | ILIKE | NOT LIKE '<pattern>'`: Filters tables by pattern.
-- `ON CLUSTER cluster`: Runs the command across a cluster.
+<br/>
+| Parameter                  | Description                                       |
+|----------------------------|---------------------------------------------------|
+| `ALL`                      | Removes data from all tables in the database.     |
+| `IF EXISTS`                | Prevents an error if the database does not exist. |
+| `db`                       | The database name.                                |
+| `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | Filters tables by pattern.           |
+| `ON CLUSTER cluster`       | Runs the command across a cluster.                |
+
 
 Removes all data from all tables in a database.
 
@@ -51,9 +58,13 @@ Removes all data from all tables in a database.
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
-- `IF EXISTS`: Prevents an error if the database does not exist.
-- `db`: The database name.
-- `ON CLUSTER cluster`: Runs the command across a specified cluster.
+<br/>
+| Parameter            | Description                                       |
+|----------------------|---------------------------------------------------|
+| `IF EXISTS`          | Prevents an error if the database does not exist. |
+| `db`                 | The database name.                                |
+| `ON CLUSTER cluster` | Runs the command across a specified cluster.      |
+
 
 Removes all tables from a database but keeps the database itself. When the clause `IF EXISTS` is omitted, the query returns an error if the database does not exist.
 
