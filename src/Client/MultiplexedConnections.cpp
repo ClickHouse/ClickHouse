@@ -2,6 +2,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
@@ -100,6 +101,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendQueryPlan(query_plan);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -195,6 +211,7 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
+
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     std::lock_guard lock(cancel_mutex);
@@ -211,12 +228,12 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendReadTaskResponse(const String & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendReadTaskResponse(response);
+    current_connection->sendClusterFunctionReadTaskResponse(response);
 }
 
 

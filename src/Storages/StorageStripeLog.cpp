@@ -1,10 +1,10 @@
-#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <optional>
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 
 #include <Core/Settings.h>
 
@@ -23,10 +23,9 @@
 
 #include <Interpreters/Context.h>
 
-#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
-#include "StorageLogSettings.h"
+#include <Storages/StorageLogSettings.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -537,7 +536,7 @@ void StorageStripeLog::updateTotalRows(const WriteLock &)
     total_rows = new_total_rows;
 }
 
-std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
 {
     if (indices_loaded)
         return total_rows;
@@ -548,7 +547,7 @@ std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }

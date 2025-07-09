@@ -1,7 +1,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -17,8 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
 #include <cstring> // memcpy
 
 
@@ -143,7 +140,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.safeGet<Array &>();
+    Array & res_arr = res.safeGet<Array>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -332,7 +329,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.safeGet<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -344,7 +341,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.safeGet<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -497,7 +494,7 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns)
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     Columns source_data_columns;
@@ -509,8 +506,8 @@ void ColumnArray::prepareForSquashing(const Columns & source_columns)
         source_data_columns.push_back(source_array_column.getDataPtr());
     }
 
-    getOffsets().reserve_exact(new_size);
-    data->prepareForSquashing(source_data_columns);
+    getOffsets().reserve_exact(new_size * factor);
+    data->prepareForSquashing(source_data_columns, factor);
 }
 
 void ColumnArray::shrinkToFit()

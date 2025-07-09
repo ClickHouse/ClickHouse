@@ -9,9 +9,10 @@ import time
 from os import path as p
 from typing import Iterable, List, Optional, Sequence, Union
 
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
 from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.client import KazooClient
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -372,8 +373,8 @@ def get_any_follower(cluster, nodes):
 
 
 def get_fake_zk(
-    cluster, nodename, timeout: float = 30.0, password=None, retries=10
-) -> KazooClient:
+    cluster, nodename, timeout: float = 30.0, password=None, retries=10, start=True
+) -> KazooClientWithImplicitRetries:
     kazoo_retry = {
         "max_tries": retries,
     }
@@ -382,14 +383,15 @@ def get_fake_zk(
     if password is not None:
         client_id = (0, password)
 
-    _fake = KazooClient(
+    _fake = KazooClientWithImplicitRetries(
         hosts=cluster.get_instance_ip(nodename) + ":9181",
         client_id=client_id,
         timeout=timeout,
         connection_retry=kazoo_retry,
         command_retry=kazoo_retry,
     )
-    _fake.start()
+    if start:
+        _fake.start()
     return _fake
 
 

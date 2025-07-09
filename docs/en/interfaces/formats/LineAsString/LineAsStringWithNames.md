@@ -1,21 +1,22 @@
 ---
-title : LineAsStringWithNames
-slug : /en/interfaces/formats/LineAsStringWithNames
-keywords : [LineAsStringWithNames]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the LineAsStringWithNames format'
+input_format: true
+keywords: ['LineAsStringWithNames']
+output_format: true
+slug: /interfaces/formats/LineAsStringWithNames
+title: 'LineAsStringWithNames'
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```sql title="Query"
 CREATE TABLE example (
@@ -30,10 +31,10 @@ SELECT * FROM example FORMAT LineAsStringWithNames;
 ```
 
 ```response title="Response"
-name	value
-John	30
-Jane	25
-Peter	35
+name    value
+John    30
+Jane    25
+Peter    35
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

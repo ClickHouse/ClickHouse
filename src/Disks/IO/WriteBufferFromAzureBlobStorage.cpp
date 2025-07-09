@@ -12,9 +12,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-
     extern const Event AzureUpload;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
@@ -22,7 +19,6 @@ namespace ProfileEvents
     extern const Event DiskAzureUpload;
     extern const Event DiskAzureStageBlock;
     extern const Event DiskAzureCommitBlockList;
-
 }
 
 namespace DB
@@ -83,9 +79,21 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
     LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
-    /// That destructor could be call with finalized=false in case of exceptions
-    if (!finalized)
+    if (canceled)
     {
+        if (!isEmpty())
+        {
+            LOG_INFO(
+                log,
+                "WriteBufferFromAzureBlobStorage was canceled."
+                "The file might not be written to AzureBlobStorage. "
+                "{}.",
+                blob_path);
+        }
+    }
+    else if (!finalized)
+    {
+        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromAzureBlobStorage is not finalized in destructor. "
@@ -240,7 +248,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 void WriteBufferFromAzureBlobStorage::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 

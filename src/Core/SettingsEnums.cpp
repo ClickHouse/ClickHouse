@@ -1,4 +1,5 @@
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
 
@@ -90,15 +91,15 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryResultCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryResultCacheNondeterministicFunctionHandling::Ignore}})
 
-IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheSystemTableHandling::Throw},
-     {"save",   QueryCacheSystemTableHandling::Save},
-     {"ignore", QueryCacheSystemTableHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheSystemTableHandling::Throw},
+     {"save",   QueryResultCacheSystemTableHandling::Save},
+     {"ignore", QueryResultCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
@@ -179,6 +180,21 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
+
+IMPLEMENT_SETTING_ENUM(AlterUpdateMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"heavy", AlterUpdateMode::HEAVY},
+     {"lightweight", AlterUpdateMode::LIGHTWEIGHT},
+     {"lightweight_force", AlterUpdateMode::LIGHTWEIGHT_FORCE}})
+
+IMPLEMENT_SETTING_ENUM(UpdateParallelMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"sync", UpdateParallelMode::SYNC},
+     {"async", UpdateParallelMode::ASYNC},
+     {"auto", UpdateParallelMode::AUTO}})
+
+IMPLEMENT_SETTING_ENUM(LightweightDeleteMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"alter_update", LightweightDeleteMode::ALTER_UPDATE},
+     {"lightweight_update", LightweightDeleteMode::LIGHTWEIGHT_UPDATE},
+     {"lightweight_update_force", LightweightDeleteMode::LIGHTWEIGHT_UPDATE_FORCE}})
 
 IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", LightweightMutationProjectionMode::THROW},
@@ -281,7 +297,33 @@ IMPLEMENT_SETTING_ENUM(
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
      {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
-IMPLEMENT_SETTING_ENUM(DatabaseIcebergCatalogType, ErrorCodes::BAD_ARGUMENTS,
-                       {{"rest", DatabaseIcebergCatalogType::REST}})
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeCatalogType,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+     {"unity", DatabaseDataLakeCatalogType::UNITY},
+     {"glue", DatabaseDataLakeCatalogType::GLUE},
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+
+IMPLEMENT_SETTING_ENUM(
+    FileCachePolicy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lru", FileCachePolicy::LRU},
+     {"LRU", FileCachePolicy::LRU},
+     {"slru", FileCachePolicy::SLRU},
+     {"SLRU", FileCachePolicy::SLRU}})
+
+IMPLEMENT_SETTING_ENUM(
+    VectorSearchFilterStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", VectorSearchFilterStrategy::AUTO},
+     {"prefilter", VectorSearchFilterStrategy::PREFILTER},
+     {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
+
+IMPLEMENT_SETTING_ENUM(
+    GeoToH3ArgumentOrder,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
+     {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 }

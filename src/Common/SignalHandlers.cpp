@@ -6,7 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
-#include <Daemon/SentryWriter.h>
+#include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
 #include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -34,6 +34,8 @@ extern const int CANNOT_SEND_SIGNAL;
 }
 
 extern const char * GIT_HASH;
+
+static const std::vector<StackTrace::FramePointers> empty_stack;
 
 using namespace DB;
 
@@ -113,7 +115,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
     out.finalize();
@@ -199,6 +201,12 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
+
+    /// Signal pipe can be already closed in BaseDaemon::~BaseDaemon, but
+    /// sanitizerDeathCallback() can be called on exit handlers.
+    if (signal_pipe.fds_rw[1] == -1)
+        return;
+
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const StackTrace stack_trace;
@@ -570,17 +578,14 @@ try
     {
         if (daemon)
         {
-            if (auto * sentry = SentryWriter::getInstance())
-                sentry->onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+            CrashWriter::onSignal(sig, std::string_view(error_message), stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
         }
 
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
         {
-            const auto & date_lut = DateLUT::instance();
-
             /// Approximate support period, upper bound.
-            if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
             {
                 LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
             }

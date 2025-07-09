@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>

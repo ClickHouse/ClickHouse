@@ -7,6 +7,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -47,6 +48,18 @@ namespace Setting
 namespace
 {
 
+ASTPtr createIdentifierFromColumnName(const String & column_name)
+{
+    Tokens tokens(column_name.data(), column_name.data() + column_name.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr res;
+    Expected expected;
+    ParserCompoundIdentifier().parse(pos, res, expected);
+    if (!res || getIdentifierName(res) != column_name)
+        return std::make_shared<ASTIdentifier>(column_name);
+    return res;
+}
+
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
     ASTPtr result_query;
@@ -83,7 +96,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
     projection_expression_list_ast->children.reserve(column_names.size());
 
     for (const auto & column_name : column_names)
-        projection_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 
@@ -104,6 +117,8 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     return result_context;
+}
+
 }
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
@@ -130,7 +145,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
@@ -143,6 +158,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
+        || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
@@ -154,7 +170,6 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
-}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,

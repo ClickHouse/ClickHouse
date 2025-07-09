@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {

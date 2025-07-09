@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
 

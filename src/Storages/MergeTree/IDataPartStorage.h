@@ -7,18 +7,21 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
-#include <boost/core/noncopyable.hpp>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
 #include <memory>
 #include <optional>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 struct CanRemoveDescription
 {
@@ -183,10 +186,6 @@ public:
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
-
-    /// TODO: remove or at least remove const.
-    virtual void syncRevision(UInt64 revision) const = 0;
-    virtual UInt64 getRevision() const = 0;
 
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;

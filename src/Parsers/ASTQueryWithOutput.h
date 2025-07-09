@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <IO/Operators.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -25,6 +25,8 @@ public:
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
+
+    bool hasOutputOptions() const;
 
 protected:
     /// NOTE: call this helper at the end of the clone() method of descendant class.

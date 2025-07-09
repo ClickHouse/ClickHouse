@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/PreparedSets.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -36,6 +35,9 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
@@ -134,9 +136,7 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
   */
 struct SelectQueryInfo
 {
-    SelectQueryInfo()
-        : prepared_sets(std::make_shared<PreparedSets>())
-    {}
+    SelectQueryInfo();
 
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
@@ -160,11 +160,11 @@ struct SelectQueryInfo
     StorageLimits local_storage_limits;
 
     /// This is a leak of abstraction.
-    /// StorageMerge replaces storage into query_tree. However, column types may be changed for inner table.
+    /// StorageMerge/StorageBuffer/StorageMaterializedView replace storage into query_tree. However, column types may be changed for inner table.
     /// So, resolved query tree might have incompatible types.
     /// StorageDistributed uses this query tree to calculate a header, throws if we use storage snapshot.
-    /// To avoid this, we use initial merge_storage_snapshot.
-    StorageSnapshotPtr merge_storage_snapshot;
+    /// To avoid this, we use initial_storage_snapshot.
+    StorageSnapshotPtr initial_storage_snapshot;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -190,6 +190,7 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
+    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 

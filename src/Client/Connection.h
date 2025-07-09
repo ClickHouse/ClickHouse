@@ -4,9 +4,11 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -30,13 +32,13 @@ struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
+struct ClusterFunctionReadTaskResponse;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
-
 
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
@@ -61,7 +63,8 @@ public:
         const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
-        Protocol::Secure secure_);
+        Protocol::Secure secure_,
+        const String & bind_host_);
 
     ~Connection() override;
 
@@ -114,6 +117,8 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
@@ -133,9 +138,9 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 
@@ -143,7 +148,7 @@ public:
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-    void sendReadTaskResponse(const String &);
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
     /// Send parts' uuids to excluded them from query processing
@@ -188,7 +193,9 @@ private:
     SSHKey ssh_private_key;
 #endif
     String quota_key;
+#if USE_JWT_CPP && USE_SSL
     String jwt;
+#endif
 
     /// For inter-server authorization
     String cluster;
@@ -220,6 +227,8 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
+    UInt64 server_cluster_function_protocol_version = 0;
+    UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
     SettingsChanges settings_from_server;
@@ -232,6 +241,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;
@@ -308,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -316,6 +326,7 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();

@@ -20,14 +20,16 @@ class CacheRunnerHooks:
         ), f"Outdated yaml pipelines or BUG. Configuration must be run only for workflow with enabled cache, workflow [{workflow.name}]"
         artifact_digest_map = {}
         job_digest_map = {}
+        artifact_name_config_map = {}
+        for a in workflow.artifacts:
+            artifact_name_config_map[a.name] = a
+
         for job in workflow.jobs:
             digest = cache.digest.calc_job_digest(
-                job_config=job, docker_digests=docker_digests
+                job_config=job,
+                docker_digests=docker_digests,
+                artifact_configs=artifact_name_config_map,
             )
-            if not job.digest_config:
-                print(
-                    f"NOTE: job [{job.name}] has no Config.digest_config - skip cache check, always run"
-                )
             job_digest_map[job.name] = digest
             if job.provides:
                 # assign the job digest also to the artifacts it provides
@@ -71,6 +73,9 @@ class CacheRunnerHooks:
                 futures = {
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
                     for job_name, job_digest in workflow_config.digest_jobs.items()
+                    if job_digest != cache.digest.get_null_digest()  # not being cached
+                    and job_name
+                    not in workflow_config.filtered_jobs  # skipped by user's hook
                 }
 
                 for future in futures:
@@ -105,7 +110,10 @@ class CacheRunnerHooks:
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
-            if job.name in workflow_config.cache_success:
+            if (
+                job.name in workflow_config.cache_success
+                and job.name not in workflow_config.filtered_jobs
+            ):
                 if job.provides:
                     for artifact_name in job.provides:
                         workflow_config.cache_artifacts[artifact_name] = (
@@ -171,5 +179,6 @@ class CacheRunnerHooks:
                 job.name,
                 job_digest,
                 workflow_runtime.sha,
+                workflow_name=workflow.name,
                 if_not_exist=workflow.is_event_pull_request(),
             )

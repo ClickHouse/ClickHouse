@@ -1,5 +1,6 @@
 #include <Processors/DelayedPortsProcessor.h>
 
+#include <Processors/Port.h>
 #include <base/sort.h>
 
 

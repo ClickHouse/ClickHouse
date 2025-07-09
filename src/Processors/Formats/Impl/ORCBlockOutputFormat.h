@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
 class WriteBuffer;
 
 

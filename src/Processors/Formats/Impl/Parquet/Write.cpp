@@ -1,10 +1,14 @@
-#include "Processors/Formats/Impl/Parquet/Write.h"
-#include "Processors/Formats/Impl/Parquet/ThriftUtil.h"
+#include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
 #include <xxhash.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -12,10 +16,14 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
+#include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeCustom.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -396,6 +404,45 @@ struct ConverterNumberAsFixedString
     size_t fixedStringSize() { return sizeof(T); }
 };
 
+struct ConverterJSON
+{
+    using Statistics = StatisticsStringRef;
+
+    const ColumnObject & column;
+    DataTypePtr data_type;
+    PODArray<parquet::ByteArray> buf;
+    std::vector<String> stash;
+    const FormatSettings & format_settings;
+
+    explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
+        : column(assert_cast<const ColumnObject &>(*c))
+        , data_type(data_type_)
+        , format_settings(format_settings_)
+    {
+    }
+
+    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        stash.clear();
+        stash.reserve(count);
+
+        auto serialization = data_type->getDefaultSerialization();
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            WriteBufferFromOwnString wb;
+            serialization->serializeTextJSON(column, offset + i, wb, format_settings);
+
+            stash.emplace_back(std::move(wb.str()));
+            const String & s = stash.back();
+
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+        }
+        return buf.data();
+    }
+};
+
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
 /// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY, presumably
 /// to make them comparable lexicographically.)
@@ -618,6 +665,14 @@ void writeColumnImpl(
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
+    /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
+    /// so let's be nice to them and avoid that. This matches arrow's logic.
+    /// If we ever use DataPageV2, enable this flag in that case too:
+    /// bool pages_change_on_record_boundaries = options.write_page_index || options.data_page_v2;
+    bool pages_change_on_record_boundaries = options.write_page_index;
+    /// If there are no arrays, record boundaries are everywhere.
+    pages_change_on_record_boundaries &= s.max_rep > 0;
+
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
     {
@@ -788,11 +843,21 @@ void writeColumnImpl(
             /// Bite off a batch of defs and corresponding data values.
             size_t def_count = std::min(options.write_batch_size, num_values - next_def_offset);
             size_t data_count = 0;
-            if (s.max_def == 0)
+            if (s.max_def == 0) // no arrays or nullables
                 data_count = def_count;
             else
                 for (size_t i = 0; i < def_count; ++i)
                     data_count += s.def[next_def_offset + i] == s.max_def;
+
+            if (pages_change_on_record_boundaries)
+            {
+                /// Each record (table row) starts with a value with rep = 0.
+                while (next_def_offset + def_count < num_values && s.rep[next_def_offset + def_count] != 0)
+                {
+                    data_count += s.def[next_def_offset + def_count] == s.max_def;
+                    ++def_count;
+                }
+            }
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
@@ -902,7 +967,8 @@ void writeColumnImpl(
 
 }
 
-void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out)
+void writeColumnChunkBody(
+    ColumnChunkWriteState & s, const WriteOptions & options, const FormatSettings & format_settings, WriteBuffer & out)
 {
     s.column_chunk.meta_data.__set_num_values(s.max_def > 0 ? s.def.size() : s.primitive_column->size());
 
@@ -990,6 +1056,9 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             else
                 writeColumnImpl<parquet::ByteArrayType>(
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
+            break;
+        case TypeIndex::Object:
+            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
             break;
 
         #define F(source_type) \
@@ -1133,7 +1202,11 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     }
 }
 
-void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)
+void writeFileFooter(FileWriteState & file,
+    SchemaElements schema,
+    const WriteOptions & options,
+    WriteBuffer & out,
+    const Block & header)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -1163,6 +1236,65 @@ void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOp
                 meta.column_orders.emplace_back();
         for (auto & c : meta.column_orders)
             c.__set_TYPE_ORDER({});
+    }
+
+    /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
+    if (options.write_geometadata)
+    {
+        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+        for (const auto & [column_name, type] : header.getNamesAndTypesList())
+        {
+            if (type->getCustomName() &&
+                (type->getCustomName()->getName() == WKBPointTransform::name ||
+                type->getCustomName()->getName() == WKBLineStringTransform::name ||
+                type->getCustomName()->getName() == WKBPolygonTransform::name ||
+                type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||
+                type->getCustomName()->getName() == WKBMultiPolygonTransform::name))
+            {
+                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
+                geom_meta->set("encoding", "WKB");
+
+                Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
+                geom_types->add(type->getCustomName()->getName());
+                geom_meta->set("geometry_types", geom_types);
+                geom_meta->set("crs", "EPSG:4326");
+
+                geo_columns_metadata.push_back({column_name, geom_meta});
+
+                if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
+                    type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
+                {
+                    geom_meta->set("edges", "planar");
+                    geom_meta->set("orientation", "counterclockwise");
+                }
+                geo_columns_metadata.push_back({column_name, geom_meta});
+            }
+        }
+
+        if (!geo_columns_metadata.empty())
+        {
+            Poco::JSON::Object::Ptr columns = new Poco::JSON::Object;
+            for (const auto & [column_name, column_type] : geo_columns_metadata)
+            {
+                columns->set(column_name, column_type);
+            }
+
+            Poco::JSON::Object::Ptr geo = new Poco::JSON::Object;
+            geo->set("version", "1.0.0");
+            geo->set("columns", columns);
+            geo->set("primary_column", geo_columns_metadata[0].first);
+
+            std::ostringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                oss;
+            Poco::JSON::Stringifier::stringify(geo, oss, 4);
+
+            parquet::format::KeyValue key_value;
+            key_value.__set_key("geo");
+            key_value.__set_value(oss.str());
+
+            meta.key_value_metadata.push_back(std::move(key_value));
+            meta.__isset.key_value_metadata = true;
+        }
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

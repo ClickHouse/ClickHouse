@@ -61,7 +61,7 @@ OutputBlockColumns prepareOutputBlockColumns(
                 };
 
                 callback(*final_aggregate_columns[i]);
-                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
+                final_aggregate_columns[i]->forEachMutableSubcolumnRecursively(callback);
             }
         }
     }

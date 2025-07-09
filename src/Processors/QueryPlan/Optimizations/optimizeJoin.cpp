@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
@@ -19,10 +20,11 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
-#include <Common/logger_useful.h>
-#include <Core/Joins.h>
-#include <ranges>
+#include <limits>
 #include <memory>
+#include <Core/Joins.h>
+#include <Interpreters/HashTablesStatistics.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -36,7 +38,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
@@ -48,8 +50,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return {};
@@ -86,7 +87,7 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
-        return reading->getStorage()->totalRows(Settings{});
+        return reading->getStorage()->totalRows({});
 
     if (node.children.size() != 1)
         return {};
@@ -154,23 +155,6 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
     return true;
-}
-
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
-{
-    const auto & header = node->step->getOutputHeader();
-    if (!header && !actions_dag.getInputs().empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}",
-        actions_dag.dumpDAG());
-
-    QueryPlanStepPtr step;
-
-    if (filter_column_name.empty())
-        step = std::make_unique<ExpressionStep>(header, std::move(actions_dag));
-    else
-        step = std::make_unique<FilterStep>(header, std::move(actions_dag), filter_column_name, false);
-
-    return &nodes.emplace_back(QueryPlan::Node{std::move(step), {node}});
 }
 
 void addSortingForMergeJoin(
@@ -249,7 +233,11 @@ void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
-bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool convertLogicalJoinToPhysical(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    std::optional<UInt64> rhs_size_estimation)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -258,10 +246,16 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
-    JoinActionRef left_filter(nullptr);
-    JoinActionRef right_filter(nullptr);
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical);
+    auto join_ptr = join_step->convertToPhysical(
+        post_filter,
+        keep_logical,
+        optimization_settings.max_threads,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.initial_query_id,
+        optimization_settings.lock_acquire_timeout,
+        optimization_settings.actions_settings,
+        rhs_size_estimation);
 
     if (join_ptr->isFilled())
     {
@@ -273,17 +267,17 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
 
     Header output_header = join_step->getOutputHeader();
 
-    auto & join_expression_actions = join_step->getExpressionActions();
+    const auto & join_expression_actions = join_step->getExpressionActions();
 
-    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(join_expression_actions.left_pre_join_actions), left_filter.column_name, nodes);
+    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
     QueryPlan::Node * new_right_node = nullptr;
     if (node.children.size() >= 2)
-        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(join_expression_actions.right_pre_join_actions), right_filter.column_name, nodes);
+        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
 
     if (join_step->areInputsSwapped() && new_right_node)
         std::swap(new_left_node, new_right_node);
 
-    const auto & settings = join_step->getContext()->getSettingsRef();
+    const auto & settings = join_step->getSettings();
 
     auto & new_join_node = nodes.emplace_back();
 
@@ -294,14 +288,15 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
                 join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
 
-        auto required_output_from_join = join_expression_actions.post_join_actions.getRequiredColumnsNames();
+        auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
         new_join_node.step = std::make_unique<JoinStep>(
             new_left_node->step->getOutputHeader(),
             new_right_node->step->getOutputHeader(),
             join_ptr,
-            settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_bytes],
-            settings[Setting::max_threads],
+            settings.max_block_size,
+            settings.min_joined_block_size_rows,
+            settings.min_joined_block_size_bytes,
+            optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),
             false /*optimize_read_in_order*/,
             true /*use_new_analyzer*/);
@@ -312,43 +307,69 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
         new_join_node.step = std::make_unique<FilledJoinStep>(
             new_left_node->step->getOutputHeader(),
             join_ptr,
-            settings[Setting::max_block_size]);
+            settings.max_block_size);
         new_join_node.children = {new_left_node};
     }
+    new_join_node.step->setStepDescription(node.step->getStepDescription());
 
-    if (!post_filter)
-        node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions));
+    QueryPlan::Node result_node;
+    if (post_filter)
+    {
+        bool remove_filter = !output_header.has(post_filter.getColumnName());
+        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
+        result_node.children = {&new_join_node};
+    }
     else
     {
-        bool remove_filter = !output_header.has(post_filter.column_name);
-        node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions), post_filter.column_name, remove_filter);
+        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
+        result_node.children = {&new_join_node};
     }
-    node.children = {&new_join_node};
+
+    node = std::move(result_node);
     return true;
 }
 
-bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+std::optional<UInt64>
+optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
-        return false;
+        return {};
 
     if (join_step->hasPreparedJoinStorage())
-        return false;
+        return {};
 
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     bool need_swap = false;
+    auto lhs_estimation = estimateReadRowsCount(*node.children[0]);
+    auto rhs_estimation = estimateReadRowsCount(*node.children[1]);
+
+    /// Consider estimations from hash table sizes cache too
+    if (const auto & hash_table_key_hashes = join_step->getHashTableKeyHashes();
+        hash_table_key_hashes && optimization_settings.collect_hash_table_stats_during_joins)
+    {
+        StatsCollectingParams params{
+            /*key_=*/0,
+            /*enable=*/true,
+            optimization_settings.max_entries_for_hash_table_stats,
+            optimization_settings.max_size_to_preallocate_for_joins};
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_left)))
+            lhs_estimation = std::min<size_t>(lhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+        if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_right)))
+            rhs_estimation = std::min<size_t>(rhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+    }
+
+    LOG_TRACE(
+        getLogger("optimizeJoin"),
+        "Left table estimation: {}, right table estimation: {}",
+        lhs_estimation.transform(toString<UInt64>).value_or("unknown"),
+        rhs_estimation.transform(toString<UInt64>).value_or("unknown"));
+
     if (!optimization_settings.join_swap_table.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
-        LOG_TRACE(getLogger("optimizeJoin"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
-            rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
-
-        if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
+        if (lhs_estimation && rhs_estimation && *lhs_estimation < *rhs_estimation)
             need_swap = true;
     }
     else if (optimization_settings.join_swap_table.value())
@@ -357,17 +378,17 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     }
 
     if (!need_swap)
-        return false;
+        return rhs_estimation;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     const auto & join_info = join_step->getJoinInfo();
     if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
-        return true;
+        return rhs_estimation;
 
     join_step->setSwapInputs();
 
-    return true;
+    return lhs_estimation;
 }
 
 }

@@ -2,6 +2,7 @@ import pytest
 from minio.deleteobjects import DeleteObject
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.s3_tools import list_s3_objects
 from helpers.utility import random_string
 
@@ -52,7 +53,7 @@ def test_backup_scheduler_settings(
     node.query(
         f"CREATE OR REPLACE RESOURCE network_read (READ DISK {storage_policy}, WRITE DISK {storage_policy})"
     )
-    node.query(f"CREATE OR REPLACE WORKLOAD backup SETTINGS max_requests = 10")
+    node.query(f"CREATE OR REPLACE WORKLOAD backup SETTINGS max_io_requests = 10")
 
     query_id = f"{storage_policy}_{allow_s3_native_copy}_{random_string(10)}"
     node.query(
@@ -76,7 +77,7 @@ def test_backup_scheduler_settings(
 
     result = node.query(
         f"""
-            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', 'minio123')
+            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', '{minio_secret_key}')
             SETTINGS s3_storage_class='STANDARD', allow_s3_native_copy={allow_s3_native_copy} SETTINGS workload='backup';
         """,
         query_id=query_id,

@@ -25,18 +25,14 @@ Union
       Join
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                Expression
-                  Expression
-                    ReadFromMemoryStorage
+                  ReadFromMergeTree
+              Expression
+                ReadFromMemoryStorage
         Expression
-          Expression
-            ReadFromMemoryStorage
+          ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -79,18 +75,14 @@ Expression
               Join
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
-                        Expression
-                          Expression
-                            ReadFromMemoryStorage
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromMemoryStorage
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
+                  ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -122,18 +114,14 @@ Expression
                   Join
                     Expression
                       Expression
-                        Expression
-                          Join
+                        Join
+                          Expression
                             Expression
-                              Expression
-                                Expression
-                                  ReadFromMergeTree
-                            Expression
-                              Expression
-                                ReadFromMemoryStorage
+                              ReadFromMergeTree
+                          Expression
+                            ReadFromMemoryStorage
                     Expression
-                      Expression
-                        ReadFromMemoryStorage
+                      ReadFromMemoryStorage
           Expression
             ReadFromRemoteParallelReplicas
 --
@@ -173,12 +161,11 @@ Expression
         Union
           Expression
             Expression
-              Join
-                Expression
+              Expression
+                Join
                   Expression
                     Expression
                       ReadFromMergeTree
-                Expression
                   Expression
                     ReadFromMemoryStorage
           Expression
@@ -228,7 +215,8 @@ Expression
             Union
               Expression
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
             Union
@@ -279,18 +267,14 @@ Union
       Join
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
+                ReadFromMemoryStorage
+              Expression
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
-                Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                  ReadFromMergeTree
         Expression
-          Expression
-            ReadFromMemoryStorage
+          ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -332,20 +316,16 @@ Expression
             Expression
               Join
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
+                  ReadFromMemoryStorage
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -388,24 +368,20 @@ Expression
               Join
                 Expression
                   Expression
-                    Expression
-                      Join
-                        Expression
+                    Join
+                      Expression
+                        CreatingSets
                           Expression
-                            CreatingSets
-                              Expression
-                                Expression
-                                  ReadFromMergeTree
-                              CreatingSet
-                                Expression
-                                  Filter
-                                    ReadFromSystemNumbers
-                        Expression
-                          Expression
-                            ReadFromMemoryStorage
+                            Expression
+                              ReadFromMergeTree
+                          CreatingSet
+                            Expression
+                              Filter
+                                ReadFromSystemNumbers
+                      Expression
+                        ReadFromMemoryStorage
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
+                  ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -492,20 +468,16 @@ Union
       Join
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                  ReadFromMergeTree
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                  ReadFromMergeTree
         Expression
           Expression
-            Expression
-              ReadFromMergeTree
+            ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -548,20 +520,16 @@ Expression
               Join
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -593,20 +561,16 @@ Expression
                   Join
                     Expression
                       Expression
-                        Expression
-                          Join
+                        Join
+                          Expression
                             Expression
-                              Expression
-                                Expression
-                                  ReadFromMergeTree
+                              ReadFromMergeTree
+                          Expression
                             Expression
-                              Expression
-                                Expression
-                                  ReadFromMergeTree
+                              ReadFromMergeTree
                     Expression
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
           Expression
             ReadFromRemoteParallelReplicas
 --
@@ -646,12 +610,11 @@ Expression
         Union
           Expression
             Expression
-              Join
-                Expression
+              Expression
+                Join
                   Expression
                     Expression
                       ReadFromMergeTree
-                Expression
                   Expression
                     Expression
                       ReadFromMergeTree
@@ -702,7 +665,8 @@ Expression
             Union
               Expression
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
             Union
@@ -753,20 +717,16 @@ Union
       Join
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                  ReadFromMergeTree
+              Expression
                 Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                  ReadFromMergeTree
         Expression
           Expression
-            Expression
-              ReadFromMergeTree
+            ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -809,20 +769,16 @@ Expression
               Join
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
                 Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
+                      Expression
                         Expression
-                          Expression
-                            Expression
-                              ReadFromMergeTree
+                          ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -865,26 +821,22 @@ Expression
               Join
                 Expression
                   Expression
-                    Expression
-                      Join
-                        Expression
-                          Expression
-                            CreatingSets
-                              Expression
-                                Expression
-                                  ReadFromMergeTree
-                              CreatingSet
-                                Expression
-                                  Filter
-                                    ReadFromSystemNumbers
-                        Expression
+                    Join
+                      Expression
+                        CreatingSets
                           Expression
                             Expression
                               ReadFromMergeTree
+                          CreatingSet
+                            Expression
+                              Filter
+                                ReadFromSystemNumbers
+                      Expression
+                        Expression
+                          ReadFromMergeTree
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --

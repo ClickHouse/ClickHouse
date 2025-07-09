@@ -1,4 +1,4 @@
-#include "CompressedReadBufferBase.h"
+#include <Compression/CompressedReadBufferBase.h>
 
 #include <bit>
 #include <cstring>
@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/demangle.h>
 #include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -14,6 +15,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -38,6 +40,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -177,8 +180,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
-
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -231,6 +234,7 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -327,12 +331,52 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
 }
 
+void CompressedReadBufferBase::addDiagnostics(Exception & e) const
+{
+    /// Error messages can look really scary when we can't decompress something.
+    /// It makes sense to give more information to help debugging such issues.
+    std::optional<off_t> current_pos;
+    if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
+        current_pos = seekable_in->tryGetPosition();
+    UInt8 header_size = ICompressionCodec::getHeaderSize();
+    String header_hex = own_compressed_buffer_header_init ?
+        hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size)) :
+        String("<uninitialized>"); // We do not print uninitialized memory because it's a security vulnerability and triggers msan
+
+    e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
+                 getFileNameFromReadBuffer(*compressed_in),
+                 (current_pos ? std::to_string(*current_pos) : "?"),
+                 demangle(typeid(*compressed_in).name()),
+                 header_hex);
+}
+
+void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
+{
+    if (codec)
+        codec->flushAsynchronousDecompressRequests();
+}
+
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
+{
+    if (codec)
+        codec->setDecompressMode(mode);
+}
+
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
 CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_, bool external_data_)
     : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_), external_data(external_data_)
 {
 }
 
+void CompressedReadBufferBase::seek(size_t, size_t)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implements seek");
+}
+
+off_t CompressedReadBufferBase::getPosition() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
+}
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 

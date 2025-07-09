@@ -2,12 +2,12 @@
      <remote_servers>
          <test_shard_names_incorrect_non_unique>
             <node>
-                <shard_name>3</shard_name>
+                <name>3</name>
                 <host>localhost</host>
                 <port>9000</port>
             </node>
             <node>
-                <shard_name>3</shard_name>
+                <name>3</name>
                 <host>localhost</host>
                 <port>9000</port>
             </node>

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/NumpyDataTypes.h>
 #include <Columns/IColumn_fwd.h>
@@ -21,8 +19,6 @@ public:
     NpyOutputFormat(WriteBuffer & out_, const Block & header_);
 
     String getName() const override { return "NpyOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     String shapeStr() const;

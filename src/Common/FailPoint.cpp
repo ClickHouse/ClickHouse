@@ -55,15 +55,22 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(smt_merge_task_sleep_in_prepare) \
+    ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(rmt_merge_task_sleep_in_prepare) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
+    REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
+    REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
@@ -84,6 +91,12 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(database_replicated_startup_pause) \
+    ONCE(keeper_leader_sets_invalid_digest) \
+    ONCE(parallel_replicas_wait_for_unused_replicas) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
 
 
 namespace FailPoints

@@ -10,7 +10,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -53,7 +56,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -66,6 +69,8 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace ProfileEvents
 {
@@ -89,7 +94,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
-    extern const SettingsUInt64 max_read_buffer_size;
+    extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -124,6 +129,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
+
+using String = std::string;
 
 namespace
 {
@@ -1172,7 +1179,12 @@ StorageFileSource::FilesIterator::FilesIterator(
 String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
-        return getContext()->getReadTaskCallback()();
+    {
+        auto task = getContext()->getClusterFunctionReadTaskCallback()();
+        if (!task || task->isEmpty())
+            return {};
+        return task->path;
+    }
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
@@ -1497,7 +1509,8 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
+            (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1836,7 +1849,9 @@ public:
 
     void onFinish() override
     {
-        chassert(!isCancelled());
+        if (isCancelled())
+            return;
+
         finalizeBuffers();
     }
 
@@ -2124,7 +2139,7 @@ void registerStorageFile(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::FILE,
+        .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 

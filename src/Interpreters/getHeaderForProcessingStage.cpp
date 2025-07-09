@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
@@ -162,6 +163,8 @@ Block getHeaderForProcessingStage(
 
             return result;
         }
+        case QueryProcessingStage::QueryPlan:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get header for QueryPlan stage.");
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }

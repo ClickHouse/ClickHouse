@@ -7,51 +7,46 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
-#include <unordered_map>
+#include <Common/SharedMutex.h>
+#include <tuple>
+#include <optional>
+#include <base/defines.h>
+
 
 namespace DB
 {
 
-class IcebergMetadata : public IDataLakeMetadata, private WithContext
+class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
+    using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
-        const DB::ContextPtr & context_,
+        const ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
-        const Poco::JSON::Object::Ptr & object);
-
-
-    /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
-    /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
-    /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
+        const Poco::JSON::Object::Ptr & metadata_object,
+        IcebergMetadataFilesCachePtr cache_ptr);
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
-
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
+    NamesAndTypesList getTableSchema() const override;
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
@@ -59,79 +54,73 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr
-    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
+    static DataLakeMetadataPtr create(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationObserverPtr & configuration,
+        const ContextPtr & local_context);
 
-    size_t getVersion() const { return current_metadata_version; }
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override;
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
-    {
-        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-        return version_if_outdated.has_value() ? schema_processor.getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
-    }
+    bool supportsSchemaEvolution() const override { return true; }
 
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
-    {
-        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-        return version_if_outdated.has_value()
-            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
-            : nullptr;
-    }
-
-    bool supportsExternalMetadataChange() const override { return true; }
-
-    static Int32
-    parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+    static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
 
+    IcebergHistory getHistory(ContextPtr local_context) const;
 
-    Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
+    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
-    bool supportsPartitionPruning() override { return true; }
+protected:
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size,
+        ContextPtr local_context) const override;
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
-
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable Iceberg::ManifestFilesByName manifest_files_by_name;
-    mutable Iceberg::ManifestListsByName manifest_lists_by_name;
-    mutable ManifestEntryByDataFile manifest_entry_by_data_file;
+    IcebergMetadataFilesCachePtr manifest_cache;
 
-    Int32 current_metadata_version;
-    Int32 format_version;
-    Int32 current_schema_id;
-    std::optional<Iceberg::IcebergSnapshot> current_snapshot;
+    std::tuple<Int64, Int32> getVersion() const;
 
-    mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
+    mutable SharedMutex mutex;
 
-    Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
+    Int32 last_metadata_version TSA_GUARDED_BY(mutex);
+    const Int32 format_version;
 
-    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
+    mutable std::unordered_map<String, Int32> schema_id_by_data_file TSA_GUARDED_BY(mutex);
+    /// Does schema_id_by_data_files initialized and valid?
+    /// Is an optimization to avoid acquiring exclusive lock from get*() method
+    mutable std::atomic_bool schema_id_by_data_files_initialized = false;
 
-    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
+    Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
+    std::optional<Iceberg::IcebergSnapshot> relevant_snapshot TSA_GUARDED_BY(mutex);
+    Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
+    const String table_location;
 
-    Iceberg::ManifestFileEntry getManifestFile(const String & manifest_file) const;
+    mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
+    mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
 
-    Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
-
+    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
+    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+    void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;
+    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
+    void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
+    Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const TSA_REQUIRES_SHARED(mutex);
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
-
-    Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
-
-    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
-
-    //Fields are needed only for providing dynamic polymorphism
-    std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
+    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
-
 }
 
 #endif

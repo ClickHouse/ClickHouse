@@ -1,4 +1,4 @@
-#include "ICompressionCodec.h"
+#include <Compression/ICompressionCodec.h>
 
 #include <cassert>
 
@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Compression/CompressionCodecMultiple.h>
 
@@ -23,9 +22,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
+void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
+{
+    if (!needsVectorDimensionUpfront())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
+}
 
 void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
 {

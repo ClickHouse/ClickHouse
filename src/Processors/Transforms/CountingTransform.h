@@ -18,10 +18,9 @@ class CountingTransform final : public ExceptionKeepingTransform
 public:
     explicit CountingTransform(
         const Block & header,
-        ThreadStatus * thread_status_ = nullptr,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr)
         : ExceptionKeepingTransform(header, header)
-        , thread_status(thread_status_), quota(std::move(quota_)) {}
+        , quota(std::move(quota_)) {}
 
     String getName() const override { return "CountingTransform"; }
 
@@ -35,11 +34,6 @@ public:
         process_elem = elem;
     }
 
-    const Progress & getProgress() const
-    {
-        return progress;
-    }
-
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
@@ -49,10 +43,8 @@ public:
     }
 
 protected:
-    Progress progress;
     ProgressCallback progress_callback;
     QueryStatusPtr process_elem;
-    ThreadStatus * thread_status = nullptr;
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;

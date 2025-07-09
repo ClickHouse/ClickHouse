@@ -2,6 +2,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -11,12 +12,12 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     StorageObjectStorageSink(
+        const std::string & path_,
         ObjectStoragePtr object_storage,
         ConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         const Block & sample_block_,
-        ContextPtr context,
-        const std::string & blob_path = "");
+        ContextPtr context);
 
     ~StorageObjectStorageSink() override;
 
@@ -27,6 +28,7 @@ public:
     void onFinish() override;
 
 private:
+    const String path;
     const Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;

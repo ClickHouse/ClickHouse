@@ -1,13 +1,15 @@
-#include "ParquetBlockOutputFormat.h"
+#include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 
 #if USE_PARQUET
 
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Processors/Port.h>
+
 #include <parquet/arrow/writer.h>
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 
 namespace CurrentMetrics
@@ -79,6 +81,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 {
     if (format_settings.parquet.use_custom_encoder)
     {
+        if (format_settings.parquet.output_version < FormatSettings::ParquetVersion::V2_6)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom parquet encoder doesn't support parquet versions < 2.6. Use output_format_parquet_use_custom_encoder = 0.");
+
         if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
             pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::ParquetEncoderThreads,
@@ -106,6 +111,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
+        options.write_geometadata = format_settings.parquet.write_geometadata;
 
         schema = convertSchema(header_, options);
     }
@@ -236,7 +242,8 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(file_state, out);
         }
-        writeFileFooter(file_state, schema, options, out);
+        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+        writeFileFooter(file_state, schema, options, out, header);
         chassert(out.count() - base_offset == file_state.offset);
     }
     else
@@ -385,7 +392,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     }
     for (auto & s : columns_to_write)
     {
-        writeColumnChunkBody(s, options, out);
+        writeColumnChunkBody(s, options, format_settings, out);
         finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
     }
 
@@ -471,13 +478,9 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     {
         auto job = [this, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
-                setThreadName("ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
 
                 threadFunction();
             }
@@ -562,7 +565,7 @@ void ParquetBlockOutputFormat::threadFunction()
             PODArray<char> serialized;
             {
                 auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
-                writeColumnChunkBody(task.state, options, buf);
+                writeColumnChunkBody(task.state, options, format_settings, buf);
             }
 
             lock.lock();
@@ -591,6 +594,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");
+    factory.setContentType("Parquet", "application/octet-stream");
 }
 
 }

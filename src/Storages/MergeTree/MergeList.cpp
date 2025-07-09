@@ -25,7 +25,7 @@ const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"al
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
-    , partition_id{future_part->part_info.partition_id}
+    , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
@@ -111,6 +111,11 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
+}
+
+const MemoryTracker & MergeListElement::getMemoryTracker() const
+{
+    return thread_group->memory_tracker;
 }
 
 MergeListElement::~MergeListElement()

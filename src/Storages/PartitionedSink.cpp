@@ -1,10 +1,11 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include "PartitionedSink.h"
+#include <Storages/PartitionedSink.h>
 
 #include <Common/ArenaUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 

@@ -36,12 +36,12 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -125,6 +125,11 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
+        if (ASTPtr explained_query = explain_query.getExplainedQuery())
+            if (const auto * explained_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(explained_query.get()))
+                if (explained_query_with_output->hasOutputOptions())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
+
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
@@ -135,7 +140,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = queryToString(settings_ast);
+            settings_str = settings_ast->formatWithSecretsOneLine();
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -433,7 +438,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
+    auto type_literal = std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine());
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
@@ -1724,7 +1729,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (with_open_round_bracket)
@@ -2388,21 +2393,12 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
     ParserKeyword s_codec(Keyword::CODEC);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
-    ParserKeyword s_remove(Keyword::REMOVE);
-    ParserKeyword s_modify(Keyword::MODIFY);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
-
-    if (s_materialize.checkWithoutMoving(pos, expected) ||
-        s_remove.checkWithoutMoving(pos, expected) ||
-        s_modify.checkWithoutMoving(pos, expected))
-
-        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2451,7 +2447,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

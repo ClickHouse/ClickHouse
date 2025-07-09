@@ -1,8 +1,10 @@
-#include "StorageSystemContributors.h"
+#include <Storages/System/StorageSystemContributors.h>
+
+#include <Columns/IColumn.h>
+#include <Common/thread_local_rng.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <algorithm>
-#include <DataTypes/DataTypeString.h>
-#include <Common/thread_local_rng.h>
 
 
 extern const char * auto_contributors[];

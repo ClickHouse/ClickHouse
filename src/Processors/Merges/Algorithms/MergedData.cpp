@@ -142,9 +142,11 @@ bool MergedData::hasEnoughRows() const
     {
         size_t merged_bytes = 0;
         for (const auto & column : columns)
+        {
             merged_bytes += column->byteSize();
-        if (merged_bytes >= max_block_size_bytes)
-            return true;
+            if (merged_bytes >= max_block_size_bytes)
+                return true;
+        }
     }
 
     if (!use_average_block_size)

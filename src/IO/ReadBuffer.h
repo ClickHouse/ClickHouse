@@ -3,19 +3,12 @@
 #include <cstring>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-}
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
@@ -62,9 +55,20 @@ public:
     {
         chassert(!hasPendingData());
         chassert(position() <= working_buffer.end());
+        chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
 
         bytes += offset();
-        bool res = nextImpl();
+        bool res = false;
+        try
+        {
+            res = nextImpl();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
+
         if (!res)
         {
             working_buffer = Buffer(pos, pos);
@@ -79,6 +83,13 @@ public:
         chassert(position() <= working_buffer.end());
 
         return res;
+    }
+
+    void cancel();
+
+    bool isCanceled() const
+    {
+        return canceled;
     }
 
 
@@ -189,13 +200,7 @@ public:
     }
 
     /** Reads n bytes, if there are less - throws an exception. */
-    void readStrict(char * to, size_t n)
-    {
-        auto read_bytes = read(to, n);
-        if (n != read_bytes)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
-    }
+    void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
       * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.
@@ -259,10 +264,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] static void throwReadAfterEOF()
-    {
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
-    }
+    [[noreturn]] static void throwReadAfterEOF();
 };
 
 

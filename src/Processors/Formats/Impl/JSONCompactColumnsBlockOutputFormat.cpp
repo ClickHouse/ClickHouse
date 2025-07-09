@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -36,6 +37,7 @@ void registerOutputFormatJSONCompactColumns(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactColumnsBlockOutputFormat>(buf, sample, format_settings);
     });
+    factory.setContentType("JSONCompactColumns", "application/json; charset=UTF-8");
 }
 
 }

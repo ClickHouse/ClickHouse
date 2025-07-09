@@ -67,7 +67,6 @@ add_subdirectory (Processors)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
-add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
@@ -95,6 +94,8 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/Crypto)
+add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
@@ -103,11 +104,16 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
+add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
+
+if (TARGET ch_contrib::sz3)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
+endif()
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -130,6 +136,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -161,7 +168,7 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Databases/Iceberg)
+add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -257,6 +264,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Sto
 add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
+add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -298,7 +306,7 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -375,6 +383,12 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
+if (ENABLE_QPL)
+    set_source_files_properties(
+            Compression/CompressionCodecDeflateQpl.cpp
+            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+endif ()
+
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -449,10 +463,6 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
-
-if (USE_MONGODB)
-    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
-endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
@@ -603,8 +613,15 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qatzstd_plugin)
+if (TARGET ch_contrib::qpl)
+    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
+endif ()
+
+if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
     dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
+    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
 endif ()
 
@@ -634,6 +651,7 @@ if (TARGET ch_contrib::minizip)
 endif ()
 
 if (TARGET ch_contrib::simdjson)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
 
@@ -658,6 +676,14 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
+if (TARGET ch_contrib::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+endif ()
+
+if (TARGET ch_contrib::sha3iuf)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
 if (ENABLE_BUZZHOUSE)
@@ -699,6 +725,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::delta_kernel_rs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
+    endif ()
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)

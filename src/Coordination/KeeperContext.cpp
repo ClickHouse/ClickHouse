@@ -155,6 +155,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
@@ -173,6 +174,8 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
+
+    block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
 namespace
@@ -208,7 +211,12 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
-    rocksdb_storage = getRocksDBPathFromConfig(config);
+    #if USE_ROCKSDB
+    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
+    {
+        rocksdb_storage = getRocksDBPathFromConfig(config);
+    }
+    #endif
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -259,6 +267,11 @@ bool KeeperContext::ignoreSystemPathOnStartup() const
 bool KeeperContext::digestEnabled() const
 {
     return digest_enabled;
+}
+
+bool KeeperContext::digestEnabledOnCommit() const
+{
+    return digest_enabled_on_commit;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -417,7 +430,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -444,7 +457,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -471,7 +484,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -573,6 +586,27 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
     return *coordination_settings;
+}
+
+int64_t KeeperContext::getPrecommitSleepMillisecondsForTesting() const
+{
+    return precommit_sleep_ms_for_testing;
+}
+
+double KeeperContext::getPrecommitSleepProbabilityForTesting() const
+{
+    chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
+    return precommit_sleep_probability_for_testing;
+}
+
+bool KeeperContext::shouldBlockACL() const
+{
+    return block_acl;
+}
+
+void KeeperContext::setBlockACL(bool block_acl_)
+{
+    block_acl = block_acl_;
 }
 
 bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const

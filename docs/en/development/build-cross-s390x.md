@@ -1,14 +1,16 @@
 ---
-slug: /en/development/build-cross-s390x
+description: 'Guide for building ClickHouse from source for the s390x architecture'
+sidebar_label: 'Build on Linux for s390x (zLinux)'
 sidebar_position: 30
-sidebar_label: Build on Linux for s390x (zLinux)
+slug: /development/build-cross-s390x
+title: 'Build on Linux for s390x (zLinux)'
 ---
 
 # Build on Linux for s390x (zLinux)
 
 ClickHouse has experimental support for s390x.
 
-## Building ClickHouse for s390x
+## Building ClickHouse for s390x {#building-clickhouse-for-s390x}
 
 s390x has two OpenSSL-related build options:
 - By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
@@ -38,7 +40,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-s390x.cmake ..
 ninja
 ```
 
-## Running
+## Running {#running}
 
 Once built, the binary can be run with, e.g.:
 
@@ -46,7 +48,7 @@ Once built, the binary can be run with, e.g.:
 qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
-## Debugging
+## Debugging {#debugging}
 
 Install LLDB:
 
@@ -91,15 +93,15 @@ Process 1 stopped
    453      /// PHDR cache is required for query profiler to work reliably
 ```
 
-## Visual Studio Code integration
+## Visual Studio Code integration {#visual-studio-code-integration}
 
 - [CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
 - [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
 - Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
 - Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
 
-### Example configurations
-#### cmake-variants.yaml
+### Example configurations {#example-configurations}
+#### cmake-variants.yaml {#cmake-variantsyaml}
 ```yaml
 buildType:
   default: relwithdebinfo
@@ -135,7 +137,7 @@ toolchain:
         CMAKE_TOOLCHAIN_FILE: cmake/linux/toolchain-s390x.cmake
 ```
 
-#### launch.json
+#### launch.json {#launchjson}
 ```json
 {
     "version": "0.2.0",
@@ -152,7 +154,7 @@ toolchain:
 }
 ```
 
-#### settings.json
+#### settings.json {#settingsjson}
 This would also put different builds under different subfolders of the `build` folder.
 ```json
 {
@@ -161,7 +163,7 @@ This would also put different builds under different subfolders of the `build` f
 }
 ```
 
-#### run-debug.sh
+#### run-debug.sh {#run-debugsh}
 ```sh
 #! /bin/sh
 echo 'Starting debugger session'
@@ -169,7 +171,7 @@ cd $1
 qemu-s390x-static -g 2159 -L /usr/s390x-linux-gnu $2 $3 $4
 ```
 
-#### tasks.json
+#### tasks.json {#tasksjson}
 Defines a task to run the compiled executable in `server` mode under a `tmp` folder next to the binaries, with configuration from under `programs/server/config.xml`.
 ```json
 {

@@ -12,7 +12,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/Exception.h>
 
 #include <base/types.h>
 
@@ -122,6 +121,12 @@ public:
                 "Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
+
+        bool isEmpty() const
+        {
+            return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
+                && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
+        }
     };
 
     using Clauses = std::vector<JoinOnClause>;
@@ -205,8 +210,6 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::string right_storage_name;
-
     bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
@@ -249,6 +252,7 @@ public:
     TableJoin() = default;
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -265,25 +269,15 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableEnalyzer() const { return enable_analyzer; }
-    void assertEnableEnalyzer() const;
+    bool enableAnalyzer() const { return enable_analyzer; }
+    void assertEnableAnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithms; }
 
-    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
-    {
-        /// When join_algorithms = {'default'} (not specified by user) we use [parallel_]hash or direct algorithm.
-        /// It's behaviour that was initially supported by clickhouse.
-        bool is_default_enabled = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::DEFAULT) != join_algorithms.end();
-        constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
-            JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
-        if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
-            return true;
-        return std::find(join_algorithms.begin(), join_algorithms.end(), val) != join_algorithms.end();
-    }
+    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
@@ -440,20 +434,22 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
-    /// Remember storage name in case of joining with dictionary or another special storage
-    void setRightStorageName(const std::string & storage_name);
-    const std::string & getRightStorageName() const;
-
     void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() const { return right_storage_join; }
 
-    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
+    bool isSpecialStorage() const { return right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
+bool allowParallelHashJoin(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool is_special_storage,
+    bool one_disjunct);
 }

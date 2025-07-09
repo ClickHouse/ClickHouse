@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -79,7 +80,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
 
     if (value.getType() == Field::Types::String)
     {
-        const auto & name = value.safeGet<const String &>();
+        const auto & name = value.safeGet<String>();
         auto pos = data_type_tuple.tryGetPositionByName(name);
 
         if (!pos)
@@ -106,7 +107,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (value.getType() != Field::Types::String)
         return {};
 
-    const auto & name = value.safeGet<const String &>();
+    const auto & name = value.safeGet<String>();
     auto discr = data_type_variant.tryGetVariantDiscriminator(name);
 
     if (!discr)
@@ -184,10 +185,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContains"},
+        {TypeIndex::Map, "mapContainsKey"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};

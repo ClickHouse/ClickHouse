@@ -5,9 +5,12 @@
 #include <optional>
 #include <random>
 #include <string_view>
+#include <pcg_random.hpp>
 #include <unordered_set>
 #include <Columns/ColumnString.h>
+#include <IO/Operators.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -15,6 +18,8 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

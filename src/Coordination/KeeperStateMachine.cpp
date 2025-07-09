@@ -128,6 +128,8 @@ void KeeperStateMachine<Storage>::init()
     {
         try
         {
+            std::lock_guard lock(snapshots_lock);
+
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
@@ -173,17 +175,19 @@ void assertDigest(
     const KeeperDigest & actual,
     const Coordination::ZooKeeperRequest & request,
     uint64_t log_idx,
+    uint64_t session_id,
     bool committing)
 {
     if (!KeeperStorageBase::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {}.\nExpected digest - {}, actual digest - {} "
+            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
             "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
             log_idx,
+            session_id,
             expected.value,
             actual.value,
             expected.version,
@@ -444,6 +448,7 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & req
             storage->getNodesDigest(false, /*lock_transaction_mutex=*/true),
             *request_for_session.request,
             request_for_session.log_idx,
+            request_for_session.session_id,
             false);
 
     return true;
@@ -562,9 +567,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
             int64_t session_id;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-            response->internal_id = session_id_request.internal_id;
-            response->server_id = session_id_request.server_id;
+            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
             KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
@@ -605,6 +608,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
                     *request_for_session->request,
                     request_for_session->log_idx,
+                    request_for_session->session_id,
                     true);
         }
 
@@ -653,6 +657,8 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
 
     { /// deserialize and apply snapshot to storage
+        std::lock_guard lock(snapshots_lock);
+
         SnapshotDeserializationResult<Storage> snapshot_deserialization_result;
         if (latest_snapshot_ptr)
             snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
@@ -800,6 +806,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
         when_done(ret, exception);
 
+        std::lock_guard lock(snapshots_lock);
         return ret ? latest_snapshot_info : nullptr;
     };
 

@@ -17,23 +17,24 @@ enum class SQLTypeClass
     INT = 2,
     FLOAT = 3,
     DATE = 4,
-    DATETIME = 5,
-    DECIMAL = 6,
-    STRING = 7,
-    UUID = 8,
-    ENUM = 9,
-    IPV4 = 10,
-    IPV6 = 11,
-    DYNAMIC = 12,
-    JSON = 13,
-    NULLABLE = 14,
-    LOWCARDINALITY = 15,
-    GEO = 16,
-    ARRAY = 17,
-    MAP = 18,
-    TUPLE = 19,
-    VARIANT = 20,
-    NESTED = 21
+    TIME = 5,
+    DATETIME = 6,
+    DECIMAL = 7,
+    STRING = 8,
+    UUID = 9,
+    ENUM = 10,
+    IPV4 = 11,
+    IPV6 = 12,
+    DYNAMIC = 13,
+    JSON = 14,
+    NULLABLE = 15,
+    LOWCARDINALITY = 16,
+    GEO = 17,
+    ARRAY = 18,
+    MAP = 19,
+    TUPLE = 20,
+    VARIANT = 21,
+    NESTED = 22
 };
 
 class SQLType
@@ -71,7 +72,11 @@ class IntType : public SQLType
 public:
     const uint32_t size;
     const bool is_unsigned;
-    IntType(const uint32_t s, bool isu) : size(s), is_unsigned(isu) { }
+    IntType(const uint32_t s, bool isu)
+        : size(s)
+        , is_unsigned(isu)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -89,7 +94,10 @@ class FloatType : public SQLType
 {
 public:
     const uint32_t size;
-    explicit FloatType(const uint32_t s) : size(s) { }
+    explicit FloatType(const uint32_t s)
+        : size(s)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -107,7 +115,10 @@ class DateType : public SQLType
 {
 public:
     const bool extended;
-    explicit DateType(const bool ex) : extended(ex) { }
+    explicit DateType(const bool ex)
+        : extended(ex)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -121,6 +132,30 @@ public:
     ~DateType() override = default;
 };
 
+class TimeType : public SQLType
+{
+public:
+    const bool extended;
+    const std::optional<const uint32_t> precision;
+
+    TimeType(const bool ex, const std::optional<const uint32_t> p)
+        : extended(ex)
+        , precision(p)
+    {
+    }
+
+    String typeName(bool) const override;
+    String MySQLtypeName(RandomGenerator &, bool) const override;
+    String PostgreSQLtypeName(RandomGenerator &, bool) const override;
+    String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::TIME; }
+
+    ~TimeType() override = default;
+};
+
 class DateTimeType : public SQLType
 {
 public:
@@ -129,7 +164,9 @@ public:
     const std::optional<const String> timezone;
 
     DateTimeType(const bool ex, const std::optional<const uint32_t> p, const std::optional<const String> t)
-        : extended(ex), precision(p), timezone(t)
+        : extended(ex)
+        , precision(p)
+        , timezone(t)
     {
     }
 
@@ -152,7 +189,9 @@ public:
     const std::optional<const uint32_t> precision, scale;
     DecimalType(
         const std::optional<DecimalN_DecimalPrecision> sn, const std::optional<const uint32_t> p, const std::optional<const uint32_t> s)
-        : short_notation(sn), precision(p), scale(s)
+        : short_notation(sn)
+        , precision(p)
+        , scale(s)
     {
     }
 
@@ -161,6 +200,7 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
+    static String appendDecimalValue(RandomGenerator & rg, bool use_func, const DecimalType * dt);
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DECIMAL; }
@@ -172,7 +212,10 @@ class StringType : public SQLType
 {
 public:
     const std::optional<const uint32_t> precision;
-    explicit StringType(const std::optional<const uint32_t> p) : precision(p) { }
+    explicit StringType(const std::optional<const uint32_t> p)
+        : precision(p)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
@@ -207,7 +250,11 @@ public:
     const String val;
     const int32_t number;
 
-    EnumValue(const String v, const int32_t n) : val(v), number(n) { }
+    EnumValue(const String v, const int32_t n)
+        : val(v)
+        , number(n)
+    {
+    }
 };
 
 class EnumType : public SQLType
@@ -215,7 +262,11 @@ class EnumType : public SQLType
 public:
     const uint32_t size;
     const std::vector<EnumValue> values;
-    EnumType(const uint32_t s, const std::vector<EnumValue> v) : size(s), values(v) { }
+    EnumType(const uint32_t s, const std::vector<EnumValue> v)
+        : size(s)
+        , values(v)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
@@ -263,7 +314,10 @@ class DynamicType : public SQLType
 {
 public:
     const std::optional<const uint32_t> ntypes;
-    explicit DynamicType(const std::optional<const uint32_t> n) : ntypes(n) { }
+    explicit DynamicType(const std::optional<const uint32_t> n)
+        : ntypes(n)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -283,7 +337,11 @@ public:
     const String cname;
     SQLType * subtype;
 
-    JSubType(const String & n, SQLType * s) : cname(n), subtype(s) { }
+    JSubType(const String & n, SQLType * s)
+        : cname(n)
+        , subtype(s)
+    {
+    }
 };
 
 class JSONType : public SQLType
@@ -291,7 +349,11 @@ class JSONType : public SQLType
 public:
     const String desc;
     const std::vector<JSubType> subcols;
-    explicit JSONType(const String & s, const std::vector<JSubType> sc) : desc(s), subcols(sc) { }
+    explicit JSONType(const String & s, const std::vector<JSubType> sc)
+        : desc(s)
+        , subcols(sc)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -309,7 +371,10 @@ class Nullable : public SQLType
 {
 public:
     SQLType * subtype;
-    explicit Nullable(SQLType * s) : subtype(s) { }
+    explicit Nullable(SQLType * s)
+        : subtype(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
@@ -327,7 +392,10 @@ class LowCardinality : public SQLType
 {
 public:
     SQLType * subtype;
-    explicit LowCardinality(SQLType * s) : subtype(s) { }
+    explicit LowCardinality(SQLType * s)
+        : subtype(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
@@ -345,7 +413,10 @@ class GeoType : public SQLType
 {
 public:
     const GeoTypes geotype;
-    explicit GeoType(const GeoTypes & gt) : geotype(gt) { }
+    explicit GeoType(const GeoTypes & gt)
+        : geotype(gt)
+    {
+    }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -363,7 +434,10 @@ class ArrayType : public SQLType
 {
 public:
     SQLType * subtype;
-    explicit ArrayType(SQLType * s) : subtype(s) { }
+    explicit ArrayType(SQLType * s)
+        : subtype(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -371,7 +445,7 @@ public:
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
-    static String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, uint32_t limit);
+    static String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, uint64_t limit);
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::ARRAY; }
 
@@ -382,7 +456,11 @@ class MapType : public SQLType
 {
 public:
     SQLType *key, *value;
-    MapType(SQLType * k, SQLType * v) : key(k), value(v) { }
+    MapType(SQLType * k, SQLType * v)
+        : key(k)
+        , value(v)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -402,14 +480,21 @@ public:
     const std::optional<const uint32_t> cname;
     SQLType * subtype;
 
-    SubType(const std::optional<const uint32_t> n, SQLType * s) : cname(n), subtype(s) { }
+    SubType(const std::optional<const uint32_t> n, SQLType * s)
+        : cname(n)
+        , subtype(s)
+    {
+    }
 };
 
 class TupleType : public SQLType
 {
 public:
     const std::vector<SubType> subtypes;
-    explicit TupleType(const std::vector<SubType> s) : subtypes(s) { }
+    explicit TupleType(const std::vector<SubType> s)
+        : subtypes(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -427,7 +512,10 @@ class VariantType : public SQLType
 {
 public:
     const std::vector<SQLType *> subtypes;
-    explicit VariantType(const std::vector<SQLType *> s) : subtypes(s) { }
+    explicit VariantType(const std::vector<SQLType *> s)
+        : subtypes(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -447,14 +535,21 @@ public:
     uint32_t cname;
     SQLType * subtype;
 
-    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s) { }
+    NestedSubType(const uint32_t n, SQLType * s)
+        : cname(n)
+        , subtype(s)
+    {
+    }
 };
 
 class NestedType : public SQLType
 {
 public:
     std::vector<NestedSubType> subtypes;
-    explicit NestedType(std::vector<NestedSubType> s) : subtypes(s) { }
+    explicit NestedType(std::vector<NestedSubType> s)
+        : subtypes(s)
+    {
+    }
 
     String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
@@ -528,7 +623,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     return false;
 }
 
-String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
+String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);

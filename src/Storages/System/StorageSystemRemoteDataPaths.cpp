@@ -1,4 +1,4 @@
-#include "StorageSystemRemoteDataPaths.h"
+#include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -12,6 +12,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>

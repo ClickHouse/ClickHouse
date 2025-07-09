@@ -64,6 +64,8 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
+    /// Startup background threads.
+    void startup();
     /// Shutdown background threads.
     void shutdown();
 
@@ -123,7 +125,7 @@ public:
     void registerIfNot(const StorageID & storage_id, bool active);
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
-    size_t unregister(const StorageID & storage_id, bool active);
+    size_t unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
     /// According to current *active* registered tables,
@@ -153,7 +155,7 @@ private:
     void registerNonActive(const StorageID & storage_id);
     void registerActive(const StorageID & storage_id);
 
-    size_t unregisterNonActive(const StorageID & storage_id);
+    size_t unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     size_t unregisterActive(const StorageID & storage_id);
 
     void updateRegistryFunc();
@@ -174,6 +176,7 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
+    std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;

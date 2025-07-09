@@ -2,6 +2,7 @@
 #include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/LatencyLog.h>
