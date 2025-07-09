@@ -72,6 +72,55 @@ SELECT * FROM yt_saurus;
  └────┴────┘
 ```
 
+## Data types
+### Primitive data types
+| YTsaurus data type | Clickhouse data type    |
+| ------------------ | ----------------------- |
+| `int8`             | `Int8`                  |
+| `int16`            | `Int16`                 |
+| `int32`            | `Int32`                 |
+| `int64`            | `Int64`                 |
+| `uint8`            | `UInt8`                 |
+| `uint16`           | `UInt16`                |
+| `uint32`           | `UInt32`                |
+| `uint64`           | `UInt64`                |
+| `float`            | `Float32`               |
+| `double`           | `Float64`               |
+| `boolean`          | `Bool`                  |
+| `string`           | `String`                |
+| `utf8`             | `String`                |
+| `json`             | `JSON`                  |
+| `yson(type_v3)`    | `JSON`                  |
+| `uuid`             | `UUID`                  |
+| `date32`           | `Date`(Not supported yet)|
+| `datetime64`       | `Int64`                 |
+| `timestamp64`      | `Int64`                 |
+| `interval64`       | `Int64`                 |
+| `date`             | `Date`(Not supported yet)|
+| `datetime`         | `DateTime`              |
+| `timestamp`        | `DateTime64(6)`         |
+| `interval`         | `UInt64`                |
+| `any`              | `String`                |
+| `null`             | `Nothing`               |
+| `void`             | `Nothing`               |
+| `T` with `required = False`| `Nullable(T)`   |
+
+### Composite types
+| YTsaurus data type | Clickhouse data type |
+| ------------------ | -------------------- |
+| `decimal`          | `Decimal`            |
+| `optional`         | `Nullable`           |
+| `list`             | `Array`              |
+| `struct`           | `NamedTuple`         |
+| `tuple`            | `Tuple`              |
+| `variant`          | `Variant`            |
+| `dict`             | `Array(Tuple(...))   |
+| `tagged`           | `T`                  |
+
+
+
 **See Also**
 
 - [ytsaurus](../../../sql-reference/table-functions/ytsaurus.md) table function
+- [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
+- [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)

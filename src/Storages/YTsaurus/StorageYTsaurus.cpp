@@ -39,6 +39,7 @@ StorageYTsaurus::StorageYTsaurus(
     const String & comment)
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
+    , settings(configuration_.settings)
     , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
     , log(getLogger(" (" + table_id_.table_name + ")"))
 {
@@ -61,23 +62,26 @@ Pipe StorageYTsaurus::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
+    ColumnsDescription columns_description = storage_snapshot->metadata->getColumns();
     for (const String & column_name : column_names)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+        auto column_data = columns_description.getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path}, sample_block, max_block_size);
+    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings , ContextPtr context)
 {
-    YTsaurusStorageConfiguration configuration;
+    YTsaurusStorageConfiguration configuration{.settings = settings};
     for (auto & engine_arg : engine_args)
+    {
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+    }
     if (engine_args.size() == 3)
     {
         boost::split(configuration.http_proxy_urls, checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_urls"), [](char c) { return c == '|'; });
@@ -99,13 +103,15 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);
     },
     {
+        .supports_settings = true,
         .source_access_type = AccessType::YTSAURUS,
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     });
 }
 

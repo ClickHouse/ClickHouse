@@ -1,11 +1,11 @@
 #pragma once
-
 #include "config.h"
 
 #if USE_YTSAURUS
 
 #include "YTsaurusQueries.h"
-
+#include <Poco/JSON/Object.h>
+#include "Storages/ColumnsDescription.h"
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
@@ -59,9 +59,18 @@ public:
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
-private:
+    Poco::JSON::Array::Ptr getTableSchema(const String & cypress_path);
 
-    YTsaurusNodeType getNodeTypeFromAttributes(Poco::JSON::Object::Ptr json_ptr);
+    bool checkSchemaCompatibility(const String & table_path, const Block & sample_block);
+private:
+    Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
+
+    Poco::Dynamic::Var getTableAttribute(const String & cypress_path, const String & attribute_name);
+
+    YTsaurusNodeType getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr & json_ptr);
+
+    Poco::Dynamic::Var getMetadata(const String & path);
+
 
     ReadBufferPtr createQueryRWBuffer(YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback = nullptr);
     ContextPtr context;
