@@ -12,29 +12,16 @@ extern const int BAD_ARGUMENTS;
 
 ai::Client AIClientFactory::createClient(const AIConfiguration & config)
 {
+    if (config.api_key.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "API key must be provided in the configuration file under 'ai.api_key'");
+
     if (config.provider == "openai")
     {
-#ifdef AI_SDK_HAS_OPENAI
-        // If API key is empty, create_client() will read from OPENAI_API_KEY env var
-        if (config.api_key.empty())
-            return ai::openai::create_client();
-        else
-            return ai::openai::create_client(config.api_key);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OpenAI support not compiled in ai-sdk-cpp");
-#endif
+        return ai::openai::create_client(config.api_key);
     }
     else if (config.provider == "anthropic")
     {
-#ifdef AI_SDK_HAS_ANTHROPIC
-        // If API key is empty, create_client() will read from ANTHROPIC_API_KEY env var
-        if (config.api_key.empty())
-            return ai::anthropic::create_client();
-        else
-            return ai::anthropic::create_client(config.api_key);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Anthropic support not compiled in ai-sdk-cpp");
-#endif
+        return ai::anthropic::create_client(config.api_key);
     }
     else
     {

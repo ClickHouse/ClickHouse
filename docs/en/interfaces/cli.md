@@ -289,27 +289,19 @@ ORDER BY order_count DESC
 
 ### Configuration {#ai-sql-generation-configuration}
 
-AI SQL generation is configured through environment variables or a configuration file.
-
-#### Environment Variables
-
-- `CLICKHOUSE_CLIENT_AI_PROVIDER` - AI provider: `openai` or `anthropic`
-- `CLICKHOUSE_CLIENT_AI_API_KEY` - Your API key for the chosen provider
-- `CLICKHOUSE_CLIENT_AI_MODEL` - Model to use (optional)
-  - Default for OpenAI: `gpt-4`
-  - Default for Anthropic: `claude-3-opus-20240229`
+AI SQL generation is configured through a configuration file. An API key must be provided in the configuration.
 
 #### Configuration File
 
-You can also configure AI settings in your ClickHouse Client configuration file:
+Configure AI settings in your ClickHouse Client configuration file:
 
 **XML format (`~/.clickhouse-client/config.xml`):**
 
 ```xml
 <config>
     <ai>
-        <api_key>your-api-key-here</api_key>
-        <model_provider>openai</model_provider>
+        <api_key>your-api-key-here</api_key>  <!-- Required -->
+        <model_provider>openai</model_provider>  <!-- Required: openai or anthropic -->
         <model>gpt-4o</model>
         <enable_schema_access>true</enable_schema_access>
         <temperature>0.0</temperature>
@@ -323,8 +315,8 @@ You can also configure AI settings in your ClickHouse Client configuration file:
 
 ```yaml
 ai:
-  api_key: your-api-key-here
-  model_provider: openai
+  api_key: your-api-key-here  # Required
+  model_provider: openai  # Required: openai or anthropic
   model: gpt-4o
   
   # Enable schema access - allows AI to query database/table information
