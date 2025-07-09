@@ -3,7 +3,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -14,6 +14,8 @@ struct Settings;
 
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
+
+struct SelectQueryInfo;
 
 enum class CompactPartsReadMethod : uint8_t
 {
@@ -58,6 +60,8 @@ struct MergeTreeReaderSettings
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     size_t filesystem_prefetches_limit = 0;
+
+    static MergeTreeReaderSettings Create(const ContextPtr & context, const SelectQueryInfo & query_info);
 };
 
 struct MergeTreeWriterSettings
