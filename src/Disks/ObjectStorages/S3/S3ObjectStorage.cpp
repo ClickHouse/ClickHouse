@@ -57,6 +57,7 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 list_object_keys_size;
     extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+    extern const S3RequestSettingsUInt64 min_bytes_for_seek;
 }
 
 
@@ -166,9 +167,30 @@ private:
 
 }
 
+S3ObjectStorage::S3ObjectStorage(
+    const char * logger_name,
+    ClientGetterPtr client_getter_,
+    std::unique_ptr<S3::S3RequestSettings> && s3_request_settings_,
+    ContextPtr context,
+    S3::URI uri_,
+    const S3Capabilities & s3_capabilities_,
+    ObjectStorageKeysGeneratorPtr key_generator_,
+    const String & disk_name_,
+    bool for_disk_s3_)
+    : uri(uri_)
+    , disk_name(disk_name_)
+    , client_getter(std::move(client_getter_))
+    , s3_request_settings(std::move(s3_request_settings_))
+    , s3_capabilities(s3_capabilities_)
+    , key_generator(std::move(key_generator_))
+    , log(getLogger(logger_name))
+    , for_disk_s3(for_disk_s3_)
+{
+    client.set(client_getter->makeClient(uri, *s3_request_settings.get(), context, for_disk_s3_));
+}
+
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    auto settings_ptr = s3_settings.get();
     return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
 }
 
@@ -178,13 +200,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto settings_ptr = s3_settings.get();
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
         object.remote_path,
         uri.version_id,
-        settings_ptr->request_settings,
+        *s3_request_settings.get(),
         patchSettings(read_settings),
         read_settings.remote_read_buffer_use_external_buffer,
         /* offset */0,
@@ -205,7 +226,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    S3::S3RequestSettings request_settings = s3_settings.get()->request_settings;
+    S3::S3RequestSettings request_settings = *s3_request_settings.get();
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
@@ -239,15 +260,14 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 
 ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
-    auto settings_ptr = s3_settings.get();
     if (!max_keys)
-        max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
+        max_keys = (*s3_request_settings.get())[S3RequestSetting::list_object_keys_size];
     return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
-    auto settings_ptr = s3_settings.get();
+    auto settings_ptr = s3_request_settings.get();
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
@@ -255,7 +275,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
-        request.SetMaxKeys(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]);
+        request.SetMaxKeys((*settings_ptr)[S3RequestSetting::list_object_keys_size]);
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
@@ -326,10 +346,10 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         }
     }
 
-    auto settings_ptr = s3_settings.get();
+    auto settings_ptr = s3_request_settings.get();
 
     deleteFilesFromS3(client.get(), uri.bucket, keys, if_exists,
-                      s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
+                      s3_capabilities, (*settings_ptr)[S3RequestSetting::objects_chunk_size_to_delete],
                       blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                       ProfileEvents::DiskS3DeleteObjects);
 }
@@ -346,7 +366,6 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
-    auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfo(
         *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, /* throw_on_error= */ false);
 
@@ -364,7 +383,6 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    auto settings_ptr = s3_settings.get();
     S3::ObjectInfo object_info;
     try
     {
@@ -397,7 +415,6 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
         auto current_client = dest_s3->client.get();
-        auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
         const auto read_settings_to_use = patchSettings(read_settings);
@@ -413,7 +430,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_s3_client=*/current_client,
                 /*dest_bucket=*/dest_s3->uri.bucket,
                 /*dest_key=*/object_to.remote_path,
-                settings_ptr->request_settings,
+                (*s3_request_settings.get()),
                 read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
@@ -443,7 +460,7 @@ void S3ObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto current_client = client.get();
-    auto settings_ptr = s3_settings.get();
+    auto settings_ptr = s3_request_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
     const auto read_settings_to_use = patchSettings(read_settings);
@@ -457,7 +474,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/uri.bucket,
         /*dest_key=*/object_to.remote_path,
-        settings_ptr->request_settings,
+        *settings_ptr,
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
@@ -486,32 +503,36 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
+    bool getter_updated = client_getter->applyNewSettings(config, config_prefix, uri, context);
+    S3::S3RequestSettings request_settings_from_config(config, context->getSettingsRef(), config_prefix, "s3_", context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    settings_from_config->loadFromConfigForObjectStorage(
-        config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    request_settings_from_config.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+    /// We override these request settings from configuration, because they are related to disk configuration,
+    /// which shouldn't be changed from user query
+    request_settings_from_config[S3RequestSetting::read_only] = config.getBool(config_prefix + ".readonly", false);
+    request_settings_from_config[S3RequestSetting::min_bytes_for_seek] = config.getUInt64(config_prefix + ".min_bytes_for_seek", S3::DEFAULT_MIN_BYTES_FOR_SEEK);
+    request_settings_from_config[S3RequestSetting::list_object_keys_size] = config.getUInt64(config_prefix + ".list_object_keys_size", S3::DEFAULT_LIST_OBJECT_KEYS_SIZE);
+    request_settings_from_config[S3RequestSetting::objects_chunk_size_to_delete] = config.getUInt(config_prefix + ".objects_chunk_size_to_delete", S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE);
 
-    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+    auto modified_settings = *s3_request_settings.get();
+    modified_settings.updateIfChanged(request_settings_from_config);
+
+    modified_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+        modified_settings.updateIfChanged(endpoint_settings->request_settings);
 
-    auto current_settings = s3_settings.get();
     if (options.allow_client_change
-        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+        && (getter_updated || for_disk_s3))
     {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
+        auto new_client = client_getter->makeClient(uri, modified_settings, context, for_disk_s3);
         client.set(std::move(new_client));
     }
-    s3_settings.set(std::move(modified_settings));
+
+    s3_request_settings.set(std::make_unique<S3::S3RequestSettings>(modified_settings));
 }
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const

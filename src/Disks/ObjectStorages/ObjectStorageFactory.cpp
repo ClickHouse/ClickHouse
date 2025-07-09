@@ -162,14 +162,6 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
 
 }
 
-static std::string getEndpoint(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const ContextPtr & context)
-{
-    return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-}
-
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
     static constexpr auto disk_type = "s3";
@@ -183,14 +175,23 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+
+        auto client_getter = std::make_shared<ClientGetterFromAuthSettings>(settings->auth_settings);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
-            ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+            ObjectStorageType::S3,
+            config,
+            config_prefix,
+            client_getter,
+            std::make_unique<S3::S3RequestSettings>(settings->request_settings),
+            context,
+            uri,
+            s3_capabilities,
+            key_generator,
+            name);
 
         return object_storage;
     });
@@ -209,14 +210,19 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-        auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-        auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+        auto client_getter = std::make_shared<ClientGetterFromAuthSettings>(settings->auth_settings);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
-            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+            std::move(client_getter),
+            std::make_unique<S3::S3RequestSettings>(settings->request_settings),
+            context,
+            uri,
+            s3_capabilities,
+            key_generator,
+            name);
 
         return object_storage;
     });
@@ -236,15 +242,22 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
         {
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
-            auto endpoint = getEndpoint(config, config_prefix, context);
             auto settings = std::make_unique<S3Settings>();
             settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
-            auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
+            auto client_getter = std::make_shared<ClientGetterFromAuthSettings>(settings->auth_settings);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
             auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();
+
             auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
-                std::move(metadata_storage_metrics), std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+                std::move(metadata_storage_metrics),
+                std::move(client_getter),
+                std::make_unique<S3::S3RequestSettings>(settings->request_settings),
+                context,
+                uri,
+                s3_capabilities,
+                key_generator,
+                name);
 
             return object_storage;
         });

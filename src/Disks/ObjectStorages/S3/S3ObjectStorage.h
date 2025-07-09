@@ -10,7 +10,7 @@
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-
+#include <Disks/ObjectStorages/S3/ClientGetter.h>
 
 namespace DB
 {
@@ -26,28 +26,19 @@ class S3ObjectStorage : public IObjectStorage
 private:
     S3ObjectStorage(
         const char * logger_name,
-        std::unique_ptr<S3::Client> && client_,
-        std::unique_ptr<S3Settings> && s3_settings_,
+        ClientGetterPtr client_getter_,
+        std::unique_ptr<S3::S3RequestSettings> && s3_request_settings_,
+        ContextPtr context,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_,
-        bool for_disk_s3_ = true)
-        : uri(uri_)
-        , disk_name(disk_name_)
-        , client(std::move(client_))
-        , s3_settings(std::move(s3_settings_))
-        , s3_capabilities(s3_capabilities_)
-        , key_generator(std::move(key_generator_))
-        , log(getLogger(logger_name))
-        , for_disk_s3(for_disk_s3_)
-    {
-    }
+        bool for_disk_s3_ = true);
 
 public:
     template <typename... Args>
-    explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
-        : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
+    explicit S3ObjectStorage(ClientGetterPtr client_getter_, Args && ...args)
+        : S3ObjectStorage("S3ObjectStorage", client_getter_, std::forward<Args>(args)...)
     {
     }
 
@@ -125,7 +116,10 @@ public:
 
     bool areObjectKeysRandom() const override;
 
-    bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
+    bool isReadOnly() const override
+    {
+        return (*s3_request_settings.get())[S3RequestSetting::read_only];
+    }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
@@ -137,8 +131,10 @@ private:
 
     std::string disk_name;
 
+    ClientGetterPtr client_getter;
+    MultiVersion<S3::S3RequestSettings> s3_request_settings;
+
     MultiVersion<S3::Client> client;
-    MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
     ObjectStorageKeysGeneratorPtr key_generator;

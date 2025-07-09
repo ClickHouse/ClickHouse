@@ -131,12 +131,13 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
             headers_from_ast.begin(), headers_from_ast.end());
     }
 
-    auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
+    auto client_getter = std::make_shared<ClientGetterFromAuthSettings>(s3_settings->auth_settings);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
-        std::move(client),
-        std::make_unique<S3Settings>(*s3_settings),
+        client_getter,
+        std::make_unique<S3::S3RequestSettings>(s3_settings->request_settings),
+        context,
         url,
         *s3_capabilities,
         key_generator,

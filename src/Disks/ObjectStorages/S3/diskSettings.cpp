@@ -62,25 +62,25 @@ extern const int NO_ELEMENTS_IN_CONFIG;
 
 std::unique_ptr<S3::Client> getClient(
     const std::string & endpoint,
-    const S3Settings & settings,
+    const S3::S3RequestSettings & request_settings,
+    const S3::S3AuthSettings & auth_settings,
     ContextPtr context,
     bool for_disk_s3)
 {
     auto url = S3::URI(endpoint);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3);
+    return getClient(url, request_settings, auth_settings, context, for_disk_s3);
 }
 
 std::unique_ptr<S3::Client> getClient(
     const S3::URI & url,
-    const S3Settings & settings,
+    const S3::S3RequestSettings & request_settings,
+    const S3::S3AuthSettings & auth_settings,
     ContextPtr context,
     bool for_disk_s3)
 {
     const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
-    const auto & auth_settings = settings.auth_settings;
-    const auto & request_settings = settings.request_settings;
 
     const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
     if (is_s3_express_bucket && auth_settings[S3AuthSetting::region].value.empty())
