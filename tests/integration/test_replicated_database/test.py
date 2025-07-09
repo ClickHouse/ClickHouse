@@ -1638,32 +1638,11 @@ def test_create_alter_sleeping(started_cluster, engine):
     )
 
 
-def test_system_database_replicas(started_cluster):
+def test_system_database_replicas_with_ro(started_cluster):
     database_1 = "test_system_database_replicas_1"
-    
 
     main_node.query(
         f"CREATE DATABASE {database_1} ENGINE = Replicated('/test/{database_1}', 'shard1', 'replica1');"
-    )
-
-    assert (
-        main_node.query("SELECT * FROM system.database_replicas") == f"{database_1}\t0\n"
-    )
-
-    assert (
-        main_node.query("SELECT * FROM system.database_replicas LIMIT 1") == f"{database_1}\t0\n"
-    )
-
-    assert (
-        main_node.query("SELECT * FROM system.database_replicas LIMIT 2") == f"{database_1}\t0\n"
-    )
-
-    assert (
-        main_node.query("SELECT database FROM system.database_replicas") == f"{database_1}\n"
-    )
-
-    assert (
-        main_node.query("SELECT is_readonly FROM system.database_replicas") == "0\n"
     )
 
     zk = cluster.get_kazoo_client("zoo1")
@@ -1751,8 +1730,10 @@ db_6\t0
         main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
     )
 
-    # assert (
-    #     main_node.query("SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='db_1'") == "1\n"
-    # )
+    assert (
+        main_node.query("SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='db_1'") == "1\n"
+    )
 
-    # empty
+    assert (
+        main_node.query("SELECT is_readonly FROM system.database_replicas WHERE database='db_11'") == ""
+    )

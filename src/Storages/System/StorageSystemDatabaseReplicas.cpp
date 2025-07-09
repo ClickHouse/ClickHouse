@@ -10,10 +10,10 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
-#include "Columns/ColumnsNumber.h"
-#include "Processors/Sources/NullSource.h"
-#include "QueryPipeline/Pipe.h"
-#include "QueryPipeline/QueryPipelineBuilder.h"
+#include <Columns/ColumnsNumber.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -62,16 +62,12 @@ Chunk SystemDatabaseReplicasSource::generate()
 
     MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-    // if (query_status)
-    //     query_status->checkTimeLimit();
-
-    for(size_t row_count{}; index < max_databases && row_count < max_block_size; index++, row_count++)
+    for (size_t row_count{}; index < max_databases && row_count < max_block_size; index++, row_count++)
     {
         res_columns[0]->insert((*col_database)[index]);
         res_columns[1]->insert((*col_readonly)[index]);
     }
 
-    
     UInt64 num_rows = res_columns.at(0)->size();
     return Chunk(std::move(res_columns), num_rows);
 }
@@ -197,20 +193,17 @@ void StorageSystemDatabaseReplicas::read(
     storage_snapshot->check(column_names);
 
     const auto access = context->getAccess();
+    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
-    // use filter
     std::map<String, DatabasePtr> replicated_databases;
     for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases())
     {
-        if (!dynamic_cast<const DatabaseReplicated *>(db_data.get())) {
+        if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;
-        }
 
         const bool check_access_for_db = !access->isGranted(AccessType::SHOW_DATABASES, db_name);
-        if (!check_access_for_db) {
-            LOG_TEST(getLogger("test_lg"), "no access");
-            // continue;
-        }
+        if (need_to_check_access_for_databases && !check_access_for_db)
+            continue;
 
         replicated_databases[db_name] = db_data;
     }
