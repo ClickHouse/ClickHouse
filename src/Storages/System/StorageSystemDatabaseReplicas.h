@@ -15,7 +15,6 @@ class StorageSystemDatabaseReplicas final : public IStorage
 {
 public:
     explicit StorageSystemDatabaseReplicas(const StorageID & table_id_);
-    ~StorageSystemDatabaseReplicas() override;
 
     std::string getName() const override { return "SystemDatabaseReplicas"; }
 

@@ -178,8 +178,6 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
     setInMemoryMetadata(storage_metadata);
 }
 
-StorageSystemDatabaseReplicas::~StorageSystemDatabaseReplicas() = default;
-
 void StorageSystemDatabaseReplicas::read(
     QueryPlan & query_plan,
     const Names & column_names,
