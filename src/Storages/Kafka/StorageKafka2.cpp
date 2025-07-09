@@ -26,7 +26,6 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -38,6 +37,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -56,10 +56,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <librdkafka/rdkafka.h>
 #include <pcg-random/pcg_random.hpp>
-
-#include <filesystem>
-#include <mutex>
-#include <string>
 
 namespace CurrentMetrics
 {
@@ -322,8 +318,9 @@ void StorageKafka2::activateAndReschedule()
 
     /// It would be ideal to introduce a setting for this
     constexpr static size_t check_period_ms = 60000;
-    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
-    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
+    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep
+    /// retrying immediately in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and
+    /// 10000 ms
     const size_t backoff_ms = 100 * ((consecutive_activate_failures + 1) * (consecutive_activate_failures + 2)) / 2;
     const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
@@ -647,8 +644,8 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 void StorageKafka2::createReplica()
 {
     LOG_INFO(log, "Creating replica {}", replica_path);
-    // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some metadata
-    // about the table to be able to identify that the same table is created, not a new one.
+    // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
+    // metadata about the table to be able to identify that the same table is created, not a new one.
     const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
 
     switch (code)
@@ -692,20 +689,19 @@ void StorageKafka2::dropReplica()
 
     LOG_INFO(log, "{} is the last replica, will remove table", replica_path);
 
-    /** At this moment, another replica can be created and we cannot remove the table.
-      * Try to remove /replicas node first. If we successfully removed it,
-      * it guarantees that we are the only replica that proceed to remove the table
-      * and no new replicas can be created after that moment (it requires the existence of /replicas node).
-      * and table cannot be recreated with new /replicas node on another servers while we are removing data,
-      * because table creation is executed in single transaction that will conflict with remaining nodes.
+    /** At this moment, another replica can be created and we cannot remove the table. Try to remove /replicas node
+      * first. If we successfully removed it, it guarantees that we are the only replica that proceed to remove the
+      * table and no new replicas can be created after that moment (it requires the existence of /replicas node). and
+      * table cannot be recreated with new /replicas node on another servers while we are removing data, because table
+      * creation is executed in single transaction that will conflict with remaining nodes.
       */
 
     /// Node /dropped works like a lock that protects from concurrent removal of old table and creation of new table.
-    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so
-    /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
-    /// removing thread, and it causes race condition if removing thread is not finished yet.
-    /// To avoid this we also create ephemeral child before starting recursive removal.
-    /// (The existence of child node does not allow to remove parent node).
+    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so we remove
+    /// it on table creation if there is /dropped node. Creating thread may remove /dropped node created by removing
+    /// thread, and it causes race condition if removing thread is not finished yet. To avoid this we also create
+    /// ephemeral child before starting recursive removal. (The existence of child node does not allow to remove parent
+    /// node).
     Coordination::Requests ops;
     Coordination::Responses responses;
     String drop_lock_path = fs_keeper_path / "dropped" / "lock";
@@ -759,7 +755,10 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    // Dirty hack to "pass" MessageInfo to the on_error lambda
+    // Dirty hack to "pass" MessageInfo to the on_error lambda by reference. current_msg_info is captured in both
+    // `on_error` and `msg_sink` lambdas. It is assigned in `msg_sink` in order to pass the necessary information to
+    // `on_error` in case of an exception happens. Doing the same through a member variable would be worse, because then
+    // we would need to think about multiple threads.
     const KeeperHandlingConsumer::MessageInfo * current_msg_info = nullptr;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -939,7 +938,7 @@ void StorageKafka2::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
-    std::optional<StallReason> maybe_stall_reason;
+    std::optional<StallKind> maybe_stall_reason;
     try
     {
         auto table_id = getStorageID();
@@ -982,19 +981,18 @@ void StorageKafka2::threadFunc(size_t idx)
 
     if (!task->stream_cancelled)
     {
-        // Keeper related problems should be solved relatively fast, it makes sense wait less time
-        if (maybe_stall_reason.has_value()
-            && (*maybe_stall_reason == StallReason::KeeperSessionEnded || *maybe_stall_reason == StallReason::NoMetadata))
+        if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
             task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
         else
             task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
     }
 }
 
-std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
-    // This function is written assuming that each consumer has their own thread. This means once this is changed, this function should be revisited.
-    // The return values should be revisited, as stalling all consumers because of a single one stalled is not a good idea.
+    // This function is written assuming that each consumer has their own thread. This means once this is changed, this
+    // function should be revisited. The return values should be revisited, as stalling all consumers because of a
+    // single one stalled is not a good idea.
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1015,7 +1013,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
         if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
-            return getStallReason(*cannot_poll_reason);
+            return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
         const auto maybe_rows = streamFromConsumer(*consumer, watch);
@@ -1028,7 +1026,7 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
         else
         {
             LOG_DEBUG(log, "Couldn't stream any messages");
-            return StallReason::NoMessages;
+            return StallKind::LongStall;
         }
     }
     catch (const zkutil::KeeperException & e)
@@ -1037,7 +1035,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
         {
             LOG_INFO(log, "Cleaning up topic-partitions locks because of exception: {}", e.displayText());
             activating_task->schedule();
-            return StallReason::KeeperSessionEnded;
+            // Keeper sessions should be restored fast, so let's try to poll again sooner
+            return StallKind::ShortStall;
         }
 
         throw;
@@ -1048,6 +1047,9 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
 StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
 {
     std::lock_guard lock{consumers_mutex};
+    if (idx >= consumers.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
+
     auto consumer = consumers[idx];
     const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)
                                                        { return getConsumerConfiguration(idx, std::move(exception_sink)); });
@@ -1070,11 +1072,13 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
 
 void StorageKafka2::cleanConsumers()
 {
-    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer2 (for logging and stat callback).
-    /// So if we destroy cppkafka::Consumer in KafkaConsumer2 destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock.
-    /// Maybe we could do this in the destructor of KeeperHandlingConsumer, thus avoid this not obvious logic here, but this version is "battle tested" by our CI as we have
-    /// the very similar, if not the same approach in the old StorageKafka. Let's go with this now, later on we can improve it.
-    std::vector<CppKafkaConsumerPtr> consumers_to_close;
+    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a
+    /// weak_ptr to the KafkaConsumer2 (for logging and stat callback). So if we destroy cppkafka::Consumer in
+    /// KafkaConsumer2 destructor, then due to librdkafka will call the logging again from destructor, it will lead to a
+    /// deadlock. Maybe we could do this in the destructor of KeeperHandlingConsumer, thus avoid this not obvious logic
+    /// here, but this version is "battle tested" by our CI as we have the very similar, if not the same approach in the
+    /// old StorageKafka. Let's go with this now, later on we can improve it.
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
     {
         UniqueLock lock(consumers_mutex);
         /// Wait until all consumers will be released
@@ -1091,11 +1095,11 @@ void StorageKafka2::cleanConsumers()
         {
             if (!consumer->hasConsumer())
                 continue;
-            consumers_to_close.push_back(consumer->moveConsumer());
+            cpp_consumers_to_close.push_back(consumer->moveConsumer());
         }
     }
 
-    consumers_to_close.clear();
+    cpp_consumers_to_close.clear();
 
     std::lock_guard lock(consumers_mutex);
     consumers.clear();
@@ -1198,16 +1202,17 @@ zkutil::ZooKeeperPtr StorageKafka2::getZooKeeperIfTableShutDown() const
     return new_zookeeper;
 }
 
-StorageKafka2::StallReason StorageKafka2::getStallReason(const KeeperHandlingConsumer::CannotPollReason & reason)
+StorageKafka2::StallKind StorageKafka2::getStallKind(const KeeperHandlingConsumer::CannotPollReason & reason)
 {
+    /// Keeper session should be restored fast, therefore we don't want to stall the stream for too long because of that.
     switch (reason)
-{
+    {
         case KeeperHandlingConsumer::CannotPollReason::NoPartitions:
-            return StallReason::NoPartitions;
+            [[fallthrough]];
         case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
-            return StallReason::NoMetadata;
+            return StallKind::LongStall;
         case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
-            return StallReason::KeeperSessionEnded;
-}
+            return StallKind::ShortStall;
+    }
 }
 }

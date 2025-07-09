@@ -11,7 +11,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -191,16 +190,13 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    enum class StallReason : uint8_t
+    enum class StallKind : uint8_t
     {
-        NoMetadata,
-        KeeperSessionEnded,
-        NoPartitions,
-        NoMessages,
-        ConsumerNotAvailable,
+        ShortStall,
+        LongStall,
     };
 
-    std::optional<StallReason> streamToViews(size_t idx);
+    std::optional<StallKind> streamToViews(size_t idx);
 
     /// KeeperHandlingConsumer has to be acquired before polling it
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
@@ -226,7 +222,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeperAndAssertActive() const;
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
 
-    static StallReason getStallReason(const KeeperHandlingConsumer::CannotPollReason & cannotPollReason);
+    static StallKind getStallKind(const KeeperHandlingConsumer::CannotPollReason & cannotPollReason);
 };
 
 }

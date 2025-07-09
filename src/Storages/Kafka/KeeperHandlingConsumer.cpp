@@ -1,10 +1,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
-#include <mutex>
-#include <optional>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
@@ -35,6 +31,46 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & pa
 
     return DB::parse<int64_t>(result);
 }
+}
+
+KeeperHandlingConsumer::MessageInfo::MessageInfo(const KafkaConsumer2 & kafka_consumer_)
+    : kafka_consumer(kafka_consumer_)
+{
+}
+
+String KeeperHandlingConsumer::MessageInfo::currentTopic() const
+{
+    return kafka_consumer.currentTopic();
+}
+
+int32_t KeeperHandlingConsumer::MessageInfo::currentPartition() const
+{
+    return kafka_consumer.currentPartition();
+}
+
+int64_t KeeperHandlingConsumer::MessageInfo::currentOffset() const
+{
+    return kafka_consumer.currentOffset();
+}
+
+String KeeperHandlingConsumer::MessageInfo::currentKey() const
+{
+    return kafka_consumer.currentKey();
+}
+
+String KeeperHandlingConsumer::MessageInfo::currentPayload() const
+{
+    return kafka_consumer.currentPayload();
+}
+
+boost::optional<cppkafka::MessageTimestamp> KeeperHandlingConsumer::MessageInfo::currentTimestamp() const
+{
+    return kafka_consumer.currentTimestamp();
+}
+
+const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::currentHeaderList() const
+{
+    return kafka_consumer.currentHeaderList();
 }
 
 KeeperHandlingConsumer::OffsetGuard::OffsetGuard(KeeperHandlingConsumer & consumer_, const int64_t new_offset_)
@@ -151,10 +187,11 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         appendToAssignedTopicPartitions(permanent_locks);
         appendToAssignedTopicPartitions(tmp_locks);
     }
-    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called in-between the two locks.
-    // However this is not a problem, because in `getStat` the main source of information is the acquired locks and the information from KafkaConsumer2
-    // about the offset are only used to provide more recent information about the offsets in case the consumer is polling message while `getStat` is called.
-    // Here this is not the case, so the offset values in the lock infos are good enough.
+    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
+    // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
+    // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
+    // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
+    // the case, so the offset values in the lock infos are good enough.
     rollbackToCommittedOffsets();
 
     if (assigned_topic_partitions.empty())
@@ -294,7 +331,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     }
     LOG_TRACE(log, "Starting to lock temporary locks");
 
-    /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give the other replica a chance to lock some partitions
+    /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give
+    /// the other replica a chance to lock some partitions
     if (tmp_locks_quota > 0 && has_replica_without_locks)
     {
         LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks this round");
@@ -302,8 +340,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
         return;
     }
 
-    /// We have some temporary lock quota, but it is greater than the number of available topic partitions,
-    /// so we will reduce the quota to give other replicas a chance to lock some partitions
+    /// We have some temporary lock quota, but it is greater than the number of available topic partitions, so we will
+    /// reduce the quota to give other replicas a chance to lock some partitions
     if (tmp_locks_quota > 0 && tmp_locks_quota <= available_topic_partitions.size())
     {
         LOG_TRACE(log, "Reducing temporary locks to give other replicas a chance to lock some partitions");
@@ -333,8 +371,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     }
 }
 
-// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
-// Otherwise, we try to lock free partitions one by one.
+// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no
+// longer hold. Otherwise, we try to lock free partitions one by one.
 void KeeperHandlingConsumer::updatePermanentLocksLocked(
     const TopicPartitions & available_topic_partitions, const size_t topic_partitions_count, const size_t active_replica_count)
     TSA_REQUIRES(topic_partition_locks_mutex)
@@ -402,7 +440,8 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
 
 void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
-    // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is not expensive to get it.
+    // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is
+    // not expensive to get it.
     LOG_TEST(
         log,
         "Saving intent of {} for topic-partition [{}:{}] at offset {}",
@@ -551,7 +590,8 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
         for (const auto & [topic_partition, info] : tmp_locks)
             committed_offsets_and_intent_sizes[topic_partition]
                 = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size};
-        // TODO(antaljanosbenjamin): make sure this is still safe even if the consumer is being closed, maybe it can be by protecting that in `StorageKafka2` similarly to how it is done in StorageKafka
+        // TODO(antaljanosbenjamin): make sure this is still safe even if the consumer is being closed, maybe it can be
+        // by protecting that in `StorageKafka2` similarly to how it is done in StorageKafka
         consumer_stat = kafka_consumer->getStat();
     }
 
@@ -561,8 +601,8 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
     Assignments assignments;
     assignments.reserve(committed_offsets_and_intent_sizes.size());
 
-    /// It is possible that some topic partitions are already locked, but they were not assigned to the consumer yet. In that case the committed offset is the current offset.
-    /// See comment in `prepareToPoll`.
+    /// It is possible that some topic partitions are already locked, but they were not assigned to the consumer yet. In
+    /// that case the committed offset is the current offset. See comment in `prepareToPoll`.
     for (const auto & [topic_partition, committed_offset_and_intent_size] : committed_offsets_and_intent_sizes)
     {
         int64_t offset = committed_offset_and_intent_size.first;

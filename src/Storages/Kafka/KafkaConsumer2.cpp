@@ -57,7 +57,8 @@ KafkaConsumer2::~KafkaConsumer2()
 
 void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
 {
-    chassert(!consumer.get());
+    if (consumer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KafkaConsumer2::createConsumer called when consumer already exists");
 
     if (consumer_config.get("statistics.interval.ms") != "0")
     {
@@ -135,10 +136,12 @@ void KafkaConsumer2::cleanQueuesAndMessages()
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
     cleanQueuesAndMessages();
-    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually. Later on we have to reassign the topic partitions with correct offsets.
+    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually.
+    // Later on we have to reassign the topic partitions with correct offsets.
     consumer->assign(topic_partitions);
     for (const auto & topic_partition : topic_partitions)
-        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without attaching them manually
+        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without
+        // attaching them manually
         queues.emplace(
             TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}, consumer->get_partition_queue(topic_partition));
 }
@@ -148,7 +151,8 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
 {
     resetIfStopped();
 
-    // TODO: `polledDataUnusable` should be renamed to `clearMessagesIfNotSameTopicPartition` and it should be okay to continue without returning nullptr.
+    // TODO: `polledDataUnusable` should be renamed to `clearMessagesIfNotSameTopicPartition` and it should be okay to
+    // continue without returning nullptr.
     if (polledDataUnusable(topic_partition))
         return nullptr;
 
@@ -228,9 +232,9 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
         try
         {
             // See https://github.com/edenhill/librdkafka/issues/1470
-            // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
-            // there were not enough replicas available for the __consumer_offsets topic.
-            // also some other temporary issues like client-server connectivity problems are possible
+            // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
+            // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
+            // connectivity problems are possible
 
             consumer->commit(topic_partition_list);
             committed = true;
@@ -243,9 +247,9 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
         }
         catch (const cppkafka::HandleException & e)
         {
-            // If there were actually no offsets to commit, return. Retrying won't solve
-            // anything here.
-            // Furthermore, we don't consider failing to commit as an error, because the Kafka is not the primary store for committed offsets.
+            // If there were actually no offsets to commit, return. Retrying won't solve anything here. Furthermore, we
+            // don't consider failing to commit as an error, because Kafka is not the primary store for committed
+            // offsets.
             if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                 committed = true;
             else
@@ -340,7 +344,7 @@ void KafkaConsumer2::setExceptionInfo(const std::string & text, bool with_stackt
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
+    exceptions_buffer.push_back({std::move(enriched_text), timeInSeconds(std::chrono::system_clock::now())});
 }
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()

@@ -1,25 +1,19 @@
 #pragma once
 
 #include <memory>
-#include <cppkafka/error.h>
 
+namespace cppkafka
+{
+class Error;
+}
 namespace DB
 {
 class IKafkaExceptionInfoSink
 {
 public:
-    virtual void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
-    {
-        setExceptionInfo(err.to_string(), with_stacktrace);
-    }
-
-    virtual void setExceptionInfo(const std::string & text, bool with_stacktrace)
-    {
-        UNUSED(text);
-        UNUSED(with_stacktrace);
-    }
-
-    virtual ~IKafkaExceptionInfoSink() = default;
+    virtual void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace);
+    virtual void setExceptionInfo(const std::string & text, bool with_stacktrace);
+    virtual ~IKafkaExceptionInfoSink();
 };
 
 using IKafkaExceptionInfoSinkPtr = std::shared_ptr<IKafkaExceptionInfoSink>;

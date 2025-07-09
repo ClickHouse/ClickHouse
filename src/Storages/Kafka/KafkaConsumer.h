@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
-#include <base/types.h>
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/cppkafka.h>
 #include <Common/CurrentMetrics.h>
@@ -26,7 +25,7 @@ namespace DB
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
-class KafkaConsumer : public IKafkaExceptionInfoSink, public std::enable_shared_from_this<KafkaConsumer>
+class KafkaConsumer : public IKafkaExceptionInfoSink
 {
 public:
     using Stat = StorageKafkaUtils::ConsumerStatistics;

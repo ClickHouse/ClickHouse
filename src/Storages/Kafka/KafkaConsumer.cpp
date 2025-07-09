@@ -549,7 +549,7 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
+    exceptions_buffer.push_back({std::move(enriched_text), timeInSeconds(std::chrono::system_clock::now())});
 }
 
 std::string KafkaConsumer::getMemberId() const

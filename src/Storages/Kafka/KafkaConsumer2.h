@@ -144,7 +144,7 @@ private:
     /// so we have to protect exceptions_buffer
     mutable std::mutex exception_mutex;
     const size_t EXCEPTIONS_DEPTH = 10;
-    ExceptionsBuffer exceptions_buffer;
+    ExceptionsBuffer exceptions_buffer TSA_GUARDED_BY(exception_mutex);
 
     // order is important, need to be destructed *after* consumer
     mutable std::mutex rdkafka_stat_mutex;

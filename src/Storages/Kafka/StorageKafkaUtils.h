@@ -9,7 +9,6 @@
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/configuration.h>
 #include <cppkafka/cppkafka.h>
-#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <cppkafka/topic_partition.h>
 #include <fmt/ostream.h>
 #include <librdkafka/rdkafka.h>

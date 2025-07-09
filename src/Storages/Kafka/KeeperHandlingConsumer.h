@@ -1,12 +1,10 @@
 #pragma once
 
-#include <expected>
 #include <filesystem>
-#include <Core/Block_fwd.h>
+#include <mutex>
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
-#include <cppkafka/topic.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
@@ -15,16 +13,23 @@ namespace DB
 /// Wrapper around KafkaConsumer2 that manages locks, committed offsets and intent sizes in Keeper.
 ///
 /// It assigns a specific list of topic partitions to KafkaConsumer2 without relying on the rebalance logic of Kafka.
-/// The general workflow how to use this class is quite error-prone, but a lot of this boils down to the quirks of librdkafka:
-///  1. If `isInUse()` returns false, `startUsing` must be called before calling `prepareToPoll` or `poll`. This will create the librdkafka consumer inside KafkaConsumer2 if necessary
-///  2. If `needsKeeper()` returns true, then `setKeeper` must be called to set the new Keeper session.
-///  3. If `prepareToPoll` returns an empty optional, then it is possible to call `poll` to start to consume some messages.
-///  4. If the consumed messages are processed successfully, then the the batch must be committed using  the returned `OffsetGuard`.
+/// The general workflow how to use this class is quite error-prone, but a lot of this boils down to the quirks of
+/// librdkafka:
+///   1. If `isInUse()` returns false, `startUsing` must be called before calling `prepareToPoll` or `poll`. This will
+/// create the librdkafka consumer inside KafkaConsumer2 if necessary
+///   2. If `needsKeeper()` returns true, then `setKeeper` must be called to set the new Keeper session.
+///   3. If `prepareToPoll` returns an empty optional, then it is possible to call `poll` to start to consume some
+/// messages.
+///   4. If the consumed messages are processed successfully, then the the batch must be committed using  the returned
+/// `OffsetGuard`.
 ///
 /// From thread-safety perspective the functions of this class falls into three categories:
-///  a) Functions `startUsing`, `stopUsing` and `moveConsumer`: they need exclusive access to the object, so they cannot be called simultaneously with other functions. No exceptions.
-///  b) Function `getStat`: it can be called simultaneously with any other functions (including itself), except for the functions of category a).
-///  c) All other functions: they can be called simultaneously with `getStat`, but nothing else, not even each other or themselves.
+///   a) Functions `startUsing`, `stopUsing` and `moveConsumer`: they need exclusive access to the object, so they
+/// cannot be called simultaneously with other functions. No exceptions.
+///   b) Function `getStat`: it can be called simultaneously with any other functions (including itself), except for
+/// the functions of category a).
+///   c) All other functions: they can be called simultaneously with `getStat`, but nothing else, not even each other
+/// or themselves.
 class KeeperHandlingConsumer
 {
 public:
@@ -38,18 +43,15 @@ public:
     class MessageInfo
     {
     public:
-        explicit MessageInfo(const KafkaConsumer2 & kafka_consumer_)
-            : kafka_consumer(kafka_consumer_)
-        {
-        }
+        explicit MessageInfo(const KafkaConsumer2 & kafka_consumer_);
 
-        String currentTopic() const { return kafka_consumer.currentTopic(); }
-        int32_t currentPartition() const { return kafka_consumer.currentPartition(); }
-        int64_t currentOffset() const { return kafka_consumer.currentOffset(); }
-        String currentKey() const { return kafka_consumer.currentKey(); }
-        String currentPayload() const { return kafka_consumer.currentPayload(); }
-        boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const { return kafka_consumer.currentTimestamp(); }
-        const cppkafka::Message::HeaderListType & currentHeaderList() const { return kafka_consumer.currentHeaderList(); }
+        String currentTopic() const;
+        int32_t currentPartition() const;
+        int64_t currentOffset() const;
+        String currentKey() const;
+        String currentPayload() const;
+        boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
+        const cppkafka::Message::HeaderListType & currentHeaderList() const;
 
     private:
         const KafkaConsumer2 & kafka_consumer;
@@ -90,16 +92,19 @@ public:
     ///   1. Separate the logic of converting messages to rows with virtual columns and everything else
     ///   2. Do not expose KafkaConsumer2, so KeeperHandlingConsumer has some kind of control over the offsets
     ///   3. Only do the heavy initialization once the consumer can actually poll messages
-    /// 1: KeeperHandlingConsumer shouldn't be aware of the logic how a single message is turned into rows. It doesn't need to know about virtual columns, error streams, etc.
-    /// 2: By polling `KafkaConsumer2` directly the user (StorageKafka2) should report back the intent size in order to be able to save it before pushing the block. Yes, the
-    ///    the current solution does not solve this (in MessageSinkFunction KeeperHandlingConsumer has no control over the blocks) completely, but I think it is a good compromise.
-    ///    In the future we might add a similar class than `KafkaSource` to handle the conversion of messages to rows, but right now this is not the priority.
+    /// 1: KeeperHandlingConsumer shouldn't be aware of the logic how a single message is turned into rows. It doesn't
+    /// need to know about virtual columns, error streams, etc.
+    /// 2: By polling `KafkaConsumer2` directly the user (StorageKafka2) should report back the intent size in order to
+    /// be able to save it before pushing the block. Yes, the current solution does not solve this (in
+    /// MessageSinkFunction KeeperHandlingConsumer has no control over the blocks) completely, but I think it is a good
+    /// compromise. In the future we might add a similar class than `KafkaSource` to handle the conversion of messages
+    /// to rows, but right now this is not the priority.
     /// 3: There are several reasons why KeeperHandlingConsumer might not be able to poll messages:
-    ///      - Keeper session has ended
-    ///      - Couldn't get the list of topic partitions from Kafka
-    ///      - Couldn't lock any topic partitions
-    ///    In case of these reasons it doesn't make sense to set up the whole pipeline, which not the lightest operation.
-    /// As a result we have the the MessageSink callback. In the end I think the extra complexity does worth it.
+    ///   - Keeper session has ended
+    ///   - Couldn't get the list of topic partitions from Kafka
+    ///   - Couldn't lock any topic partitions
+    /// In case of these reasons it doesn't make sense to set up the whole pipeline, which not the lightest operation.
+    /// As a result we have the the MessageSink callback. In the end I think the extra complexity worth it.
     std::optional<CannotPollReason> prepareToPoll();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
