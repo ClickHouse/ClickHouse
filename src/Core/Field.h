@@ -106,6 +106,8 @@ template <is_decimal T>
 class DecimalField
 {
 public:
+    using ValueType = T;
+
     explicit DecimalField(T value = {}, UInt32 scale_ = 0)
     :   dec(value),
         scale(scale_)
@@ -115,6 +117,11 @@ public:
     T getValue() const { return dec; }
     T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
+
+    explicit operator bool() const { return dec.value != 0; }
+
+    template <std::floating_point F>
+    explicit operator F() const;
 
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
@@ -161,6 +168,7 @@ template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = tr
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<DateTime64>> = true;
 
 template <typename T, typename SFINAE = void>
 struct NearestFieldTypeImpl;

@@ -52,6 +52,10 @@ def execute_query_impl(host, port, path, query, timestamp):
     return r.json()
 
 
+def execute_query_locally(query, timestamp):
+    return node.query("SELECT * FROM prometheusQuery('prometheus', '{query}', {timestamp}")
+
+
 def execute_remote_write_impl(host, port, path, body):
     if not path.startswith("/"):
         path += "/"
@@ -82,6 +86,8 @@ def show_query_result(query):
     print(f"Result from prometheus_writer: {result_from_writer}")
     result_from_reader = execute_query_on_prometheus_reader(query, evaluation_time)
     print(f"Result from prometheus_reader: {result_from_reader}")
+    local_result = execute_query_locally(query, evaluation_time)
+    print(f"Result from local evaluation: {local_result}")
 
 
 def compare_query(query):
@@ -94,8 +100,10 @@ def compare_query(query):
         result_from_writer = execute_query_on_prometheus_writer(query, evaluation_time)
         time.sleep(1)
         result_from_reader = execute_query_on_prometheus_reader(query, evaluation_time)
+        local_result = execute_query_locally(query, evaluation_time)
         print(f"Result from prometheus_writer: {result_from_writer}")
         print(f"Result from prometheus_reader: {result_from_reader}")
+        print(f"Result from local evaluation: {local_result}")
         if result_from_writer == result_from_reader:
             return
     raise Exception(

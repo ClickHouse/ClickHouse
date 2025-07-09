@@ -382,6 +382,14 @@ static void explainStep(
         step.describeDistributedPlan(settings, options);
 }
 
+std::string debugExplainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.header = true, .actions = true};
+    plan.explainPlan(out, options);
+    return out.str();
+}
+
 std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
@@ -389,6 +397,21 @@ std::string debugExplainStep(IQueryPlanStep & step)
     IQueryPlanStep::FormatSettings settings{.out = out};
     explainStep(step, settings, options);
     return out.str();
+}
+
+static void explainChildPlan(const IQueryPlanStep & step, size_t child_index, const QueryPlan & child_plan, IQueryPlanStep::FormatSettings & settings, const ExplainPlanOptions & options)
+{
+    std::string prefix(settings.offset, ' ');
+    settings.out << prefix;
+    settings.out  << "Child #" << child_index << " of " << step.getName();
+
+    const auto & description = step.getStepDescription();
+    if (options.description && !description.empty())
+        settings.out  <<" (" << description << ')';
+
+    settings.out.write('\n');
+
+    child_plan.explainPlan(settings.out, options, settings.offset / settings.indent + 1);
 }
 
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
@@ -426,9 +449,13 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         else
         {
             auto child_plans = frame.node->step->getChildPlans();
-
-            for (const auto & child_plan : child_plans)
-                child_plan->explainPlan(buffer, options, indent + stack.size());
+            if (!child_plans.empty())
+            {
+                settings.offset = (indent + stack.size()) * settings.indent;
+                size_t child_index = 0;
+                for (const auto & child_plan : child_plans)
+                    explainChildPlan(*frame.node->step, child_index++, *child_plan, settings, options);
+            }
 
             stack.pop();
         }

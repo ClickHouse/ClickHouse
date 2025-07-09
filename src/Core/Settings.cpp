@@ -6885,6 +6885,18 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
+    DECLARE(String, promql_database_name, "", R"(
+Specifies the database name to be used with promql dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(String, promql_table_name, "", R"(
+Specifies the name of a TimeSeries table to be used with promql dialect.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Float, promql_evaluation_time, 0, R"(
+Sets the evaluation time to be used with promql dialect. Zero means the current time.
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

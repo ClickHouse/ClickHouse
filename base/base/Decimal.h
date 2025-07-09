@@ -55,6 +55,8 @@ struct Decimal
 
     constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
 
+    explicit constexpr operator bool() const { return value != 0; }
+
     template <typename U>
     constexpr U convertTo() const
     {
