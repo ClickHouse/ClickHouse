@@ -1,16 +1,22 @@
 #include "StorageObjectStorageSource.h"
 
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -19,15 +25,12 @@
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Common/logger_useful.h"
+#include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
 #include <Poco/Logger.h>
@@ -227,6 +230,17 @@ Chunk StorageObjectStorageSource::generate()
 
     while (true)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, generate0"),
+            "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+            reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
+            (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
+                                                                         : std::numeric_limits<uint64_t>::max(),
+            reader.reader != nullptr,
+            reader.pipeline != nullptr,
+            reader.read_buf != nullptr,
+            reader.source != nullptr);
+
         if (isCancelled() || !reader)
         {
             if (reader)
@@ -235,6 +249,11 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         Chunk chunk;
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, generate"),
+            "Generating chunks from file with name: {}, object storage source: {}",
+            reader.getObjectInfo()->getPath(),
+            configuration->getTypeName());
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
@@ -334,6 +353,18 @@ Chunk StorageObjectStorageSource::generate()
 
         assert(reader_future.valid());
         reader = reader_future.get();
+
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, generate1"),
+            "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+            reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
+            (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
+                                                                         : std::numeric_limits<uint64_t>::max(),
+            reader.reader != nullptr,
+            reader.pipeline != nullptr,
+            reader.read_buf != nullptr,
+            reader.source != nullptr);
+
 
         if (!reader)
             break;
@@ -514,7 +545,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (configuration->hasPositionDeleteTransformer(object_info))
         {
             LOG_DEBUG(
-                &Poco::Logger::get("StorageObjectStorageSource"),
+                &Poco::Logger::get("StorageObjectStorageSource, createReader"),
                 "Adding position delete transformer for object: {}",
                 object_info->getPath());
             builder.addSimpleTransform(
@@ -568,13 +599,39 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource, createReader"),
+        "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+        object_info->getPath(),
+        object_info->metadata->size_bytes,
+        current_reader != nullptr,
+        pipeline != nullptr,
+        read_buf != nullptr,
+        source != nullptr);
+
     return ReaderHolder(
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
 }
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler(
+        [=, this]
+        {
+            auto real_reader = createReader();
+            LOG_DEBUG(
+                &Poco::Logger::get("StorageObjectStorageSource, createReaderAsync"),
+                "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+                reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
+                (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
+                                                                             : std::numeric_limits<uint64_t>::max(),
+                reader.reader != nullptr,
+                reader.pipeline != nullptr,
+                reader.read_buf != nullptr,
+                reader.source != nullptr);
+            return real_reader;
+        },
+        Priority{});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(

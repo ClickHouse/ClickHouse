@@ -114,7 +114,6 @@ protected:
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
-    private:
         ObjectInfoPtr object_info;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
