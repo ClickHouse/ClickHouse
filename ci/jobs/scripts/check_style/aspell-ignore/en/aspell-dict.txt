@@ -722,6 +722,7 @@ NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
 NumericIndexedVector
+NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS

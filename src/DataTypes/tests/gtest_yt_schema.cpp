@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
-#include "Common/IntervalKind.h"
+#include <Common/IntervalKind.h>
 #include <Common/Exception.h>
 #include <fmt/format.h>
 

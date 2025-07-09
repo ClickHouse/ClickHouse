@@ -48,6 +48,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
+
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -56,9 +60,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cast_string_to_date_time_mode", "basic", "basic", "Allow to use different DateTime parsing mode in String to DateTime cast"},
             {"parallel_replicas_connect_timeout_ms", 1000, 300, "Separate connection timeout for parallel replicas queries"},
             {"use_iceberg_partition_pruning", false, true, "Enable Iceberg partition pruning by default."},
-            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
-            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"distributed_cache_credentials_refresh_period_seconds", 5, 5, "New private setting"},
             {"enable_shared_storage_snapshot_in_query", false, false, "A new setting to share storage snapshot in query"},
             {"merge_tree_storage_snapshot_sleep_ms", 0, 0, "A new setting to debug storage snapshot consistency in query"},

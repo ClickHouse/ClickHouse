@@ -3,9 +3,9 @@
 
 #if USE_YTSAURUS
 
-#include "YTsaurusQueries.h"
+#include <Core/YTsaurus/YTsaurusQueries.h>
 #include <Poco/JSON/Object.h>
-#include "Storages/ColumnsDescription.h"
+#include <Storages/ColumnsDescription.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>

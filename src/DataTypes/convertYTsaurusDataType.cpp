@@ -1,4 +1,4 @@
-#include "convertYTsaurusDataType.h"
+#include <DataTypes/convertYTsaurusDataType.h>
 #include <memory>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TYPE;
     extern const int INCORRECT_DATA;
 }
 
@@ -219,7 +218,7 @@ DataTypePtr convertYTTuple(const Poco::JSON::Object::Ptr & json)
     types.reserve(tuple_types->size());
     for (const auto & tuple_type : *tuple_types)
     {
-        auto element_json = tuple_type.extract<Poco::JSON::Object::Ptr>();
+        const auto & element_json = tuple_type.extract<Poco::JSON::Object::Ptr>();
         types.push_back(convertYTItemType(element_json->get("type")));
     }
     return std::make_shared<DataTypeTuple>(types);
@@ -244,7 +243,7 @@ DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)
     types.reserve(elements_json->size());
     for (const auto & element : *elements_json)
     {
-        auto element_json = element.extract<Poco::JSON::Object::Ptr>();
+        const auto & element_json = element.extract<Poco::JSON::Object::Ptr>();
         types.push_back(convertYTItemType(element_json->get("type")));
     }
     return std::make_shared<DataTypeVariant>(types);
@@ -263,7 +262,7 @@ DataTypePtr convertYTStruct(const Poco::JSON::Object::Ptr &json)
     names.reserve(members_json->size());
     for (const auto & member : *members_json)
     {
-        auto member_json = member.extract<Poco::JSON::Object::Ptr>();
+        const auto & member_json = member.extract<Poco::JSON::Object::Ptr>();
         if (!member_json->get("name") || !member_json->has("type"))
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'struct' type from YTsaurus. Missing field `member`.");
@@ -294,7 +293,7 @@ DataTypePtr convertYTTypeV3(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse the YT json schema('type_name' is not string)");
     }
-    auto data_type = data_type_var.extract<std::string>();
+    const auto & data_type = data_type_var.extract<std::string>();
     DataTypePtr data_type_ptr;
     if (data_type == "decimal")
     {

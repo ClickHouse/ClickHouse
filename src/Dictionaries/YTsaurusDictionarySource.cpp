@@ -1,8 +1,8 @@
 #include "config.h"
 
-#include "DictionarySourceFactory.h"
 #if USE_YTSAURUS
-#include "YTsaurusDictionarySource.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/YTsaurusDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/YTsaurusSource.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>

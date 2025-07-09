@@ -1,6 +1,6 @@
 #include "config.h"
 #if USE_YTSAURUS
-#include "YTsaurusClient.h"
+#include <Core/YTsaurus/YTsaurusClient.h>
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting

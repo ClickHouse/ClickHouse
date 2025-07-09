@@ -3,8 +3,8 @@
 #include "config.h"
 
 #if USE_YTSAURUS
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 

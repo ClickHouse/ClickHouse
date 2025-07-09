@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_YTSAURUS
-#include "YTsaurusSource.h"
+#include <Processors/Sources/YTsaurusSource.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 
 
@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace YTsaurusSetting

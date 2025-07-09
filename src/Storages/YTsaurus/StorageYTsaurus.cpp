@@ -75,7 +75,7 @@ Pipe StorageYTsaurus::read(
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings , ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
 {
     YTsaurusStorageConfiguration configuration{.settings = settings};
     for (auto & engine_arg : engine_args)
