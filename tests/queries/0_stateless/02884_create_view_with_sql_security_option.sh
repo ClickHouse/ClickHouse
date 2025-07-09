@@ -147,7 +147,7 @@ ${CLICKHOUSE_CLIENT} --query "
   AS SELECT * FROM $db.test_table;
 "
 
-echo "grand select on test_mv_5 to user2"
+echo "grant select on test_mv_5 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_5 TO $user2"
 
 echo "alter table test_mv_5"
@@ -157,11 +157,11 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_5"
 echo "show create table test_mv_5"
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_mv_5" | grep -c "SQL SECURITY NONE"
 
-echo "grand select on test_mv_1 to user2"
+echo "grant select on test_mv_1 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_1 TO $user2"
-echo "grand select on test_mv_3 to user2"
+echo "grant select on test_mv_3 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_3 TO $user2"
-echo "grand select on test_mv_4 to user2"
+echo "grant select on test_mv_4 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_4 TO $user2"
 
 echo "select from test_mv_1 as user2"
@@ -203,6 +203,13 @@ CREATE TABLE $db.source
 ENGINE = MergeTree
 ORDER BY a;
 
+CREATE TABLE $db.source3
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
 CREATE TABLE $db.destination1
 (
     a UInt64
@@ -211,6 +218,13 @@ ENGINE = MergeTree
 ORDER BY a;
 
 CREATE TABLE $db.destination2
+(
+    a UInt64
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+CREATE TABLE $db.destination3
 (
     a UInt64
 )
@@ -227,18 +241,18 @@ CREATE MATERIALIZED VIEW $db.mv2 TO $db.destination2
 AS SELECT *
 FROM $db.destination1;
 
-CREATE MATERIALIZED VIEW $db.mv3 TO $db.destination2
+CREATE MATERIALIZED VIEW $db.mv3 TO $db.destination3
 DEFINER = $user4 SQL SECURITY DEFINER
 AS SELECT *
-FROM $db.destination1
+FROM $db.source3
 EOF
 
 echo "insert into source"
-(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 echo "grant insert on source to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
 echo "insert into source as user2"
-${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100"
 
 echo "select from destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
@@ -259,17 +273,17 @@ echo "create view"
 
 echo "insert with not enough rights"
 ${CLICKHOUSE_CLIENT} <<EOF
-GRANT SELECT ON $db.destination1 TO $user4;
-GRANT INSERT ON $db.destination1 TO $user4;
-GRANT SELECT ON $db.destination2 TO $user4;
-GRANT NONE ON $db.destination2 TO $user4;
+GRANT SELECT ON $db.source3 TO $user4;
+GRANT INSERT ON $db.source3 TO $user4;
+GRANT SELECT ON $db.destination3 TO $user4;
+GRANT NONE ON $db.destination3 TO $user4;
 
 GRANT SELECT ON $db.mv3 TO $user5;
 GRANT INSERT ON $db.mv3 TO $user5;
-GRANT SELECT ON $db.destination1 TO $user5;
-GRANT INSERT ON $db.destination1 TO $user5;
-GRANT SELECT ON $db.destination2 TO $user5;
-GRANT INSERT ON $db.destination2 TO $user5;
+GRANT SELECT ON $db.source3 TO $user5;
+GRANT INSERT ON $db.source3 TO $user5;
+GRANT SELECT ON $db.destination3 TO $user5;
+GRANT INSERT ON $db.destination3 TO $user5;
 EOF
 
 (( $(${CLICKHOUSE_CLIENT} --user $user5 --query "INSERT INTO $db.mv3 VALUES (10)" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
