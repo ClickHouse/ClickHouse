@@ -531,19 +531,25 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         nsel->mutable_orderby()->set_oall(true);
         addLimitOrOffset(rg, gen, ncols, nsel);
     }
-    else if (measure_performance)
+
+    /// Don't write statistics
+    if (!sel->has_setting_values())
+    {
+        const auto * news = sel->mutable_setting_values();
+        UNUSED(news);
+    }
+    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+    SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+
+    sv->set_property("output_format_write_statistics");
+    sv->set_value("0");
+    if (measure_performance)
     {
         /// Add tag to find query later on
-        if (!sel->has_setting_values())
-        {
-            const auto * news = sel->mutable_setting_values();
-            UNUSED(news);
-        }
-        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+        SetValue * sv2 = svs.add_other_values();
 
-        sv->set_property("log_comment");
-        sv->set_value("'measure_performance'");
+        sv2->set_property("log_comment");
+        sv2->set_value("'measure_performance'");
     }
 }
 
