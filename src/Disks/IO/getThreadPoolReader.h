@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/types.h"
+#include <base/types.h>
 #include <memory>
 
 namespace Poco::Util { class AbstractConfiguration; }
