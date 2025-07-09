@@ -1,3 +1,5 @@
+# docker build -t clickhouse/integration-test-with-hms .
+ARG FROM_TAG=latest
 FROM openjdk:8-jre-slim AS build
 
 RUN apt-get update && apt-get -o Acquire::Retries=5 install --fix-missing -y curl
