@@ -101,9 +101,11 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
                                                 );
         if (!new_ast)
             return;
-
-        new_ast->setAlias(ast->tryGetAlias());
-        ast = new_ast;
+        else
+        {
+            new_ast->setAlias(ast->tryGetAlias());
+            ast = new_ast;
+        }
     }
     else if (column_id == 1)
     {
@@ -118,9 +120,11 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
                                                 );
         if (!new_ast)
             return;
-
-        new_ast->setAlias(ast->tryGetAlias());
-        ast = new_ast;
+        else
+        {
+            new_ast->setAlias(ast->tryGetAlias());
+            ast = new_ast;
+        }
     }
 }
 

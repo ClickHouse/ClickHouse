@@ -1,7 +1,5 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 
-#include <Core/Block.h>
-
 namespace DB
 {
 

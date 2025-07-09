@@ -1,13 +1,16 @@
 import os
-
+import math
 import pytest
-
-from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import mongo_pass
-from helpers.external_sources import SourceMongo
 
 from .common import *
 
+from helpers.cluster import ClickHouseCluster
+from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.external_sources import SourceMongo
+
+SOURCE = None
+cluster = None
+node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
@@ -21,9 +24,7 @@ def secure_connection(request):
 
 @pytest.fixture(scope="module")
 def cluster(secure_connection):
-    cluster_name = __file__.removeprefix("test_").removesuffix(".py")
-    cluster_name += "_secure" if secure_connection else "_insecure"
-    return ClickHouseCluster(cluster_name)
+    return ClickHouseCluster(__file__)
 
 
 @pytest.fixture(scope="module")
@@ -31,11 +32,11 @@ def source(secure_connection, cluster):
     return SourceMongo(
         "MongoDB",
         "localhost",
-        cluster.mongo_secure_port if secure_connection else cluster.mongo_port,
-        "mongo_secure" if secure_connection else "mongo1",
-        27017,
+        cluster.mongo_port,
+        cluster.mongo_host,
+        "27017",
         "root",
-        mongo_pass,
+        "clickhouse",
         secure=secure_connection,
     )
 
@@ -64,25 +65,41 @@ def ranged_tester(source):
 
 @pytest.fixture(scope="module")
 def main_config(secure_connection):
+    main_config = []
     if secure_connection:
-        return [os.path.join("configs", "disable_ssl_verification.xml")]
-    return [os.path.join("configs", "ssl_verification.xml")]
+        main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
+    else:
+        main_config.append(os.path.join("configs", "ssl_verification.xml"))
+    return main_config
 
 
 @pytest.fixture(scope="module")
 def started_cluster(
+    secure_connection,
     cluster,
     main_config,
     simple_tester,
     ranged_tester,
     complex_tester,
 ):
+    SOURCE = SourceMongo(
+        "MongoDB",
+        "localhost",
+        cluster.mongo_port,
+        cluster.mongo_host,
+        "27017",
+        "root",
+        "clickhouse",
+        secure=secure_connection,
+    )
     dictionaries = simple_tester.list_dictionaries()
-    cluster.add_instance(
-        "node1",
+
+    node = cluster.add_instance(
+        "node",
         main_configs=main_config,
         dictionaries=dictionaries,
         with_mongo=True,
+        with_mongo_secure=secure_connection,
     )
 
     try:
@@ -101,22 +118,22 @@ def started_cluster(
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(secure_connection, started_cluster, layout_name, simple_tester):
-    simple_tester.execute(layout_name, started_cluster.instances["node1"])
+    simple_tester.execute(layout_name, started_cluster.instances["node"])
 
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
 def test_complex(secure_connection, started_cluster, layout_name, complex_tester):
-    complex_tester.execute(layout_name, started_cluster.instances["node1"])
+    complex_tester.execute(layout_name, started_cluster.instances["node"])
 
 
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(secure_connection, started_cluster, layout_name, ranged_tester):
-    ranged_tester.execute(layout_name, started_cluster.instances["node1"])
+    ranged_tester.execute(layout_name, started_cluster.instances["node"])
 
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple_ssl(secure_connection, started_cluster, layout_name, simple_tester):
-    simple_tester.execute(layout_name, started_cluster.instances["node1"])
+    simple_tester.execute(layout_name, started_cluster.instances["node"])

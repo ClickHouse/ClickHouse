@@ -105,24 +105,6 @@ public:
         return children[fill_step_child_index];
     }
 
-    /// Returns true if sort node has fill staleness, false otherwise
-    bool hasFillStaleness() const
-    {
-        return children[fill_staleness_child_index] != nullptr;
-    }
-
-    /// Get fill staleness
-    const QueryTreeNodePtr & getFillStaleness() const
-    {
-        return children[fill_staleness_child_index];
-    }
-
-    /// Get fill staleness
-    QueryTreeNodePtr & getFillStaleness()
-    {
-        return children[fill_staleness_child_index];
-    }
-
     /// Get collator
     const std::shared_ptr<Collator> & getCollator() const
     {
@@ -162,8 +144,7 @@ private:
     static constexpr size_t fill_from_child_index = 1;
     static constexpr size_t fill_to_child_index = 2;
     static constexpr size_t fill_step_child_index = 3;
-    static constexpr size_t fill_staleness_child_index = 4;
-    static constexpr size_t children_size = fill_staleness_child_index + 1;
+    static constexpr size_t children_size = fill_step_child_index + 1;
 
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;

@@ -1,9 +1,6 @@
 ---
-description: 'Selects the last encountered value, similar to `anyLast`, but could
-  accept NULL.'
+slug: /en/sql-reference/aggregate-functions/reference/last_value
 sidebar_position: 160
-slug: /sql-reference/aggregate-functions/reference/last_value
-title: 'last_value'
 ---
 
 # last_value
@@ -12,7 +9,7 @@ Selects the last encountered value, similar to `anyLast`, but could accept NULL.
 Mostly it should be used with [Window Functions](../../window-functions/index.md).
 Without Window Functions the result will be random if the source stream is not ordered.
 
-## examples {#examples}
+## examples
 
 ```sql
 CREATE TABLE test_data
@@ -22,13 +19,13 @@ CREATE TABLE test_data
 )
 ENGINE = Memory;
 
-INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null)
+INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null)
 ```
 
-### example1 {#example1}
+### example1
 The NULL value is ignored at default.
 ```sql
-SELECT last_value(b) FROM test_data
+select last_value(b) from test_data
 ```
 
 ```text
@@ -37,10 +34,10 @@ SELECT last_value(b) FROM test_data
 └────────────────────────────┘
 ```
 
-### example2 {#example2}
+### example2
 The NULL value is ignored.
 ```sql
-SELECT last_value(b) ignore nulls FROM test_data
+select last_value(b) ignore nulls from test_data
 ```
 
 ```text
@@ -49,10 +46,10 @@ SELECT last_value(b) ignore nulls FROM test_data
 └────────────────────────────┘
 ```
 
-### example3 {#example3}
+### example3
 The NULL value is accepted.
 ```sql
-SELECT last_value(b) respect nulls FROM test_data
+select last_value(b) respect nulls from test_data
 ```
 
 ```text
@@ -61,7 +58,7 @@ SELECT last_value(b) respect nulls FROM test_data
 └─────────────────────────────┘
 ```
 
-### example4 {#example4}
+### example4
 Stabilized result using the sub-query with `ORDER BY`.
 ```sql
 SELECT

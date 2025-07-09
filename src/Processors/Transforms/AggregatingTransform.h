@@ -22,13 +22,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
+class AggregatedChunkInfo : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
+
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
@@ -103,12 +106,18 @@ struct ManyAggregatedData
                 // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
                 if (variant->aggregator)
                 {
-                    pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
+                    // variant is moved here and will be destroyed in the destructor of the lambda function.
+                    pool->trySchedule(
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
 
-                            my_variant.reset();
+                            setThreadName("AggregDestruct");
                         });
                 }
             }
@@ -140,7 +149,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform : public IProcessor
 {
 public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
@@ -206,8 +215,6 @@ private:
     bool is_consume_started = false;
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
-
-    std::list<TemporaryBlockStreamHolder> tmp_files;
 
     void initGenerate();
 };

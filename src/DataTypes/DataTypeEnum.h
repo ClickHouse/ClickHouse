@@ -3,7 +3,10 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
+#include <vector>
+#include <unordered_map>
 
 
 namespace DB
@@ -80,8 +83,6 @@ public:
     bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
-
-    void updateHashImpl(SipHash & hash) const override;
 };
 
 

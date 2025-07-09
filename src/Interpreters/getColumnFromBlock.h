@@ -1,9 +1,8 @@
 #pragma once
+#include <Core/Block.h>
 
 namespace DB
 {
-
-class Block;
 
 /// Helps in-memory storages to extract columns from block.
 /// Properly handles cases, when column is a subcolumn and when it is compressed.

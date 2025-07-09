@@ -5,7 +5,6 @@
 import uuid
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -97,7 +96,6 @@ def get_node(query_node, table="dist", *args, **kwargs):
         "log_queries": 1,
         "log_queries_min_type": "QUERY_START",
         "prefer_localhost_replica": 0,
-        "max_parallel_replicas": 1,
     }
     if "settings" not in kwargs:
         kwargs["settings"] = settings
@@ -202,35 +200,36 @@ def test_distributed_replica_max_ignored_errors():
         "connect_timeout": 2,
         "receive_timeout": 2,
         "send_timeout": 2,
+        "idle_connection_timeout": 2,
         "tcp_keep_alive_timeout": 2,
         "distributed_replica_max_ignored_errors": 0,
         "distributed_replica_error_half_life": 60,
-        "max_parallel_replicas": 1,
     }
 
     # initiate connection (if started only this test)
     n2.query("SELECT * FROM dist", settings=settings)
+    cluster.pause_container("n1")
 
-    with cluster.pause_container("n1"):
-        # n1 paused -- skipping, and increment error_count for n1
-        # but the query succeeds, no need in query_and_get_error()
-        n2.query("SELECT * FROM dist", settings=settings)
-        # XXX: due to config reloading we need second time (sigh)
-        n2.query("SELECT * FROM dist", settings=settings)
-        # check error_count for n1
-        assert (
-            int(
-                n2.query(
-                    """
-        SELECT errors_count FROM system.clusters
-        WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
-        """,
-                    settings=settings,
-                )
+    # n1 paused -- skipping, and increment error_count for n1
+    # but the query succeeds, no need in query_and_get_error()
+    n2.query("SELECT * FROM dist", settings=settings)
+    # XXX: due to config reloading we need second time (sigh)
+    n2.query("SELECT * FROM dist", settings=settings)
+    # check error_count for n1
+    assert (
+        int(
+            n2.query(
+                """
+    SELECT errors_count FROM system.clusters
+    WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
+    """,
+                settings=settings,
             )
-            == 1
         )
+        == 1
+    )
 
+    cluster.unpause_container("n1")
     # still n2
     assert get_node(n2, settings=settings) == "n2"
     # now n1

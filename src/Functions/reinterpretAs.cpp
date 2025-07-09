@@ -226,7 +226,7 @@ public:
                         else
                         {
                             size_t offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
-                            reverseMemcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
+                            memcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
                         }
                         offset += step;
                     }
@@ -314,11 +314,11 @@ private:
         {
             std::string_view data = src.getDataAt(i).toView();
 
-            if constexpr (std::endian::native == std::endian::little)
-                memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
-            else
-                reverseMemcpy(&data_to[offset], data.data(), std::min(n, data.size()));
-
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#else
+            reverseMemcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+#endif
             offset += n;
         }
     }
@@ -328,10 +328,11 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * input_rows_count);
 
-        if constexpr (std::endian::native == std::endian::little)
-            memcpy(data_to.data(), src.getRawData().data(), data_to.size());
-        else
-            reverseMemcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#else
+        reverseMemcpy(data_to.data(), src.getRawData().data(), data_to.size());
+#endif
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst, size_t input_rows_count)

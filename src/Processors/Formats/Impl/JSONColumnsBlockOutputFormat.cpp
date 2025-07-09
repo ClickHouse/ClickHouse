@@ -3,7 +3,6 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -51,8 +50,6 @@ void registerOutputFormatJSONColumns(FormatFactory & factory)
     {
         return std::make_shared<JSONColumnsBlockOutputFormat>(buf, sample, format_settings, format_settings.json.validate_utf8);
     });
-
-    factory.setContentType("JSONColumns", "application/json; charset=UTF-8");
 }
 
 }

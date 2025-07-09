@@ -1,15 +1,15 @@
-#include <Interpreters/Context_fwd.h>
+#include "Interpreters/Context_fwd.h"
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Parsers/queryToString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/StorageFileCluster.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFile.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFileCluster.h>
 
@@ -21,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 StorageFileCluster::StorageFileCluster(
@@ -66,33 +66,18 @@ StorageFileCluster::StorageFileCluster(
 
 void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
 {
-    auto * table_function = extractTableFunctionFromSelectQuery(query);
-    if (!table_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", queryToString(query));
 
     TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
 }
 
-RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * /* filter */,
-    const ContextPtr & context,
-    const size_t) const
+RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), context);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
-    {
-        auto file = iter->next();
-        if (file.empty())
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 

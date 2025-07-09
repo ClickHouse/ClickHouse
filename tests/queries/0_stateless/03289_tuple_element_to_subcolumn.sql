@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS t_tuple_elem;
 
-SET enable_variant_type = 1;
+SET allow_experimental_variant_type = 1;
 
 CREATE TABLE t_tuple_elem (
     t1 Tuple(

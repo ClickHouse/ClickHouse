@@ -1,21 +1,19 @@
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include "UserDefinedExecutableFunctionFactory.h"
 
 #include <filesystem>
 
-#include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
-#include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -28,11 +26,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace Setting
-{
-    extern const SettingsBool log_queries;
 }
 
 namespace
@@ -112,7 +105,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -252,14 +245,6 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
-
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
-    }
-
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
@@ -272,14 +257,6 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
         auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
-
-        if (CurrentThread::isInitialized())
-        {
-            auto query_context = CurrentThread::get().getQueryContext();
-            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
-        }
-
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
     }
 

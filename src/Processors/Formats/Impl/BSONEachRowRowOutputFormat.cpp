@@ -21,8 +21,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
-#include <Processors/Port.h>
-
 
 namespace DB
 {
@@ -38,10 +36,9 @@ namespace ErrorCodes
 static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buf;
-    {
-        WriteBufferValidUTF8 validating_buf(buf);
-        writeJSONString(name, validating_buf, settings);
-    }
+    WriteBufferValidUTF8 validating_buf(buf);
+    writeJSONString(name, validating_buf, settings);
+    validating_buf.finalize();
     /// Return value without quotes
     return buf.str().substr(1, buf.str().size() - 2);
 }
@@ -460,7 +457,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type =  tuple_type->hasExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
             String current_path = path + "." + name;
@@ -545,8 +542,6 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
-    factory.markOutputFormatNotTTYFriendly("BSONEachRow");
-    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }

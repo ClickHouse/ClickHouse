@@ -6,7 +6,6 @@
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
-            <verificationMode>none</verificationMode>
             <invalidCertificateHandler>
                 <name>AcceptCertificateHandler</name>  <!-- For tests only-->
             </invalidCertificateHandler>

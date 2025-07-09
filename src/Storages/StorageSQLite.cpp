@@ -1,8 +1,7 @@
-#include <Storages/StorageSQLite.h>
+#include "StorageSQLite.h"
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -12,7 +11,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
@@ -219,7 +217,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::SQLITE,
+        .source_access_type = AccessType::SQLITE,
     });
 }
 

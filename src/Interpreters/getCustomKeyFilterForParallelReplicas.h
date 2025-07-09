@@ -12,7 +12,7 @@ namespace DB
 {
 struct ParallelReplicasCustomKeyFilter
 {
-    ParallelReplicasMode filter_type;
+    ParallelReplicasCustomKeyFilterType filter_type;
     UInt64 range_lower;
     UInt64 range_upper;
 };

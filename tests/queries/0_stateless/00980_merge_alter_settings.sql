@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, log-engine
+-- Tags: no-replicated-database
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 DROP TABLE IF EXISTS log_for_alter;
@@ -8,7 +8,7 @@ CREATE TABLE log_for_alter (
   Data String
 ) ENGINE = Log();
 
-ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS log_for_alter;
 

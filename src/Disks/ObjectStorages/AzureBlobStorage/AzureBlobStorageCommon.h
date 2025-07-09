@@ -4,23 +4,16 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
-#include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
 #include <azure/core/http/curl_transport.hpp>
-
-#endif
-
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/strong_typedef.h>
-#include <filesystem>
-#include <variant>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -29,6 +22,11 @@ struct Settings;
 
 namespace AzureBlobStorage
 {
+
+using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
+using ContainerClient = Azure::Storage::Blobs::BlobContainerClient;
+using BlobClient = Azure::Storage::Blobs::BlobClient;
+using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
 
 struct RequestSettings
 {
@@ -52,13 +50,9 @@ struct RequestSettings
     size_t sdk_retry_initial_backoff_ms = 10;
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
-    bool check_objects_after_upload = false;
-    bool read_only = false;
 
-#if USE_AZURE_BLOB_STORAGE
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;
-#endif
 };
 
 struct Endpoint
@@ -70,7 +64,7 @@ struct Endpoint
     String sas_auth;
     std::optional<bool> container_already_exists;
 
-    String getContainerEndpoint() const
+    String getEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -82,13 +76,16 @@ struct Endpoint
         if (!container_name.empty())
             url += "/" + container_name;
 
+        if (!prefix.empty())
+            url += "/" + prefix;
+
         if (!sas_auth.empty())
             url += "?" + sas_auth;
 
         return url;
     }
 
-    String getServiceEndpoint() const
+    String getEndpointWithoutContainer() const
     {
         String url = storage_account_url;
 
@@ -102,37 +99,13 @@ struct Endpoint
     }
 };
 
-#if USE_AZURE_BLOB_STORAGE
+using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
-using BlobClient = Azure::Storage::Blobs::BlobClient;
-using BlockBlobClient = Azure::Storage::Blobs::BlockBlobClient;
-using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
-
-using Azure::Storage::Blobs::ListBlobsOptions;
-using Azure::Storage::Blobs::ListBlobsPagedResponse;
-using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
-
-/// A wrapper for ContainerClient that correctly handles the prefix of blobs.
-/// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
-class ContainerClientWrapper
-{
-public:
-    ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
-
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
-
-private:
-    RawContainerClient client;
-    fs::path blob_prefix;
-};
-
-using ContainerClient = ContainerClientWrapper;
-using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
-using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
+using AuthMethod = std::variant<
+    ConnectionString,
+    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
+    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
 
 struct ConnectionParams
 {
@@ -155,32 +128,12 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
 BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-#endif
-
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);
-std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref);
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(const Settings & query_settings, bool use_native_copy);
+std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
 }
 
-
-/// AzureSettingsByEndpoint contains a map of AzureBlobStorage endpoints and their settings, used in Context level
-/// When any endpoint is used, the settings are looked up in this map and applied
-class AzureSettingsByEndpoint
-{
-public:
-    void loadFromConfig(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const DB::Settings & settings);
-
-    std::optional<AzureBlobStorage::RequestSettings> getSettings(
-        const std::string & endpoint) const;
-
-private:
-    mutable std::mutex mutex;
-    std::map<const String, const AzureBlobStorage::RequestSettings> azure_settings;
-};
-
-
 }
+
+#endif

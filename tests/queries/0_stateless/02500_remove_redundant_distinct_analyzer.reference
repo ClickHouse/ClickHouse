@@ -46,17 +46,19 @@ ORDER BY number
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
-      Union
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
-          Distinct (DISTINCT)
-            Distinct (Preliminary DISTINCT)
-              Expression ((Projection + Change column names to column identifiers))
-                ReadFromSystemNumbers
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
-          Distinct (DISTINCT)
-            Distinct (Preliminary DISTINCT)
-              Expression ((Projection + Change column names to column identifiers))
-                ReadFromSystemNumbers
+      Expression (Before ORDER BY)
+        Distinct (Preliminary DISTINCT)
+          Union
+            Expression ((Projection + (Change column names to column identifiers + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromSystemNumbers
+            Expression (( + ( + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromSystemNumbers
 -- execute
 0
 1
@@ -79,7 +81,7 @@ Expression (Project names)
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
-          Expression (Projection)
+          Expression ((Projection + DROP unused columns after JOIN))
             Join (JOIN FillRightFirst)
               Expression ((Change column names to column identifiers + Project names))
                 Distinct (DISTINCT)
@@ -244,7 +246,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
       Aggregating
-        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
           Join (JOIN FillRightFirst)
             Expression (Change column names to column identifiers)
               ReadFromSystemNumbers
@@ -280,7 +282,7 @@ Expression (Project names)
         Sorting (Sorting for ORDER BY)
           Expression ((Before ORDER BY + Projection))
             Aggregating
-              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
                 Join (JOIN FillRightFirst)
                   Expression (Change column names to column identifiers)
                     ReadFromSystemNumbers
@@ -315,7 +317,7 @@ Expression (Project names)
           Expression ((Before ORDER BY + Projection))
             Rollup
               Aggregating
-                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
                   Join (JOIN FillRightFirst)
                     Expression (Change column names to column identifiers)
                       ReadFromSystemNumbers
@@ -348,7 +350,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
     Expression ((Before ORDER BY + Projection))
       Rollup
         Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
             Join (JOIN FillRightFirst)
               Expression (Change column names to column identifiers)
                 ReadFromSystemNumbers
@@ -386,7 +388,7 @@ Expression (Project names)
           Expression ((Before ORDER BY + Projection))
             Cube
               Aggregating
-                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
                   Join (JOIN FillRightFirst)
                     Expression (Change column names to column identifiers)
                       ReadFromSystemNumbers
@@ -419,7 +421,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
     Expression ((Before ORDER BY + Projection))
       Cube
         Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
             Join (JOIN FillRightFirst)
               Expression (Change column names to column identifiers)
                 ReadFromSystemNumbers
@@ -457,7 +459,7 @@ Expression (Project names)
           Expression ((Before ORDER BY + Projection))
             TotalsHaving
               Aggregating
-                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
                   Join (JOIN FillRightFirst)
                     Expression (Change column names to column identifiers)
                       ReadFromSystemNumbers
@@ -491,7 +493,7 @@ Expression ((Project names + (Projection + (Change column names to column identi
     Expression ((Before ORDER BY + Projection))
       TotalsHaving
         Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
             Join (JOIN FillRightFirst)
               Expression (Change column names to column identifiers)
                 ReadFromSystemNumbers
@@ -532,17 +534,19 @@ ORDER BY number
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
-      Union
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
-          Distinct (DISTINCT)
-            Distinct (Preliminary DISTINCT)
-              Expression ((Projection + Change column names to column identifiers))
-                ReadFromSystemNumbers
-        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + Project names))))
-          Distinct (DISTINCT)
-            Distinct (Preliminary DISTINCT)
-              Expression ((Projection + Change column names to column identifiers))
-                ReadFromSystemNumbers
+      Expression (Before ORDER BY)
+        Distinct (Preliminary DISTINCT)
+          Union
+            Expression ((Projection + (Change column names to column identifiers + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromSystemNumbers
+            Expression (( + ( + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromSystemNumbers
 -- execute
 0
 1

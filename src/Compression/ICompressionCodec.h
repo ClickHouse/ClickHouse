@@ -4,9 +4,9 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
+#include <Common/SipHash.h>
 
-class SipHash;
 
 namespace DB
 {
@@ -96,12 +96,6 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
-    /// Does the codec need to know the vector (Array) dimension before compression?
-    virtual bool needsVectorDimensionUpfront() const { return false; }
-
-    /// Setting dimension is useful for vector codecs (only SZ3 codec at the moment).
-    virtual void setAndCheckVectorDimension(size_t /*dimension*/);
-
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
 
@@ -120,8 +114,6 @@ public:
     /// If the codec's purpose is to calculate deltas between consecutive values.
     virtual bool isDeltaCompression() const { return false; }
 
-    virtual bool isLossyCompression() const { return false; }
-
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
@@ -134,9 +126,6 @@ public:
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
-
-    // Returns a string with a high level codec description.
-    virtual String getDescription() const = 0;
 
 protected:
     /// This is used for fuzz testing

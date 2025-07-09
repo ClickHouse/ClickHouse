@@ -1,10 +1,10 @@
-from contextlib import nullcontext as does_not_raise
-
 import pytest
-
-from helpers.client import QueryRuntimeException
+from contextlib import nullcontext as does_not_raise
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from helpers.client import QueryRuntimeException
+from helpers.test_tools import exec_query_with_retry
+from helpers.test_tools import assert_eq_with_retry
+
 
 ACCESSIBLE_IPV4 = "10.5.172.10"
 OTHER_ACCESSIBLE_IPV4 = "10.5.172.20"

@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
@@ -11,15 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
-    {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
-        valid_until.format(ostr, settings);
-    }
 }
 
 std::optional<String> ASTAuthenticationData::getPassword() const
@@ -37,7 +29,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
-    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && children.size() == 2)
+    if (type && *type == AuthenticationType::SHA256_PASSWORD && children.size() == 2)
     {
         if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
@@ -48,18 +40,12 @@ std::optional<String> ASTAuthenticationData::getSalt() const
     return {};
 }
 
-void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (type && *type == AuthenticationType::NO_PASSWORD)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
                       << (settings.hilite ? IAST::hilite_none : "");
-
-        if (valid_until)
-        {
-            formatValidUntil(*valid_until, ostr, settings);
-        }
-
         return;
     }
 
@@ -87,17 +73,6 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             {
                 if (contains_hash)
                     auth_type_name = "sha256_hash";
-
-                prefix = "BY";
-                password = true;
-                if (children.size() == 2)
-                    salt = true;
-                break;
-            }
-            case AuthenticationType::SCRAM_SHA256_PASSWORD:
-            {
-                if (contains_hash)
-                    auth_type_name = "scram_sha256_hash";
 
                 prefix = "BY";
                 password = true;
@@ -185,54 +160,52 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             auth_type_name = AuthenticationTypeInfo::get(*type).name;
     }
 
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
+
     if (!auth_type_name.empty())
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << auth_type_name << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH " << auth_type_name
+                        << (settings.hilite ? IAST::hilite_none : "");
     }
 
     if (!prefix.empty())
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
     }
 
     if (password)
     {
-        ostr << " ";
-        children[0]->format(ostr, settings);
+        settings.ostr << " ";
+        children[0]->format(settings);
     }
 
     if (salt)
     {
-        ostr << " SALT ";
-        children[1]->format(ostr, settings);
+        settings.ostr << " SALT ";
+        children[1]->format(settings);
     }
 
     if (parameter)
     {
-        ostr << " ";
-        children[0]->format(ostr, settings);
+        settings.ostr << " ";
+        children[0]->format(settings);
     }
     else if (parameters)
     {
-        ostr << " ";
+        settings.ostr << " ";
         bool need_comma = false;
         for (const auto & child : children)
         {
             if (std::exchange(need_comma, true))
-                ostr << ", ";
-            child->format(ostr, settings);
+                settings.ostr << ", ";
+            child->format(settings);
         }
     }
 
     if (scheme)
     {
-        ostr << " SCHEME ";
-        children[1]->format(ostr, settings);
-    }
-
-    if (valid_until)
-    {
-        formatValidUntil(*valid_until, ostr, settings);
+        settings.ostr << " SCHEME ";
+        children[1]->format(settings);
     }
 
 }
@@ -246,7 +219,6 @@ bool ASTAuthenticationData::hasSecretParts() const
     auto auth_type = *type;
     if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
         || (auth_type == AuthenticationType::SHA256_PASSWORD)
-        || (auth_type == AuthenticationType::SCRAM_SHA256_PASSWORD)
         || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
         || (auth_type == AuthenticationType::BCRYPT_PASSWORD))
         return true;

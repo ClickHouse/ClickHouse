@@ -1,4 +1,4 @@
-#include <Loggers/ExtendedLogChannel.h>
+#include "ExtendedLogChannel.h"
 
 #include <sys/time.h>
 #include <Common/CurrentThread.h>

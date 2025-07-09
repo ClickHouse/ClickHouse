@@ -57,7 +57,7 @@ static size_t decodeURL(const char * __restrict src, size_t src_size, char * __r
         {
             break;
         }
-        if (*src_curr_pos == '+')
+        else if (*src_curr_pos == '+')
         {
             if (!plus_as_space)
             {

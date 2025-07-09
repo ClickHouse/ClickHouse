@@ -83,10 +83,9 @@ enum class TargetArch : UInt32
     AVX512BW    = (1 << 4),
     AVX512VBMI  = (1 << 5),
     AVX512VBMI2 = (1 << 6),
-    AVX512BF16 = (1 << 7),
-    AMXBF16 = (1 << 8),
-    AMXTILE = (1 << 9),
-    AMXINT8 = (1 << 10),
+    AMXBF16 = (1 << 7),
+    AMXTILE = (1 << 8),
+    AMXINT8 = (1 << 9),
 };
 
 /// Runtime detection.
@@ -103,7 +102,6 @@ String toString(TargetArch arch);
 /// NOLINTNEXTLINE
 #define USE_MULTITARGET_CODE 1
 
-#define AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16")))
 #define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2")))
 #define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi")))
 #define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw")))
@@ -113,8 +111,6 @@ String toString(TargetArch arch);
 #define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt")))
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
-#   define BEGIN_AVX512BF16_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI2_SPECIFIC_CODE \
         _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
 #   define BEGIN_AVX512VBMI_SPECIFIC_CODE \
@@ -201,14 +197,6 @@ namespace TargetSpecific::AVX512VBMI2 { \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512BF16_SPECIFIC_CODE(...) \
-BEGIN_AVX512BF16_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512BF16 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512BF16; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
 
 #else
 
@@ -223,7 +211,6 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX512BW_SPECIFIC_CODE(...)
 #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
 #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
-#define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
 
 #endif
 
@@ -242,8 +229,7 @@ DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__) \
 DECLARE_AVX512BW_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_AVX512VBMI_SPECIFIC_CODE  (__VA_ARGS__) \
-DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__) \
-DECLARE_AVX512BF16_SPECIFIC_CODE (__VA_ARGS__)
+DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default; /// NOLINT
@@ -276,10 +262,6 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512VBMI2; /// NOLINT
 ) // DECLARE_AVX512VBMI2_SPECIFIC_CODE
-
-DECLARE_AVX512BF16_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512BF16; /// NOLINT
-) // DECLARE_AVX512BF16_SPECIFIC_CODE
 
 /** Runtime Dispatch helpers for class members.
   *

@@ -1,14 +1,11 @@
 #pragma once
 
-#include <queue>
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
+#include <queue>
 
 
 namespace DB
 {
-
-class Block;
 
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
@@ -24,7 +21,13 @@ class Block;
 class ResizeProcessor final : public IProcessor
 {
 public:
-    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs);
+    /// TODO Check that there is non zero number of inputs and outputs.
+    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
+        : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+        , current_input(inputs.begin())
+        , current_output(outputs.begin())
+    {
+    }
 
     String getName() const override { return "Resize"; }
 

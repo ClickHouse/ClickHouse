@@ -3,6 +3,8 @@
 #include <memory>
 #include <utility>
 
+#include <pcg_random.hpp>
+
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -24,12 +26,6 @@ public:
 
     Priority getPriority() const override { return priority; }
 
-    void cancel() noexcept override
-    {
-        if (merge_task)
-            merge_task->cancel();
-    }
-
 protected:
     /// Both return false if we can't execute merge.
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
@@ -44,7 +40,6 @@ private:
     TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;
-    MergeTreeData::DataPartsVector patch_parts;
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
 
@@ -54,6 +49,7 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+    pcg64 rng;
 };
 
 

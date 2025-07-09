@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
 
+#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
@@ -67,8 +68,7 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
 
-    ASTs create_queries;
-    ASTs grant_queries;
+    ASTs create_queries, grant_queries;
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));

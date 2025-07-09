@@ -1,4 +1,3 @@
-set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print ' -- binary functions';
 print binary_and(4,7), binary_or(4,7);

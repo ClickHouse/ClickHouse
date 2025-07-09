@@ -1,15 +1,12 @@
 #include <Server/PrometheusRequestHandler.h>
 
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/HTTPCommon.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
-#include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <base/scope_guard.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
@@ -36,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -139,7 +137,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
@@ -231,8 +229,7 @@ public:
         if (write_request.metadata_size())
             protocol.writeMetricsMetadata(write_request.metadata());
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
-        response.setChunkedTransferEncoding(false);
+        response.setContentType("text/plain; charset=UTF-8");
         response.send();
 
 #else
@@ -306,15 +303,13 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     IServer & server_,
     const PrometheusRequestHandlerConfig & config_,
     const AsynchronousMetrics & async_metrics_,
-    std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
-    std::unordered_map<String, String> response_headers_)
+    std::shared_ptr<PrometheusMetricsWriter> metrics_writer_)
     : server(server_)
     , config(config_)
     , async_metrics(async_metrics_)
     , metrics_writer(metrics_writer_)
     , log(getLogger("PrometheusRequestHandler"))
 {
-    response_headers = response_headers_;
     createImpl();
 }
 
@@ -346,10 +341,10 @@ void PrometheusRequestHandler::createImpl()
 void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
 {
     setThreadName("PrometheusHndlr");
-    applyHTTPResponseHeaders(response, response_headers);
 
     try
     {
+        response_finalized = false;
         write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
@@ -363,14 +358,15 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
 
-        getOutputStream(response).finalize();
+        finalizeResponse(response);
     }
     catch (...)
     {
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        trySendExceptionToClient(status.message, status.code, request, response);
+        tryFinalizeResponse(response);
 
         tryCallOnException();
     }
@@ -378,13 +374,61 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
 {
+    if (response_finalized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PrometheusRequestHandler: Response already sent");
     if (write_buffer_from_response)
         return *write_buffer_from_response;
-
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
         response, http_method == HTTPRequest::HTTP_HEAD, write_event);
-
     return *write_buffer_from_response;
+}
+
+void PrometheusRequestHandler::finalizeResponse(HTTPServerResponse & response)
+{
+    if (response_finalized)
+    {
+        /// Response is already finalized or at least tried to. We don't need the write buffer anymore in either case.
+        write_buffer_from_response = nullptr;
+    }
+    else
+    {
+        /// We set `response_finalized = true` before actually calling `write_buffer_from_response->finalize()`
+        /// because we shouldn't call finalize() again even if finalize() throws an exception.
+        response_finalized = true;
+
+        if (write_buffer_from_response)
+            std::exchange(write_buffer_from_response, {})->finalize();
+        else
+            WriteBufferFromHTTPServerResponse{response, http_method == HTTPRequest::HTTP_HEAD, write_event}.finalize();
+    }
+    chassert(response_finalized && !write_buffer_from_response);
+}
+
+void PrometheusRequestHandler::trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    if (response_finalized)
+        return; /// Response is already finalized (or tried to). We can't write the error message to the response in either case.
+
+    try
+    {
+        sendExceptionToHTTPClient(exception_message, exception_code, request, response, &getOutputStream(response), log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Couldn't send exception to client");
+    }
+}
+
+void PrometheusRequestHandler::tryFinalizeResponse(HTTPServerResponse & response)
+{
+    try
+    {
+        finalizeResponse(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
+    }
 }
 
 void PrometheusRequestHandler::tryCallOnException()

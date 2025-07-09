@@ -1,9 +1,8 @@
-#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -46,7 +45,6 @@ void registerOutputFormatTSKV(FormatFactory & factory)
         return std::make_shared<TSKVRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("TSKV");
-    factory.setContentType("TSKV", "text/tab-separated-values; charset=UTF-8");
 }
 
 }

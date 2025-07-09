@@ -1,9 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 
 #include <atomic>
 #include <mutex>

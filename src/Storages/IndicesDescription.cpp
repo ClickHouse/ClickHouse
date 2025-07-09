@@ -1,5 +1,4 @@
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
@@ -8,13 +7,14 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
-#include <Common/Exception.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -28,45 +28,6 @@ namespace ErrorCodes
 namespace
 {
 using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
-
-Tuple parseGinIndexArgumentFromAST(const ASTPtr & arguments)
-{
-    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
-    if (identifier == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
-
-    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
-    if (literal == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
-
-    Tuple key_value_pair{};
-    key_value_pair.emplace_back(identifier->name());
-    key_value_pair.emplace_back(literal->value);
-    return key_value_pair;
-}
-
-bool parseGinIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
-{
-    parsed_arguments.reserve(arguments->children.size());
-
-    for (const auto & argument : arguments->children)
-    {
-        if (const auto * ast_function = argument->template as<ASTFunction>();
-            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
-        {
-            parsed_arguments.emplace_back(parseGinIndexArgumentFromAST(ast_function->arguments));
-        }
-        else
-        {
-            if (!parsed_arguments.empty())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as GIN index arguments");
-            return false;
-        }
-    }
-
-    return true;
-}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -153,7 +114,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
     }
 
-    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     result.sample_block = result.expression->getSampleBlock();
 
@@ -168,11 +129,6 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_text_index = index_type->name == "text";
-        bool is_legacy_text_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
-        if ((is_text_index || is_legacy_text_index) && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
-            return result;
-
         for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
         {
             const auto & child = index_type->arguments->children[i];
@@ -203,14 +159,6 @@ bool IndicesDescription::has(const String & name) const
     return false;
 }
 
-bool IndicesDescription::hasType(const String & type) const
-{
-    for (const auto & index : *this)
-        if (index.type == type)
-            return true;
-    return false;
-}
-
 String IndicesDescription::toString() const
 {
     if (empty())
@@ -220,7 +168,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return serializeAST(list);
 }
 
 
@@ -247,7 +195,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 

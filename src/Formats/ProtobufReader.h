@@ -6,7 +6,6 @@
 #   include <Common/PODArray.h>
 #   include <IO/ReadBuffer.h>
 
-#   include <vector>
 
 namespace DB
 {

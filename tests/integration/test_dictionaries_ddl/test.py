@@ -1,14 +1,12 @@
-import logging
 import os
-import time
 import warnings
+import time
 
 import pymysql
 import pytest
-
+import logging
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import mysql_pass
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -48,15 +46,6 @@ node3 = cluster.add_instance(
 node4 = cluster.add_instance(
     "node4", user_configs=["configs/user_admin.xml", "configs/config_password.xml"]
 )
-node5 = cluster.add_instance(
-    "node5",
-    # Check that the cluster can start when the dictionary with the bad source query
-    # was created using DDL
-    clickhouse_path_dir="node5",
-    main_configs=["configs/allow_remote_node.xml"],
-    dictionaries=["configs/dictionaries/dictionary_with_insert_query.xml"],
-    user_configs=["configs/user_admin.xml"],
-)
 
 
 def create_mysql_conn(user, password, hostname, port):
@@ -81,7 +70,7 @@ def execute_mysql_query(connection, query):
 def started_cluster():
     try:
         cluster.start()
-        for clickhouse in [node1, node2, node3, node4, node5]:
+        for clickhouse in [node1, node2, node3, node4]:
             clickhouse.query("CREATE DATABASE test", user="admin")
             clickhouse.query(
                 "CREATE TABLE test.xml_dictionary_table (id UInt64, SomeValue1 UInt8, SomeValue2 String) ENGINE = MergeTree() ORDER BY id",
@@ -128,7 +117,7 @@ def started_cluster():
 )
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn(
-        "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS create_and_select")
     execute_mysql_query(mysql_conn, "CREATE DATABASE create_and_select")
@@ -149,8 +138,8 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     )
 
     clickhouse.query(
-        f"""
-    CREATE DICTIONARY default.{name} (
+        """
+    CREATE DICTIONARY default.{} (
         key_field1 Int32,
         key_field2 Int64,
         value1 String DEFAULT 'xxx',
@@ -159,15 +148,17 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     PRIMARY KEY key_field1, key_field2
     SOURCE(MYSQL(
         USER 'root'
-        PASSWORD '{mysql_pass}'
+        PASSWORD 'clickhouse'
         DB 'create_and_select'
-        TABLE '{name}'
+        TABLE '{}'
         REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3333)
         REPLICA(PRIORITY 2 HOST 'mysql80' PORT 3306)
     ))
-    {layout}
+    {}
     LIFETIME(MIN 1 MAX 3)
-    """
+    """.format(
+            name, name, layout
+        )
     )
 
     for i in range(172, 200):
@@ -330,39 +321,6 @@ def test_conflicting_name(started_cluster):
     ) == "17\n"
 
 
-def test_with_insert_query(started_cluster):
-    try:
-        node5.query(
-            """
-        CREATE DICTIONARY test.ddl_dictionary_with_insert_query (
-            id UInt64,
-            SomeValue1 UInt8,
-            SomeValue2 String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' QUERY 'insert into test.xml_dictionary_table values (234432, 29, "htms")'))
-        LIFETIME(MIN 0 MAX 0)
-        """
-        )
-        assert "Invalid dictionary should not be created" and False
-    except QueryRuntimeException as ex:
-        assert "(SYNTAX_ERROR)" in str(ex)
-        assert (
-            "Syntax error (Query for ClickHouse dictionary test.ddl_dictionary_with_insert_query)"
-            in str(ex)
-        )
-
-    try:
-        node5.query(
-            """
-        SELECT dictGet('test.dictionary_with_insert_query', 'SomeValue1', 432234)
-        """
-        )
-    except QueryRuntimeException as ex:
-        assert "Only SELECT query can be used as a dictionary source" in str(ex)
-
-
 def test_http_dictionary_restrictions(started_cluster):
     try:
         node3.query(
@@ -409,7 +367,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 def test_dictionary_with_where(started_cluster):
     mysql_conn = create_mysql_conn(
-        "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(
         mysql_conn, "CREATE DATABASE IF NOT EXISTS dictionary_with_where"
@@ -424,7 +382,7 @@ def test_dictionary_with_where(started_cluster):
     )
 
     node1.query(
-        f"""
+        """
     CREATE DICTIONARY default.special_dict (
         key_field1 Int32,
         value1 String DEFAULT 'xxx'
@@ -432,7 +390,7 @@ def test_dictionary_with_where(started_cluster):
     PRIMARY KEY key_field1
     SOURCE(MYSQL(
         USER 'root'
-        PASSWORD '{mysql_pass}'
+        PASSWORD 'clickhouse'
         DB 'dictionary_with_where'
         TABLE 'special_table'
         REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)
@@ -653,5 +611,3 @@ def test_named_collection(started_cluster):
     node1.query(
         "select dictGetUInt8('test.clickhouse_named_collection', 'SomeValue1', toUInt64(23))"
     ) == "0\n"
-
-    node1.query("DROP DICTIONARY test.clickhouse_named_collection")

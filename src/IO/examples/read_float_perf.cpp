@@ -75,8 +75,6 @@ try
     if (method == 2) loop<T, readFloatTextFast>(in, out);
     if (method == 3) loop<T, readFloatTextSimple>(in, out);
 
-    out.finalize();
-
     return 0;
 }
 catch (const Exception & e)

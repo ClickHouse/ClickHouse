@@ -1,8 +1,6 @@
-import json
-import os
-
 import pytest
-
+import os
+import json
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
