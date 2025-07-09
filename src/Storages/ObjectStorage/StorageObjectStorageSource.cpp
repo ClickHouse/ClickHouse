@@ -1,4 +1,3 @@
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>
@@ -20,6 +19,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -512,6 +512,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (configuration->hasPositionDeleteTransformer(object_info))
+        {
+            builder.addSimpleTransform(
+                [&](const Block & header)
+                { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
+        }
+
 
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)

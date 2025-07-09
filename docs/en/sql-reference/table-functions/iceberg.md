@@ -86,6 +86,14 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Processing of tables with deleted rows {#deleted-rows}
+
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
 ### Basic usage {#basic-usage}
  ```sql
  SELECT * FROM example_table ORDER BY 1 
