@@ -241,7 +241,11 @@ Chunk StorageObjectStorageSource::generate()
             reader.read_buf != nullptr,
             reader.source != nullptr);
 
-        if (isCancelled() || !reader)
+        bool is_cancelled = isCancelled();
+
+        LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSource, generate2"), "Checking if task is cancelled: {}", is_cancelled);
+
+        if (is_cancelled || !reader)
         {
             if (reader)
                 reader->cancel();
