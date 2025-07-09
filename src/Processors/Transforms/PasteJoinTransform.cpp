@@ -31,9 +31,8 @@ namespace ErrorCodes
 PasteJoinAlgorithm::PasteJoinAlgorithm(
     JoinPtr table_join_,
     const SharedHeaders & input_headers,
-    size_t max_block_size_)
+    [[maybe_unused]] size_t max_block_size_)
     : table_join(table_join_)
-    , max_block_size(max_block_size_)
     , log(getLogger("PasteJoinAlgorithm"))
 {
     if (input_headers.size() != 2)

@@ -45,8 +45,6 @@ private:
 
     JoinPtr table_join;
 
-    size_t max_block_size;
-
     struct Statistic
     {
         size_t num_blocks[2] = {0, 0};
