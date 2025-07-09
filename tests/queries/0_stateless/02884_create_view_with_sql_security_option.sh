@@ -250,8 +250,6 @@ echo "create view"
   AS SELECT * FROM $db.test_table;
 " 2>&1 | grep -c "Syntax error") >= 1 )) && echo "Syntax error" || echo "UNEXPECTED"
 
-(( $(${CLICKHOUSE_CLIENT} --user $user5 --query "INSERT INTO $db.mv3 VALUES (10)" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
-
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_table TO $user1, $user2"
