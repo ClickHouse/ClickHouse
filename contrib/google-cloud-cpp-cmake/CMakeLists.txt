@@ -1,15 +1,21 @@
 set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
 
-if(ENABLE_LIBRARIES AND CLICKHOUSE_CLOUD AND OS_LINUX)
+if(ENABLE_LIBRARIES)
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
 endif()
-
-option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
 
 if(NOT ENABLE_GOOGLE_CLOUD_CPP)
     message(STATUS "Not using Google Cloud Cpp")
     return()
 endif()
+
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+
+if (CLICKHOUSE_CLOUD AND OS_LINUX)
+    set(ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT ON)
+endif()
+
+option(ENABLE_GOOGLE_CLOUD_CPP_KMS "Enable Google Cloud Cpp KMS" ${ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT})
 
 if(NOT ENABLE_GRPC)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without gRPC")
@@ -58,21 +64,21 @@ include(GoogleApis.cmake)
 add_library(gRPC::grpc++ ALIAS _ch_contrib_grpc)
 add_library(gRPC::grpc ALIAS _ch_contrib_grpc)
 
-# KMS
-google_cloud_cpp_add_library_protos(kms)
-
 include(google_cloud_cpp_common.cmake)
 include(google_cloud_cpp_grpc_utils.cmake)
 
-SET(GOOGLE_CLOUD_CPP_KMS_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/kms")
+# KMS
+if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
+    google_cloud_cpp_add_library_protos(kms)
 
-file(GLOB GOOGLE_CLOUD_CPP_KMS_SRC
-    "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/*.cc"
-    "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/internal/*.cc"
-    "${GOOGLE_CLOUD_CPP_KMS_DIR}/inventory/v1/*.cc"
-)
+    SET(GOOGLE_CLOUD_CPP_KMS_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/kms")
 
-list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
+    file(GLOB GOOGLE_CLOUD_CPP_KMS_SRC
+        "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/*.cc"
+        "${GOOGLE_CLOUD_CPP_KMS_DIR}/v1/internal/*.cc"
+        "${GOOGLE_CLOUD_CPP_KMS_DIR}/inventory/v1/*.cc"
+    )
+endif()
 
 # Storage
 google_cloud_cpp_add_library_protos(storage)
@@ -99,35 +105,37 @@ set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR_BAK})
 # Link against external libraries.
 list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_common
-    google_cloud_cpp_grpc_utils
-    google_cloud_cpp_kms_protos
     google_cloud_cpp_rest_internal
     google_cloud_cpp_storage
     google_cloud_cpp_storage_protos
-    google_cloud_cpp_cloud_location_locations_protos
-    google_cloud_cpp_iam_v1_iam_policy_protos
-    gRPC::grpc++
-    absl::optional
-    absl::crc32c
+    ch_contrib::crc32c
     ch_contrib::curl
     ch_contrib::nlohmann_json
 )
 
-list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_LIBS
-    absl::optional
-    gRPC::grpc++
-)
+if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
+    list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
+    add_library(_gcloud ${GOOGLE_CLOUD_CPP_SOURCES})
 
-# Add library.
-add_library(_gcloud ${GOOGLE_CLOUD_CPP_SOURCES})
+    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
+        google_cloud_cpp_grpc_utils
+        google_cloud_cpp_kms_protos
+        google_cloud_cpp_cloud_location_locations_protos
+        google_cloud_cpp_iam_v1_iam_policy_protos
+    )
 
-target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
-target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
-target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
+    # The library is large - avoid bloat.
+    if (OMIT_HEAVY_DEBUG_SYMBOLS)
+        target_compile_options(_gcloud PRIVATE -g0)
+    endif()
 
-# The library is large - avoid bloat.
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(_gcloud PRIVATE -g0)
+    target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
+    target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
+    target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
+else()
+    add_library(_gcloud INTERFACE)
+    target_include_directories(_gcloud SYSTEM INTERFACE ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
+    target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
 endif()
 
 add_library(ch_contrib::google_cloud_cpp ALIAS _gcloud)
