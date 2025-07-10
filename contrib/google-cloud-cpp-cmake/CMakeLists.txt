@@ -64,9 +64,6 @@ include(GoogleApis)
 add_library(gRPC::grpc++ ALIAS _ch_contrib_grpc)
 add_library(gRPC::grpc ALIAS _ch_contrib_grpc)
 
-# google-cloud-cpp-kms.
-google_cloud_cpp_add_library_protos(kms)
-
 include(google_cloud_cpp_common)
 include(google_cloud_cpp_grpc_utils)
 
