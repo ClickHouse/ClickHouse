@@ -14,6 +14,12 @@ namespace DB
 
 class NamedCollection;
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 struct StorageObjectStorageQuerySettings
 {
     /// Insert settings:
