@@ -128,6 +128,7 @@
 #include <iterator>
 #include <numeric>
 #include <future>
+#include <utility>
 
 
 namespace fs = std::filesystem;
@@ -7678,7 +7679,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
       * Calculated only if the absolute delay is large enough.
       */
 
-    if (out_absolute_delay < static_cast<time_t>((*storage_settings_ptr)[MergeTreeSetting::min_relative_delay_to_measure]))
+    if (std::cmp_less(out_absolute_delay ,(*storage_settings_ptr)[MergeTreeSetting::min_relative_delay_to_measure])))
         return;
 
     auto zookeeper = getZooKeeper();

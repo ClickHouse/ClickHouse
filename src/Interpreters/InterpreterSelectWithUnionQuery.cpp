@@ -287,7 +287,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     auto key = query_ptr_->formatWithSecretsOneLine();
     {
         auto [cache, lock] = context_->getSampleBlockCache();
-        if (cache->find(key) != cache->end())
+        if (cache->contains(key))
             return cache->at(key);
     }
 

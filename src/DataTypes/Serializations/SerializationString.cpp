@@ -18,6 +18,8 @@
 
 #ifdef __SSE2__
     #include <emmintrin.h>
+
+#include <utility>
 #endif
 
 
@@ -188,7 +190,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
                 while (sse_src_pos < sse_src_end)
                 {
-                    for (size_t j = 0; j < UNROLL_TIMES; ++j)
+                    for (size_t j = 0; std::cmp_less(j , UNROLL_TIMES); ++j)
                         _mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
                     sse_src_pos += UNROLL_TIMES;

@@ -1,3 +1,4 @@
+#include <utility>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -512,7 +513,7 @@ void StorageFileLog::openFilesAndSetPos()
             assertStreamGood(reader);
 
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
-            if (meta.last_writen_position > static_cast<UInt64>(file_end))
+            if (std::cmp_greater(meta.last_writen_position, static_cast<UInt64>(file_end)))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -692,8 +693,7 @@ void StorageFileLog::threadFunc()
                 if (streamToViews())
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
-                    if (milliseconds_to_wait
-                        < static_cast<uint64_t>((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
+                    if (std::cmp_less(milliseconds_to_wait, ((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds())))
                         milliseconds_to_wait *= (*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
                     break;
                 }

@@ -20,6 +20,7 @@
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
+#include <utility>
 #include <Poco/Timestamp.h>
 
 namespace DB
@@ -2390,14 +2391,14 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     for (const LogEntryPtr & entry : queue)
     {
-        if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
+        if (entry->create_time && (!res.queue_oldest_time || std::cmp_less(entry->create_time , res.queue_oldest_time)))
             res.queue_oldest_time = static_cast<UInt32>(entry->create_time);
 
         if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
         {
             ++res.inserts_in_queue;
 
-            if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+            if (entry->create_time && (!res.inserts_oldest_time || std::cmp_less(entry->create_time , res.inserts_oldest_time)))
             {
                 res.inserts_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_get = entry->new_part_name;
@@ -2408,7 +2409,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
         {
             ++res.merges_in_queue;
 
-            if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+            if (entry->create_time && (!res.merges_oldest_time || std::cmp_less(entry->create_time , res.merges_oldest_time)))
             {
                 res.merges_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_merge_to = entry->new_part_name;
@@ -2419,7 +2420,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
         {
             ++res.part_mutations_in_queue;
 
-            if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
+            if (entry->create_time && (!res.part_mutations_oldest_time || std::cmp_less(entry->create_time , res.part_mutations_oldest_time)))
             {
                 res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;

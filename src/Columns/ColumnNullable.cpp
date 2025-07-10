@@ -15,6 +15,8 @@
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <llvm/IR/IRBuilder.h>
+
+#include <utility>
 #endif
 
 
@@ -642,11 +644,11 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             }
 
             /// We have a range [write_idx+1, last) of non-NULL values
-            if (write_idx != static_cast<ssize_t>(last))
+            if (std::cmp_not_equal(write_idx ,last)))
                 new_ranges.emplace_back(write_idx + 1, last);
 
             /// We have a range [first, write_idx+1) of NULL values
-            if (static_cast<ssize_t>(first) != write_idx)
+            if (std::cmp_not_equal(first, write_idx))
                 null_ranges.emplace_back(first, write_idx + 1);
         }
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
@@ -113,7 +114,7 @@ public:
 
     size_t countBytesInFilter() const
     {
-        if (cached_count_bytes == size_t(-1))
+        if (cached_count_bytes == std::numeric_limits<size_t>::max())
             cached_count_bytes = DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }

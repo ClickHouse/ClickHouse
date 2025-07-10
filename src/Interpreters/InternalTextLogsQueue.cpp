@@ -7,6 +7,8 @@
 
 #include <Poco/Message.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -64,7 +66,7 @@ std::string_view InternalTextLogsQueue::getPriorityName(int priority)
         "Trace"sv,
         "Test"sv,
     };
-    return (priority >= 1 && priority < static_cast<int>(PRIORITIES.size())) ? PRIORITIES[priority] : PRIORITIES[0];
+    return (priority >= 1 && std::cmp_less(priority ,PRIORITIES.size()))) ? PRIORITIES[priority] : PRIORITIES[0];
 }
 
 bool InternalTextLogsQueue::isNeeded(int priority, const String & source) const

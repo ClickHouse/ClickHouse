@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <ranges>
+#include <utility>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/QueryProcessingStage.h>
@@ -636,7 +637,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_fail_time = 0;
                     entry.latest_fail_reason.clear();
                     entry.latest_fail_error_code_name.clear();
-                    if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
+                    if (std::cmp_equal(result_part->part_info.mutation, it->first))
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
                 }
             }
@@ -648,7 +649,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                 entry.latest_fail_reason = exception_message;
                 entry.latest_fail_error_code_name = error_code_name;
 
-                if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
+                if (std::cmp_equal(result_part->part_info.mutation, it->first))
                 {
                     mutation_backoff_policy.addPartMutationFailure(failed_part->name, (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }

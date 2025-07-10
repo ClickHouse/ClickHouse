@@ -13,6 +13,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <utility>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
@@ -148,7 +149,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
     UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
 
-    for (auto i = 0; i < postings_list_size; ++i)
+    for (auto i = 0; std::cmp_less(i , postings_list_size); ++i)
         readVarUInt(row_ids[i], buffer);
     postings_list->addMany(postings_list_size, row_ids);
     return postings_list;
@@ -564,7 +565,7 @@ GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(cons
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
-        if (postings_cache->find(term) != postings_cache->end())
+        if (postings_cache->contains(term))
             continue;
 
         auto container = readSegmentedPostingsLists(term);

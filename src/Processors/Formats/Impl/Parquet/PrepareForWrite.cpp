@@ -23,6 +23,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeCustom.h>
 
+#include <utility>
+
 /// This file deals with schema conversion and with repetition and definition levels.
 
 /// Schema conversion is pretty straightforward.
@@ -140,7 +142,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         s.def.resize_fill(s.primitive_column->size(), 1);
         s.rep.resize_fill(s.primitive_column->size(), 1);
         size_t i = 0;
-        for (ssize_t row = 0; row < static_cast<ssize_t>(offsets.size()); ++row)
+        for (ssize_t row = 0; std::cmp_less(row ,offsets.size())); ++row)
         {
             size_t n = offsets[row] - offsets[row - 1];
             if (n)
@@ -174,7 +176,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
     PaddedPODArray<UInt8> mask(s.def.size(), 1); // for inserting zeroes to rep and def
     size_t i = 0; // in the input (s.def/s.rep)
     size_t empty_arrays = 0;
-    for (ssize_t row = 0; row < static_cast<ssize_t>(offsets.size()); ++row)
+    for (ssize_t row = 0; std::cmp_less(row ,offsets.size())); ++row)
     {
         size_t n = offsets[row] - offsets[row - 1];
         if (n)

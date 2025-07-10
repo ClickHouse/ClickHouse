@@ -7,6 +7,7 @@
 
 #include <random>
 #include <unordered_set>
+#include <utility>
 
 #include <base/sort.h>
 #include <Poco/Timestamp.h>
@@ -245,7 +246,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
     double ratio = distr(rng);
     size_t min_replicated_logs_to_keep = static_cast<size_t>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep] * ratio);
 
-    if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
+    if (std::cmp_less(children_count, min_replicated_logs_to_keep))
         return 0;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);

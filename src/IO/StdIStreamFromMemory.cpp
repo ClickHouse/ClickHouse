@@ -1,3 +1,4 @@
+#include <utility>
 #include <IO/StdIStreamFromMemory.h>
 
 namespace DB
@@ -38,7 +39,7 @@ StdIStreamFromMemory::MemoryBuf::seekoff(off_type off, std::ios_base::seekdir wa
         return ret;
 
     ret += off;
-    if (!(ret >= 0 && size_t(ret) <= size))
+    if (!(ret >= 0 && std::cmp_less_equal(ret, size)))
         return off_type(-1);
 
     this->setg(begin, begin + ret, begin + size);

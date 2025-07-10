@@ -45,6 +45,7 @@
 #include <NodeImpl.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
+#include <utility>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -550,7 +551,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 std::vector<std::string> symbols;
                 symbols.reserve(root_node->names());
-                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
+                for (int i = 0; std::cmp_less(i ,root_node->names())); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
                 }
@@ -566,7 +567,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 Row symbol_mapping;
-                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
+                for (int i = 0; std::cmp_less(i ,root_node->names())); ++i)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
                 }
@@ -628,7 +629,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 if (root_node->leaves() != nested_types.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
 
-                for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
+                for (int i = 0; std::cmp_not_equal(i ,root_node->leaves())); ++i)
                 {
                     const auto & name = root_node->nameAt(i);
                     size_t pos = tuple_type.getPositionByName(name);
@@ -746,7 +747,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         {
             std::vector<SkipFn> union_skip_fns;
             union_skip_fns.reserve(root_node->leaves());
-            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
+            for (int i = 0; std::cmp_less(i ,root_node->leaves())); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -788,7 +789,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         {
             std::vector<SkipFn> field_skip_fns;
             field_skip_fns.reserve(root_node->leaves());
-            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
+            for (int i = 0; std::cmp_less(i ,root_node->leaves())); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -886,7 +887,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_RECORD)
     {
         std::vector<AvroDeserializer::Action> field_actions(node->leaves());
-        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+        for (int i = 0; std::cmp_less(i ,node->leaves())); ++i)
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
@@ -897,7 +898,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_UNION)
     {
         std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
-        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+        for (int i = 0; std::cmp_less(i ,node->leaves())); ++i)
         {
             const auto & branch_node = node->leafAt(i);
             const auto & branch_name = nodeName(branch_node);
@@ -927,7 +928,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// Create nested deserializer for each nested column.
         std::vector<DeserializeFn> nested_deserializers;
         std::vector<size_t> nested_indexes;
-        for (int i = 0; i != static_cast<int>(nested_avro_node->leaves()); ++i)
+        for (int i = 0; std::cmp_not_equal(i ,nested_avro_node->leaves())); ++i)
         {
             const auto & name = nested_avro_node->nameAt(i);
             if (!nested_types.contains(name))
@@ -1267,7 +1268,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
 
     NamesAndTypesList names_and_types;
-    for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
+    for (int i = 0; std::cmp_not_equal(i ,root_node->leaves())); ++i)
         names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
 
     return names_and_types;
@@ -1317,14 +1318,14 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             if (node->names() < 128)
             {
                 EnumValues<Int8>::Values values;
-                for (int i = 0; i != static_cast<int>(node->names()); ++i)
+                for (int i = 0; std::cmp_not_equal(i ,node->names())); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum8>(std::move(values));
             }
             if (node->names() < 32768)
             {
                 EnumValues<Int16>::Values values;
-                for (int i = 0; i != static_cast<int>(node->names()); ++i)
+                for (int i = 0; std::cmp_not_equal(i ,node->names())); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum16>(std::move(values));
             }
@@ -1388,7 +1389,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             nested_types.reserve(node->leaves());
             Names nested_names;
             nested_names.reserve(node->leaves());
-            for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
+            for (int i = 0; std::cmp_not_equal(i ,node->leaves())); ++i)
             {
                 nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
                 nested_names.push_back(node->nameAt(i));

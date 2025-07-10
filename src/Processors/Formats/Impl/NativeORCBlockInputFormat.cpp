@@ -48,6 +48,7 @@
 #    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #    include <boost/algorithm/string.hpp>
+#include <utility>
 
 
 namespace
@@ -126,7 +127,7 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
     }
     else
     {
-        if (offset != static_cast<UInt64>(in.getPosition()))
+        if (std::cmp_not_equal(offset ,in.getPosition())))
             in.seek(offset, SEEK_SET);
         in.readStrict(reinterpret_cast<char *>(buf), length);
     }

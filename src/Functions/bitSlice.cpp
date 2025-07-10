@@ -10,6 +10,8 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -287,7 +289,7 @@ public:
                 if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                     length_byte = 0;
             }
-            bool right_truncate = static_cast<ssize_t>(length_byte) > remain_byte;
+            bool right_truncate = std::cmp_greater(length_byte, remain_byte);
             size_t abandon_last_bit = (over_bit && !right_truncate) ? word_size - over_bit : 0;
             auto slice = src.getSliceFromLeft(offset_byte, length_byte);
             if (slice.size)
@@ -392,7 +394,7 @@ public:
                         length_byte = 0;
                 }
 
-                bool right_truncate = static_cast<ssize_t>(length_byte) > remain_byte;
+                bool right_truncate = std::cmp_greater(length_byte, remain_byte);
                 size_t abandon_last_bit = (over_bit && !right_truncate) ? word_size - over_bit : 0;
                 auto slice = left_offset ? src.getSliceFromLeft(offset_byte, length_byte) : src.getSliceFromRight(offset_byte, length_byte);
                 if (slice.size)

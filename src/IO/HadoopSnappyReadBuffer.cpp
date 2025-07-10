@@ -1,3 +1,4 @@
+#include <utility>
 #include "config.h"
 
 #if USE_SNAPPY
@@ -28,7 +29,7 @@ inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 {
-    return avail_in >= static_cast<size_t>(min);
+    return std::cmp_greater_equal(avail_in, min);
 }
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)

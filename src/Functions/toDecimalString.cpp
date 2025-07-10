@@ -11,6 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -180,7 +182,7 @@ private:
         if (precision > 0) [[likely]]
         {
             writeChar('.', out);
-            for (int i = 0; i < precision; ++i)
+            for (int i = 0; std::cmp_less(i , precision); ++i)
                 writeChar('0', out);
             writeChar(0, out);
         }

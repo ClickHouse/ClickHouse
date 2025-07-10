@@ -46,6 +46,7 @@
 #    include <boost/container/flat_set.hpp>
 #    include <boost/numeric/conversion/cast.hpp>
 #    include <boost/range/algorithm.hpp>
+#include <utility>
 #    include <google/protobuf/descriptor.h>
 #    include <google/protobuf/descriptor.pb.h>
 
@@ -2540,7 +2541,7 @@ namespace
                     while (reader->readFieldNumber(field_tag))
                     {
                         size_t field_index = findFieldIndexByFieldTag(field_tag);
-                        if (field_index == static_cast<size_t>(-1))
+                        if (std::cmp_equal(field_index ,-1)))
                             continue;
                         auto * field_serializer = field_infos[field_index].field_serializer.get();
                         field_serializer->readRow(row_num);

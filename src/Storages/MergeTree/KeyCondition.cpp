@@ -45,6 +45,7 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
+#include <utility>
 
 
 namespace DB
@@ -2086,7 +2087,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 func.getArgumentAt(0), key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
                 return false;
 
-            if (key_column_num == static_cast<size_t>(-1))
+            if (std::cmp_equal(key_column_num ,-1)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
         }
         else if (num_args == 2)
@@ -2187,7 +2188,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             else
                 return false;
 
-            if (key_column_num == static_cast<size_t>(-1))
+            if (std::cmp_equal(key_column_num ,-1)))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
             /// Replace <const> <sign> <data> on to <data> <-sign> <const>

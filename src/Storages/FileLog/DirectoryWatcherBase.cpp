@@ -134,7 +134,7 @@ void DirectoryWatcherBase::watchFunc()
         }
         else
         {
-            if (milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
+            if (std::cmp_less(milliseconds_to_wait, ((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds())))
                 milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
         }
     }

@@ -286,7 +286,7 @@ public:
 
         /// Check that the new position is now beyond the end of the file.
         const auto & file_info = handle.getFileInfo();
-        if (new_pos > static_cast<off_t>(file_info.uncompressed_size))
+        if (std::cmp_greater(new_pos, file_info.uncompressed_size))
             throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bound");
 
         /// unzSeek64() works only for non-compressed files.

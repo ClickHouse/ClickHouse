@@ -152,7 +152,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 void Exception::addMessage(const MessageMasked & msg_masked)
 {
     extendedMessage(msg_masked.msg);
-    if (error_index != static_cast<size_t>(-1))
+    if (std::cmp_not_equal(error_index, -1))
         ErrorCodes::extendedMessage(code(), remote, error_index, message());
 }
 
