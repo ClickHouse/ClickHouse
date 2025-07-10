@@ -56,6 +56,7 @@ set(GOOGLE_CLOUD_CPP_ENABLE_GRPC ON)
 set(PROJECT_VERSION "1")
 set(PROJECT_VERSION_MAJOR "1")
 set(PROTO_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
+set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
 set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
 include(GoogleApis)
