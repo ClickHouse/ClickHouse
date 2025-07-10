@@ -73,6 +73,7 @@ namespace Setting
 {
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool allow_general_join_planning;
+    extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsJoinAlgorithm join_algorithm;
 }
 
@@ -432,10 +433,15 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
     addConditionsToJoinOperator(builder_context, std::move(built_clauses.at(join_expression.get())));
 }
 
-static String getQueryDisplayLabel(const QueryTreeNodePtr & node)
+static String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
 {
-    const auto & printable_alias = node->getOriginalAlias();
     const auto & internal_alias = node->getAlias();
+
+    if (display_internal_aliases && !internal_alias.empty())
+        return internal_alias;
+
+    const auto & printable_alias = node->getOriginalAlias();
+
     if (!printable_alias.empty() && printable_alias != internal_alias)
         return printable_alias;
 
@@ -528,8 +534,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         JoinSettings(settings),
         SortingStep::Settings(settings));
 
-    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression());
-    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression());
+    bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
+    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression(), display_internal_aliases);
+    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression(), display_internal_aliases);
     join_step->setInputLabels(std::move(left_table_label), std::move(right_table_label));
     return join_step;
 }

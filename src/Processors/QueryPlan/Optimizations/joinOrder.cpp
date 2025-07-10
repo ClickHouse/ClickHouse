@@ -7,10 +7,12 @@
 #include <Common/logger_useful.h>
 #include "Core/Joins.h"
 #include "Interpreters/JoinExpressionActions.h"
+#include "base/defines.h"
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <ranges>
 #include <stack>
 #include <vector>
 
@@ -74,14 +76,15 @@ private:
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & lhs, const BitSet & rhs) const;
-    std::vector<JoinActionRef> getApplicableExpressions(const BitSet & left, const BitSet & right);
+    std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
-    double computeSelectivity(const std::vector<JoinActionRef> & edges);
+    double computeSelectivity(const std::vector<JoinActionRef *> & edges);
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
+    std::unordered_map<JoinActionRef, bool> applied;
     std::unordered_map<JoinActionRef, double> expression_selectivity;
 
     LoggerPtr log = getLogger("JoinOrderOptimizer");
@@ -128,11 +131,11 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     return selectivity;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef> & edges)
+double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
 {
     double selectivity = 1.0;
     for (const auto & edge : edges)
-        selectivity = std::min(selectivity, computeSelectivity(edge));
+        selectivity = std::min(selectivity, computeSelectivity(*edge));
     return selectivity;
 }
 
@@ -171,7 +174,9 @@ static double computeJoinCost(
     JoinKind join_kind = JoinKind::Inner)
 {
     UNUSED(join_kind);
-    return selectivity * left->estimated_rows * right->estimated_rows;
+    UNUSED(selectivity);
+    // return left->cost + right->cost + std::min(left->estimated_rows, right->estimated_rows);
+    return left->cost + right->cost + selectivity * left->estimated_rows * right->estimated_rows;
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -201,13 +206,15 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 }
 
 
-std::vector<JoinActionRef> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
+std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
 {
-    std::vector<JoinActionRef> applicable;
+    std::vector<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
-    for (const auto & edge : query_graph.edges)
+    for (auto & edge : query_graph.edges)
     {
+        if (!edge)
+            continue;
         if (!isSubsetOf(edge.getSourceRelations(), joined_rels))
             continue;
 
@@ -215,7 +222,7 @@ std::vector<JoinActionRef> JoinOrderOptimizer::getApplicableExpressions(const Bi
         if (!isSubsetOf(pinned, left) && !isSubsetOf(pinned, right))
             continue;
 
-        applicable.push_back(edge);
+        applicable.push_back(&edge);
     }
     return applicable;
 }
@@ -229,6 +236,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows));
     }
 
+    std::vector<JoinActionRef *> applied_edge;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {
@@ -257,7 +265,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 if (!best_plan || current_cost < best_plan->cost)
                 {
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                    JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Local, std::move(edge));
+                    JoinOperator join_operator(
+                        join_kind.value(), JoinStrictness::All, JoinLocality::Local,
+                        std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                    applied_edge = std::move(edge);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
                     best_i = i;
                     best_j = j;
@@ -297,6 +308,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
             JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Local);
             best_plan = std::make_shared<DPJoinEntry>(components[best_i], components[best_j], cost, cardinality, join_operator);
+            applied_edge.clear();
         }
 
         if (best_i == best_j)
@@ -306,7 +318,17 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.erase(components.begin() + std::max(best_i, best_j));
         components.erase(components.begin() + std::min(best_i, best_j));
         components.push_back(best_plan);
+        for (auto * edge : applied_edge)
+            *edge = nullptr;
     }
+
+    for (auto * edge : applied_edge)
+        *edge = nullptr;
+
+    auto non_applied_edges = std::views::filter(query_graph.edges, [](auto & edge) { return bool(edge); });
+    if (!non_applied_edges.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Some expressions was not applied: [{}]",
+            fmt::join(non_applied_edges | std::views::transform([](const auto & e) { return e.dump(); }), ", "));
 
     return components.at(0);
 }

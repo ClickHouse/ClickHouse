@@ -11,14 +11,15 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-bool isPassthroughActions(const ActionsDAG & actions_dag)
+static bool isPassthroughActions(const ActionsDAG & actions_dag)
 {
     return actions_dag.getOutputs() == actions_dag.getInputs() && actions_dag.trivial();
 }
 
-bool makeExpressionNodeOnTopOf(
-    QueryPlan::Node & node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes,
-    std::string_view step_description)
+template <typename Step, typename ...Args>
+bool makeExpressionNodeOnTopOfImpl(
+    QueryPlan::Node & node, ActionsDAG actions_dag, QueryPlan::Nodes & nodes,
+    std::string_view step_description, Args && ...args)
 {
     const auto & header = node.step->getOutputHeader();
     if (!header && !actions_dag.getInputs().empty())
@@ -26,13 +27,9 @@ bool makeExpressionNodeOnTopOf(
 
     // if (isPassthroughActions(actions_dag))
     //     return false;
+    UNUSED(isPassthroughActions);
 
-    QueryPlanStepPtr step;
-
-    if (filter_column_name.empty())
-        step = std::make_unique<ExpressionStep>(header, std::move(actions_dag));
-    else
-        step = std::make_unique<FilterStep>(header, std::move(actions_dag), filter_column_name, false);
+    QueryPlanStepPtr step = std::make_unique<Step>(header, std::move(actions_dag), std::forward<Args>(args)...);
 
     if (!step_description.empty())
         step->setStepDescription(std::string(step_description));
@@ -41,5 +38,20 @@ bool makeExpressionNodeOnTopOf(
     node = QueryPlan::Node{std::move(step), {new_node}};
     return true;
 }
+
+bool makeExpressionNodeOnTopOf(QueryPlan::Node & node, ActionsDAG actions_dag, QueryPlan::Nodes & nodes, std::string_view step_description)
+{
+    return makeExpressionNodeOnTopOfImpl<ExpressionStep>(node, std::move(actions_dag), nodes, step_description);
+}
+
+bool makeFilterNodeOnTopOf(
+    QueryPlan::Node & node, ActionsDAG actions_dag, const String & filter_column_name, bool remove_filer,
+    QueryPlan::Nodes & nodes, std::string_view step_description)
+{
+    if (filter_column_name.empty())
+        return makeExpressionNodeOnTopOfImpl<ExpressionStep>(node, std::move(actions_dag), nodes, step_description);
+    return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, step_description, filter_column_name, remove_filer);
+}
+
 
 }

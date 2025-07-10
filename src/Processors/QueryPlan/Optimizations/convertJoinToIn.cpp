@@ -219,9 +219,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
     auto * lhs_in_node = parent_node->children.at(0);
-    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), {}, nodes);
+    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes);
     auto * rhs_in_node = parent_node->children.at(1);
-    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), {}, nodes);
+    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes);
     parent_node->children.pop_back();
 
     /// Join equality does not match Nulls.

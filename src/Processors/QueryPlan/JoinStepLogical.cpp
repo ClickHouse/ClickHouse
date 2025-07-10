@@ -233,14 +233,22 @@ std::string_view joinTypePretty(const JoinOperator & join_operator)
     return joinTypePretty(join_operator.kind, join_operator.strictness);
 }
 
+String JoinStepLogical::getReadableRelationName() const
+{
+    if (left_table_label.empty() || right_table_label.empty())
+        return "";
+    return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
+}
+
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
 
-    if (!left_table_label.empty() && !right_table_label.empty())
-    {
-        description.emplace_back("Join", fmt::format("`{}` {} `{}`", left_table_label, joinTypePretty(join_operator), right_table_label));
-    }
+    auto readable_relation_name = getReadableRelationName();
+    if (!readable_relation_name.empty())
+        description.emplace_back("Join", std::move(readable_relation_name));
+
+    description.emplace_back("ResultRows", std::to_string(result_rows_estimation));
 
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
@@ -258,8 +266,12 @@ void JoinStepLogical::describeActions(FormatSettings & settings) const
         settings.out << prefix << name << ": " << value << '\n';
 
     settings.out << prefix << "Expression:\n";
-    auto actions_dag = expression_actions.getActionsDAG()->clone();
-    ExpressionActions(std::move(actions_dag)).describeActions(settings.out, prefix);
+    auto actions_dag = expression_actions.getActionsDAG();
+    ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+
+    settings.out << prefix << "Expression Sources:\n";
+    for (const auto * input_ptr : actions_dag->getInputs())
+        settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
 }
 
 void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
@@ -597,7 +609,7 @@ static void constructPhysicalStep(
     // std::cerr << "constructPhysicalStep" << std::endl;
     auto * join_left_node = node.children[0];
     // std::cerr << join_left_node->step->getOutputHeader().dumpStructure() << std::endl;
-    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), {}, nodes, "Left Join Actions");
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, "Left Join Actions");
 
     // std::cerr << join_left_node->step->getOutputHeader().dumpStructure() << std::endl;
     // std::cerr << left_pre_join_actions.dumpDAG() << std::endl;
@@ -607,7 +619,10 @@ static void constructPhysicalStep(
         join_settings.max_block_size);
     // std::cerr << node.step->getOutputHeader().dumpStructure() << std::endl;
     // std::cerr << post_join_actions.dumpDAG() << std::endl;
-    makeExpressionNodeOnTopOf(node, std::move(post_join_actions), residual_filter_condition.first, nodes, "Post Join Actions");
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, "Post Join Actions");
 }
 
 static void constructPhysicalStep(
@@ -631,15 +646,16 @@ static void constructPhysicalStep(
     auto * join_left_node = node.children[0];
     auto * join_right_node = node.children[1];
 
-    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), {}, nodes, "Left Pre Join Actions");
-    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), {}, nodes, "Right Pre Join Actions");
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, "Left Pre Join Actions");
+
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, "Right Pre Join Actions");
 
     if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
         addSortingForMergeJoin(fsmjoin, join_left_node, join_right_node, nodes,
             sorting_settings, join_settings, fsmjoin->getTableJoin());
 
     auto required_output_from_join = post_join_actions.getRequiredColumnsNames();
-    node.step = std::make_unique<JoinStep>(
+    auto join_step = std::make_unique<JoinStep>(
         join_left_node->step->getOutputHeader(),
         join_right_node->step->getOutputHeader(),
         join_ptr,
@@ -649,10 +665,15 @@ static void constructPhysicalStep(
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
         false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
+    join_step->setOptimized();
+    node.step = std::move(join_step);
 
     node.children = {join_left_node, join_right_node};
 
-    makeExpressionNodeOnTopOf(node, std::move(post_join_actions), residual_filter_condition.first, nodes, "Post Join Actions");
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, "Post Join Actions");
 }
 
 static QueryPlanNode buildPhysicalJoinImpl(
@@ -731,6 +752,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
                         formatJoinCondition(join_expression));
 
                 join_operator.kind = JoinKind::Cross;
+                join_operator.residual_filter.append_range(join_expression);
+                join_expression.clear();
             }
         }
     }

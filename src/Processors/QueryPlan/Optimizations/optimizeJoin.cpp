@@ -59,6 +59,13 @@ RelationStats getDummyStats(ContextPtr context, const String & table_name);
 namespace QueryPlanOptimizations
 {
 
+static bool functionDoesNotChangeNumberOfValues(std::string_view function_name)
+{
+    return function_name == "materialize" ||
+        function_name == "_CAST" ||
+        function_name == "toNullable";
+}
+
 NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
     NameSet output_names;
@@ -88,21 +95,27 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 
             if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
                 node = node->children[0];
+
+            if (node->type == ActionsDAG::ActionType::FUNCTION &&
+                node->function_base &&
+                node->children.size() == 1 &&
+                functionDoesNotChangeNumberOfValues(node->function_base->getName()))
+            {
+                node = node->children[0];
+            }
         }
     }
     return output_names;
 }
 
-template <typename T>
-std::unordered_map<String, T> remapColumnStats(const std::unordered_map<String, T> & original, const ActionsDAG & actions)
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
-    std::unordered_map<String, T> mapped;
-    for (const auto & [name, value] : original)
+    std::unordered_map<String, ColumnStats> original = std::move(mapped);
+    for (auto && [name, value] : original)
     {
         for (const auto & remapped : backTrackColumnsInDag(name, actions))
-            mapped[remapped] = value;
+            mapped[remapped] = std::move(value);
     }
-    return mapped;
 }
 
 struct StatisticsContext
@@ -223,15 +236,23 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), has_filter);
-        stats.column_stats = remapColumnStats(stats.column_stats, expression_step->getExpression());
+        remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
 
     if (const auto * expression_step = typeid_cast<const FilterStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), true);
-        stats.column_stats = remapColumnStats(stats.column_stats, expression_step->getExpression());
+        remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = {},
+            .table_name = join_step->getReadableRelationName()};
     }
 
     return {};
@@ -241,7 +262,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
-    if (!join_step || node.children.size() != 2)
+    if (!join_step || node.children.size() != 2 || join_step->isOptimized())
         return false;
 
     const auto & join = join_step->getJoin();
@@ -566,7 +587,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     BitSet right_mask = BitSet::allSet(rhs_count);
     right_mask.shift(lhs_count);
 
-
     ActionsDAG::NodeRawConstPtrs left_changes_types;
     ActionsDAG::NodeRawConstPtrs right_changes_types;
     for (const auto * out_node : join_outputs)
@@ -585,9 +605,9 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     }
 
     /// Non-reorderable joins
-    if (isLeftOrFull(join_operator.kind) || !left_changes_types.empty())
+    if (isLeftOrFull(join_operator.kind))
         query_graph.dependencies.emplace_back(right_mask, left_mask, join_operator.kind);
-    if (isRightOrFull(join_operator.kind) || !right_changes_types.empty())
+    if (isRightOrFull(join_operator.kind))
         query_graph.dependencies.emplace_back(left_mask, right_mask, reverseJoinKind(join_operator.kind));
 
     if (!left_changes_types.empty())
@@ -601,7 +621,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
         auto sources = edge.getSourceRelations();
-        for (auto & [null_side, non_null_side, join_kind] : query_graph.dependencies)
+        for (auto & [null_side, _, join_kind] : query_graph.dependencies)
         {
             if (sources & null_side)
             {
@@ -656,7 +676,15 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
     std::unordered_map<BitSet, String> relation_names;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
-        relation_names[BitSet().set(i)] = query_graph.relation_stats[i].table_name;
+    {
+        const auto & table_name = query_graph.relation_stats[i].table_name;
+        auto estimated_count = query_graph.relation_stats[i].estimated_rows;
+        String estimation = estimated_count > 0 ? fmt::format("[{}]", estimated_count) : "";
+        if (!table_name.empty())
+            relation_names[BitSet().set(i)] = fmt::format("{}{}", table_name, estimation);
+        else
+            relation_names[BitSet().set(i)] = fmt::format("R{}{}", i, estimation);
+    }
 
     auto global_expression_actions = std::move(query_graph_builder.expression_actions);
     auto global_actions_dag = global_expression_actions.getActionsDAG();
@@ -667,7 +695,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     auto sequence = getJoinTreePostOrderSequence(optimized);
     std::stack<QueryPlan::Node *> nodeStack;
     auto & input_nodes = query_graph_builder.inputs;
-
 
     if (!query_graph_builder.context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryGraphBuilder context is not set");
@@ -710,6 +737,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             {
                 /// For hash joins, we want to keep the smaller side on the right
                 std::swap(left_rels, right_rels);
+                std::swap(left_child_node, right_child_node);
                 join_operator.kind = reverseJoinKind(join_operator.kind);
             }
 
@@ -740,7 +768,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (const auto & column : right_header)
                 process_input_column(column);
 
-            JoinExpressionActions current_expression_actions(left_header, right_header, ActionsDAG::foldActionsByProjection(current_inputs, required_output_nodes));
+            JoinExpressionActions current_expression_actions(left_header, right_header,
+                ActionsDAG::foldActionsByProjection(current_inputs, required_output_nodes));
 
             auto current_dag = current_expression_actions.getActionsDAG();
             auto & dag_outputs = current_dag->getOutputs();
@@ -808,15 +837,16 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 join_settings,
                 sorting_settings);
 
-            const auto & left_label = relation_names[left_rels];
+            auto left_label = relation_names[left_rels];
             auto right_label = relation_names[right_rels];
+
             if (!right_label.empty() && right_rels.count() > 1)
                 right_label = fmt::format("({})", right_label);
             if (!left_label.empty() && !right_label.empty())
                 relation_names[entry->relations] = fmt::format("{} {} {}", left_label, joinTypePretty(join_operator.kind, join_operator.strictness), right_label);
 
-            join_step->setInputLabels(left_label, std::move(right_label));
-            join_step->setOptimized();
+            join_step->setInputLabels(std::move(left_label), std::move(right_label));
+            join_step->setOptimized(entry->estimated_rows);
             auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
@@ -835,8 +865,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    UNUSED(nodes);
-
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step || join_step->isOptimized())
         return;
@@ -848,6 +876,13 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     {
         if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
             lookup_step->optimize(optimization_settings);
+    }
+
+    if (!optimization_settings.optimize_join_order)
+    {
+        /// TODO: we still can try swap tables if query_plan_join_swap_table is enabled
+        join_step->setOptimized();
+        return;
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());

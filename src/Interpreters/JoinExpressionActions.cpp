@@ -1,5 +1,8 @@
 #include <Interpreters/JoinExpressionActions.h>
+#include <ranges>
 #include <stack>
+#include <string_view>
+#include <unordered_set>
 #include <Core/Block.h>
 #include <boost/noncopyable.hpp>
 #include <Functions/isNotDistinctFrom.h>
@@ -9,6 +12,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsComparison.h>
+#include <Common/logger_useful.h>
+#include <fmt/ranges.h>
 
 #include <Interpreters/ActionsDAG.h>
 
@@ -130,13 +135,23 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input nodes size mismatch in dag: {}, expected: [{}], [{}]",
                         actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
 
+    auto left_column_names = std::ranges::to<std::unordered_set<std::string_view>>(left_header | std::views::transform(&ColumnWithTypeAndName::name));
+    auto right_column_names = std::ranges::to<std::unordered_set<std::string_view>>(right_header | std::views::transform(&ColumnWithTypeAndName::name));
+
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
         BitSet rels;
         if (input_nodes[i]->type != ActionsDAG::ActionType::INPUT)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} is not INPUT in dag: {}",
                             i, actions_dag_.dumpDAG());
-        rels.set(i < left_header.columns() ? 0 : 1);
+        const auto & column_name = input_nodes[i]->result_name;
+        if (left_column_names.contains(column_name))
+            rels.set(0);
+        else if (right_column_names.contains(column_name))
+            rels.set(1);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} from is not in headers: [{}] [{}], dag: {}",
+                            column_name, actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
         expression_sources[input_nodes[i]] = rels;
     }
 
@@ -251,7 +266,7 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionAct
     }
 }
 
-JoinActionRef::JoinActionRef(NodeRawPtr node_, JoinExpressionActions & expression_actions_)
+JoinActionRef::JoinActionRef(NodeRawPtr node_, const JoinExpressionActions & expression_actions_)
     : JoinActionRef(node_, expression_actions_.data)
 {
     if (!expression_actions_.data)
@@ -281,6 +296,15 @@ const String & JoinActionRef::getColumnName() const
 DataTypePtr JoinActionRef::getType() const
 {
     return getNode()->result_type;
+}
+
+String JoinActionRef::dump() const
+{
+    if (!node_ptr)
+        return "";
+    const auto * node = getNode();
+
+    return fmt::format("{}: {{{}}}", node->result_name, fmt::join(getSourceRelations(), ", "));
 }
 
 JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool is_input, bool throw_if_not_found) const

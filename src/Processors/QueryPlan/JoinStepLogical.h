@@ -128,7 +128,12 @@ public:
     bool changesColumnsType() const { return false; }
 
     bool isOptimized() const { return optimized; }
-    void setOptimized() { optimized = true; }
+    size_t getResultRowsEstimation() const { return result_rows_estimation; }
+    void setOptimized(size_t estimated_rows_ = 0)
+    {
+        optimized = true;
+        result_rows_estimation = estimated_rows_;
+    }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
     {
@@ -142,6 +147,8 @@ public:
         std::string_view right_label = right_table_label;
         return {left_label, right_label};
     }
+
+    String getReadableRelationName() const;
 
 protected:
     void updateOutputHeader() override;
@@ -163,6 +170,8 @@ protected:
     SortingStep::Settings sorting_settings;
 
     bool optimized = false;
+    size_t result_rows_estimation = 0;
+
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;

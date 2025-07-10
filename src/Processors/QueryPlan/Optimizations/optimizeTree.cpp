@@ -160,9 +160,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         if (frame.next_child == 0)
         {
             optimizeJoinLogical(*frame.node, nodes, optimization_settings);
-            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, {});
-            if (!has_join_logical)
-                optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
+            optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
 
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
@@ -178,6 +176,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             ++frame.next_child;
             stack.push_back(next_frame);
             continue;
+        }
+
+        {
+            convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, {});
         }
 
         stack.pop_back();

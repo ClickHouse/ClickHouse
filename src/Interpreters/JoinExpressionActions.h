@@ -27,6 +27,9 @@ std::string_view toString(JoinConditionOperator op);
 
 class BitSet
 {
+private:
+    using Base = boost::dynamic_bitset<>;
+
 public:
     BitSet() = default;
 
@@ -82,10 +85,27 @@ public:
 
     operator bool() const { return bitset.any(); } /// NOLINT
 
+    class Iterator
+    {
+    public:
+        using value_type = size_t;
+
+        explicit Iterator(const Base & bitset_) : bitset(&bitset_), pos(bitset->find_first()) {}
+        explicit Iterator() : bitset(nullptr), pos(Base::npos) {}
+        bool operator !=(const Iterator & other) const { return pos != other.pos; }
+        bool operator ==(const Iterator & other) const { return pos == other.pos; }
+        value_type operator *() const { return pos; }
+        Iterator & operator++() { chassert(bitset); pos = bitset->find_next(pos); return *this; }
+    private:
+        const Base * bitset;
+        size_t pos;
+    };
+
+    Iterator begin() const { return Iterator(this->bitset); }
+    Iterator end() const { return Iterator(); }
+
 private:
     friend struct std::hash<BitSet>;
-
-    using Base = boost::dynamic_bitset<>;
 
     static void adjustSize(const BitSet & lhs, const BitSet & rhs)
     {
@@ -158,7 +178,7 @@ public:
 
     JoinActionRef(std::nullptr_t) : node_ptr(nullptr) {} /// NOLINT
 
-    explicit JoinActionRef(NodeRawPtr node_, JoinExpressionActions & expression_actions_);
+    explicit JoinActionRef(NodeRawPtr node_, const JoinExpressionActions & expression_actions_);
     explicit JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_);
 
     class AddFunction
@@ -200,10 +220,12 @@ public:
     bool isFunction(JoinConditionOperator op) const;
     std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
 
+    String dump() const;
+
     friend bool operator==(const JoinActionRef & left, const JoinActionRef & right) { return left.node_ptr == right.node_ptr; }
     friend struct std::hash<JoinActionRef>;
 
-    private:
+private:
     std::shared_ptr<JoinExpressionActions::Data> getData() const;
     static std::shared_ptr<JoinExpressionActions::Data> getData(const std::vector<JoinActionRef> & actions);
     static ActionsDAG & getActionsDAG(JoinExpressionActions::Data & data_);
