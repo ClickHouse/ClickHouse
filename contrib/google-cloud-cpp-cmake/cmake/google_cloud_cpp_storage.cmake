@@ -18,11 +18,6 @@
 
 set(GOOGLE_CLOUD_CPP_STORAGE_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/storage")
 
-# find_package(CURL REQUIRED)
-# if (NOT WIN32)
-#     find_package(OpenSSL REQUIRED)
-# endif ()
-
 # the client library
 add_library(
     google_cloud_cpp_storage # cmake-format: sort
