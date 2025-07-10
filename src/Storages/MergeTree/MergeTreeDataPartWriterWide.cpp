@@ -127,6 +127,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
 {
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
+    enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Wide;
     return enumerate_settings;
@@ -496,7 +497,9 @@ void MergeTreeDataPartWriterWide::writeColumn(
         serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
         serialize_settings.dynamic_serialization_version = settings.dynamic_serialization_version;
         serialize_settings.object_serialization_version = settings.object_serialization_version;
+        serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
         serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+        serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);

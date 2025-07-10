@@ -331,9 +331,15 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeObjectSerializationVersion::V1},
      {"v2", MergeTreeObjectSerializationVersion::V2},
-     {"v2_with_buckets", MergeTreeObjectSerializationVersion::V2_WITH_BUCKETS},
-     {"v3", MergeTreeObjectSerializationVersion::V3},
-     {"v4", MergeTreeObjectSerializationVersion::V4}})
+     {"v3", MergeTreeObjectSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectSharedDataSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
+     {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,

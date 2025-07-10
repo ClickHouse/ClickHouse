@@ -194,6 +194,14 @@ private:
         }
     };
 
+    struct SubstreamsCacheDiscriminatorsWithNumReadRowsElement : public ISubstreamsCacheElement
+    {
+        SubstreamsCacheDiscriminatorsWithNumReadRowsElement(ColumnPtr discriminators_, size_t num_read_rows_) : discriminators(discriminators_), num_read_rows(num_read_rows_) {}
+
+        ColumnPtr discriminators;
+        size_t num_read_rows;
+    };
+
     static DeserializeBinaryBulkStatePtr deserializeDiscriminatorsStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);

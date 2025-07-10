@@ -253,19 +253,46 @@ namespace ErrorCodes
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
-    TBD
+    Serialization version for JSON data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
+
+    Only version `v3` supports changing the shared data serialization version.
     )", 0) \
-    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version_for_zero_level_parts, "v2", R"(
-    TBD
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    Serialization version for shared data inside JSON data type.
+
+    Possible values:
+    - `map` - store shared data as `Map(String, String)`
+    - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
+    - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
+    Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+
+    Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+    [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
-    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 1, R"(
-    TBD
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    This setting allows to specify different serialization version of the
+    shared data inside JSON type for zero level parts that are created during inserts.
+    It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+    the insertion time significantly.
     )", 0) \
-    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 1, R"(
-    TBD
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
+    Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    )", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
+    Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
-    TBD
+    Serialization version for Dynamic data type. Required for compatibility.
+
+    Possible values:
+    - `v1`
+    - `v2`
+    - `v3`
     )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.

@@ -16,7 +16,7 @@ class SerializationObject : public ISerialization
 {
 public:
     /// Serialization can change in future. Let's introduce serialization version.
-    struct ObjectSerializationVersion
+    struct SerializationVersion
     {
         enum Value
         {
@@ -34,13 +34,11 @@ public:
             V1 = 0,
             /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
             V2 = 2,
-            /// V2_WITH_BUCKETS serialization: the same as V2 but shared data is splitted into buckets.
-            /// Number of buckets is serialized in ObjectStructure stream after sorted list of dynamic paths.
-            V2_WITH_BUCKETS = 4,
-            /// V3 serialization: TBD
-            V3 = 5,
-            /// V4 serialization: TBD
-            V4 = 6,
+            /// V3 serialization: the same as V2 but with 2 additions:
+            ///   - additional information about shared data serialization version that goes after list of dynamic paths.
+            ///   - additional bool flag before statistics that indicates if there are any statistics serialized.
+            V3 = 4,
+
             /// Serializations used only in Native format:
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
@@ -59,36 +57,10 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        bool supportsSharedDataBuckets() const
-        {
-            switch (value)
-            {
-                case V2_WITH_BUCKETS: [[fallthrough]];
-                case V3: [[fallthrough]];
-                case V4:
-                    return true;
-                default:
-                    return false;
-            }
-        }
+        SerializationVersion(UInt64 version);
+        SerializationVersion(MergeTreeObjectSerializationVersion version);
 
-        bool supportsEmptyStatistics() const
-        {
-            switch (value)
-            {
-                case V2_WITH_BUCKETS: [[fallthrough]];
-                case V3: [[fallthrough]];
-                case V4:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        explicit ObjectSerializationVersion(UInt64 version);
-        explicit ObjectSerializationVersion(MergeTreeObjectSerializationVersion version);
-
-        ObjectSerializationVersion(Value value_) : value(value_) {}
+        SerializationVersion(Value value_) : value(value_) {}
     };
 
     SerializationObject(
@@ -140,8 +112,6 @@ public:
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
-    static SerializationObjectSharedData::Mode chooseSharedDataMode(ObjectSerializationVersion version);
-
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
@@ -149,9 +119,10 @@ private:
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        ObjectSerializationVersion serialization_version;
+        SerializationVersion serialization_version;
         std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
+        SerializationObjectSharedData::SerializationVersion shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion::MAP;
         size_t shared_data_buckets = 1;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;

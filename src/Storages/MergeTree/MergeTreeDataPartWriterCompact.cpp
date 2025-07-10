@@ -102,6 +102,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
+    enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     auto serialization = getSerialization(name_and_type.name);
@@ -170,6 +171,7 @@ void writeColumnSingleGranule(
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
     serialize_settings.dynamic_serialization_version = settings.dynamic_serialization_version;
     serialize_settings.object_serialization_version = settings.object_serialization_version;
+    serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
     /// Write statistics only in first granule, it is used only during merges and we always get it from the first granule.
     if (is_first_granule)

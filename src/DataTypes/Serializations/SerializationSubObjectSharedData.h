@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
 
 namespace DB
@@ -12,13 +13,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/// Serialization of a sub-object Object subcolumns.
-/// For example, if we have type JSON and data {"a" : {"b" : {"c" : 42, "d" : "Hello"}}, "c" : [1, 2, 3], "d" : 42}
-/// this class will be responsible for reading sub-object a.b and will read JSON column with data {"c" : 43, "d" : "Hello"}.
-class SerializationSubObject final : public SimpleTextSerialization
+/// Serialization of shared data for a sub-object Object subcolumns.
+class SerializationSubObjectSharedData final : public SimpleTextSerialization
 {
 public:
-    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
+    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -68,10 +67,12 @@ private:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for object sub-object subcolumn");
     }
 
+    SerializationObjectSharedData::SerializationVersion serialization_version;
+    size_t buckets;
     String paths_prefix;
-    std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    SerializationPtr serialization_map;
 };
 
 }

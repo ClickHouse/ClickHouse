@@ -25,7 +25,8 @@ namespace MergeTreeSetting
 {
     extern MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
 }
 
@@ -104,7 +105,8 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_shared_data_buckets = (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_shared_data_buckets_for_wide_part];
-    enumerate_settings.object_serialization_version = isZeroLevel() ? (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_serialization_version_for_zero_level_parts] : (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_serialization_version];
+    enumerate_settings.object_serialization_version = (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_serialization_version];
+    enumerate_settings.object_shared_data_serialization_version = isZeroLevel() ? (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*IMergeTreeDataPart::storage.getSettings())[MergeTreeSetting::object_shared_data_serialization_version];
     auto serialization = getSerialization(column.name);
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {

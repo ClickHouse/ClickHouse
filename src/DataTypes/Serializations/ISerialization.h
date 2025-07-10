@@ -217,7 +217,7 @@ public:
             ObjectSharedDataPathsInfos,
             ObjectSharedDataCopy,
             ObjectSharedDataCopySizes,
-            ObjectSharedDataCopyIndexes,
+            ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
 
@@ -291,6 +291,8 @@ public:
 
         /// Serialization version that should be used for Object column.
         MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
+        /// Serialization version that should be used for shared data inside Object column.
+        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
@@ -336,6 +338,8 @@ public:
         /// Serialization versions that should be used for Dynamic and Object columns.
         MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
         MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
+        /// Serialization version that should be used for shared data inside Object column.
+        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;

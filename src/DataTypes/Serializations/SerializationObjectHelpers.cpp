@@ -140,7 +140,7 @@ std::vector<ColumnPtr> splitSharedDataPathsToBuckets(const IColumn & shared_data
     return shared_data_buckets;
 }
 
-void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buckets, IColumn & shared_data_column)
+void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix)
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     std::vector<const ColumnString *> shared_data_paths_buckets(shared_data_buckets.size());
@@ -160,8 +160,28 @@ void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buc
         {
             size_t offset_start = (*shared_data_offsets_buckets[bucket])[ssize_t(i) - 1];
             size_t offset_end = (*shared_data_offsets_buckets[bucket])[ssize_t(i)];
-            for (size_t j = offset_start; j != offset_end; ++j)
-                all_paths.emplace_back(shared_data_paths_buckets[bucket]->getDataAt(j).toView(), bucket, j);
+
+            /// If no paths prefix specified, collect all paths.
+            if (!paths_prefix)
+            {
+                for (size_t j = offset_start; j != offset_end; ++j)
+                {
+                    auto path = shared_data_paths_buckets[bucket]->getDataAt(j).toView();
+                    all_paths.emplace_back(path, bucket, j);
+                }
+            }
+            /// Otherwise collect only paths that match the prefix.
+            else
+            {
+                size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(*paths_prefix, *shared_data_paths_buckets[bucket], offset_start, offset_end);
+                for (; lower_bound_index != offset_end; ++lower_bound_index)
+                {
+                    auto path = shared_data_paths_buckets[bucket]->getDataAt(lower_bound_index).toView();
+                    if (!path.starts_with(*paths_prefix))
+                        break;
+                    all_paths.emplace_back(path, bucket, lower_bound_index);
+                }
+            }
         }
 
         std::sort(all_paths.begin(), all_paths.end());

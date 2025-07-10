@@ -787,8 +787,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
-            {"object_serialization_version_for_zero_level_parts", "v2", "v2", "Add a setting to control JSON serialization versions  for zero level parts"},
-            {"object_shared_data_buckets", 1, 1, "Add a setting to control number of buckets for shared data in JSON serialization"},
+            {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
+            {"object_shared_data_buckets_for_compact_part", 8, 8, "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"},
+            {"object_shared_data_buckets_for_wide_part", 32, 32, "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"},
             {"object_dynamic_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",

@@ -85,6 +85,7 @@ protected:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// The same as above, but for subcolumns.
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map_for_subcolumns;
+    DeserializeBinaryBulkStateMap cached_deserialize_binary_bulk_state_map_for_subcolumns;
 
    /// Actual columns description in part.
     const ColumnsDescription & part_columns;

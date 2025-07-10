@@ -44,11 +44,10 @@ try
         std::unordered_map<String, ColumnPtr> columns_cache;
         std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
 
-        /// If we need to read multiple subcolumns from a single column in storage,
-        /// we will read it this column only once and then reuse to extract all subcolumns.
+        /// If we don't have substream marks and we need to read multiple subcolumns from a single column in storage,
+        /// we will read the whole column only once and then reuse to extract all subcolumns.
         /// We cannot use SubstreamsCache for it, because we may also read the full column itself
-        /// and it might me not empty inside res_columns (and SubstreamsCache contains the whole columns).
-        /// TODO: refactor the code in a way when we first read all full columns and then extract all subcolumns from them.
+        /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
         std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
         for (size_t pos = 0; pos < num_columns; ++pos)
@@ -58,23 +57,39 @@ try
                 continue;
             }
 
+            /// If we have substream marks, subcolumns will be read separately.
+            if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
+                continue;
+
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
-            /// If it's a subcolumn and we have substream marks, we will seek to the specific substream mark during deserialization later.
-            if (!columns_to_read[pos].isSubcolumn() || !have_substream_marks)
-                stream->seekToMarkAndColumn(from_mark, have_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
+            stream->seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+//            LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read data of column {}", columns_to_read[pos].name);
             readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
+            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, cache_for_subcolumns, nullptr);
+        }
 
-            /// Subcolumns of the same column might share the same states inside deserialization state.
-            /// But in Compact part we can't use substreams cache during serialization so we read every substream independently
-            /// for subcolumns of the same column. And because of this the states should be empty and not shared.
-            /// To avoid sharing of the same state we clone deserialization states.
-            for (auto & [_, state] : deserialize_states_cache)
-                state = state ? state->clone() : nullptr;
+        /// If we have subcolumns and substreams marks, we read subcolumns separately, because we want to
+        /// use deserialization prefixes cache and substreams cache during deserialization.
+        if (has_substream_marks && has_subcolumns)
+        {
+            readSubcolumnsPrefixes(from_mark, current_task_last_mark);
+            initSubcolumnsDeserializationOrder();
+            /// Deserialize all subcolumns according to subcolumns_deserialization_order.
+            for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
+            {
+//                LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read subcolumns of column {}", column);
 
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, cache_for_subcolumns);
+                ISerialization::SubstreamsCache substreams_cache;
+                for (size_t pos : subcolumns_order)
+                {
+//                    LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read data of subcolumn {}", columns_to_read[pos].name);
+//                    stream->adjustRightMark(current_task_last_mark);
+                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+                }
+            }
         }
 
         ++from_mark;

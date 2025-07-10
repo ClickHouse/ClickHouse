@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
@@ -12,105 +13,67 @@
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/range/algorithm.hpp>
 
 namespace DB
 {
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationObjectSharedData::Mode mode_, const DataTypePtr & dynamic_type_, size_t buckets_)
-    : mode(mode_)
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+    : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_type_->getDefaultSerialization())
     , buckets(buckets_)
+    , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
-    if (mode == Mode::MAP)
-        serialization_map = DataTypeObject::getTypeOfSharedData()->getDefaultSerialization();
 }
 
-void SerializationObjectSharedData::enumerateStreams(
-    ISerialization::EnumerateStreamsSettings & settings,
-    const ISerialization::StreamCallback & callback,
-    const ISerialization::SubstreamData & data) const
+SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
 {
-    for (size_t bucket = 0; bucket != buckets; ++bucket)
+    checkVersion(version);
+}
+
+SerializationObjectSharedData::SerializationVersion::SerializationVersion(DB::MergeTreeObjectSharedDataSerializationVersion version)
+{
+    switch (version)
     {
-        settings.path.push_back(Substream::ObjectSharedDataBucket);
-        settings.path.back().object_shared_data_bucket = bucket;
-        if (mode == Mode::MAP)
-        {
-            serialization_map->enumerateStreams(settings, callback, data);
-        }
-        else
-        {
-            Substream structure_stream_type = settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::ObjectSharedDataStructurePrefix
-                                                                                           : Substream::ObjectSharedDataStructure;
-            settings.path.push_back(structure_stream_type);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataData);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
-            callback(settings.path);
-            settings.path.pop_back();
-
-            if (mode == Mode::SEPARATE_SUBSTREAMS)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-                callback(settings.path);
-                settings.path.pop_back();
-
-                settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-                callback(settings.path);
-                settings.path.pop_back();
-
-                settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
-
-            if (settings.use_specialized_prefixes_and_suffixes_substreams)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
-                callback(settings.path);
-                settings.path.pop_back();
-            }
-        }
-
-        settings.path.pop_back();
-    }
-
-    /// Streams related to shared data copy.
-    if (mode == Mode::SEPARATE_PATHS || mode == Mode::SEPARATE_SUBSTREAMS)
-    {
-        settings.path.push_back(Substream::ObjectSharedDataCopy);
-
-        settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataCopyIndexes);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.push_back(Substream::ObjectSharedDataCopyValues);
-        callback(settings.path);
-        settings.path.pop_back();
-
-        settings.path.pop_back();
+        case MergeTreeObjectSharedDataSerializationVersion::MAP:
+            value = MAP;
+            break;
+        case MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS:
+            value = MAP_WITH_BUCKETS;
+            break;
+        case MergeTreeObjectSharedDataSerializationVersion::ADVANCED:
+            value = ADVANCED;
+            break;
     }
 }
 
-struct SerializeBinaryBulkStateObjectSharedData : public ISerialization::SerializeBinaryBulkState
+void SerializationObjectSharedData::SerializationVersion::checkVersion(UInt64 version)
 {
+    if (version != MAP && version != MAP_WITH_BUCKETS && version != ADVANCED)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Object shared data serialization: {}", version);
+}
+
+struct SerializeBinaryBulkStateObjectSharedDataMapWithBuckets : public ISerialization::SerializeBinaryBulkState
+{
+    ISerialization::SerializeBinaryBulkStatePtr map_state;
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> bucket_map_states;
 };
 
 struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::DeserializeBinaryBulkState
 {
+    ISerialization::DeserializeBinaryBulkStatePtr map_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
+    /// Some granules can be partially read, we need to remember how many rows
+    /// were already read from the last incomplete granule.
+    size_t last_incomplete_granule_offset = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -123,14 +86,123 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     }
 };
 
+void SerializationObjectSharedData::enumerateStreams(
+    ISerialization::EnumerateStreamsSettings & settings,
+    const ISerialization::StreamCallback & callback,
+    const ISerialization::SubstreamData & data) const
+{
+    const auto * shared_data_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectSharedData>(data.deserialize_state) : nullptr;
+
+    if (serialization_version.value == SerializationVersion::MAP)
+    {
+        auto map_data = SubstreamData(serialization_map)
+                            .withColumn(data.column)
+                            .withType(data.type)
+                            .withSerializationInfo(data.serialization_info)
+                            .withDeserializeState(shared_data_state ? shared_data_state->map_state : nullptr);
+
+        serialization_map->enumerateStreams(settings, callback, map_data);
+        return;
+    }
+
+    /// Other 2 serializations MAP_WITH_BUCKETS and ADVAMCED support buckets.
+    for (size_t bucket = 0; bucket != buckets; ++bucket)
+    {
+        settings.path.push_back(Substream::ObjectSharedDataBucket);
+        settings.path.back().object_shared_data_bucket = bucket;
+        if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
+        {
+            auto map_data = SubstreamData(serialization_map)
+                                .withColumn(data.column)
+                                .withType(data.type)
+                                .withSerializationInfo(data.serialization_info)
+                                .withDeserializeState(shared_data_state ? shared_data_state->bucket_map_states[bucket] : nullptr);
+            serialization_map->enumerateStreams(settings, callback, map_data);
+        }
+        else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+        {
+            if (settings.use_specialized_prefixes_and_suffixes_substreams)
+            {
+                settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
+                callback(settings.path);
+                settings.path.pop_back();
+            }
+            else
+            {
+                settings.path.push_back(Substream::ObjectSharedDataStructure);
+                callback(settings.path);
+                settings.path.pop_back();
+            }
+
+            settings.path.push_back(Substream::ObjectSharedDataData);
+            callback(settings.path);
+            settings.path.pop_back();
+
+            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
+            callback(settings.path);
+            settings.path.pop_back();
+
+            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+            callback(settings.path);
+            settings.path.pop_back();
+
+            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+            callback(settings.path);
+            settings.path.pop_back();
+
+            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            callback(settings.path);
+            settings.path.pop_back();
+
+            if (settings.use_specialized_prefixes_and_suffixes_substreams)
+            {
+                settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
+                callback(settings.path);
+                settings.path.pop_back();
+            }
+        }
+        else
+        {
+            /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
+        }
+
+        settings.path.pop_back();
+    }
+
+    /// Streams related to shared data copy in ADVANCED serialization.
+    if (serialization_version.value == SerializationVersion::ADVANCED)
+    {
+        settings.path.push_back(Substream::ObjectSharedDataCopy);
+
+        settings.path.push_back(Substream::ObjectSharedDataCopySizes);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.push_back(Substream::ObjectSharedDataCopyValues);
+        callback(settings.path);
+        settings.path.pop_back();
+
+        settings.path.pop_back();
+    }
+}
 
 void SerializationObjectSharedData::serializeBinaryBulkStatePrefix(
     const IColumn & column,
     ISerialization::SerializeBinaryBulkSettings & settings,
     ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto shared_data_state = std::make_shared<SerializeBinaryBulkStateObjectSharedData>();
-    if (mode == Mode::MAP)
+    auto shared_data_state = std::make_shared<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>();
+
+    if (serialization_version.value == SerializationVersion::MAP)
+    {
+        serialization_map->serializeBinaryBulkStatePrefix(column, settings, shared_data_state->map_state);
+    }
+    else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         shared_data_state->bucket_map_states.resize(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -141,6 +213,16 @@ void SerializationObjectSharedData::serializeBinaryBulkStatePrefix(
             settings.path.pop_back();
         }
     }
+    else if (serialization_version.value == SerializationVersion::ADVANCED)
+    {
+        /// ADVANCED serialization doesn't have serialization prefix.
+    }
+    else
+    {
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "enumerateStreams is not implemented for shared data serialization version {}", serialization_version.value);
+    }
+
 
     state = std::move(shared_data_state);
 }
@@ -152,31 +234,30 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     ISerialization::SerializeBinaryBulkSettings & settings,
     ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedData>(state);
-    if (mode == Mode::MAP)
+    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>(state);
+
+    if (serialization_version.value == SerializationVersion::MAP)
     {
-        if (buckets == 1)
-        {
-            serialization_map->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, shared_data_state->bucket_map_states[0]);
-        }
-        else
-        {
-            size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-            auto shared_data_buckets = splitSharedDataPathsToBuckets(column, offset, end, buckets);
-            for (size_t bucket = 0; bucket != buckets; ++bucket)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataBucket);
-                settings.path.back().object_shared_data_bucket = bucket;
-                serialization_map->serializeBinaryBulkWithMultipleStreams(*shared_data_buckets[bucket], 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
-                settings.path.pop_back();
-            }
-        }
+        serialization_map->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, shared_data_state->map_state);
     }
-    else if (mode == Mode::SEPARATE_PATHS || mode == Mode::SEPARATE_SUBSTREAMS)
+    else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
+        auto shared_data_buckets = splitSharedDataPathsToBuckets(column, offset, end, buckets);
+        for (size_t bucket = 0; bucket != buckets; ++bucket)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataBucket);
+            settings.path.back().object_shared_data_bucket = bucket;
+            serialization_map->serializeBinaryBulkWithMultipleStreams(*shared_data_buckets[bucket], 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
+            settings.path.pop_back();
+        }
+    }
+    else if (serialization_version.value == SerializationVersion::ADVANCED)
+    {
+        size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
+        /// First we need to flatten all paths stored in the shared data and separate them into buckets.
         auto flattened_paths_buckets = flattenAndBucketSharedDataPaths(column, offset, end, dynamic_type, buckets);
-
+        /// Second, write paths in each bucket separately.
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             const auto & flattened_paths = flattened_paths_buckets[bucket];
@@ -213,19 +294,20 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                     "Got empty stream for shared data data in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
             if (!settings.stream_mark_getter)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark getter is not set for SEPARATE_PATHS shared data serialization");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark getter is not set for ADVANCED shared data serialization");
 
-            /// Remember the mark of the data stream, we will write it in the structure stream later.
+            /// Remember the mark of the ObjectSharedDataData stream, we will write it in the structure stream later.
             MarkInCompressedFile data_stream_mark = settings.stream_mark_getter(data_stream_path);
 
-            /// Collect mark of the data stream for each path.
+            /// Collect mark of the ObjectSharedDataData stream for each path.
             std::vector<MarkInCompressedFile> paths_marks;
             paths_marks.reserve(flattened_paths.size());
             /// Collect list of substreams for each path.
             std::vector<std::vector<String>> paths_substreams;
-            /// Collect mark of the data stream for each stream of each path.
+            /// Collect mark of the ObjectSharedDataData stream for each substream of each path.
             std::vector<std::vector<MarkInCompressedFile>> paths_substreams_marks;
 
+            /// Configure serialization settings as in Compact part.
             SerializeBinaryBulkSettings data_serialization_settings;
             data_serialization_settings.data_part_type = MergeTreeDataPartType::Compact;
             data_serialization_settings.position_independent_encoding = true;
@@ -233,41 +315,34 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             data_serialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
             data_serialization_settings.use_compact_variant_discriminators_serialization = true;
             data_serialization_settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V3;
-            if (mode == Mode::SEPARATE_PATHS)
-                data_serialization_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V2;
-            else
-                data_serialization_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V4;
+            data_serialization_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V3;
+            /// Also use ADVANCED serialization for nested Object types.
+            data_serialization_settings.object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::ADVANCED;
+            /// Don't write any dynamic statistics.
             data_serialization_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::NONE;
             data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(data_stream_path); };
 
             for (const auto & [path, path_column] : flattened_paths)
             {
-                if (mode == Mode::SEPARATE_SUBSTREAMS)
+                paths_substreams.emplace_back();
+                paths_substreams_marks.emplace_back();
+                data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
-                    paths_substreams.emplace_back();
-                    paths_substreams_marks.emplace_back();
-                    data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
-                    {
-                        /// Add new substream and its mark for current path.
-                        paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path));
-                        paths_substreams_marks.back().push_back(settings.stream_mark_getter(data_stream_path));
-                        return data_stream;
-                    };
-                }
-                else
-                {
-                    data_serialization_settings.getter = [&](const SubstreamPath &) -> WriteBuffer * { return data_stream; };
-                }
+                    /// Add new substream and its mark for current path.
+                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path));
+                    paths_substreams_marks.back().push_back(settings.stream_mark_getter(data_stream_path));
+                    return data_stream;
+                };
 
                 SerializeBinaryBulkStatePtr path_state;
-                /// Remember the mark of data stream for this path before writing any data.
+                /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
                 paths_marks.push_back(settings.stream_mark_getter(data_stream_path));
                 dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
-            /// Write paths marks of the data stream.
+            /// Write paths marks of the ObjectSharedDataData stream.
             settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
             auto * paths_marks_stream = settings.getter(settings.path);
             auto paths_marks_stream_path = settings.path;
@@ -278,7 +353,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                     ErrorCodes::LOGICAL_ERROR,
                     "Got empty stream for shared data paths marks in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
-            /// Remember the mark of the paths marks stream, we will write it in the structure stream later
+            /// Remember the mark of the ObjectSharedDataPathsMarks stream, we will write it in the structure stream later.
             MarkInCompressedFile paths_marks_stream_mark = settings.stream_mark_getter(paths_marks_stream_path);
 
             for (const auto & mark : paths_marks)
@@ -287,73 +362,71 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 writeBinaryLittleEndian(mark.offset_in_decompressed_block, *paths_marks_stream);
             }
 
-            MarkInCompressedFile paths_substreams_metadata_stream_mark;
-            if (mode == Mode::SEPARATE_SUBSTREAMS)
+            /// Write paths substreams.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+            auto * paths_substreams_stream = settings.getter(settings.path);
+            auto paths_substreams_stream_path = settings.path;
+            settings.path.pop_back();
+
+            if (!paths_substreams_stream)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Got empty stream for shared data paths substreams in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
+
+            /// Collect marks of the ObjectSharedDataSubstreams stream for each path so
+            /// we will be able to seek to the start of the substreams list of the specific path.
+            std::vector<MarkInCompressedFile> marks_of_paths_substreams;
+            for (const auto & path_substreams : paths_substreams)
             {
-                /// Write paths substreams.
-                settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-                auto * paths_substreams_stream = settings.getter(settings.path);
-                auto paths_substreams_stream_path = settings.path;
-                settings.path.pop_back();
+                marks_of_paths_substreams.push_back(settings.stream_mark_getter(paths_substreams_stream_path));
+                /// Write number of substreams of this path and the list of substreams.
+                writeVarUInt(path_substreams.size(), *paths_substreams_stream);
+                for (const auto & substream : path_substreams)
+                    writeStringBinary(substream, *paths_substreams_stream);
+            }
 
-                if (!paths_substreams_stream)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Got empty stream for shared data paths substreams in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
+            /// Write paths substreams marks of the ObjectSharedDataData stream.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+            auto * substreams_marks_stream = settings.getter(settings.path);
+            auto substreams_marks_stream_path = settings.path;
+            settings.path.pop_back();
 
-                /// Collect mark of the substreams stream for each path..
-                std::vector<MarkInCompressedFile> marks_of_paths_substreams;
-                for (const auto & path_substreams : paths_substreams)
+            if (!substreams_marks_stream)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Got empty stream for shared data substreams marks in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
+
+            /// Collect mark of the ObjectSharedDataSubstreamsMarks stream for each path so
+            /// we will be able to seek to the start of the substreams marks of the specific path.
+            std::vector<MarkInCompressedFile> marks_of_paths_substreams_marks;
+            for (const auto & substreams_marks : paths_substreams_marks)
+            {
+                marks_of_paths_substreams_marks.push_back(settings.stream_mark_getter(substreams_marks_stream_path));
+                for (const auto & mark : substreams_marks)
                 {
-                    marks_of_paths_substreams.push_back(settings.stream_mark_getter(paths_substreams_stream_path));
-                    /// Write number of substreams of this path and the list of substreams.
-                    writeVarUInt(path_substreams.size(), *paths_substreams_stream);
-                    for (const auto & substream : path_substreams)
-                        writeStringBinary(substream, *paths_substreams_stream);
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, *substreams_marks_stream);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, *substreams_marks_stream);
                 }
+            }
 
-                /// Write substreams marks.
-                settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-                auto * substreams_marks_stream = settings.getter(settings.path);
-                auto substreams_marks_stream_path = settings.path;
-                settings.path.pop_back();
+            /// For each path write mark of its substreams in ObjectSharedDataSubstreams/ObjectSharedDataSubstreamsMarks streams.
+            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            auto * paths_substreams_metadata_stream = settings.getter(settings.path);
+            auto paths_substreams_metadata_stream_path = settings.path;
+            settings.path.pop_back();
 
-                if (!substreams_marks_stream)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Got empty stream for shared data substreams marks in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
+            if (!paths_substreams_metadata_stream)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Got empty stream for shared data paths substreams metadata in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
-                /// Collect mark of the substreams marks stream for each path.
-                std::vector<MarkInCompressedFile> marks_of_paths_substreams_marks;
-                for (const auto & substreams_marks : paths_substreams_marks)
-                {
-                    marks_of_paths_substreams_marks.push_back(settings.stream_mark_getter(substreams_marks_stream_path));
-                    for (const auto & mark : substreams_marks)
-                    {
-                        writeBinaryLittleEndian(mark.offset_in_compressed_file, *substreams_marks_stream);
-                        writeBinaryLittleEndian(mark.offset_in_decompressed_block, *substreams_marks_stream);
-                    }
-                }
-
-                /// For each path write mark of its substreams list and mark of their marks.
-                settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-                auto * paths_substreams_metadata_stream = settings.getter(settings.path);
-                auto paths_substreams_metadata_stream_path = settings.path;
-                settings.path.pop_back();
-
-                if (!paths_substreams_metadata_stream)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Got empty stream for shared data paths substreams metadata in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
-
-                paths_substreams_metadata_stream_mark = settings.stream_mark_getter(paths_substreams_metadata_stream_path);
-                for (size_t i = 0; i != marks_of_paths_substreams.size(); ++i)
-                {
-                    writeBinaryLittleEndian(marks_of_paths_substreams[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
-                    writeBinaryLittleEndian(marks_of_paths_substreams[i].offset_in_decompressed_block, *paths_substreams_metadata_stream);
-                    writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
-                    writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_decompressed_block, *paths_substreams_metadata_stream);
-                }
+            MarkInCompressedFile paths_substreams_metadata_stream_mark = settings.stream_mark_getter(paths_substreams_metadata_stream_path);
+            for (size_t i = 0; i != marks_of_paths_substreams.size(); ++i)
+            {
+                writeBinaryLittleEndian(marks_of_paths_substreams[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
+                writeBinaryLittleEndian(marks_of_paths_substreams[i].offset_in_decompressed_block, *paths_substreams_metadata_stream);
+                writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_compressed_file, *paths_substreams_metadata_stream);
+                writeBinaryLittleEndian(marks_of_paths_substreams_marks[i].offset_in_decompressed_block, *paths_substreams_metadata_stream);
             }
 
             /// Write collected marks of other streams into structure stream.
@@ -372,12 +445,8 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             writeBinaryLittleEndian(data_stream_mark.offset_in_decompressed_block, *structure_stream);
             writeBinaryLittleEndian(paths_marks_stream_mark.offset_in_compressed_file, *structure_stream);
             writeBinaryLittleEndian(paths_marks_stream_mark.offset_in_decompressed_block, *structure_stream);
-
-            if (mode == Mode::SEPARATE_SUBSTREAMS)
-            {
-                writeBinaryLittleEndian(paths_substreams_metadata_stream_mark.offset_in_compressed_file, *structure_stream);
-                writeBinaryLittleEndian(paths_substreams_metadata_stream_mark.offset_in_decompressed_block, *structure_stream);
-            }
+            writeBinaryLittleEndian(paths_substreams_metadata_stream_mark.offset_in_compressed_file, *structure_stream);
+            writeBinaryLittleEndian(paths_substreams_metadata_stream_mark.offset_in_decompressed_block, *structure_stream);
 
             settings.path.pop_back();
         }
@@ -406,7 +475,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         size_t nested_limit = limit ? shared_data_offsets[end - 1] - nested_offset : shared_data_offsets.back() - nested_offset;
         size_t nested_end = nested_offset + nested_limit;
 
-        settings.path.push_back(Substream::ObjectSharedDataCopyIndexes);
+        settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
         auto * copy_indexes_stream = settings.getter(settings.path);
 
         if (!copy_indexes_stream)
@@ -447,13 +516,23 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
         settings.path.pop_back();
     }
+    else
+    {
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "serializeBinaryBulkWithMultipleStreams is not implemented for shared data serialization version {}", serialization_version.value);
+    }
 }
 
 void SerializationObjectSharedData::serializeBinaryBulkStateSuffix(
     ISerialization::SerializeBinaryBulkSettings & settings, ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedData>(state);
-    if (mode == Mode::MAP)
+    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>(state);
+
+    if (serialization_version.value == SerializationVersion::MAP)
+    {
+        serialization_map->serializeBinaryBulkStateSuffix(settings, shared_data_state->map_state);
+    }
+    else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
@@ -463,6 +542,16 @@ void SerializationObjectSharedData::serializeBinaryBulkStateSuffix(
             settings.path.pop_back();
         }
     }
+    else if (serialization_version.value == SerializationVersion::ADVANCED)
+    {
+        /// ADVANCED doesn't have suffix.
+    }
+    else
+    {
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "serializeBinaryBulkStateSuffix is not implemented for shared data serialization version {}", serialization_version.value);
+    }
+
 }
 
 void SerializationObjectSharedData::deserializeBinaryBulkStatePrefix(
@@ -471,7 +560,12 @@ void SerializationObjectSharedData::deserializeBinaryBulkStatePrefix(
     ISerialization::SubstreamsDeserializeStatesCache * cache) const
 {
     auto shared_data_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedData>();
-    if (mode == Mode::MAP)
+
+    if (serialization_version.value == SerializationVersion::MAP)
+    {
+        serialization_map->deserializeBinaryBulkStatePrefix(settings, shared_data_state->map_state, cache);
+    }
+    else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         shared_data_state->bucket_map_states.resize(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -482,7 +576,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkStatePrefix(
             settings.path.pop_back();
         }
     }
-    else
+    else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         shared_data_state->bucket_structure_states.resize(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -491,10 +585,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkStatePrefix(
             settings.path.back().object_shared_data_bucket = bucket;
             shared_data_state->bucket_structure_states[bucket] = deserializeStructureStatePrefix(settings, cache);
             auto * structure_state_concrete = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
-            structure_state_concrete->read_all_paths = true;
-            structure_state_concrete->requested_paths.clear();
+            structure_state_concrete->need_all_paths = true;
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Update structure state by setting need_all_paths = true. Structure state: {}", structure_state_concrete->str());
             settings.path.pop_back();
         }
+    }
+    else
+    {
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "deserializeBinaryBulkStatePrefix is not implemented for shared data serialization version {}", serialization_version.value);
     }
 
     state = std::move(shared_data_state);
@@ -506,10 +605,12 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
     DeserializeBinaryBulkStatePtr state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get structure state from cache");
         state = cached_state;
     }
     else
     {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Create structure state");
         state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>();
         /// Add state to cache so all columns/subcolumns that read from this stream will share the same state.
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
@@ -522,8 +623,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
 void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     ReadBuffer & buf,
     SerializationObjectSharedData::StructureGranule & structure_granule,
-    const std::unordered_set<String> & requested_paths,
-    bool read_all_paths)
+    const DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state)
 {
     /// Read number of rows in this granule.
     readVarUInt(structure_granule.num_rows, buf);
@@ -534,26 +634,22 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
     {
         readStringBinary(path, buf);
-        if (read_all_paths || requested_paths.contains(path))
-        {
-            structure_granule.paths.push_back(path);
-            structure_granule.paths_set.insert(path);
-            structure_granule.original_position_to_local_position[i] = structure_granule.paths.size() - 1;
-        }
+        if (structure_state.requested_paths.contains(path) || structure_state.requested_paths_subcolumns.contains(path) || structure_state.checkIfPathMatchesAnyRequestedPrefix(path))
+            structure_granule.position_to_requested_path[i] = path;
+
+        if (structure_state.need_all_paths)
+            structure_granule.all_paths.push_back(path);
     }
 }
 
-void SerializationObjectSharedData::deserializeStructureGranuleSuffix(ReadBuffer & buf, SerializationObjectSharedData::StructureGranule & structure_granule, Mode mode)
+void SerializationObjectSharedData::deserializeStructureGranuleSuffix(ReadBuffer & buf, SerializationObjectSharedData::StructureGranule & structure_granule)
 {
     readBinaryLittleEndian(structure_granule.data_stream_mark.offset_in_compressed_file, buf);
     readBinaryLittleEndian(structure_granule.data_stream_mark.offset_in_decompressed_block, buf);
     readBinaryLittleEndian(structure_granule.paths_marks_stream_mark.offset_in_compressed_file, buf);
     readBinaryLittleEndian(structure_granule.paths_marks_stream_mark.offset_in_decompressed_block, buf);
-    if (mode == Mode::SEPARATE_SUBSTREAMS)
-    {
-        readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_compressed_file, buf);
-        readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_decompressed_block, buf);
-    }
+    readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_compressed_file, buf);
+    readBinaryLittleEndian(structure_granule.paths_substreams_metadata_stream_mark.offset_in_decompressed_block, buf);
 }
 
 std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationObjectSharedData::deserializeStructure(
@@ -561,9 +657,19 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
-    ISerialization::SubstreamsCache * cache,
-    Mode mode)
+    ISerialization::SubstreamsCache * cache)
 {
+    /// First check if we already deserialized data from structure steam and have it in the cache.
+    auto structure_path = settings.path;
+    structure_path.push_back(Substream::ObjectSharedDataStructure);
+    if (const auto * cached_structure = getElementFromSubstreamsCache(cache, structure_path))
+    {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get structure from cache");
+        return assert_cast<const SubstreamsCacheStructureElement *>(cached_structure)->structure_granules;
+    }
+
+//    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize structure with rows_offset {} and limit {}", rows_offset, limit);
+
     auto result = std::make_shared<StructureGranules>();
     
     /// In Compact part we always read one whole granule, so we don't need to worry about reading structure from multiple granules.
@@ -577,7 +683,10 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
         /// Read prefix of the structure stream
         settings.path.push_back(Substream::ObjectSharedDataStructurePrefix);
         auto * structure_prefix_stream = settings.getter(settings.path);
-        deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, structure_state.requested_paths, structure_state.read_all_paths);
+        if (!structure_prefix_stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty structure prefix stream for object shared data data");
+
+        deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, structure_state);
         settings.path.pop_back();
 
         if (structure_granule.num_rows != rows_offset + limit)
@@ -589,23 +698,32 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
         /// Read suffix of the structure stream.
         settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
         auto * structure_suffix_stream = settings.getter(settings.path);
-        deserializeStructureGranuleSuffix(*structure_suffix_stream, structure_granule, mode);
+        if (!structure_suffix_stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty structure suffix stream for object shared data");
+
+        deserializeStructureGranuleSuffix(*structure_suffix_stream, structure_granule);
         settings.path.pop_back();
+
+//        LOG_DEBUG(
+//            getLogger("SerializationObjectSharedData"),
+//            "Deserialize from Compact part: num rows: {}; offset: {}; limit: {}; paths: {}; all paths: {};",
+//            structure_granule.num_rows,
+//            structure_granule.offset,
+//            structure_granule.limit,
+//            boost::join(structure_granule.getRequestedPaths(), ", "),
+//            boost::join(structure_granule.all_paths, ", "));
 
         result->push_back(std::move(structure_granule));
     }
     /// In Wide part we can read multiple granules together and read only part of last granule.
     else
     {
-        settings.path.push_back(Substream::ObjectSharedDataStructure);
-        /// First check if we already deserialized data from structure steam and have it in the cache.
-        if (auto * cached_structure = getElementFromSubstreamsCache(cache, settings.path))
-        {
-            settings.path.pop_back();
-            return assert_cast<SubstreamsCacheStructureElement *>(cached_structure)->structure_granules;
-        }
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize from Wide part");
 
-        auto * structure_stream = settings.getter(settings.path);
+        auto * structure_stream = settings.getter(structure_path);
+
+        if (!structure_stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty structure stream for object shared data");
 
         /// Reset last read granule state if we don't continue reading from it.
         if (!settings.continuous_reading)
@@ -627,8 +745,8 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
                     break;
 
                 current_granule.clear();
-                deserializeStructureGranulePrefix(*structure_stream, current_granule, structure_state.requested_paths, structure_state.read_all_paths);
-                deserializeStructureGranuleSuffix(*structure_stream, current_granule, mode);
+                deserializeStructureGranulePrefix(*structure_stream, current_granule, structure_state);
+                deserializeStructureGranuleSuffix(*structure_stream, current_granule);
                 remaining_rows_in_granule = current_granule.num_rows;
             }
 
@@ -665,20 +783,358 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
                 rows_to_read = 0;
             }
 
+//            LOG_DEBUG(
+//                getLogger("SerializationObjectSharedData"),
+//                "Deserialize from Wide part: num rows: {}; offset: {}; limit: {}; paths: {}; all paths: {};",
+//                current_granule.num_rows,
+//                current_granule.offset,
+//                current_granule.limit,
+//                boost::join(current_granule.getRequestedPaths(), ", "),
+//                boost::join(current_granule.all_paths, ", "));
             result->push_back(current_granule);
             current_granule.clear();
         }
 
-        /// Remember the state of the last read granule as it can be only partially read.
+        /// Remember the state of the last read granule because it can be partially read.
         if (!result->empty())
             structure_state.last_granule_structure = result->back();
-
-        addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCacheStructureElement>(result));
-        settings.path.pop_back();
     }
 
+    /// Add deserialized data into cache.
+    addElementToSubstreamsCache(cache, structure_path, std::make_unique<SubstreamsCacheStructureElement>(result));
     return result;
 }
+
+std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> SerializationObjectSharedData::deserializePathsInfos(
+    const SerializationObjectSharedData::StructureGranules & structure_granules,
+    const SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
+    ISerialization::DeserializeBinaryBulkSettings & settings,
+    ISerialization::SubstreamsCache * cache)
+{
+    auto paths_infos_path = settings.path;
+    paths_infos_path.push_back(Substream::ObjectSharedDataPathsInfos);
+    /// First check if we already deserialized paths infos and have it in cache.
+    if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, paths_infos_path))
+    {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get paths infos from cache");
+        return assert_cast<SubstreamsCachePathsInfosElement *>(cached_paths_infos)->paths_infos_granules;
+    }
+
+//    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize paths infos");
+
+    /// Deserialize paths infos granule by granule.
+    auto paths_infos_granules = std::make_shared<PathsInfosGranules>();
+    paths_infos_granules->reserve(structure_granules.size());
+    for (size_t granule = 0; granule != structure_granules.size(); ++granule)
+    {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Granule {}", granule);
+
+        auto & path_to_info = (*paths_infos_granules).emplace_back().path_to_info;
+
+        /// If there is nothing to read from this granule, just skip it.
+        if (structure_granules[granule].limit == 0 || structure_granules[granule].position_to_requested_path.empty())
+        {
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Nothing to read from this granule");
+            continue;
+        }
+
+        bool need_paths_marks = false;
+        bool need_subcolumns_info = false;
+        for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+        {
+            /// For paths inside requested_paths_subcolumns we will need to read only subcolumns
+            /// and don't need paths marks.
+            if (structure_state.requested_paths_subcolumns.contains(requested_path))
+                need_subcolumns_info = true;
+            else
+                need_paths_marks = true;
+        }
+
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Need paths marks: {}. Need subcolumns info: {}", need_paths_marks, need_subcolumns_info);
+
+        if (!settings.seek_stream_to_mark_callback)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
+
+        if (need_paths_marks)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
+            auto * paths_marks_stream = settings.getter(settings.path);
+
+            if (!paths_marks_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths marks");
+
+            /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
+            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_marks_stream_mark);
+
+            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
+            {
+                auto path_it = structure_granules[granule].position_to_requested_path.find(i);
+                /// Skip marks of not requested paths.
+                if (path_it == structure_granules[granule].position_to_requested_path.end())
+                {
+                    paths_marks_stream->ignore(2 * sizeof(UInt64));
+                }
+                else
+                {
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read marks for path {}", path_it->second);
+                    auto & path_info = path_to_info[path_it->second];
+                    readBinaryLittleEndian(path_info.data_mark.offset_in_compressed_file, *paths_marks_stream);
+                    readBinaryLittleEndian(path_info.data_mark.offset_in_decompressed_block, *paths_marks_stream);
+                }
+            }
+
+            settings.path.pop_back();
+        }
+        
+        if (need_subcolumns_info)
+        {
+            /// Read metadata about paths subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            auto * paths_substreams_metadata_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_metadata_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams metadata");
+
+            /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
+            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_substreams_metadata_stream_mark);
+            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
+            {
+                auto path_it = structure_granules[granule].position_to_requested_path.find(i);
+                /// Skip metadata of not requested paths.
+                if (path_it == structure_granules[granule].position_to_requested_path.end())
+                {
+                    paths_substreams_metadata_stream->ignore(4 * sizeof(UInt64));
+                }
+                else
+                {
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read subcolumns metadata for path {}", path_it->second);
+                    auto & path_info = path_to_info[path_it->second];
+                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
+                }
+            }
+
+            settings.path.pop_back();
+
+            /// Read list of substreams for each path with requested subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+            auto * paths_substreams_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams");
+
+            for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+            {
+                if (!structure_state.requested_paths_subcolumns.contains(requested_path))
+                    continue;
+
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read subcolumns list for path {}", requested_path);
+
+                auto & path_info = path_to_info[requested_path];
+                /// Seek to the start of the substreams list for this path.
+                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
+                size_t num_substreams;
+                readVarUInt(num_substreams, *paths_substreams_stream);
+                path_info.substreams.reserve(num_substreams);
+                for (size_t i = 0; i != num_substreams; ++i)
+                {
+                    path_info.substreams.emplace_back();
+                    readStringBinary(path_info.substreams.back(), *paths_substreams_stream);
+                }
+            }
+
+            settings.path.pop_back();
+
+            /// Read mark in the data stream for each substream of each path with requested subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+            auto * paths_substreams_marks_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_marks_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams marks");
+
+            for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+            {
+                if (!structure_state.requested_paths_subcolumns.contains(requested_path))
+                    continue;
+
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read subcolumns marks for path {}", requested_path);
+
+                auto & path_info = path_to_info[requested_path];
+                /// Seek to the start of the substreams marks for this path.
+                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
+                for (size_t i = 0; i != path_info.substreams.size(); ++i)
+                {
+                    MarkInCompressedFile substream_mark;
+                    readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
+                    readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
+                    path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
+                }
+            }
+
+            settings.path.pop_back();
+        }
+    }
+
+    addElementToSubstreamsCache(cache, paths_infos_path, std::make_unique<SubstreamsCachePathsInfosElement>(paths_infos_granules));
+    return paths_infos_granules;
+}
+
+std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationObjectSharedData::deserializePathsData(
+    const SerializationObjectSharedData::StructureGranules & structure_granules,
+    const PathsInfosGranules & paths_infos_granules,
+    const SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,
+    ISerialization::DeserializeBinaryBulkSettings & settings,
+    const DataTypePtr & dynamic_type,
+    const SerializationPtr & dynamic_serialization,
+    ISerialization::SubstreamsCache * cache)
+{
+    settings.path.push_back(Substream::ObjectSharedDataData);
+    /// First check if we already deserialized paths data and have it in cache.
+    if (auto * cached_paths_data = getElementFromSubstreamsCache(cache, settings.path))
+    {
+        settings.path.pop_back();
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get paths data from cache");
+        return assert_cast<SubstreamsCachePathsDataElement *>(cached_paths_data)->paths_data_granules;
+    }
+
+//    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize paths data");
+
+    /// Deserialize paths data granule by granule.
+    auto * data_stream = settings.getter(settings.path);
+    if (!data_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data data");
+
+    auto paths_data_granules = std::make_shared<PathsDataGranules>();
+    paths_data_granules->reserve(structure_granules.size());
+
+    if (!settings.seek_stream_to_mark_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
+
+    DeserializeBinaryBulkSettings deserialization_settings;
+    deserialization_settings.object_and_dynamic_read_statistics = false;
+    deserialization_settings.position_independent_encoding = true;
+    deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+    deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
+    deserialization_settings.seek_stream_to_mark_callback = [&](const SubstreamPath &, const MarkInCompressedFile & mark)
+    {
+        settings.seek_stream_to_mark_callback(settings.path, mark);
+    };
+
+    for (size_t granule = 0; granule != structure_granules.size(); ++granule)
+    {
+//        LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Granule {}", granule);
+
+        const auto & structure_granule = structure_granules[granule];
+        const auto & path_to_info = paths_infos_granules[granule].path_to_info;
+        auto & paths_data_granule = (*paths_data_granules).emplace_back();
+
+        /// Skip granule if there is nothing to read from it.
+        if (!structure_granule.limit || path_to_info.empty())
+        {
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Nothing to read in this granule");
+            continue;
+        }
+
+        for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
+        {
+            auto path_info_it = path_to_info.find(requested_path);
+            if (path_info_it == path_to_info.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Info for path {} is not deserialized", requested_path);
+
+            const auto & path_info = path_info_it->second;
+
+            /// If we have only subcolumns requested for this path, read all subcolumns.
+            auto paths_subcolumns_it = structure_state.requested_paths_subcolumns.find(requested_path);
+            if (paths_subcolumns_it != structure_state.requested_paths_subcolumns.end())
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read subcolumns of path {}", requested_path);
+
+                const auto & subcolumns_infos = paths_subcolumns_it->second;
+                std::vector<SubstreamData> subcolumns_substream_data;
+                subcolumns_substream_data.reserve(subcolumns_infos.size());
+//                std::vector<String> subcolumns_names;
+                for (const auto & subcolumn_info : subcolumns_infos)
+                {
+                    subcolumns_substream_data.push_back(SubstreamData(subcolumn_info.serialization).withType(subcolumn_info.type));
+//                    subcolumns_names.push_back(subcolumn_info.name);
+                }
+
+                deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
+                {
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path);
+
+                    auto it = path_info.substream_to_mark.find(stream_name);
+                    if (it == path_info.substream_to_mark.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Substream {} for path {} is requested but not found in substreams list", stream_name, requested_path);
+
+                    /// Seek to the requested substream in the data stream.
+                    settings.seek_stream_to_mark_callback(settings.path, it->second);
+                };
+
+                deserialization_settings.getter = [&](const SubstreamPath & substream_path) -> ReadBuffer *
+                {
+                    /// Seek to the requested substream before returning the data stream.
+                    deserialization_settings.seek_stream_to_current_mark_callback(substream_path);
+                    return data_stream;
+                };
+
+                /// First, deserialize prefixes for all subcolumns.
+                SubstreamsDeserializeStatesCache deserialize_states_cache;
+                for (auto & data : subcolumns_substream_data)
+                    data.serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, data.deserialize_state, &deserialize_states_cache);
+
+                /// Second, determine the order of subcolumns deserialization if we have multiple subcolumns of the same path.
+                std::vector<size_t> order;
+                if (subcolumns_infos.size() == 1)
+                {
+                    order.push_back(0);
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read single subcolumn {}", subcolumns_infos[0].name);
+                }
+                else
+                {
+                    EnumerateStreamsSettings enumerate_settings;
+                    enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
+                    enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings);
+//                    subcolumns_names.clear();
+//                    for (size_t pos : order)
+//                        subcolumns_names.push_back(subcolumns_infos[pos].name);
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Subcolumns order: {}", boost::join(subcolumns_names, ", "));
+                }
+
+                /// Finally, deserialize data of subcolumns in determined order.
+                SubstreamsCache cache_for_subcolumns;
+                for (auto pos : order)
+                {
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize data for subcolumn {}", subcolumns_infos[pos].name);
+                    ColumnPtr subcolumn = subcolumns_infos[pos].type->createColumn();
+                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
+                }
+            }
+            /// Otherwise read the whole path data.
+            else
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize data for path {}", requested_path);
+                deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
+                settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
+                DeserializeBinaryBulkStatePtr path_state;
+                ColumnPtr dynamic_column = dynamic_type->createColumn();
+                dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
+                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
+            }
+        }
+    }
+
+    addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCachePathsDataElement>(paths_data_granules));
+    settings.path.pop_back();
+
+    return paths_data_granules;
+}
+
 
 void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
@@ -691,34 +1147,81 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     if (!state)
         return;
 
+//    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize shared data with rows_offsets {} and limit {}", rows_offset, limit);
+
     auto * shared_data_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedData>(state);
 
-    if (mode == Mode::MAP)
+    if (serialization_version.value == SerializationVersion::MAP)
     {
-        if (buckets == 1)
+        /// Check if we have map column in cache.
+        if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
         {
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->bucket_map_states[0], cache);
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get map column from cache");
+
+            const auto * map_element = assert_cast<const SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
+            /// In cache we can have 2 different map columns:
+            ///   1. Map column that contains only rows from current deserialization
+            ///   2. Map column that contains rows from both previous deserializations and current deserialization
+            /// First scenario can happen in Compact part when we deserialized map column in SerializationObjectSharedDataPath
+            /// during subcolumn deserialization from current granule and put it in cache. In this case if we read into
+            /// non-empty map column we should use insertRangeFrom to insert data into it.
+            /// Second scenario will happen in all other cases when we put the whole column in cache that can contain
+            /// rows from previous deserializations.
+            if (map_element->map_column->size() == map_element->num_read_rows && !column->empty())
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Map column in cache contains only rows from this deserialization");
+                column->assumeMutable()->insertRangeFrom(*map_element->map_column, 0, map_element->num_read_rows);
+            }
+            else
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Use column from cache as whole column");
+                column = map_element->map_column;
+            }
         }
+        /// If we don't have it in cache, deserialize and put deserialized map in cache.
         else
         {
-            std::vector<ColumnPtr> shared_data_buckets(buckets);
-            for (size_t bucket = 0; bucket != buckets; ++bucket)
-            {
-                settings.path.push_back(Substream::ObjectSharedDataBucket);
-                settings.path.back().object_shared_data_bucket = bucket;
-                shared_data_buckets[bucket] = column->cloneEmpty();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
-                settings.path.pop_back();
-            }
-
-            collectSharedDataFromBuckets(shared_data_buckets, *column->assumeMutable());
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize map column");
+            size_t prev_size = column->size();
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
+            addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCacheMapColumnWithNumReadRowsElement>(column, column->size() - prev_size));
         }
     }
-    else if (mode == Mode::SEPARATE_PATHS || mode == Mode::SEPARATE_SUBSTREAMS)
+    else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
+    {
+        std::vector<ColumnPtr> shared_data_buckets(buckets);
+        for (size_t bucket = 0; bucket != buckets; ++bucket)
+        {
+            settings.path.push_back(Substream::ObjectSharedDataBucket);
+            settings.path.back().object_shared_data_bucket = bucket;
+            /// Check if we have map column for this bucket in cache.
+            /// Map column for bucket from cache must contain only rows from current deserialization.
+            if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Get map bucket column from cache");
+                const auto * map_element = assert_cast<const SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
+                shared_data_buckets[bucket] = map_element->map_column;
+            }
+            /// If we don't have it in cache, deserialize and put deserialized map in cache.
+            else
+            {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Deserialize map bucket column");
+                shared_data_buckets[bucket] = column->cloneEmpty();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
+                addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCacheMapColumnWithNumReadRowsElement>(shared_data_buckets[bucket], shared_data_buckets[bucket]->size()));
+            }
+            settings.path.pop_back();
+        }
+
+        collectSharedDataFromBuckets(shared_data_buckets, *column->assumeMutable());
+    }
+    else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read advanced shared data in Compact part");
+
             std::vector<String> paths;
 
             /// Collect all paths stored in this granule in all buckets.
@@ -740,23 +1243,26 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (settings.seek_stream_to_current_mark_callback)
                     settings.seek_stream_to_current_mark_callback(settings.path);
 
+                auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
                 StructureGranule structure_granule;
-                deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, {}, true);
+                deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, *structure_state);
 
                 if (structure_granule.num_rows != rows_offset + limit)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part", structure_granule.num_rows, rows_offset + limit);
 
-                for (const auto & path : structure_granule.paths)
-                    paths.push_back(path);
-
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Add paths from bucket {}: {}", bucket, boost::join(structure_granule.all_paths, ", "));
+                paths.insert(paths.end(), structure_granule.all_paths.begin(), structure_granule.all_paths.end());
                 settings.path.pop_back();
 
                 /// Skip deserialization of flattened paths data/marks/substreams/etc if we can.
                 if (settings.seek_stream_to_current_mark_callback)
                 {
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Seek to the next bucket");
                     settings.path.pop_back();
                     continue;
                 }
+
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Skip data of this bucket");
 
                 /// Ignore all other data in all other streams.
                 settings.path.push_back(Substream::ObjectSharedDataData);
@@ -789,44 +1295,41 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
                 paths_marks_stream->ignore(sizeof(UInt64) * structure_granule.num_paths * 2);
 
-                if (mode == Mode::SEPARATE_SUBSTREAMS)
+                settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+                auto * paths_substreams_stream = settings.getter(settings.path);
+                settings.path.pop_back();
+
+                if (!paths_substreams_stream)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
+
+                size_t num_substreams;
+                String substream;
+                size_t total_number_of_substreams = 0;
+                for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {
-                    settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-                    auto * paths_substreams_stream = settings.getter(settings.path);
-                    settings.path.pop_back();
-
-                    if (!paths_substreams_stream)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
-
-                    size_t num_substreams;
-                    String substream;
-                    size_t total_number_of_substreams = 0;
-                    for (size_t i = 0; i != structure_granule.num_paths; ++i)
-                    {
-                        readVarUInt(num_substreams, *paths_substreams_stream);
-                        total_number_of_substreams += num_substreams;
-                        for (size_t j = 0; j != num_substreams; ++j)
-                            readStringBinary(substream, *paths_substreams_stream);
-                    }
-
-                    settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-                    auto * substreams_marks_stream = settings.getter(settings.path);
-                    settings.path.pop_back();
-
-                    if (!substreams_marks_stream)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams marks");
-
-                    substreams_marks_stream->ignore(sizeof(UInt64) * total_number_of_substreams * 2);
-
-                    settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-                    auto * paths_substreams_metadata_stream = settings.getter(settings.path);
-                    settings.path.pop_back();
-
-                    if (!paths_substreams_metadata_stream)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams marks");
-
-                    paths_substreams_metadata_stream->ignore(sizeof(UInt64) * structure_granule.num_paths * 4);
+                    readVarUInt(num_substreams, *paths_substreams_stream);
+                    total_number_of_substreams += num_substreams;
+                    for (size_t j = 0; j != num_substreams; ++j)
+                        readStringBinary(substream, *paths_substreams_stream);
                 }
+
+                settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+                auto * substreams_marks_stream = settings.getter(settings.path);
+                settings.path.pop_back();
+
+                if (!substreams_marks_stream)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams marks");
+
+                substreams_marks_stream->ignore(sizeof(UInt64) * total_number_of_substreams * 2);
+
+                settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+                auto * paths_substreams_metadata_stream = settings.getter(settings.path);
+                settings.path.pop_back();
+
+                if (!paths_substreams_metadata_stream)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams marks");
+
+                paths_substreams_metadata_stream->ignore(sizeof(UInt64) * structure_granule.num_paths * 4);
 
                 settings.path.push_back(Substream::ObjectSharedDataStructureSuffix);
                 auto * structure_suffix_stream = settings.getter(settings.path);
@@ -835,10 +1338,12 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (!structure_suffix_stream)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data structure suffix");
 
-                deserializeStructureGranuleSuffix(*structure_suffix_stream, structure_granule, mode);
+                deserializeStructureGranuleSuffix(*structure_suffix_stream, structure_granule);
 
                 settings.path.pop_back();
             }
+
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "All paths: {}", boost::join(paths, ", "));
 
             /// Now we have the list of paths stored in this granule and can deserialize shared data copy with paths indexes and values.
             auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
@@ -858,7 +1363,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
 
             /// Read paths indexes.
-            settings.path.push_back(Substream::ObjectSharedDataCopyIndexes);
+            settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
             auto * indexes_stream = settings.getter(settings.path);
             if (!indexes_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy indexes");
@@ -880,11 +1385,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// In Wide part we can read multiple granules together and read only part of last granule.
         else
         {
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Read advanced shared data in Wide part");
+
             /// Collect list of paths from all buckets for each granule.
             std::vector<std::vector<String>> granules_paths;
             /// Collect offsets and limits for each granule.
             std::vector<size_t> granules_offsets;
             std::vector<size_t> granules_limits;
+
+            if (!settings.continuous_reading)
+                shared_data_state->last_incomplete_granule_offset = 0;
 
             for (size_t bucket = 0; bucket != buckets; ++bucket)
             {
@@ -892,13 +1402,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 settings.path.back().object_shared_data_bucket = bucket;
 
                 auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
-                /// Remember how many rows were already read from last granule if it's incomplete.
-                size_t rows_read_in_last_granule = 0;
-                if (settings.continuous_reading && structure_state->last_granule_structure.offset + structure_state->last_granule_structure.limit < structure_state->last_granule_structure.num_rows)
-                    rows_read_in_last_granule = structure_state->last_granule_structure.offset + structure_state->last_granule_structure.limit;
-
                 /// Read structure for all granules in this bucket.
-                auto structure_granules = deserializeStructure(rows_offset, limit, settings, *structure_state, cache, mode);
+                auto structure_granules = deserializeStructure(rows_offset, limit, settings, *structure_state, cache);
                 if (!structure_granules)
                     return;
 
@@ -911,17 +1416,28 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                     {
                         granules_offsets.push_back((*structure_granules)[granule].offset);
-                        /// Offset in the first granule includes rows that were already read before.
+                        /// Offset in the first granule includes rows that we could already read before.
                         if (granule == 0)
-                            granules_offsets.back() -= rows_read_in_last_granule;
+                            granules_offsets.back() -= shared_data_state->last_incomplete_granule_offset;
                         granules_limits.push_back((*structure_granules)[granule].limit);
                     }
+
+                    if (!structure_granules->empty())
+                    {
+                        /// Update last_incomplete_granule_offset if there are remaining rows in the last granule.
+                        const auto & last_granule = structure_granules->back();
+                        if (last_granule.offset + last_granule.limit < last_granule.num_rows)
+                            shared_data_state->last_incomplete_granule_offset = last_granule.offset + last_granule.limit;
+                        else
+                            shared_data_state->last_incomplete_granule_offset = 0;
+                    }
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Set last granule offset: {}", shared_data_state->last_incomplete_granule_offset);
                 }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                 {
-                    for (const auto & path : (*structure_granules)[granule].paths)
-                        granules_paths[granule].push_back(path);
+//                    LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Granule {}: add paths from bucket {}: {}", granule, bucket, boost::join((*structure_granules)[granule].all_paths, ", "));
+                    granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(),  (*structure_granules)[granule].all_paths.end());
                 }
 
                 settings.path.pop_back();
@@ -945,7 +1461,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
 
             /// Read paths indexes.
-            settings.path.push_back(Substream::ObjectSharedDataCopyIndexes);
+            settings.path.push_back(Substream::ObjectSharedDataCopyPathsIndexes);
             auto * indexes_stream = settings.getter(settings.path);
 
             if (!indexes_stream)
@@ -954,8 +1470,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Each granule has its own set of indexes, we should deserialize them granule by granule.
             size_t offsets_current_granule_start = prev_offset_size;
             auto & offsets = shared_data_array_column.getOffsets();
+//            String offsets_str;
+//            for (size_t i = 0; i != offsets.size(); ++i)
+//                offsets_str += std::to_string(offsets[i]) + " ";
+//            LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Offsets: {}. Offsets first granule start: {}", offsets_str, offsets_current_granule_start);
+
             for (size_t granule = 0; granule != granules_paths.size(); ++granule)
             {
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Granule {}: all paths: {}", granule, boost::join(granules_paths[granule], ", "));
+
                 /// Calculate how many rows should be skipped in this granule.
                 size_t nested_offset = offsets[offsets_current_granule_start + granules_offsets[granule] - ssize_t(1)] - offsets[offsets_current_granule_start - ssize_t(1)];
                 /// Calculate how many rows should be read in this granule.
@@ -963,6 +1486,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     = offsets[offsets_current_granule_start + granules_offsets[granule] + granules_limits[granule] - ssize_t(1)]
                     - offsets[offsets_current_granule_start + granules_offsets[granule] - ssize_t(1)];
                 /// Read indexes and collect paths into paths_column.
+//                LOG_DEBUG(getLogger("SerializationObjectSharedData"), "Granule {}: deserialize paths indexes with offset {} and limit {}", granule,nested_offset, nested_limit);
                 deserializeIndexesAndCollectPaths(paths_column, *indexes_stream, std::move(granules_paths[granule]), nested_offset, nested_limit);
                 offsets_current_granule_start += granules_offsets[granule] + granules_limits[granule];
             }
@@ -992,6 +1516,11 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             settings.path.pop_back();
         }
+    }
+    else
+    {
+        /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "deserializeBinaryBulkStatePrefix is not implemented for shared data serialization version {}", serialization_version.value);
     }
 }
 
