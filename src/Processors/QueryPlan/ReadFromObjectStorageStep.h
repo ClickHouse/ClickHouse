@@ -10,11 +10,9 @@ namespace DB
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     ReadFromObjectStorageStep(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const String & name_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
@@ -36,7 +34,7 @@ public:
 
 private:
     ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;

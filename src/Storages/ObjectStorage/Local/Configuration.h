@@ -16,8 +16,6 @@ namespace DB
 class StorageLocalConfiguration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).

@@ -14,8 +14,6 @@ namespace DB
 class StorageS3Configuration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::S3;
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";

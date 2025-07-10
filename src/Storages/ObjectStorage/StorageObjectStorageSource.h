@@ -20,8 +20,6 @@ class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
 public:
-    using Configuration = StorageObjectStorageConfiguration;
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     class ReadTaskIterator;
@@ -32,7 +30,7 @@ public:
     StorageObjectStorageSource(
         String name_,
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr configuration,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -50,7 +48,7 @@ public:
     Chunk generate() override;
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
-        ConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
@@ -64,7 +62,7 @@ public:
         bool skip_object_metadata = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const Configuration & configuration,
+        const StorageObjectStorageConfiguration & configuration,
         const ObjectInfo & object_info,
         bool include_connection_info = true);
 
@@ -78,7 +76,7 @@ public:
 protected:
     const String name;
     ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
@@ -130,7 +128,7 @@ protected:
     static ReaderHolder createReader(
         size_t processor,
         const std::shared_ptr<IObjectIterator> & file_iterator,
-        const ConfigurationPtr & configuration,
+        const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
@@ -183,7 +181,7 @@ class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithCon
 public:
     GlobIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
@@ -204,7 +202,7 @@ private:
     void fillBufferForKey(const std::string & uri_key);
 
     const ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
     const LoggerPtr log;
@@ -273,7 +271,7 @@ class StorageObjectStorageSource::ArchiveIterator : public IObjectIterator, priv
 public:
     explicit ArchiveIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
         ObjectInfos * read_keys_,

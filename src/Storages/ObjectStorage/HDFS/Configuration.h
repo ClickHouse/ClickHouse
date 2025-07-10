@@ -12,8 +12,6 @@ namespace DB
 class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::HDFS;
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";

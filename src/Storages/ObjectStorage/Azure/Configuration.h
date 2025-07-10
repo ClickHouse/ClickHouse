@@ -19,8 +19,6 @@ class StorageAzureConfiguration : public StorageObjectStorageConfiguration
     friend void registerBackupEngineAzureBlobStorage(BackupFactory & factory);
 
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::Azure;
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";

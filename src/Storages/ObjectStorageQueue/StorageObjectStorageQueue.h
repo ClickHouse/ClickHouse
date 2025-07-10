@@ -21,11 +21,9 @@ struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
-
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -105,7 +103,7 @@ private:
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
