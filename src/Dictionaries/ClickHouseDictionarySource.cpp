@@ -114,6 +114,9 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     return query_builder->composeLoadAllQuery();
 }
 
+/// TODO(mstetsyuk): refactor all the code to return BlockIO
+/// this is needed because BlockIO has finish_callback which adds QueryFinish to system.query_log
+/// alternatively, introduce custom_metric_dictionary_reload_cpu_seconds and custom_metric_dictionary_reload_ram_bytes histogram metrics (just in private)
 QueryPipeline ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
