@@ -22,14 +22,8 @@ namespace DB
 
 class ReadBufferIterator;
 class SchemaCache;
-class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /**
  * A general class containing implementation for external table engines
