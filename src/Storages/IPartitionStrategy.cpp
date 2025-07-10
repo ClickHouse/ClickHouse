@@ -332,15 +332,14 @@ ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
     return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
 }
 
-Chunk HiveStylePartitionStrategy::getFormatChunk(const Chunk & chunk)
+ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)
 {
-    Chunk result;
-
+    ColumnRawPtrs result;
     if (partition_columns_in_data_file)
     {
         for (const auto & column : chunk.getColumns())
         {
-            result.addColumn(column);
+            result.emplace_back(column.get());
         }
 
         return result;
@@ -358,7 +357,7 @@ Chunk HiveStylePartitionStrategy::getFormatChunk(const Chunk & chunk)
     {
         if (!partition_columns_name_set.contains(sample_block.getByPosition(i).name))
         {
-            result.addColumn(chunk.getColumns()[i]);
+            result.emplace_back(chunk.getColumns()[i].get());
         }
     }
 
