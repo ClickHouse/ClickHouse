@@ -1496,6 +1496,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     state.block_out->write(totals);
     state.maybe_compressed_out->next();
+
     out->finishChunk();
     out->next();
 }
@@ -1513,6 +1514,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     state.block_out->write(extremes);
     state.maybe_compressed_out->next();
+
     out->finishChunk();
     out->next();
 }
@@ -1530,7 +1532,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-        state.profile_events_block_out->flush();
+
         out->finishChunk();
         out->next();
 
@@ -2441,26 +2443,19 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 }
 
 
-void TCPHandler::initMaybeCompressedOut(QueryState & state)
-{
-    const Settings & query_settings = state.query_context->getSettingsRef();
-    if (!state.maybe_compressed_out)
-    {
-        if (auto codec = getCompressionCodec(query_settings, state.compression))
-            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
-        else
-            state.maybe_compressed_out = out;
-    }
-}
-
-
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
     {
-        initMaybeCompressedOut(state);
-
         const Settings & query_settings = state.query_context->getSettingsRef();
+        if (!state.maybe_compressed_out)
+        {
+            if (auto codec = getCompressionCodec(query_settings, state.compression))
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
+            else
+                state.maybe_compressed_out = out;
+        }
+
         state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
@@ -2475,17 +2470,10 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.logs_block_out)
     {
-        WriteBuffer * logs_buf = out.get();
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-        {
-            initMaybeCompressedOut(state);
-            logs_buf = state.maybe_compressed_out.get();
-        }
-
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *logs_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2494,16 +2482,9 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 {
     if (!state.profile_events_block_out)
     {
-        WriteBuffer * profile_events_buf = out.get();
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-        {
-            initMaybeCompressedOut(state);
-            profile_events_buf = state.maybe_compressed_out.get();
-        }
-
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *profile_events_buf, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2647,28 +2628,20 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-    state.logs_block_out->flush();
+
     out->finishChunk();
     out->next();
 }
 
 
-void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
+void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & columns)
 {
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
-    WriteBuffer * columns_buf = out.get();
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-    {
-        initMaybeCompressedOut(state);
-        columns_buf = state.maybe_compressed_out.get();
-    }
-
     /// Send external table name (empty name is the main table)
-    writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+    writeStringBinary("", *out);
+    writeStringBinary(columns.toString(), *out);
 
-    columns_buf->next();
     out->finishChunk();
     out->next();
 }

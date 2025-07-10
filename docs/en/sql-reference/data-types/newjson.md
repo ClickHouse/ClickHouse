@@ -11,7 +11,7 @@ title: 'JSON Data Type'
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
 import Link from '@docusaurus/Link'
 
-<Link to="/docs/best-practices/use-json-where-appropriate" style={{textDecoration: 'none', width: '100%'}}>
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
 <CardSecondary
   badgeState="success"
   badgeText=""
