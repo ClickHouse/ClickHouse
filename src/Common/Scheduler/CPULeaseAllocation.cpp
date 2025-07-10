@@ -12,7 +12,7 @@
 
 #if 0
 #define LOG_EVENT(X) LOG_TRACE(log, "{}:{} ({}) allocated={} granted={} running={} L:{} P:{} <{}/{}> e:{}", \
-    reinterpret_cast<void*>(this), settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
+    lease_id, settings.workload, #X, allocated, granted, threads.running_count, formatBitset(threads.leased), \
     formatBitset(threads.preempted), consumed_ns, requested_ns, enqueued)
 namespace
 {
@@ -70,6 +70,7 @@ CPULeaseAllocation::Lease::~Lease()
         if (parent->settings.trace_cpu_scheduling)
         {
             span.emplace("CPU_LEASE_STOP");
+            span->addAttribute("workload", parent->settings.workload);
             span->addAttribute("lease_id", parent->getLeaseId());
             span->addAttribute("thread_number", slot_id);
         }
@@ -83,6 +84,7 @@ void CPULeaseAllocation::Lease::startConsumption()
     if (parent && parent->settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder span("CPU_LEASE_START");
+        span.addAttribute("workload", parent->settings.workload);
         span.addAttribute("lease_id", parent->getLeaseId());
         span.addAttribute("thread_number", slot_id);
     }
@@ -101,6 +103,7 @@ void CPULeaseAllocation::Lease::reset()
     if (parent->settings.trace_cpu_scheduling)
     {
         OpenTelemetry::SpanHolder span("CPU_LEASE_DOWNSCALED");
+        span.addAttribute("workload", parent->settings.workload);
         span.addAttribute("lease_id", parent->getLeaseId());
         span.addAttribute("thread_number", slot_id);
     }
@@ -362,6 +365,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
     if (settings.trace_cpu_scheduling)
     {
         report_span.emplace("CPU_LEASE_REPORT");
+        report_span->addAttribute("workload", settings.workload);
         report_span->addAttribute("lease_id", lease_id);
         report_span->addAttribute("thread_number", lease.slot_id);
         report_span->addAttribute("delta_ns", delta_ns);
@@ -398,6 +402,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
             if (settings.trace_cpu_scheduling)
             {
                 preemption_span.emplace("CPU_LEASE_PREEMPTION");
+                preemption_span->addAttribute("workload", settings.workload);
                 preemption_span->addAttribute("lease_id", lease_id);
                 preemption_span->addAttribute("thread_number", thread_num);
                 preemption_span->addAttribute("consumed_ns", consumed_ns);
