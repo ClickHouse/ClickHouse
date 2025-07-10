@@ -64,6 +64,8 @@ public:
     /// Add transform with simple input and simple output for each port.
     void addSimpleTransform(const Pipe::ProcessorGetter & getter);
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeader & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
@@ -127,6 +129,7 @@ public:
         JoinPtr join,
         const Block & output_header,
         size_t max_block_size,
+        size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
         bool keep_left_read_in_order,

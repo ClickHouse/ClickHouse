@@ -143,7 +143,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
-    format_settings.interval.output_format = settings[Setting::interval_output_format];
+    format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
@@ -216,6 +216,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
@@ -246,7 +247,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.regexp.escaping_rule = settings[Setting::format_regexp_escaping_rule];
     format_settings.regexp.regexp = settings[Setting::format_regexp];
     format_settings.regexp.skip_unmatched = settings[Setting::format_regexp_skip_unmatched];
+    format_settings.schema.format_schema_source = settings[Setting::format_schema_source];
     format_settings.schema.format_schema = settings[Setting::format_schema];
+    format_settings.schema.format_schema_message_name = settings[Setting::format_schema_message_name];
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];

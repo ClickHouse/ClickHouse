@@ -13,17 +13,17 @@ Please note that CTEs do not guarantee the same results in all places they are c
 
 An example of such behavior is below
 ```sql
-with cte_numbers as
+WITH cte_numbers AS
 (
-    select
+    SELECT
         num
-    from generateRandom('num UInt64', NULL)
-    limit 1000000
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
 )
-select
+SELECT
     count()
-from cte_numbers
-where num in (select num from cte_numbers)
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers)
 ```
 If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
 
@@ -44,7 +44,7 @@ WITH <identifier> AS <subquery expression>
 **Example 1:** Using constant expression as "variable"
 
 ```sql
-WITH '2019-08-01 15:23:00' as ts_upper_bound
+WITH '2019-08-01 15:23:00' AS ts_upper_bound
 SELECT *
 FROM hits
 WHERE
@@ -55,7 +55,7 @@ WHERE
 **Example 2:** Evicting a sum(bytes) expression result from the SELECT clause column list
 
 ```sql
-WITH sum(bytes) as s
+WITH sum(bytes) AS s
 SELECT
     formatReadableSize(s),
     table

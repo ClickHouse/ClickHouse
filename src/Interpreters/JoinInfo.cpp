@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
     extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsMaxThreads max_threads;
 
@@ -83,6 +84,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
     extern const QueryPlanSerializationSettingsBool allow_experimental_join_right_table_sorting;
+    extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_bytes;
 
     extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
@@ -99,6 +101,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
     max_joined_block_size_rows = query_settings[Setting::max_joined_block_size_rows];
+    min_joined_block_size_rows = query_settings[Setting::min_joined_block_size_rows];
     min_joined_block_size_bytes = query_settings[Setting::min_joined_block_size_bytes];
 
     join_overflow_mode = query_settings[Setting::join_overflow_mode];
@@ -160,6 +163,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = settings[QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting];
+    min_joined_block_size_rows = settings[QueryPlanSerializationSetting::min_joined_block_size_rows];
     min_joined_block_size_bytes = settings[QueryPlanSerializationSetting::min_joined_block_size_bytes];
 
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
@@ -198,6 +202,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;
     settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows] = join_to_sort_maximum_table_rows;
     settings[QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting] = allow_experimental_join_right_table_sorting;
+    settings[QueryPlanSerializationSetting::min_joined_block_size_rows] = min_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::min_joined_block_size_bytes] = min_joined_block_size_bytes;
 
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;

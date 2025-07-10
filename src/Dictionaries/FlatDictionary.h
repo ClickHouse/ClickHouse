@@ -10,10 +10,10 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 namespace DB
 {

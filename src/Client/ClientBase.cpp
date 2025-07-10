@@ -811,33 +811,35 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::adjustSettings()
+void ClientBase::adjustSettings(ContextMutablePtr context)
 {
-    Settings settings = global_context->getSettingsCopy();
-
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
     /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
     if (!pager.empty() || !stdout_is_a_tty)
     {
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
+        Settings settings = context->getSettingsCopy();
+
+        if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
         {
             settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_rows].changed = false;
         }
 
-        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
+        if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
         {
             settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_value_width].changed = false;
         }
-    }
 
-    global_context->setSettings(settings);
+        context->setSettings(settings);
+    }
 }
 
-void ClientBase::initClientContext()
+void ClientBase::initClientContext(ContextMutablePtr context)
 {
+    client_context = context;
+
     client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     client_context->setQuotaClientKey(getClientConfiguration().getString("quota_key", ""));
     client_context->setQueryKindInitial();
@@ -1306,7 +1308,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             {
                 if (partial_result_on_first_cancel && query_interrupt_handler.cancelled_status() == signals_before_stop - 1)
                 {
-                    connection->sendCancel();
+                    sendCancel();
                     /// First cancel reading request was sent. Next requests will only be with a full cancel
                     partial_result_on_first_cancel = false;
                 }
@@ -1345,7 +1347,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             /// Remember the first exception.
             if (!local_format_error)
                 local_format_error = std::current_exception();
-            connection->sendCancel();
+            sendCancel(std::current_exception());
         }
     }
 
@@ -1775,13 +1777,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQuery();
+            receiveEndOfQueryForInsert();
         }
     }
     catch (...)
     {
-        connection->sendCancel();
-        receiveEndOfQuery();
+        sendCancel(std::current_exception());
+        receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -2063,7 +2065,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 
 
 /// Process Log packets, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQuery()
+bool ClientBase::receiveEndOfQueryForInsert()
 {
     while (true)
     {
@@ -2077,6 +2079,9 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Exception:
                 onReceiveExceptionFromServer(std::move(packet.exception));
+                /// We cannot be sure that in case of exception all data had been sent to the server
+                /// and we either need to send Cancel or disconnect, disconnect is more stable.
+                connection->disconnect();
                 return false;
 
             case Protocol::Server::Log:
@@ -2103,9 +2108,25 @@ bool ClientBase::receiveEndOfQuery()
     }
 }
 
+void ClientBase::sendCancel(std::exception_ptr exception_ptr)
+{
+    if (!connection->isConnected())
+    {
+        error_stream << "Cannot send Cancel due to connection is lost";
+        if (exception_ptr)
+        {
+            error_stream << ": ";
+            error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
+        }
+        error_stream << '\n';
+    }
+    else
+        connection->sendCancel();
+}
+
 void ClientBase::cancelQuery()
 {
-    connection->sendCancel();
+    sendCancel();
 
     stopKeystrokeInterceptorIfExists();
 
@@ -2134,6 +2155,7 @@ void ClientBase::processParsedSingleQuery(
 {
     resetOutput();
     have_error = false;
+    error_code = 0;
     cancelled = false;
     cancelled_printed = false;
     client_exception.reset();
@@ -2251,9 +2273,7 @@ void ClientBase::processParsedSingleQuery(
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : set_query->changes)
             {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
+                if (change.name != "profile")
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
@@ -2462,7 +2482,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2516,16 +2535,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
+                have_error |= buzz_house;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
+                have_error |= buzz_house;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
+                have_error |= buzz_house;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2736,6 +2758,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     server_exception.reset();
 
                     have_error = false;
+                    error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
@@ -2756,6 +2779,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         all_queries_end,
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
+                }
+
+                if (buzz_house && have_error)
+                {
+                    // Test if error is disallowed by BuzzHouse
+                    const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
+                    error_code = exception ? exception->code() : 0;
                 }
 
                 // Report error.
@@ -2779,7 +2809,6 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2878,7 +2907,7 @@ void ClientBase::applySettingsFromServerIfNeeded()
             changes_to_apply.push_back(change);
     }
 
-    global_context->applySettingsChanges(changes_to_apply);
+    client_context->applySettingsChanges(changes_to_apply);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
@@ -3198,12 +3227,12 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_t highlight_callback{};
+    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context);
+            highlight(query, colors, *client_context, pos);
         };
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.

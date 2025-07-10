@@ -373,12 +373,12 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag.getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag.removeUnusedActions();
+    auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
 
-    actions_output_column_name = filter_actions_dag.getOutputs().at(0)->result_name;
-    actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
+    actions_output_column_name = sub_dag.getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(sub_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
