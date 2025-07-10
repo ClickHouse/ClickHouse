@@ -115,11 +115,6 @@ AlterConversions::AlterConversions(
     const PatchPartsForReader & patch_parts_,
     const ContextPtr & context)
 {
-
-    LOG_DEBUG(getLogger("AlterConversions"),
-        "Adding mutation command: {}",
-        mutation_commands_.toString());
-
     for (const auto & command : mutation_commands_)
         addMutationCommand(command, context);
 
@@ -147,8 +142,8 @@ AlterConversions::AlterConversions(
         }
         return result;
     }();
-    LOG_DEBUG(getLogger("AlterConversions"),
-        "rename_map: {}",
+    LOG_TEST(getLogger("AlterConversions"),
+        "mutations from snapshot have produce a rename_map: {}",
         fmt::join(renames, ", "));
 }
 

@@ -5010,10 +5010,6 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 
 void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPartPtr & part)
 {
-    LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
-        "Checking checksums.txt file is consistent with the files on file system for part {}",
-        part->name);
-
     Strings files_in_checksums = part->checksums.getFileNames();
 
     Strings projections_in_checksums;
@@ -5071,18 +5067,6 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
             files_in_part.begin(), files_in_part.end(),
             files_in_checksums.begin(), files_in_checksums.end(),
             std::back_inserter(extra_files));
-
-        LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
-                "checksums.txt file has {} files, part '{}' has {} files, "
-                "files in checksums: {}, files in part: {} "
-                "Missed files in part: {}, Extra files in part: {}",
-                files_in_checksums.size(),
-                part->name,
-                files_in_part.size(),
-                fmt::join(files_in_checksums, ", "),
-                fmt::join(files_in_part, ", "),
-                fmt::join(missed_files, ", "),
-                fmt::join(extra_files, ", "));
 
         if (files_in_part != files_in_checksums)
             throw Exception(ErrorCodes::LOGICAL_ERROR,

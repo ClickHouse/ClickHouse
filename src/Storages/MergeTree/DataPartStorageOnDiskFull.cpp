@@ -234,7 +234,6 @@ void DataPartStorageOnDiskFull::beginTransaction()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Uncommitted{}transaction already exists", has_shared_transaction ? " shared " : " ");
 
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "begin transaction for part {}", getRelativePath());
     transaction = volume->getDisk()->createTransaction();
 }
 
@@ -258,15 +257,12 @@ void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDisk
     scope_guard commit_transaction;
     if (!in_transaction)
     {
-        LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "Validating disk transaction without an active transaction, starting a new one");
-
         commit_transaction = [&]()
         {
             transaction->commit();
             transaction.reset();
         };
 
-        LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "begin fake transaction for part {}", getRelativePath());
         transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
     }
 

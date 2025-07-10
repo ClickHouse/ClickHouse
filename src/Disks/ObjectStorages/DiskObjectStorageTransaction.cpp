@@ -791,8 +791,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "writeFile called for path: {},, autocomit: {}", path, autocommit);
-
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
@@ -1045,11 +1043,7 @@ void DiskObjectStorageTransaction::commit()
 
 std::vector<std::string> DiskObjectStorageTransaction::listUncommittedDirectoryInTransaction(const std::string & path) const
 {
-    auto res = metadata_transaction->listUncommittedDirectory(path);
-    LOG_DEBUG(getLogger("DiskObjectStorageTransaction"),
-        "Listing uncommitted directory {} in transaction: {}",
-        path, fmt::join(res, ", "));
-    return res;
+    return metadata_transaction->listUncommittedDirectory(path);
 }
 
 void DiskObjectStorageTransaction::undo()
@@ -1072,8 +1066,6 @@ void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskT
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncommittedFileInTransaction(
     const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "Reading uncommitted file in transaction: {}", path);
-
     auto maybe_objects = metadata_transaction->tryGetBlobsFromTransactionIfExists(path);
     if (!maybe_objects.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Stored objects for path '{}' not found in transaction", path);

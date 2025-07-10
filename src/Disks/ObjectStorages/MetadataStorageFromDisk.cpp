@@ -239,7 +239,6 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
-    LOG_DEBUG(getLogger("MetadataStorageFromDiskTransaction"), "Creating empty metadata file at path: {}", path);
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
     writeStringToFile(path, metadata->serializeToString());
 }

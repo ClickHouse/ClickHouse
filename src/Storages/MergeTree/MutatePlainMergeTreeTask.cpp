@@ -80,8 +80,6 @@ void MutatePlainMergeTreeTask::prepare()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-    LOG_DEBUG(getLogger("MutatePlainMergeTreeTask"), "Executing step for mutation task {}", future_part ? future_part->name : "nullptr");
-
     /// Metrics will be saved in the local profile_counters.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
@@ -104,8 +102,6 @@ bool MutatePlainMergeTreeTask::executeStep()
             {
                 if (mutate_task->execute())
                     return true;
-
-                LOG_DEBUG(getLogger("MutatePlainMergeTreeTask"), "Mutation task {} is finished", future_part->name);
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
