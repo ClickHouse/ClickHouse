@@ -144,11 +144,9 @@ struct Header
 };
 
 /// Calculates the fingerprint of a passed encryption key.
-template<typename String>
 UInt128 calculateKeyFingerprint(const String & key);
 
 /// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
-template<typename String>
 UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
 
 }
