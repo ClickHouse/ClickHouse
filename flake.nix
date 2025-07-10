@@ -7,8 +7,8 @@
 
       rustNightly = fenix.packages.${system}.toolchainOf {
         channel = "nightly";
-        date = "2024-12-01";
-        sha256 = "sha256-hIvPOOO05JYaBR1AaIKaqI8+n9Uk4jC2OieBfzw+IuQ=";
+        date = "2025-07-07";
+        sha256 = "sha256-fevIArrPM30mz+SmnilxDiIdFSYVVVOJStVblAnu5Yk=";
       };
 
       contribInputs = lib.filterAttrs (name: _: lib.hasPrefix "contrib-" name) inputs;
