@@ -2597,18 +2597,20 @@ CONV_FN(SelectStatementCore, ssc)
 
 CONV_FN(SetQuery, setq)
 {
-    ret += "(";
+    ret += setq.paren1() ? "(" : "";
     ExplainQueryToString(ret, setq.sel1());
-    ret += ") ";
+    ret += setq.paren1() ? ")" : "";
+    ret += " ";
     ret += SetQuery_SetOp_Name(setq.set_op());
     if (setq.has_s_or_d())
     {
         ret += " ";
         ret += AllOrDistinct_Name(setq.s_or_d());
     }
-    ret += " (";
+    ret += " ";
+    ret += setq.paren2() ? "(" : "";
     ExplainQueryToString(ret, setq.sel2());
-    ret += ")";
+    ret += setq.paren2() ? ")" : "";
 }
 
 CONV_FN(CTEquery, cteq)

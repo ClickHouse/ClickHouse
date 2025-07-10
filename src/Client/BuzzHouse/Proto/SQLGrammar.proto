@@ -2765,10 +2765,12 @@ message SetQuery {
         EXCEPT = 2;
         INTERSECT = 3;
     }
-    required ExplainQuery sel1 = 1;
-    required SetOp set_op = 2;
-    optional AllOrDistinct s_or_d = 3;
-    required ExplainQuery sel2 = 4;
+    optional bool paren1 = 1;
+    required ExplainQuery sel1 = 2;
+    required SetOp set_op = 3;
+    optional AllOrDistinct s_or_d = 4;
+    optional bool paren2 = 5;
+    required ExplainQuery sel2 = 6;
 }
 
 message CTEquery {
