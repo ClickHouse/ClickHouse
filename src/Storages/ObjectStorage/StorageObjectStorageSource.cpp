@@ -648,14 +648,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     LOG_DEBUG(
         &Poco::Logger::get("StorageObjectStorageSource, createReader"),
         "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
-        "thread_order_number: {}",
+        "thread_order_number: {}, stacktrace: {}",
         object_info->getPath(),
         object_info->metadata->size_bytes,
         current_reader != nullptr,
         pipeline != nullptr,
         read_buf != nullptr,
         source != nullptr,
-        thread_order_number);
+        thread_order_number,
+        StackTrace().toString());
 
     return ReaderHolder(
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
