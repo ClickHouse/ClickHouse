@@ -40,8 +40,8 @@ struct IPartitionStrategy
     const KeyDescription & getPartitionKeyDescription() const;
 
 protected:
-    KeyDescription partition_key_description;
-    Block sample_block;
+    const KeyDescription partition_key_description;
+    const Block sample_block;
     ContextPtr context;
 };
 
