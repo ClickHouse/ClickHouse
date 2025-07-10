@@ -108,7 +108,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.find(name) != loaded_tables.end())
+    if (loaded_tables.contains(name))
         return true;
 
     return checkUrl(name, context_, false);

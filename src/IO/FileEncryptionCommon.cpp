@@ -129,7 +129,7 @@ namespace
         if (!ciphertext_size)
             return 0;
 
-        if (static_cast<size_t>(ciphertext_size) < pad_left)
+        if (std::cmp_less(ciphertext_size, pad_left))
             throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Unexpected size of encrypted data: {} < {}", ciphertext_size, pad_left);
 
         uint8_t * ciphertext_begin = &ciphertext[pad_left];
@@ -176,7 +176,7 @@ namespace
         if (!plaintext_size)
             return 0;
 
-        if (static_cast<size_t>(plaintext_size) < pad_left)
+        if (std::cmp_less(static_cast<size_t>(plaintext_size), pad_left))
             throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Unexpected size of decrypted data: {} < {}", plaintext_size, pad_left);
 
         const uint8_t * plaintext_begin = &plaintext[pad_left];

@@ -1,3 +1,4 @@
+#include <utility>
 #include <IO/ConcatReadBufferFromFile.h>
 
 #include <Common/Exception.h>
@@ -127,10 +128,10 @@ off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
 
     if (new_position < 0)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
-    if (static_cast<UInt64>(new_position) > total_size)
+    if (std::cmp_greater(new_position, total_size))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
 
-    if (static_cast<UInt64>(new_position) == total_size)
+    if (std::cmp_equal(new_position, total_size))
     {
         current = buffers.size();
         current_start_pos = total_size;
@@ -148,10 +149,11 @@ off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
         return new_position;
     }
 
-    while (new_position < static_cast<off_t>(current_start_pos))
+    while (std::cmp_less(new_position, current_start_pos))
         current_start_pos -= buffers[--current].size;
 
-    while (new_position >= static_cast<off_t>(current_start_pos + buffers[current].size))
+
+    while (std::cmp_greater_equal(new_position, current_start_pos + buffers[current].size))
         current_start_pos += buffers[current++].size;
 
     buffers[current].in->seek(new_position - current_start_pos, SEEK_SET);

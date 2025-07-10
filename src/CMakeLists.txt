@@ -5,7 +5,7 @@ if (USE_INCLUDE_WHAT_YOU_USE)
 endif ()
 
 if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}" "--fix" "--fix-errors")
 endif ()
 
 include (../cmake/version.cmake)

@@ -574,7 +574,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 
     // If we had at least one enabled event, also show multiplexing-related
     // statistics.
-    if (min_enabled_time != UInt64(-1))
+    if (std::cmp_not_equal(min_enabled_time, UInt64(-1)))
     {
         profile_events.increment(ProfileEvents::PerfMinEnabledTime,
             min_enabled_time);

@@ -14,6 +14,7 @@
 #include <base/find_symbols.h>
 #include <Poco/String.h>
 #include <string_view>
+#include <utility>
 
 #if USE_REPLXX
 namespace replxx { char const * ansi_color(Replxx::Color); }
@@ -103,9 +104,9 @@ bool isChineseNewYearMode(const String & local_tz)
     for (auto d : chineseNewYearIndicators)
     {
         /// Let's celebrate until Lantern Festival
-        if (d <= days && d + 25 >= days)
+        if (std::cmp_less_equal(d , days) && d + 25 >= days)
             return true;
-        if (d > days)
+        if (std::cmp_greater(d , days))
             return false;
     }
     return false;

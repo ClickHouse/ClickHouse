@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <utility>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 
@@ -1740,7 +1741,7 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && std::cmp_greater(current_memory_usage ,params.max_bytes_before_external_group_by))
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
@@ -3418,7 +3419,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && std::cmp_greater(current_memory_usage ,params.max_bytes_before_external_group_by))
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;

@@ -344,7 +344,7 @@ off_t ReadBufferFromS3::getPosition()
 
 void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
-    if (position != static_cast<size_t>(read_until_position))
+    if (std::cmp_not_equal(position, static_cast<size_t>(read_until_position)))
     {
         read_all_range_successfully = false;
 

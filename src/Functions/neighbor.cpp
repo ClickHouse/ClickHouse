@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <utility>
+
 namespace DB
 {
 namespace Setting
@@ -154,7 +156,7 @@ public:
                 }
                 if (size <= 0)
                     return;
-                if (size > static_cast<Int64>(input_rows_count))
+                if (std::cmp_greater(size ,input_rows_count)))
                     size = input_rows_count;
 
                 if (!src)
@@ -204,7 +206,7 @@ public:
 
             Int64 src_idx = row + offset;
 
-            if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
+            if (src_idx >= 0 && std::cmp_less(src_idx ,input_rows_count)))
                 result_column->insertFrom(*source_column_cast, source_is_constant ? 0 : src_idx);
             else if (has_defaults)
                 result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);

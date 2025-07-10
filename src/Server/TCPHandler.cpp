@@ -4,6 +4,7 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
@@ -1009,7 +1010,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         while (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
-            if (elapsed > size_t(receive_timeout.totalSeconds()))
+            if (std::cmp_greater(elapsed ,receive_timeout.totalSeconds())))
             {
                 throw NetException(ErrorCodes::SOCKET_TIMEOUT,
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",

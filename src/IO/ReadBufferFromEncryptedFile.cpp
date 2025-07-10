@@ -1,3 +1,4 @@
+#include <utility>
 #include <IO/ReadBufferFromEncryptedFile.h>
 
 #if USE_SSL
@@ -105,7 +106,7 @@ void ReadBufferFromEncryptedFile::setReadUntilPosition(size_t position)
     read_until_position = position;
     need_set_read_until_position = true;
 
-    if (static_cast<off_t>(position) < offset)
+    if (std::cmp_less(position, offset))
     {
         working_buffer.resize(working_buffer.size() - (offset - position));
         offset = position;
@@ -134,7 +135,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     /// Using a wrong file position could give a completely wrong byte sequence and produce very weird errors,
     /// so it's better to check it.
     auto in_position = in->getPosition();
-    if (in_position != static_cast<off_t>(offset + FileEncryption::Header::kSize))
+    if (std::cmp_not_equal(in_position, (offset + FileEncryption::Header::kSize)))
     {
         const auto & in_ref = *in;
         throw Exception(ErrorCodes::LOGICAL_ERROR,

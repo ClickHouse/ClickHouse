@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
@@ -320,7 +321,7 @@ void ThreadStatus::applyQuerySettings()
     initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
-    if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
+    if (settings[Setting::memory_profiler_step] && std::cmp_less(settings[Setting::memory_profiler_step] ,untracked_memory_limit)))
         untracked_memory_limit = settings[Setting::memory_profiler_step];
 
 #if defined(OS_LINUX)

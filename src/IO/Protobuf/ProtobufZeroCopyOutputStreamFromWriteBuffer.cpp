@@ -35,7 +35,7 @@ bool ProtobufZeroCopyOutputStreamFromWriteBuffer::Next(void ** data, int * size)
 
 void ProtobufZeroCopyOutputStreamFromWriteBuffer::BackUp(int count)
 {
-    if (static_cast<Int64>(out->offset()) < count)
+    if (std::cmp_less(out->offset(), count))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "ProtobufZeroCopyOutputStreamFromWriteBuffer::BackUp() cannot back up {} bytes (max = {} bytes)",

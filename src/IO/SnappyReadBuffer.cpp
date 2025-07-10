@@ -1,3 +1,4 @@
+#include <utility>
 #include "config.h"
 
 #if USE_SNAPPY
@@ -60,7 +61,7 @@ off_t SnappyReadBuffer::seek(off_t off, int whence)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 
     working_buffer = internal_buffer;
-    if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
+    if (new_pos < 0 || std::cmp_greater(new_pos, working_buffer.size()))
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
                         "Cannot seek through buffer because seek position ({}) is out of bounds [0, {}]",
                         new_pos, working_buffer.size());

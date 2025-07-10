@@ -7,6 +7,7 @@
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <base/EnumReflection.h>
@@ -208,7 +209,7 @@ consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs)
     if (str.empty())
         return;
     ssize_t cnt = formatStringCountArgsNum(str.data(), str.size());
-    if (0 <= cnt && cnt != nargs)
+    if (0 <= cnt && std::cmp_not_equal(cnt, nargs))
         functionThatFailsCompilationOfConstevalFunctions("unexpected number of arguments in a format string");
 }
 

@@ -15,6 +15,8 @@
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -140,7 +142,7 @@ size_t MergeTreeReaderWide::readRows(
     size_t rows_offset, Columns & res_columns)
 {
     size_t read_rows = 0;
-    if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
+    if (prefetched_from_mark != -1 && std::cmp_not_equal(prefetched_from_mark, from_mark))
     {
         prefetched_streams.clear();
         prefetched_from_mark = -1;

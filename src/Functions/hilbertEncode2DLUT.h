@@ -1,6 +1,8 @@
 #pragma once
 #include <Functions/FunctionSpaceFillingCurve.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -119,7 +121,7 @@ private:
     {
         UInt8 iterations = used_bits / bit_step;
         Int8 initial_shift = iterations * bit_step;
-        if (initial_shift < used_bits)
+        if (std::cmp_less(initial_shift , used_bits))
         {
             ++iterations;
         }

@@ -9,6 +9,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -112,7 +114,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     {
         ssize_t src_index = src_array_offsets[i] - 1;
 
-        while (src_index >= static_cast<ssize_t>(src_prev_offset))
+        while (std::cmp_greater_equal(src_index ,src_prev_offset)))
         {
             res_data.insertFrom(src_data, src_index);
             --src_index;

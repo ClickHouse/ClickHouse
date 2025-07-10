@@ -261,9 +261,9 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     else
     {
         /// We can still display profiling info.
-        if (remaining_space >= static_cast<int64_t>(profiling_msg.size()))
+        if (std::cmp_greater_equal(remaining_space, profiling_msg.size()))
         {
-            if (remaining_space > static_cast<int64_t>(profiling_msg.size()))
+            if (std::cmp_greater(remaining_space, static_cast<int64_t>(profiling_msg.size())))
                 message << std::string(remaining_space - profiling_msg.size(), ' ');
             message << "\033[2m" << profiling_msg << "\033[0m";
         }

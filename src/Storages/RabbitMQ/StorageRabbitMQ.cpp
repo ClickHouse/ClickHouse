@@ -709,7 +709,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 
             if (integer_settings.contains(key))
                 queue_settings[key] = parse<uint64_t>(value);
-            else if (string_settings.find(key) != string_settings.end())
+            else if (string_settings.contains(key))
                 queue_settings[key] = value;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);

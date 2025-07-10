@@ -1,4 +1,5 @@
 #include <memory>
+#include <utility>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -329,7 +330,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
             if (group_by_kind != GroupByKind::ORDINARY)
                 aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 
-            for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
+            for (ssize_t i = 0; std::cmp_less(i ,group_asts.size())); ++i)
             {
                 ssize_t size = group_asts.size();
 
@@ -345,7 +346,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                     NamesAndTypesList grouping_set_list;
                     ColumnNumbers grouping_set_indexes_list;
 
-                    for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
+                    for (ssize_t j = 0; std::cmp_less(j ,group_elements_ast.size())); ++j)
                     {
                         getRootActionsNoMakeSet(group_elements_ast[j], temp_actions, false);
 

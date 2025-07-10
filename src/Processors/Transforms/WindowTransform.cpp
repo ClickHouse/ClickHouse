@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -552,7 +553,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
             // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
             assert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= static_cast<UInt64>(-offset))
+            if (std::cmp_greater_equal(moved_row_number.row ,-offset)))
             {
                 moved_row_number.row -= -offset;
                 offset = 0;

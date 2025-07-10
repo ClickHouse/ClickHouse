@@ -580,7 +580,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                          table_name, reason);
             };
 
-            Int16 num_columns = readInt16(replication_message, pos, size);
+            UInt16 num_columns = readInt16(replication_message, pos, size);
 
             auto & storage_data = storage_iter->second;
             const auto & description = storage_data.table_description;

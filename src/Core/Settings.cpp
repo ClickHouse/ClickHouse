@@ -22,6 +22,7 @@
 #include <Poco/Util/Application.h>
 
 #include <cstring>
+#include <limits>
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
@@ -7406,7 +7407,7 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
 {
     const auto & accessor = SettingsImpl::Traits::Accessor::instance();
     size_t index = accessor.find(setting_name);
-    chassert(index != static_cast<size_t>(-1));
+    chassert(index != std::numeric_limits<size_t>::max());
     auto on_program_option = boost::function1<void, const std::string &>(
             [this, setting_name](const std::string & value)
             {
@@ -7426,7 +7427,7 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.count(name))
+        if (options.contains(name))
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());

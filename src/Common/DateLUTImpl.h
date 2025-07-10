@@ -7,6 +7,7 @@
 #include <ctime>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 /// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
@@ -531,7 +532,7 @@ public:
 
         Time res = t - lut[index].date;
 
-        if (res >= lut[index].time_at_offset_change())
+        if (std::cmp_greater_equal(res, lut[index].time_at_offset_change()))
             res += lut[index].amount_of_offset_change();
 
         return res - offset_at_start_of_epoch; /// Starting at 1970-01-01 00:00:00 local time.
@@ -543,7 +544,7 @@ public:
 
         Time time = t - lut[index].date;
 
-        if (time >= lut[index].time_at_offset_change())
+        if (std::cmp_greater_equal(time, lut[index].time_at_offset_change()))
             time += lut[index].amount_of_offset_change();
 
         unsigned res = static_cast<unsigned>(time / 3600);
@@ -572,7 +573,7 @@ public:
         res = res > 43200 ? (86400 - res) : (0 - res);
 
         /// Check if has a offset change during this day. Add the change when cross the line
-        if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
+        if (lut[index].amount_of_offset_change() != 0 && std::cmp_greater_equal(t, lut[index].date + lut[index].time_at_offset_change()))
             res += lut[index].amount_of_offset_change();
 
         return res + offset_at_start_of_epoch;
@@ -592,7 +593,7 @@ public:
         LUTIndex index = findIndex(t);
         Time time = t - lut[index].date;
 
-        if (time >= lut[index].time_at_offset_change())
+        if (std::cmp_greater_equal(time, lut[index].time_at_offset_change()))
             time += lut[index].amount_of_offset_change();
 
         return time % 60;
@@ -812,7 +813,7 @@ public:
         // get weekday from first day in year.
         UInt8 weekday = calc_weekday(first_day_number, !monday_first_mode);
 
-        if (toMonth(i) == 1 && toDayOfMonth(i) <= static_cast<UInt32>(7 - weekday))
+        if (toMonth(i) == 1 && toDayOfMonth(i) <= (7 - weekday))
         {
             if (!week_year_mode && ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4)))
                 return yw;
@@ -1098,14 +1099,14 @@ public:
         const Values & values = lut[index];
 
         Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
+        if (std::cmp_greater_equal(time, values.time_at_offset_change()))
         {
             /// Align to new hour numbers before rounding.
             time += values.amount_of_offset_change();
             time = time / seconds * seconds;
 
             /// Should subtract the shift back but only if rounded time is not before shift.
-            if (time >= values.time_at_offset_change())
+            if (std::cmp_greater_equal(time, values.time_at_offset_change()))
             {
                 time -= values.amount_of_offset_change();
 
@@ -1198,7 +1199,7 @@ public:
         size_t index = makeLUTIndex(year, month, day_of_month);
         Time time_offset = hour * 3600 + minute * 60 + second;
 
-        if (time_offset >= lut[index].time_at_offset_change())
+        if (std::cmp_greater_equal(time_offset, lut[index].time_at_offset_change()))
             time_offset -= lut[index].amount_of_offset_change();
 
         return lut[index].date + time_offset;
@@ -1208,7 +1209,7 @@ public:
     {
         Time time_offset = hour * 3600 + minute * 60 + second;
 
-        if (time_offset >= lut[1].time_at_offset_change())
+        if (std::cmp_greater_equal(time_offset, lut[0].time_at_offset_change()))
             time_offset -= lut[0].amount_of_offset_change();
 
         return time_offset;
@@ -1281,7 +1282,7 @@ public:
         res.date.day = values.day_of_month;
 
         Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
+        if (std::cmp_greater_equal(time, values.time_at_offset_change()))
             time += values.amount_of_offset_change();
 
         if (unlikely(time < 0))
@@ -1368,12 +1369,12 @@ public:
         const Values & values = lut[index];
 
         Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
+        if (std::cmp_greater_equal(time, values.time_at_offset_change()))
             time += values.amount_of_offset_change();
 
         const LUTIndex new_index = index + delta;
 
-        if (time >= lut[new_index].time_at_offset_change())
+        if (std::cmp_greater_equal(time, lut[new_index].time_at_offset_change()))
             time -= lut[new_index].amount_of_offset_change();
 
         return lut[new_index].date + time;
@@ -1429,7 +1430,7 @@ public:
         const Values & values = lut[index];
 
         Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
+        if (std::cmp_greater_equal(time, values.time_at_offset_change()))
             time += values.amount_of_offset_change();
 
         if (time >= lut[result_day].time_at_offset_change())
@@ -1488,7 +1489,7 @@ public:
         const Values & values = lut[index];
 
         Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
+        if (std::cmp_greater_equal(time, values.time_at_offset_change()))
             time += values.amount_of_offset_change();
 
         if (time >= lut[result_day].time_at_offset_change())

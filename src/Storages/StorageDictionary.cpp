@@ -51,7 +51,7 @@ namespace
 
         for (const auto & column : columns.getOrdinary())
         {
-            if (names_and_types_set.find(column) == names_and_types_set.end())
+            if (!names_and_types_set.contains(column))
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),

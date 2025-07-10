@@ -30,6 +30,8 @@
 #include <Common/parseAddress.h>
 #include <Common/JSONBuilder.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -523,7 +525,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
         cmd.add(keys.get<RedisBulkString>(i));
 
     auto ret = connection->client->execute<RedisInteger>(cmd);
-    if (ret != static_cast<RedisInteger>(keys.size()))
+    if (std::cmp_not_equal(ret ,keys.size())))
         LOG_DEBUG(
             log,
             "Try to delete {} rows but actually deleted {} rows from redis table {}.",

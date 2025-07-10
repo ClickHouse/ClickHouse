@@ -121,7 +121,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lo
 void LRUFileCachePriority::updateSize(int64_t size)
 {
     chassert(size != 0);
-    chassert(size > 0 || state->current_size >= size_t(-size));
+    chassert(size > 0 || std::cmp_greater_equal(state->current_size ,-size));
 
     LOG_TEST(log, "Updating size with {}, current is {}",
              size, state->current_size.load());

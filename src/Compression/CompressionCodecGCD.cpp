@@ -221,7 +221,7 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
 
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (std::cmp_greater(2 + bytes_to_skip, source_size))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);

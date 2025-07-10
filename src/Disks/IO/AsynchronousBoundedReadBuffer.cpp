@@ -301,7 +301,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     }
 
     /// Position is unchanged.
-    if (new_pos == static_cast<size_t>(getPosition()))
+    if (std::cmp_equal(new_pos, getPosition()))
         return new_pos;
 
     bool read_from_prefetch = false;

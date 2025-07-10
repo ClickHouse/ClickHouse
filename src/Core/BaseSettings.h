@@ -7,7 +7,9 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 
+#include <limits>
 #include <unordered_map>
+#include <utility>
 
 #include <boost/blank.hpp>
 
@@ -264,7 +266,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         accessor.setValue(*this, index, value);
     else
         getCustomSetting(name) = value;
@@ -275,7 +277,7 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.getValue(*this, index);
     return static_cast<Field>(getCustomSetting(name));
 }
@@ -285,7 +287,7 @@ bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
     {
         value = accessor.getValue(*this, index);
         return true;
@@ -303,7 +305,7 @@ bool BaseSettings<TTraits>::isChanged(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.isValueChanged(*this, index);
     return tryGetCustomSetting(name) != nullptr;
 }
@@ -349,7 +351,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
     {
         accessor.resetValueToDefault(*this, index);
         return;
@@ -379,7 +381,7 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.getTypeName(index);
     if (tryGetCustomSetting(name))
         return "Custom";
@@ -391,7 +393,7 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.getDescription(index);
     if (tryGetCustomSetting(name))
         return "Custom";
@@ -403,7 +405,7 @@ SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.getTier(index);
     if (tryGetCustomSetting(name))
         return SettingsTierType::PRODUCTION;
@@ -422,7 +424,7 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.castValueUtil(index, value);
     if constexpr (Traits::allow_custom_settings)
         return value;
@@ -435,7 +437,7 @@ String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Fie
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         return accessor.valueToStringUtil(index, value);
     if constexpr (Traits::allow_custom_settings)
         return value.dump();
@@ -450,7 +452,7 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
     try
     {
         const auto & accessor = Traits::Accessor::instance();
-        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        if (size_t index = accessor.find(name); std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
             return accessor.stringToValueUtil(index, str);
         if constexpr (Traits::allow_custom_settings)
             return Field::restoreFromDump(str);
@@ -557,7 +559,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
-        if (index != static_cast<size_t>(-1))
+        if (std::cmp_not_equal(index, std::numeric_limits<size_t>::max()))
         {
             if (is_custom)
             {

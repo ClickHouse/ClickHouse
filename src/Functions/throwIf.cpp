@@ -10,6 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <utility>
+
 namespace DB
 {
 namespace Setting
@@ -49,7 +51,7 @@ public:
     {
         const size_t number_of_arguments = arguments.size();
 
-        if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
+        if (number_of_arguments < 1 || std::cmp_greater(number_of_arguments , (allow_custom_error_code_argument ? 3 : 2)))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be {}",
                 getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");

@@ -7,6 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -179,7 +181,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
 
         seen_columns[column_index] = 1;
         size_t columns_size = readColumn(*columns[column_index], fields[column_index].type, serializations[column_index], fields[column_index].name);
-        if (rows != -1 && size_t(rows) != columns_size)
+        if (rows != -1 && std::cmp_not_equal(rows, columns_size))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Number of rows differs in different columns: {} != {}", rows, columns_size);
         rows = columns_size;
         ++iteration;

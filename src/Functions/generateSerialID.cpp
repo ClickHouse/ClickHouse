@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 
 #include <filesystem>
+#include <utility>
 
 
 namespace DB
@@ -58,12 +59,12 @@ public:
         Coordination::Stat stat;
         if (keeper->exists(keeper_path, &stat))
         {
-            if (static_cast<size_t>(stat.numChildren) > max_series)
+            if (std::cmp_greater(stat.numChildren, max_series))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
                     name, max_series);
 
-            if (static_cast<size_t>(stat.numChildren) == max_series)
+            if (std::cmp_equal(stat.numChildren, max_series))
                 at_capacity = true;
         }
         else

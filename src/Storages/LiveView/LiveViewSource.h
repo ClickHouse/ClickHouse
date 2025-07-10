@@ -3,6 +3,8 @@
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Processors/ISource.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -90,7 +92,7 @@ protected:
     {
         Block res;
 
-        if (has_limit && num_updates == static_cast<Int64>(limit))
+        if (has_limit && std::cmp_equal(num_updates ,limit)))
         {
             return { Block(), true };
         }

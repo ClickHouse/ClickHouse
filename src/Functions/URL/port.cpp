@@ -7,6 +7,8 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/URL/domain.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -111,7 +113,7 @@ private:
                 return default_port;
 
             port = (port * 10) + (*p - '0');
-            if (port < 0 || port > static_cast<UInt16>(-1))
+            if (port < 0 || std::cmp_greater(port ,-1)))
                 return default_port;
             ++p;
         }
