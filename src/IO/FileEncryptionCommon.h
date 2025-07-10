@@ -144,10 +144,10 @@ struct Header
 };
 
 /// Calculates the fingerprint of a passed encryption key.
-UInt128 calculateKeyFingerprint(const String & key);
+UInt128 calculateKeyFingerprint(const NoDumpString & key);
 
 /// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
+UInt128 calculateV1KeyFingerprint(const NoDumpString & key, UInt64 key_id);
 
 }
 }
