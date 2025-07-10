@@ -338,4 +338,5 @@ void MetadataStorageFromPlainObjectStorageTransaction::commit()
 {
     MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
+
 }

@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/IDiskTransaction.h>
@@ -7,6 +8,9 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
+#include <Disks/FakeDiskTransaction.h>
+
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -230,6 +234,7 @@ void DataPartStorageOnDiskFull::beginTransaction()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Uncommitted{}transaction already exists", has_shared_transaction ? " shared " : " ");
 
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "begin transaction for part {}", getRelativePath());
     transaction = volume->getDisk()->createTransaction();
 }
 
@@ -241,8 +246,37 @@ void DataPartStorageOnDiskFull::commitTransaction()
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "commit transaction for part {}", getRelativePath());
+
     transaction->commit();
     transaction.reset();
+}
+
+void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function)
+ {
+    const auto in_transaction = bool(transaction);
+    scope_guard commit_transaction;
+    if (!in_transaction)
+    {
+        LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "Validating disk transaction without an active transaction, starting a new one");
+
+        commit_transaction = [&]()
+        {
+            commitTransaction();
+        };
+
+        LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "begin fake transaction for part {}", getRelativePath());
+        transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
+    }
+
+    transaction->validateTransaction(std::move(check_function));
+}
+
+bool DataPartStorageOnDiskFull::isTransactional() const
+{
+    auto tx = volume->getDisk()->createTransaction();
+    SCOPE_EXIT({ tx->undo(); });
+    return tx->isTransactional();
 }
 
 }

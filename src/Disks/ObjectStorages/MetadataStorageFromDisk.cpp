@@ -270,4 +270,11 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
     return result;
 }
 
+std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    if (metadata_storage.existsFileOrDirectory(path))
+        return metadata_storage.getStorageObjects(path);
+    return std::nullopt;
+}
+
 }

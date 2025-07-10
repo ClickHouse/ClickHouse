@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
@@ -95,6 +96,19 @@ public:
     }
 
     bool supportsChmod() const override { return false; }
+
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
+    {
+        if (metadata_storage.existsFileOrDirectory(path))
+            return metadata_storage.getStorageObjects(path);
+        return std::nullopt;
+    }
+
+    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override
+    {
+        chassert(!metadata_storage.isTransactional());
+        return metadata_storage.listDirectory(path);
+    }
 };
 
 }
