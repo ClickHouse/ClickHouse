@@ -26,7 +26,7 @@ test1() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SELECT URL, EventDate, max(URL)
-        FROM remote(test_cluster_one_shard_two_replicas, test.hits)
+        FROM remote(test_cluster_one_shard_three_replicas_localhost, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
         GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
@@ -41,7 +41,7 @@ test2() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SELECT URL, EventDate, max(URL)
-        FROM remote(test_cluster_one_shard_two_replicas, test.hits)
+        FROM remote(test_cluster_one_shard_three_replicas_localhost, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
         GROUP BY URL, EventDate
         ORDER BY URL, EventDate
