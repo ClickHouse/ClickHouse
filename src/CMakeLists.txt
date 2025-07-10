@@ -514,6 +514,7 @@ dbms_target_link_libraries(PUBLIC
 dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
+target_link_libraries (clickhouse_common_io PUBLIC Poco::Redis)
 
 if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)

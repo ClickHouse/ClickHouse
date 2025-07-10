@@ -57,6 +57,7 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Interpreters/Cache/registerQueryResultCaches.h>
 
 #include "config.h"
 
@@ -621,6 +622,7 @@ try
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+    registerQueryResultCaches();
 
     processConfig();
 
@@ -887,7 +889,7 @@ void LocalServer::processConfig()
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
     /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    global_context->setQueryResultCache(max_cache_size, config());
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);

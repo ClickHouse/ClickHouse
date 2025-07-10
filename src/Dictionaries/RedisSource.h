@@ -6,7 +6,7 @@
 #include <Processors/ISource.h>
 #include <Poco/Redis/Array.h>
 #include <Poco/Redis/Type.h>
-#include <Storages/RedisCommon.h>
+#include <Common/RedisCommon.h>
 
 
 namespace DB

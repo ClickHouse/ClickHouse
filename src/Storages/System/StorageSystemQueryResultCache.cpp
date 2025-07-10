@@ -37,8 +37,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
     if (!query_result_cache)
         return;
-
-    std::vector<QueryResultCache::Cache::KeyMapped> content = query_result_cache->dump();
+    std::vector<QueryResultCache::KeyMapped> content = query_result_cache->dump();
 
     const String & user_name = context->getUserName();
     std::optional<UUID> user_id = context->getUserID();
