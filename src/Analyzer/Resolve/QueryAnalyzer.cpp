@@ -3586,7 +3586,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
-      * Then each lambda arguments are initialized with columns, where column source is lambda node.
+      * Then each lambda arguments are initialized with columns, where column source is lambda.
       * This information is important for later steps of query processing.
       * Example: SELECT arrayMap(x -> x + 1, [1, 2, 3]).
       * lambda node x -> x + 1 identifier x is resolved as column where source is lambda node.
@@ -5332,7 +5332,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
                             "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 
-/// Resolve cross join node in scope
+/// Resolve join node in scope
 void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto & cross_join_node_typed = cross_join_node->as<CrossJoinNode &>();
