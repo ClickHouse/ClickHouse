@@ -37,7 +37,7 @@ public:
 
     String generateDataFileName();
     String generateManifestEntryName();
-    String generateManifestListName();
+    String generateManifestListName(Int64 snapshot_id, Int32 format_version);
     String generateMetadataName();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
@@ -74,8 +74,9 @@ class MetadataGenerator
 public:
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
-    Poco::JSON::Object::Ptr generateNextMetadata(
-        const String & manifest_list_name,
+    std::pair<Poco::JSON::Object::Ptr, String> generateNextMetadata(
+        FileNamesGenerator & generator,
+        const String & metadata_filename,
         Int64 parent_snapshot_id,
         Int32 added_files,
         Int32 added_records,

@@ -47,6 +47,9 @@ DEFINE_ICEBERG_FIELD(partition_spec_id);
 DEFINE_ICEBERG_FIELD(content);
 DEFINE_ICEBERG_FIELD(min_sequence_number);
 DEFINE_ICEBERG_FIELD(added_snapshot_id);
+DEFINE_ICEBERG_FIELD(added_data_files_count);
+DEFINE_ICEBERG_FIELD(existing_data_files_count);
+DEFINE_ICEBERG_FIELD(deleted_data_files_count);
 DEFINE_ICEBERG_FIELD(added_files_count);
 DEFINE_ICEBERG_FIELD(existing_files_count);
 DEFINE_ICEBERG_FIELD(deleted_files_count);
@@ -57,6 +60,7 @@ DEFINE_ICEBERG_FIELD(record_count);
 DEFINE_ICEBERG_FIELD(file_path);
 DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
+DEFINE_ICEBERG_FIELD(refs);
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
@@ -86,6 +90,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(total_delete_files, total-delete-files);
 DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
+DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);

@@ -35,6 +35,7 @@ from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
+    LocalDownloader,
     get_file_contents,
     list_s3_objects,
     prepare_s3_bucket,
@@ -45,6 +46,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_spark():
+    os.environ["PYSPARK_TRACE_BACK"] = "true"
+
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
@@ -58,6 +61,8 @@ def get_spark():
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
+        .config("spark.executor.extraJavaOptions", "-Dlog4j.configuration=file:log4j.properties")
+        .config("spark.driver.extraJavaOptions", "-Dlog4j.configuration=file:log4j.properties")
         .master("local")
     )
     return builder.master("local").getOrCreate()
@@ -129,6 +134,7 @@ def started_cluster():
         )
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
+        cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
 
         yield cluster
 
@@ -358,6 +364,17 @@ def default_upload_directory(
         )
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
+
+
+def default_download_directory(
+    started_cluster, storage_type, remote_path, local_path, **kwargs
+):
+    if storage_type == "local":
+        return started_cluster.default_local_downloader.download_directory(
+            local_path, remote_path, **kwargs
+        )
+    else:
+        raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -3187,6 +3204,7 @@ def test_writes(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1);")
+
     default_upload_directory(
         started_cluster,
         storage_type,
@@ -3194,10 +3212,38 @@ def test_writes(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    #instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);")
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n'
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);")
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n456\n'
+    #instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);")
+    #assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n456\n'
+
+    result_download = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
+        f.write(b"3")
+
+    #if storage_type == "local":
+    #    df = spark.sql(f"SELECT * FROM spark_catalog.default.{TABLE_NAME}.snapshots;").collect()
+    #    raise ValueError(len(df), df)
+    #df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    #raise ValueError(df)
+    #with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/.version-hint.text.crc", "rb") as f:
+    #    raise ValueError(f.read())
+
+
+    #os.remove(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text")
+    #with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
+    #    raise ValueError(f.read())
+
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    raise ValueError(df)
+    #raise ValueError([file for file in os.listdir(f"/iceberg_data/default/{TABLE_NAME}/metadata")], result_download)
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])

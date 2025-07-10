@@ -70,12 +70,9 @@ extern const int BAD_ARGUMENTS;
 }
 
 FileNamesGenerator::FileNamesGenerator(const String & metadata_dir_)
-    : metadata_dir(metadata_dir_)
+    : metadata_dir(metadata_dir_ + "metadata/")
 {
-    if (metadata_dir.ends_with("metadata/"))
-        data_dir = metadata_dir.substr(0, metadata_dir.size() - std::strlen("metadata/")) + "data/";
-    else
-        data_dir = metadata_dir;
+    data_dir = metadata_dir_ + "data/";
 }
 
 String FileNamesGenerator::generateDataFileName()
@@ -85,17 +82,23 @@ String FileNamesGenerator::generateDataFileName()
 
 String FileNamesGenerator::generateManifestEntryName()
 {
-    return fmt::format("{}manifest-entry-{}.avro", metadata_dir, uuid_generator.createRandom().toString());
+    auto result = fmt::format("{}{}.avro", metadata_dir, uuid_generator.createRandom().toString());
+    std::cerr << "generateManifestEntryName " << result << '\n';
+    return result;
 }
 
-String FileNamesGenerator::generateManifestListName()
+String FileNamesGenerator::generateManifestListName(Int64 snapshot_id, Int32 format_version)
 {
-    return fmt::format("{}manifest-list-{}.avro", metadata_dir, uuid_generator.createRandom().toString());
+    auto result = fmt::format("{}snap-{}-{}-{}.avro", metadata_dir, snapshot_id, format_version, uuid_generator.createRandom().toString());
+    std::cerr << "generateManifestListName " << result << '\n';
+    return result;
 }
 
 String FileNamesGenerator::generateMetadataName()
 {
-    return fmt::format("{}metadata/{}-{}.metadata.json", metadata_dir, initial_version, uuid_generator.createRandom().toString());
+    auto result = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version);
+    std::cerr << "generateMetadataName " << result << '\n';
+    return result;
 }
 
 String removeEscapedSlashes(const String & json_str)
@@ -202,6 +205,30 @@ void generateManifestFile(
         set_versioned_field(sequence_number, "file_sequence_number");
     }
     avro::GenericRecord & data_file = manifest.field("data_file").value<avro::GenericRecord>();
+    auto set_null_field = [&](const String & field_name)
+    {
+        size_t field_index;
+        if (!data_file.schema()->nameIndex(field_name, field_index))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
+
+        const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
+        avro::GenericUnion field(union_schema);
+        field.selectBranch(0);
+        field.datum() = avro::GenericDatum();
+        data_file.field(field_name) = avro::GenericDatum(union_schema, field);
+    };
+
+    set_null_field("column_sizes");
+    set_null_field("value_counts");
+    set_null_field("null_value_counts");
+    set_null_field("nan_value_counts");
+    set_null_field("lower_bounds");
+    set_null_field("upper_bounds");
+    set_null_field("key_metadata");
+    set_null_field("split_offsets");
+    if (version > 1)
+        set_null_field("equality_ids");
+    set_null_field("sort_order_id");
 
     if (version > 1)
         data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
@@ -223,6 +250,7 @@ void generateManifestFile(
         else if (partition_values[i].getType() == Field::Types::String)
             partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
     }
+
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>("current-schema-id");
     Poco::JSON::Stringifier::stringify(metadata->getArray("schemas")->getObject(current_schema_id), oss, 4);
@@ -271,6 +299,18 @@ void generateManifestList(
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
         entry.field(Iceberg::f_partition_spec_id) = 1;
+        //avro::GenericDatum empty_array(avro::GenericArray());
+        {
+            size_t parititons_index;
+            if (!schema.root()->nameIndex("partitions", parititons_index))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field partitions in schema");
+
+            const avro::NodePtr & partitiions_schema = schema.root()->leafAt(static_cast<UInt32>(parititons_index));
+            avro::GenericUnion field(partitiions_schema);
+            field.selectBranch(1);
+            field.datum() = avro::GenericDatum(partitiions_schema->leafAt(1));
+            entry.field("partitions") = avro::GenericDatum(partitiions_schema->leafAt(1));
+        }
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = 0;
@@ -298,8 +338,15 @@ void generateManifestList(
                 entry.field(field_name) = value;
             }
         };
-        set_versioned_field(new_snapshot->getValue<Int32>(Iceberg::f_snapshot_id), Iceberg::f_added_snapshot_id);
-        if (version > 1)
+        set_versioned_field(new_snapshot->getValue<Int64>(Iceberg::f_snapshot_id), Iceberg::f_added_snapshot_id);
+
+        if (version == 1)
+        {
+            set_versioned_field(1, Iceberg::f_added_data_files_count);
+            set_versioned_field(new_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(Iceberg::f_total_data_files), Iceberg::f_existing_data_files_count);
+            set_versioned_field(0, Iceberg::f_deleted_data_files_count);
+        }
+        else
         {
             entry.field(Iceberg::f_added_files_count) = 1;
             entry.field(Iceberg::f_existing_files_count)
@@ -334,6 +381,8 @@ void generateManifestList(
 
                 const avro::ValidSchema & prev_schema = reader.readerSchema();
 
+                std::cerr << "spark schema\n";
+                prev_schema.toFlatList(std::cerr);
                 avro::GenericDatum datum(prev_schema);
 
                 while (reader.read(datum))
@@ -382,8 +431,9 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
-Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
-    const String & manifest_list_name,
+std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetadata(
+    FileNamesGenerator & generator,
+    const String & metadata_filename,
     Int64 parent_snapshot_id,
     Int32 added_files,
     Int32 added_records,
@@ -393,9 +443,14 @@ Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
     if (format_version > 1)
+    {
+        auto sequence_number = getMaxSequenceNumber() + 1;
         new_snapshot->set(f_sequence_number, getMaxSequenceNumber() + 1);
-
+        metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
+    }
     Int32 snapshot_id = dis(gen);
+
+    auto manifest_list_name = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(f_snapshot_id, snapshot_id);
     new_snapshot->set(f_parent_snapshot_id, parent_snapshot_id);
 
@@ -406,15 +461,15 @@ Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set("operation", "append");
-    summary->set(Iceberg::f_added_data_files, added_files);
-    summary->set(Iceberg::f_added_records, added_records);
-    summary->set(Iceberg::f_added_files_size, added_files_size);
-    summary->set(Iceberg::f_changed_partition_count, num_partitions);
+    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+    summary->set(Iceberg::f_added_records, std::to_string(added_records));
+    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
     {
-        Int32 prev_value = parent_snapshot ? parent_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(field_name) : 0;
-        summary->set(field_name, prev_value + snapshot_value);
+        Int32 prev_value = parent_snapshot ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
+        summary->set(field_name, std::to_string(prev_value + snapshot_value));
     };
 
     sum_with_parent_snapshot(Iceberg::f_total_records, added_records);
@@ -430,7 +485,26 @@ Poco::JSON::Object::Ptr MetadataGenerator::generateNextMetadata(
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
-    return new_snapshot;
+
+    if (metadata_object->has(Iceberg::f_refs))
+        metadata_object->getObject(Iceberg::f_refs)->getObject("main")->set(Iceberg::f_snapshot_id, snapshot_id);
+
+    std::cerr << "bp1\n";
+    {
+        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+        new_metadata_item->set("metadata-file", metadata_filename);
+        new_metadata_item->set("timestamp-ms", ms.count());
+        metadata_object->getArray("metadata-log")->add(new_metadata_item);
+    }
+    std::cerr << "bp2\n";
+    {
+        Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
+        new_snapshot_item->set("snapshot-id", snapshot_id);
+        new_snapshot_item->set("timestamp-ms", ms.count());
+        metadata_object->getArray("snapshot-log")->add(new_snapshot_item);
+    }
+    std::cerr << "bp3\n";
+    return {new_snapshot, manifest_list_name};
 }
 
 ChunkPartitioner::ChunkPartitioner(
@@ -652,6 +726,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
         if (!data_filenames.contains(partition_key))
         {
             auto data_filename = filename_generator.generateDataFileName();
+            std::cerr << "parquet data file " << data_filename << '\n';
             data_filenames[partition_key] = data_filename;
 
             const auto & settings = context->getSettingsRef();
@@ -727,12 +802,11 @@ void IcebergStorageSink::cancelBuffers()
 
 void IcebergStorageSink::initializeMetadata()
 {
-    auto manifest_list_name = filename_generator.generateManifestListName();
     auto metadata_name = filename_generator.generateMetadataName();
 
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    auto new_snapshot = MetadataGenerator(metadata).generateNextMetadata(
-        manifest_list_name, parent_snapshot, 1, total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
+    auto [new_snapshot, manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
+        filename_generator, metadata_name, parent_snapshot, 1, total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
     Strings manifest_entries;
     for (const auto & [partition_key, data_filename] : data_filenames)
@@ -760,6 +834,7 @@ void IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
+        std::cerr << "json_representation " << json_representation << '\n';
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         buffer_metadata->write(json_representation.data(), json_representation.size());
