@@ -107,10 +107,9 @@ def test_ephemeral_watch_session_close(started_cluster):
 
     zk = get_fake_zk(node.name)
 
-    watch_triggered = False
 
     def watch_callback(event):
-        watch_triggered = True
+        pass
     try:
         zk.create("/ephemeral_test_node", b"data", ephemeral=True)
         zk.exists("/ephemeral_test_node", watch=watch_callback)
