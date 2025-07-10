@@ -40,59 +40,62 @@ targets. This function sets them.
   control over this code, and therefore any warnings are not actionable.
 #]=======================================================================]
 function (google_cloud_cpp_add_common_options target)
-    # Parse the optional arguments.
-    cmake_parse_arguments(_opt "NO_WARNINGS" "" "" ${ARGN})
+    # Make this a NOP cause ClickHouse is already setting proper compiler options
+    # and we don't want a contrib lib to fiddle with that.
 
-    # Require C++ >= 14.  Note that this is a *minimum* requirement. It is still
-    # possible to compile the library (and its dependencies) with C++17 or
-    # higher.
-    target_compile_features(${target} PUBLIC cxx_std_14)
+    # # Parse the optional arguments.
+    # cmake_parse_arguments(_opt "NO_WARNINGS" "" "" ${ARGN})
 
-    # Add `-fclang-abi-compat=17` if supported *AND* requested.
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_CLANG_ABI_COMPAT_17
-        AND GOOGLE_CLOUD_CPP_ENABLE_CLANG_ABI_COMPAT_17)
-        target_compile_options(${target} PUBLIC "-fclang-abi-compat=17")
-    endif ()
+    # # Require C++ >= 14.  Note that this is a *minimum* requirement. It is still
+    # # possible to compile the library (and its dependencies) with C++17 or
+    # # higher.
+    # target_compile_features(${target} PUBLIC cxx_std_14)
 
-    if (MSVC)
-        target_compile_options(${target} PRIVATE "/bigobj")
-        # Disable warnings in files included via #include <...>. This is mostly
-        # because Protobuf and gRPC-generated headers produce too many
-        # non-actionable warnings, even with the default warning level. This is
-        # also true for Abseil, but for complicated reasons it is not possible
-        # to say  #include <absl/...> at the moment. We use different
-        # workarounds in this case.
-        target_compile_options(${target} PRIVATE "/experimental:external")
-        target_compile_options(${target} PRIVATE "/external:W0")
-        target_compile_options(${target} PRIVATE "/external:anglebrackets")
-        if (_opt_NO_WARNINGS)
-            return()
-        endif ()
-        target_compile_options(${target} PRIVATE "/W3")
-        if (GOOGLE_CLOUD_CPP_ENABLE_WERROR)
-            target_compile_options(${target} PRIVATE "/WX")
-        endif ()
-        return()
-    endif ()
+    # # Add `-fclang-abi-compat=17` if supported *AND* requested.
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_CLANG_ABI_COMPAT_17
+    #     AND GOOGLE_CLOUD_CPP_ENABLE_CLANG_ABI_COMPAT_17)
+    #     target_compile_options(${target} PUBLIC "-fclang-abi-compat=17")
+    # endif ()
 
-    if (_opt_NO_WARNINGS)
-        set_target_properties(${libname} PROPERTIES CXX_CLANG_TIDY "")
-        return()
-    endif ()
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WALL)
-        target_compile_options(${target} PRIVATE "-Wall")
-    endif ()
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WEXTRA)
-        target_compile_options(${target} PRIVATE "-Wextra")
-    endif ()
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WCONVERSION)
-        target_compile_options(${target} PRIVATE "-Wconversion")
-    endif ()
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WNO_SIGN_CONVERSION)
-        target_compile_options(${target} PRIVATE "-Wno-sign-conversion")
-    endif ()
-    if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WERROR
-        AND GOOGLE_CLOUD_CPP_ENABLE_WERROR)
-        target_compile_options(${target} PRIVATE "-Werror")
-    endif ()
+    # if (MSVC)
+    #     target_compile_options(${target} PRIVATE "/bigobj")
+    #     # Disable warnings in files included via #include <...>. This is mostly
+    #     # because Protobuf and gRPC-generated headers produce too many
+    #     # non-actionable warnings, even with the default warning level. This is
+    #     # also true for Abseil, but for complicated reasons it is not possible
+    #     # to say  #include <absl/...> at the moment. We use different
+    #     # workarounds in this case.
+    #     target_compile_options(${target} PRIVATE "/experimental:external")
+    #     target_compile_options(${target} PRIVATE "/external:W0")
+    #     target_compile_options(${target} PRIVATE "/external:anglebrackets")
+    #     if (_opt_NO_WARNINGS)
+    #         return()
+    #     endif ()
+    #     target_compile_options(${target} PRIVATE "/W3")
+    #     if (GOOGLE_CLOUD_CPP_ENABLE_WERROR)
+    #         target_compile_options(${target} PRIVATE "/WX")
+    #     endif ()
+    #     return()
+    # endif ()
+
+    # if (_opt_NO_WARNINGS)
+    #     set_target_properties(${libname} PROPERTIES CXX_CLANG_TIDY "")
+    #     return()
+    # endif ()
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WALL)
+    #     target_compile_options(${target} PRIVATE "-Wall")
+    # endif ()
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WEXTRA)
+    #     target_compile_options(${target} PRIVATE "-Wextra")
+    # endif ()
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WCONVERSION)
+    #     target_compile_options(${target} PRIVATE "-Wconversion")
+    # endif ()
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WNO_SIGN_CONVERSION)
+    #     target_compile_options(${target} PRIVATE "-Wno-sign-conversion")
+    # endif ()
+    # if (GOOGLE_CLOUD_CPP_COMPILER_SUPPORTS_WERROR
+    #     AND GOOGLE_CLOUD_CPP_ENABLE_WERROR)
+    #     target_compile_options(${target} PRIVATE "-Werror")
+    # endif ()
 endfunction ()

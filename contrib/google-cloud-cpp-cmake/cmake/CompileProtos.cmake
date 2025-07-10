@@ -339,52 +339,56 @@ endfunction ()
 
 # Install headers for a C++ proto library.
 function (google_cloud_cpp_install_proto_library_headers target)
-    cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
-    google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
-    get_target_property(type ${target} TYPE)
-    if ("${type}" STREQUAL "INTERFACE_LIBRARY")
-        return()
-    endif ()
-    get_target_property(target_sources ${target} SOURCES)
-    foreach (header ${target_sources})
-        # Skip anything that is not a header file.
-        if (NOT "${header}" MATCHES "\\.h$")
-            continue()
-        endif ()
-        string(REPLACE "${OUT_DIR}/" "" relative "${header}")
-        get_filename_component(dir "${relative}" DIRECTORY)
-        install(
-            FILES "${header}"
-            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
-            COMPONENT google_cloud_cpp_development)
-    endforeach ()
+    # Make this a NOP because we don't need to install the proto headers.
+
+    # cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
+    # google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
+    # get_target_property(type ${target} TYPE)
+    # if ("${type}" STREQUAL "INTERFACE_LIBRARY")
+    #     return()
+    # endif ()
+    # get_target_property(target_sources ${target} SOURCES)
+    # foreach (header ${target_sources})
+    #     # Skip anything that is not a header file.
+    #     if (NOT "${header}" MATCHES "\\.h$")
+    #         continue()
+    #     endif ()
+    #     string(REPLACE "${OUT_DIR}/" "" relative "${header}")
+    #     get_filename_component(dir "${relative}" DIRECTORY)
+    #     install(
+    #         FILES "${header}"
+    #         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
+    #         COMPONENT google_cloud_cpp_development)
+    # endforeach ()
 endfunction ()
 
 # Install protos for a C++ proto library.
 function (google_cloud_cpp_install_proto_library_protos target source_dir)
-    cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
-    google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
-    get_target_property(type ${target} TYPE)
-    if ("${type}" STREQUAL "INTERFACE_LIBRARY")
-        return()
-    endif ()
-    get_target_property(target_protos ${target} PROTO_SOURCES)
-    foreach (header ${target_protos})
-        # Skip anything that is not a header file.
-        if (NOT "${header}" MATCHES "\\.proto$")
-            continue()
-        endif ()
-        string(REPLACE "${source_dir}/" "" relative "${header}")
-        string(REPLACE "${OUT_DIR}/" "" relative "${relative}")
-        get_filename_component(dir "${relative}" DIRECTORY)
-        # This is modeled after the Protobuf library, it installs the basic
-        # protos (think google/protobuf/any.proto) in the include directory for
-        # C/C++ code. :shrug:
-        install(
-            FILES "${header}"
-            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
-            COMPONENT google_cloud_cpp_development)
-    endforeach ()
+    # Make this a NOP because we don't need to install the proto files.
+
+    # cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
+    # google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
+    # get_target_property(type ${target} TYPE)
+    # if ("${type}" STREQUAL "INTERFACE_LIBRARY")
+    #     return()
+    # endif ()
+    # get_target_property(target_protos ${target} PROTO_SOURCES)
+    # foreach (header ${target_protos})
+    #     # Skip anything that is not a header file.
+    #     if (NOT "${header}" MATCHES "\\.proto$")
+    #         continue()
+    #     endif ()
+    #     string(REPLACE "${source_dir}/" "" relative "${header}")
+    #     string(REPLACE "${OUT_DIR}/" "" relative "${relative}")
+    #     get_filename_component(dir "${relative}" DIRECTORY)
+    #     # This is modeled after the Protobuf library, it installs the basic
+    #     # protos (think google/protobuf/any.proto) in the include directory for
+    #     # C/C++ code. :shrug:
+    #     install(
+    #         FILES "${header}"
+    #         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
+    #         COMPONENT google_cloud_cpp_development)
+    # endforeach ()
 endfunction ()
 
 include(GoogleCloudCppCommonOptions)

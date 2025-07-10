@@ -74,11 +74,11 @@ function (google_cloud_cpp_add_library_protos library)
     external_googleapis_set_version_and_alias(${library}_protos)
     target_link_libraries(${protos_target} PUBLIC ${proto_deps})
 
-    google_cloud_cpp_install_proto_library_protos(
-        "${protos_target}" "${EXTERNAL_GOOGLEAPIS_SOURCE}" OUT_DIRECTORY
-        ${OUT_DIR})
-    google_cloud_cpp_install_proto_library_headers("${protos_target}"
-                                                   OUT_DIRECTORY ${OUT_DIR})
+    # google_cloud_cpp_install_proto_library_protos(
+    #     "${protos_target}" "${EXTERNAL_GOOGLEAPIS_SOURCE}" OUT_DIRECTORY
+    #     ${OUT_DIR})
+    # google_cloud_cpp_install_proto_library_headers("${protos_target}"
+    #                                                OUT_DIRECTORY ${OUT_DIR})
 
     # external_googleapis_install_pc("${protos_target}")
 
@@ -89,10 +89,10 @@ function (google_cloud_cpp_add_library_protos library)
     set(library_target "google_cloud_cpp_${library}")
 
     # Export the CMake targets to make it easy to create configuration files.
-    install(
-        EXPORT ${library_target}-targets
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
-        COMPONENT google_cloud_cpp_development)
+    # install(
+    #     EXPORT ${library_target}-targets
+    #     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
+    #     COMPONENT google_cloud_cpp_development)
 
     # Install the libraries and headers in the locations determined by
     # GNUInstallDirs
