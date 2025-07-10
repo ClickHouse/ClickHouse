@@ -276,7 +276,7 @@ Now let's try to decrypt all that data.
 Query:
 
 ```sql
-SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') as plaintext FROM encryption_test
+SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
 ```
 
 Result:

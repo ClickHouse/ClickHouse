@@ -1,6 +1,6 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
 

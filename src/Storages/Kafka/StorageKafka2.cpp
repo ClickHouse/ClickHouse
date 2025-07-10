@@ -1028,7 +1028,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        getFormatName(), empty_buf, non_virtual_header, modified_context, getMaxBlockSize(), std::nullopt, FormatParserGroup::singleThreaded(modified_context->getSettingsRef()));
+        getFormatName(), empty_buf, non_virtual_header, modified_context, getMaxBlockSize(), std::nullopt, 1);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;

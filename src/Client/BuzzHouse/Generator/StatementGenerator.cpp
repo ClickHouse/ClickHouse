@@ -622,7 +622,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     ct->set_single_result(rg.nextSmallNumber() < 4);
 }
 
-void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * dt)
+void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt)
 {
     const uint32_t desc_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t desc_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
@@ -654,8 +654,23 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     }
     else if (desc_query && nopt < (desc_table + desc_view + desc_dict + desc_query + 1))
     {
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        generateSelect(rg, false, false, (rg.nextLargeNumber() % 5) + 1, std::numeric_limits<uint32_t>::max(), dt->mutable_sel());
+        ExplainQuery * eq = dt->mutable_sel();
+
+        if (rg.nextMediumNumber() < 6)
+        {
+            prepareNextExplain(rg, eq);
+        }
+        else
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            generateSelect(
+                rg,
+                false,
+                false,
+                (rg.nextLargeNumber() % 5) + 1,
+                std::numeric_limits<uint32_t>::max(),
+                eq->mutable_inner_query()->mutable_select()->mutable_sel());
+        }
         this->levels.clear();
     }
     else if (desc_function && nopt < (desc_table + desc_view + desc_dict + desc_query + desc_function + 1))
@@ -756,7 +771,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
         for (const auto & entry : this->entries)
         {
-            url += fmt::format("{}{}", first ? "" : ",", columnPathRef(entry));
+            url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
             buf2 += fmt::format(
                 "{}{} {}{}{}",
                 first ? "" : ", ",

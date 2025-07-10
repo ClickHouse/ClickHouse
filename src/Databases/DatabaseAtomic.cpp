@@ -120,7 +120,7 @@ void DatabaseAtomic::drop(ContextPtr)
     auto db_disk = getDisk();
     try
     {
-        if (db_disk->isSymlinkSupported())
+        if (db_disk->isSymlinkSupported() && !db_disk->isReadOnly())
         {
             db_disk->removeFileIfExists(path_to_metadata_symlink);
             db_disk->removeRecursive(path_to_table_symlinks);
@@ -130,7 +130,8 @@ void DatabaseAtomic::drop(ContextPtr)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    db_disk->removeRecursive(getMetadataPath());
+    if (!db_disk->isReadOnly())
+        db_disk->removeRecursive(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -796,14 +797,6 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        if (args.database_name.ends_with(DatabaseReplicated::BROKEN_REPLICATED_TABLES_SUFFIX))
-            args.context->addOrUpdateWarningMessage(
-                Context::WarningType::MAYBE_BROKEN_TABLES,
-                PreformattedMessage::create(
-                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
-                    "has tables, it worth to check why they were considered broken.",
-                    backQuoteIfNeed(args.database_name)));
-
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);

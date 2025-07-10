@@ -572,14 +572,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'";
+            ret += "'-999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'";
+            ret += "'999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
@@ -2601,8 +2601,11 @@ CONV_FN(SetQuery, setq)
     ExplainQueryToString(ret, setq.sel1());
     ret += ") ";
     ret += SetQuery_SetOp_Name(setq.set_op());
-    ret += " ";
-    ret += AllOrDistinct_Name(setq.s_or_d());
+    if (setq.has_s_or_d())
+    {
+        ret += " ";
+        ret += AllOrDistinct_Name(setq.s_or_d());
+    }
     ret += " (";
     ExplainQueryToString(ret, setq.sel2());
     ret += ")";
@@ -3576,30 +3579,30 @@ CONV_FN(CheckTable, ct)
     }
 }
 
-CONV_FN(DescTable, dt)
+CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
+    using DescType = DescribeStatement::DescOneofCase;
+    switch (ds.desc_oneof_case())
     {
         case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
-            SelectToString(ret, dt.sel());
+            ExplainQueryToString(ret, ds.sel());
             ret += ")";
             break;
         case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
+            SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
     }
-    if (dt.has_setting_values())
+    if (ds.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
+        SettingValuesToString(ret, ds.setting_values());
     }
 }
 
@@ -4952,7 +4955,7 @@ CONV_FN(SQLQueryInner, query)
             CheckTableToString(ret, query.check());
             break;
         case QueryType::kDesc:
-            DescTableToString(ret, query.desc());
+            DescribeStatementToString(ret, query.desc());
             break;
         case QueryType::kExchange:
             ExchangeToString(ret, query.exchange());

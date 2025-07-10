@@ -2,7 +2,7 @@
 
 -- Tests that various conditions are checked during creation of vector search indexes.
 
-SET allow_experimental_vector_similarity_index = 1;
+SET enable_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
