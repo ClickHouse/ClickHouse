@@ -262,7 +262,8 @@ void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDisk
 
         commit_transaction = [&]()
         {
-            commitTransaction();
+            transaction->commit();
+            transaction.reset();
         };
 
         LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "begin fake transaction for part {}", getRelativePath());
