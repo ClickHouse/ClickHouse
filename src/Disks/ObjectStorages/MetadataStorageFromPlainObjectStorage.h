@@ -156,16 +156,9 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
-    {
-        return metadata_storage.getStorageObjectsIfExist(path);
-    }
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override
-    {
-        chassert(!metadata_storage.isTransactional());
-        return metadata_storage.listDirectory(path);
-    }
+    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 
     void commit() override;
 

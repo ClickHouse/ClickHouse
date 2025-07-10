@@ -153,4 +153,17 @@ void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursiv
     /// Noop.
 }
 
+std::optional<StoredObjects>
+MetadataStorageFromStaticFilesWebServerTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    if (metadata_storage.existsFileOrDirectory(path))
+        return metadata_storage.getStorageObjects(path);
+    return std::nullopt;
+}
+
+std::vector<std::string> MetadataStorageFromStaticFilesWebServerTransaction::listUncommittedDirectory(const std::string & path) const
+{
+    chassert(!metadata_storage.isTransactional());
+    return metadata_storage.listDirectory(path);
+}
 }

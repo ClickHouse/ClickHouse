@@ -547,4 +547,11 @@ MinimalisticDataPartChecksums MinimalisticDataPartChecksums::deserializeFrom(con
     return res;
 }
 
+void MergeTreeDataPartChecksums::addExistingFile(
+    const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to)
+{
+    LOG_DEBUG(getLogger("MergeTreeDataPartChecksums"), "Add existing file {} as {}", file_from, file_to);
+    if (auto it = source.files.find(file_from); it != source.files.end())
+        files.emplace(file_to, it->second);
+}
 }

@@ -63,12 +63,7 @@ struct MergeTreeDataPartChecksums
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 
-    void addExistingFile(const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to)
-    {
-        LOG_DEBUG(getLogger("MergeTreeDataPartChecksums"), "Add existing file {} as {}", file_from, file_to);
-        if (auto it = source.files.find(file_from); it != source.files.end())
-            files.emplace(file_to, it->second);
-    }
+    void addExistingFile(const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to);
 
     bool empty() const { return files.empty(); }
 

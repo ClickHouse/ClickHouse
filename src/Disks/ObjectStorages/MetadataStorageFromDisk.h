@@ -138,13 +138,7 @@ public:
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override
-    {
-        chassert(!metadata_storage.isTransactional());
-        std::vector<std::string> result;
-        metadata_storage.disk->listFiles(path, result);
-        return result;
-    }
+    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 };
 
 

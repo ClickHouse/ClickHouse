@@ -1957,11 +1957,6 @@ private:
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
-        /// ctx->new_data_part->checksums = ctx->source_part->checksums;
-
-        // for (const auto & file_to_skip : ctx->files_to_skip)
-        //     ctx->new_data_part->checksums.remove(file_to_skip);
-
         LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: source part {} checksums files: {}", ctx->source_part->name, fmt::join(ctx->source_part->checksums.getFileNamesWithSizes(), ", "));
         LOG_TRACE(ctx->log, "MutateSomePartColumnsTask: new part {} checksums files: {}", ctx->new_data_part->name, fmt::join(ctx->new_data_part->checksums.getFileNamesWithSizes(), ", "));
 
@@ -2040,10 +2035,6 @@ private:
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
             LOG_DEBUG(ctx->log, "MutateSomePartColumnsTask: rename {} to {} for part {}", rename_from, rename_to, ctx->new_data_part->name);
-            // ctx->new_data_part->checksums.files.erase(rename_from);
-
-            // if (!rename_to.empty())
-            //    ctx->new_data_part->checksums.files[rename_to] = ctx->source_part->checksums.files.at(rename_from);
             chassert(rename_to.empty() || ctx->new_data_part->checksums.files.contains(rename_to));
         }
 
