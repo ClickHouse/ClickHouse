@@ -1052,17 +1052,6 @@ void DiskObjectStorageTransaction::undo()
         operation->undo();
 }
 
-bool DiskObjectStorageTransaction::isTransactional() const
-{
-    return metadata_storage.isTransactional();
-}
-
-void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskTransaction&)> check_function)
-{
-    auto operation = std::make_unique<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, shared_from_this(), std::move(check_function));
-    operations_to_execute.emplace_back(std::move(operation));
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncommittedFileInTransaction(
     const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
@@ -1072,6 +1061,17 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncomm
 
     return disk.readFileFromStorageObjects(
         *maybe_objects, path, settings, read_hint, file_size);
+}
+
+bool DiskObjectStorageTransaction::isTransactional() const
+{
+    return metadata_storage.isTransactional();
+}
+
+void DiskObjectStorageTransaction::validateTransaction(std::function<void(IDiskTransaction&)> check_function)
+{
+    auto operation = std::make_unique<ValidateTransactionObjectStorageOperation>(object_storage, metadata_storage, shared_from_this(), std::move(check_function));
+    operations_to_execute.emplace_back(std::move(operation));
 }
 
 }
