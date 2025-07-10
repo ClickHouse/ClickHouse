@@ -1622,7 +1622,20 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value = Int64(value * (1L << fraction_bit_num));
+
+        UInt64 scaling = 1ULL << fraction_bit_num;
+
+        /// Check for overflows before continuing
+        if ((std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
+            && (fabs(value) > std::numeric_limits<std::int64_t>::max() / scaling))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
+                Float64(value),
+                integer_bit_num,
+                fraction_bit_num);
+
+        Int64 scaled_value = Int64(value * scaling);
 
         UInt8 cin = 0;
         for (size_t j = 0; j < total_bit_num; ++j)

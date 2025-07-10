@@ -54,3 +54,8 @@ SELECT groupNumericIndexedVector(x, y) FROM values('x Nullable(Int32), y Nullabl
 SELECT groupNumericIndexedVector(x, y) FROM values('x Nullable(Int32), y Nullable(Float64)', (1, 0), (3, Null), (3, 2), (0, 0), (5, 1));
 SELECT groupNumericIndexedVector(x, y) FROM values('x Nullable(Int32), y Nullable(Float64)', (1, 0), (3, inf), (3, 2), (0, 0), (5, 1)); -- { serverError INCORRECT_DATA }
 SELECT groupNumericIndexedVector(x, y) FROM values('x Nullable(Int32), y Nullable(Float64)', (1, 0), (3, -inf), (3, 2), (0, 0), (5, 1)); -- { serverError INCORRECT_DATA }
+
+
+CREATE TABLE test (t AggregateFunction(groupNumericIndexedVectorState, UInt32, Float64)) ENGINE = AggregatingMergeTree ORDER BY tuple();
+INSERT INTO test SELECT groupNumericIndexedVectorState(toUInt32(1), 1.54743e+26); -- { serverError INCORRECT_DATA }
+INSERT INTO test SELECT groupNumericIndexedVectorState(toUInt32(1), -1.54743e+26); -- { serverError INCORRECT_DATA }
