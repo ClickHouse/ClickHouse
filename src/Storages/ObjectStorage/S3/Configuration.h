@@ -109,7 +109,7 @@ private:
     S3::URI url;
     Paths keys;
 
-    std::unique_ptr<S3ObjectStorageSettings> s3_settings;
+    std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
