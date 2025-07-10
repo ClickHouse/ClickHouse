@@ -6,8 +6,8 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Common/LocalDateTime.h>
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/CompressionMethod.h>
 

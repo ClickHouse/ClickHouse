@@ -151,6 +151,8 @@ public:
         return false;
     }
 
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
     ColumnPtr compress(bool force_compression) const override;
 
     void insertValue(const T value) { data.push_back(value); }
@@ -201,6 +203,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

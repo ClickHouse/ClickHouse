@@ -1,7 +1,7 @@
-#include "StoragePolicy.h"
-#include "DiskFactory.h"
-#include "DiskLocal.h"
-#include "createVolume.h"
+#include <Disks/StoragePolicy.h>
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
 #include <Common/StringUtils.h>
@@ -12,6 +12,7 @@
 #include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <exception>
 #include <ranges>
 #include <set>
 
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int READONLY;
 }
 
 
@@ -252,22 +254,30 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
+    bool all_volumes_read_only = true;
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
+        if (volume->isReadOnly())
+            continue;
+        all_volumes_read_only = false;
         auto reservation = volume->reserve(bytes);
         if (reservation)
             return reservation;
     }
-    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
 
-    return {};
+    if (all_volumes_read_only)
+        return std::unexpected(
+            ReservationError(ErrorCodes::READONLY, "Could not reserve {} because all disk volumes are readonly", ReadableSize(bytes)));
+
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+    return std::unexpected(ReservationError(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes)));
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes) const
 {
     return reserve(bytes, 0);
 }
@@ -275,9 +285,11 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 
 ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
 {
-    if (auto res = reserve(bytes, 0))
-        return res;
-    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes));
+    auto res = reserve(bytes, 0);
+    if (res)
+        return std::move(res.value());
+
+    throw Exception(res.error().message, res.error().code);
 }
 
 

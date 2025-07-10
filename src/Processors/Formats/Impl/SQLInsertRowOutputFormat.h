@@ -19,9 +19,6 @@ public:
 
     String getName() const override { return "SQLInsertRowOutputFormat"; }
 
-    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
-
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;

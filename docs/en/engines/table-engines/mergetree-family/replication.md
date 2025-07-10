@@ -14,8 +14,7 @@ In ClickHouse Cloud replication is managed for you. Please create your tables wi
 ```sql
 ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
-    '{replica}',
-    ver
+    '{replica}'
 )
 ```
 

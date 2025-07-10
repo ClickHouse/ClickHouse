@@ -10,4 +10,6 @@ enum class VariableContext : uint8_t
     User,           /// Group of processes
     Process,        /// For example, a query or a merge
     Thread,         /// A thread of a process
+
+    Max, /// size of the enum, not a real level
 };

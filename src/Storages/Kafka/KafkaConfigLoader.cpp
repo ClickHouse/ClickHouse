@@ -6,6 +6,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadStatus.h>
@@ -375,9 +376,9 @@ void updateGlobalConfiguration(
         {
             kerberosInit(keytab, principal);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessage(e, false));
+            LOG_ERROR(params.log, "KerberosInit failure: {}", getExceptionMessageForLogging(e, false));
         }
         LOG_DEBUG(params.log, "Finished KerberosInit");
     }

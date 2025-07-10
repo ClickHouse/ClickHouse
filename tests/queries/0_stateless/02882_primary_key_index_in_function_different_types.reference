@@ -4,101 +4,101 @@ CreatingSets
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 1-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search
 CreatingSets
   Expression
     Expression
       ReadFromMergeTree
       Indexes:
         PrimaryKey
-          Keys: 
+          Keys:
             id
             value
           Condition: and((value in 5-element set), (id in (-Inf, 10]))
           Parts: 1/1
           Granules: 1/1
-          Search algorithm: generic exclusion search
+          Search Algorithm: generic exclusion search

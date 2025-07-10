@@ -148,7 +148,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserKQLTest,
         },
         {
             "print make_timespan(67,12,30,59.9799)",
-            "SELECT CONCAT('67.', toString(substring(toString(toTime(parseDateTime64BestEffortOrNull('0000-00-00 12:30:59.9799', 9, 'UTC'))), 12)))"
+            "SELECT CONCAT('67.', toString(substring(toString(toTimeWithFixedDate(parseDateTime64BestEffortOrNull('0000-00-00 12:30:59.9799', 9, 'UTC'))), 12)))"
         },
         {
             "print  todatetime('2014-05-25T08:20:03.123456Z')",

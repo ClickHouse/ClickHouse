@@ -50,7 +50,7 @@ SETTINGS output_format_json_named_tuples_as_objects = 1,
     output_format_json_array_of_rows = 1 AS
 SELECT
     lower(hex(trace_id)) AS traceId,
-    case when parent_span_id = 0 then '' else lower(hex(parent_span_id)) end AS parentId,
+    CASE WHEN parent_span_id = 0 THEN '' ELSE lower(hex(parent_span_id)) END AS parentId,
     lower(hex(span_id)) AS id,
     operation_name AS name,
     start_time_us AS timestamp,

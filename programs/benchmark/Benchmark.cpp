@@ -35,7 +35,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -622,9 +622,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
-        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("help",                                                            "produce help message")
+        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
+        options_description.add_options()
+            ("help", "Print usage summary and exit; combine with --verbose to display all options")
+            ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -647,15 +648,16 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
         Settings settings;
-        settings.addToProgramOptions(desc);
+        auto options_description_non_verbose = options_description;
+        settings.addToProgramOptions(options_description);
 
         boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
         boost::program_options::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
@@ -663,7 +665,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            std::cout << desc << "\n";
+            if (options.contains("verbose"))
+                std::cout << options_description << "\n";
+            else
+                std::cout << options_description_non_verbose << "\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }

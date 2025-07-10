@@ -43,6 +43,7 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 struct RangesInDataPart
 {
     DataPartPtr data_part;
+    DataPartPtr parent_part;
     size_t part_index_in_query;
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
@@ -50,11 +51,16 @@ struct RangesInDataPart
 
     RangesInDataPart(
         const DataPartPtr & data_part_,
+        const DataPartPtr & parent_part_,
         size_t part_index_in_query_,
         size_t part_starting_offset_in_query_,
         const MarkRanges & ranges_);
 
-    explicit RangesInDataPart(const DataPartPtr & data_part_, size_t part_index_in_query_ = 0, size_t part_starting_offset_in_query_ = 0);
+    explicit RangesInDataPart(
+        const DataPartPtr & data_part_,
+        const DataPartPtr & parent_part_ = nullptr,
+        size_t part_index_in_query_ = 0,
+        size_t part_starting_offset_in_query_ = 0);
 
     RangesInDataPartDescription getDescription() const;
 

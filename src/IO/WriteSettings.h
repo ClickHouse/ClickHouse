@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <IO/DistributedCacheSettings.h>
 

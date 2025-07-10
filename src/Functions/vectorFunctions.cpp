@@ -8,7 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
-#include "Functions/IFunction.h"
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -1586,64 +1586,172 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
-        {
-            .description=R"(
-Consecutively adds a tuple of intervals to a Date or a DateTime.
-[example:tuple]
-)",
-            .examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
-                },
-            .category = FunctionDocumentation::Category::DateAndTime
-        });
+    /// addTupleOfIntervals documentation
+    FunctionDocumentation::Description description_addTupleOfIntervals = R"(
+Consecutively adds a tuple of intervals to a date or a date with time.
+    )";
+    FunctionDocumentation::Syntax syntax_addTupleOfIntervals = R"(
+addTupleOfIntervals(datetime, intervals)
+    )";
+    FunctionDocumentation::Arguments arguments_addTupleOfIntervals = {
+        {"datetime", "Date or date with time to add intervals to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"intervals", "Tuple of intervals to add to `datetime`. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_addTupleOfIntervals = {
+        {"Add tuple of intervals to date", R"(
+WITH toDate('2018-01-01') AS date
+SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 YEAR))
+        )",
+        R"(
+┌─addTupleOfIntervals(date, (toIntervalDay(1), toIntervalMonth(1), toIntervalYear(1)))─┐
+│                                                                           2019-02-02 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_addTupleOfIntervals = {22, 11};
+    FunctionDocumentation::Category category_addTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addTupleOfIntervals = {
+        description_addTupleOfIntervals,
+        syntax_addTupleOfIntervals,
+        arguments_addTupleOfIntervals,
+        returned_value_addTupleOfIntervals,
+        examples_addTupleOfIntervals,
+        introduced_in_addTupleOfIntervals,
+        category_addTupleOfIntervals
+    };
 
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
-        {
-            .description=R"(
-Consecutively subtracts a tuple of intervals from a Date or a DateTime.
-[example:tuple]
-)",
-            .examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
-                },
-            .category = FunctionDocumentation::Category::DateAndTime
-        });
+    factory.registerFunction<FunctionAddTupleOfIntervals>(documentation_addTupleOfIntervals);
 
-    factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
-        {
-            .description=R"(
-Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
-[example:tuple]
-[example:interval1]
+    /// subtractTupleOfIntervals documentation
+    FunctionDocumentation::Description description_subtractTupleOfIntervals = R"(
+Consecutively subtracts a tuple of intervals from a date or a date with time.
+    )";
+    FunctionDocumentation::Syntax syntax_subtractTupleOfIntervals = R"(
+subtractTupleOfIntervals(datetime, intervals)
+    )";
+    FunctionDocumentation::Arguments arguments_subtractTupleOfIntervals = {
+        {"datetime", "Date or date with time to subtract intervals from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
+        {"intervals", "Tuple of intervals to subtract from `datetime`. [`Tuple(T)`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = {"Returns `date` with subtracted `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_subtractTupleOfIntervals = {
+        {"Subtract tuple of intervals from date", R"(
+WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
+        )",
+        R"(
+┌─subtractTupl⋯alYear(1)))─┐
+│               2016-12-31 │
+└──────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_subtractTupleOfIntervals = {22, 11};
+    FunctionDocumentation::Category category_subtractTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractTupleOfIntervals = {
+        description_subtractTupleOfIntervals,
+        syntax_subtractTupleOfIntervals,
+        arguments_subtractTupleOfIntervals,
+        returned_value_subtractTupleOfIntervals,
+        examples_subtractTupleOfIntervals,
+        introduced_in_subtractTupleOfIntervals,
+        category_subtractTupleOfIntervals
+    };
 
-If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
-[example:interval2]
-)",
-            .examples{
-                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
-                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
-                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
-                },
-            .category = FunctionDocumentation::Category::DateAndTime
-        });
-    factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
-        {
-            .description=R"(
-Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
-[example:tuple]
-[example:interval1]
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(documentation_subtractTupleOfIntervals);
 
-If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
-[example:interval2]
-)",
-            .examples{
-                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
-                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
-                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
-                },
-            .category = FunctionDocumentation::Category::DateAndTime
-        });
+    /// addInterval documentation
+    FunctionDocumentation::Description description_addInterval = R"(
+Adds an interval to another interval or tuple of intervals.
+
+Note: Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`.
+    )";
+    FunctionDocumentation::Syntax syntax_addInterval = R"(
+addInterval(interval_1, interval_2)
+    )";
+    FunctionDocumentation::Arguments arguments_addInterval = {
+        {"interval_1", "First interval or tuple of intervals. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
+        {"interval_2", "Second interval to be added. [`interval`](../data-types/special-data-types/interval.md)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_addInterval = {"Returns a tuple of intervals", {"Tuple(Interval)"}};
+    FunctionDocumentation::Examples examples_addInterval = {
+        {"Add intervals", R"(
+SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
+SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH);
+SELECT addInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)
+        )",
+        R"(
+┌─addInterval(toIntervalDay(1), toIntervalMonth(1))─┐
+│ (1,1)                                             │
+└───────────────────────────────────────────────────┘
+┌─addInterval((toIntervalDay(1), toIntervalYear(1)), toIntervalMonth(1))─┐
+│ (1,1,1)                                                                │
+└────────────────────────────────────────────────────────────────────────┘
+┌─addInterval(toIntervalDay(2), toIntervalDay(1))─┐
+│ (3)                                             │
+└─────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_addInterval = {22, 11};
+    FunctionDocumentation::Category category_addInterval = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addInterval = {
+        description_addInterval,
+        syntax_addInterval,
+        arguments_addInterval,
+        returned_value_addInterval,
+        examples_addInterval,
+        introduced_in_addInterval,
+        category_addInterval
+    };
+
+    factory.registerFunction<FunctionTupleAddInterval>(documentation_addInterval);
+
+    /// subtractInterval documentation
+    FunctionDocumentation::Description description_subtractInterval = R"(
+Adds a negated interval to another interval or tuple of intervals.
+
+Note: Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(2)` and `toIntervalDay(1)` are
+passed then the result will be `(1)` rather than `(2,1)`.
+    )";
+    FunctionDocumentation::Syntax syntax_subtractInterval = R"(
+subtractInterval(interval_1, interval_2)
+    )";
+    FunctionDocumentation::Arguments arguments_subtractInterval =
+    {
+        {"interval_1", "First interval or interval of tuples.", {"Interval", "Tuple(Interval)"}},
+        {"interval_2", "Second interval to be negated.", {"Interval"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = {"Returns a tuple of intervals", {"Tuple(T)"}};
+    FunctionDocumentation::Examples examples_subtractInterval = {
+        {"Subtract intervals", R"(
+SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
+SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH);
+SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
+        )",
+        R"(
+┌─subtractInterval(toIntervalDay(1), toIntervalMonth(1))─┐
+│ (1,-1)                                                 │
+└────────────────────────────────────────────────────────┘
+┌─subtractInterval((toIntervalDay(1), toIntervalYear(1)), toIntervalMonth(1))─┐
+│ (1,1,-1)                                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─subtractInterval(toIntervalDay(2), toIntervalDay(1))─┐
+│ (1)                                                  │
+└──────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_subtractInterval = {22, 11};
+    FunctionDocumentation::Category category_subtractInterval = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subtractInterval = {
+        description_subtractInterval,
+        syntax_subtractInterval,
+        arguments_subtractInterval,
+        returned_value_subtractInterval,
+        examples_subtractInterval,
+        introduced_in_subtractInterval,
+        category_subtractInterval
+    };
+
+    factory.registerFunction<FunctionTupleSubtractInterval>(documentation_subtractInterval);
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();

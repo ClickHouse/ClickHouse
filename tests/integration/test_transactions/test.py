@@ -26,6 +26,7 @@ def tx(session, query):
 
 
 def test_rollback_unfinished_on_restart1(start_cluster):
+    node.query("DROP TABLE IF EXISTS mt")
     node.query(
         "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
     )
@@ -112,9 +113,10 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "1_6_6_0\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_6_6_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
     )
-
+    node.query("DROP TABLE IF EXISTS mt SYNC")
 
 def test_rollback_unfinished_on_restart2(start_cluster):
+    node.query("DROP TABLE IF EXISTS mt2 SYNC")
     node.query(
         "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
     )
@@ -195,3 +197,28 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
     )
+
+    node.query("DROP TABLE IF EXISTS mt2 SYNC")
+
+
+def test_mutate_transaction_involved_parts(start_cluster):
+    node.query("DROP TABLE IF EXISTS mt3 SYNC")
+    node.query("CREATE TABLE mt3 (n int, m int) ENGINE=MergeTree ORDER BY n")
+    tx(0, "BEGIN TRANSACTION")
+    tx(0, "INSERT INTO mt3 VALUES(1, 1)")
+    tx(0, "COMMIT")
+
+    tx(1, "BEGIN TRANSACTION")
+    tx(1, "INSERT INTO mt3 VALUES(2, 2)")
+    tx(1, "COMMIT")
+
+    tx(2, "BEGIN TRANSACTION")
+    tx(2, "INSERT INTO mt3 VALUES(3, 3)")
+    tx(2, "COMMIT")
+
+    # When mutating table without a transaction, after restarting, the instance should load the outdated parts successfully
+    # Refer: https://github.com/ClickHouse/ClickHouse/pull/81734
+    node.query("ALTER TABLE mt3 UPDATE m = 10 WHERE 1")
+    node.restart_clickhouse()
+
+    node.query("DROP TABLE IF EXISTS mt3 SYNC")

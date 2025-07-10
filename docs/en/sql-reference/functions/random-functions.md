@@ -617,7 +617,7 @@ randomFixedString(length);
 Query:
 
 ```sql
-SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 Result:
@@ -650,7 +650,7 @@ randomPrintableASCII(length)
 **Example**
 
 ```sql
-SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers LIMIT 3
 ```
 
 ```text

@@ -1,11 +1,11 @@
-#include "NullDictionarySource.h"
+#include <Dictionaries/NullDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB

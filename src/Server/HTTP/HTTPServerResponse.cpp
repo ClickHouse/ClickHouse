@@ -8,9 +8,9 @@
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPHeaderStream.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPStream.h>
 #include <IO/NullWriteBuffer.h>
-#include <sstream>
 
 
 namespace DB
@@ -40,9 +40,6 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
         // the connection would be poisoned.
         // Next request over that connection reads previously unreaded message as a HTTP status line
 
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
         // make sure that nothing is sent to the client if it was HTTP_HEAD request
         stream = std::make_shared<NullWriteBuffer>(write_event);
 
@@ -53,87 +50,62 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
         // but if we do, then it is safer to close the connection at the end
         setKeepAlive(false);
 
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
         stream = std::make_shared<AutoFinalizedWriteBuffer<WriteBufferFromPocoSocket>>(session.socket(), write_event);
     }
     else if (getChunkedTransferEncoding())
     {
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
         stream = std::make_shared<AutoFinalizedWriteBuffer<HTTPWriteBufferChunked>>(session.socket(), write_event);
     }
     else if (hasContentLength())
     {
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
         stream = std::make_shared<AutoFinalizedWriteBuffer<HTTPWriteBufferFixedLength>>(session.socket(), getContentLength(), write_event);
     }
     else
     {
         setKeepAlive(false);
-        // Send header
-        Poco::Net::HTTPHeaderOutputStream hs(session);
-        write(hs);
+
         stream = std::make_shared<AutoFinalizedWriteBuffer<WriteBufferFromPocoSocket>>(session.socket(), write_event);
     }
 
-    send_started = true;
+    Poco::Net::HTTPHeaderOutputStream hs(session);
+    writeStatusAndHeaders(hs);
+
     return stream;
 }
 
-std::pair<std::shared_ptr<WriteBuffer>, std::shared_ptr<WriteBuffer>> HTTPServerResponse::beginSend()
+/// Only this method is called inside WriteBufferFromHTTPServerResponse
+void HTTPServerResponse::writeStatus(std::ostream & ostr)
 {
-    poco_assert(!stream);
-    poco_assert(!header_stream);
-
-    /// NOTE: Code is not exception safe.
-
-    if ((request && request->getMethod() == HTTPRequest::HTTP_HEAD) || getStatus() < 200 || getStatus() == HTTPResponse::HTTP_NO_CONTENT
-        || getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
-    {
-        throw Poco::Exception("HTTPServerResponse::beginSend is invalid for HEAD request");
-    }
-
-    if (hasContentLength())
-    {
-        throw Poco::Exception("HTTPServerResponse::beginSend is invalid for response with Content-Length header");
-    }
-
-    // Write header to buffer
-    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    beginWrite(header);
-    // Send header
-    auto str = header.str();
-    header_stream = std::make_shared<AutoFinalizedWriteBuffer<WriteBufferFromPocoSocket>>(session.socket(), write_event, str.size());
-    header_stream->write(str.data(), str.size());
-
-    if (getChunkedTransferEncoding())
-        stream = std::make_shared<AutoFinalizedWriteBuffer<HTTPWriteBufferChunked>>(session.socket(), write_event);
-    else
-        stream = std::make_shared<AutoFinalizedWriteBuffer<WriteBufferFromPocoSocket>>(session.socket(), write_event);
-
-    send_started = true;
-    return std::make_pair(header_stream, stream);
+    ostr << getVersion() << " " << static_cast<int>(getStatus()) << " " << getReason() << "\r\n";
+    ostr.flush();
 }
 
-void HTTPServerResponse::beginWrite(std::ostream & ostr) const
+/// Only this method is called inside WriteBufferFromHTTPServerResponse
+void HTTPServerResponse::writeHeaders(std::ostream & ostr)
 {
-    HTTPResponse::beginWrite(ostr);
+    allowKeepAliveIFFRequestIsFullyRead();
+
+    Poco::Net::HTTPMessage::write(ostr); // NOLINT (bugprone-parent-virtual-call)
+    ostr << "\r\n";
+    ostr.flush();
+
     send_started = true;
+}
+
+void HTTPServerResponse::writeStatusAndHeaders(std::ostream & ostr)
+{
+    writeStatus(ostr);
+    writeHeaders(ostr);
 }
 
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
 {
     setContentLength(static_cast<int>(length));
     setChunkedTransferEncoding(false);
+
     // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
-    write(hs);
-    hs.flush();
+    writeStatusAndHeaders(hs);
 
     if (request && request->getMethod() != HTTPRequest::HTTP_HEAD)
     {
@@ -166,8 +138,15 @@ void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
 
     // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
-    write(hs);
-    hs.flush();
+    writeStatusAndHeaders(hs);
 }
 
+void HTTPServerResponse::allowKeepAliveIFFRequestIsFullyRead()
+{
+    /// Connection can only be reused if we've fully read the previous request and all its POST data.
+    /// Otherwise we'd misinterpret the leftover data as part of the next request's header.
+    /// HTTPServerRequest::canKeepAlive() checks that request stream is bounded and is fully read.
+    if (!request || !request->canKeepAlive())
+        setKeepAlive(false);
+}
 }

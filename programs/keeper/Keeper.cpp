@@ -1,4 +1,4 @@
-#include "Keeper.h"
+#include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
@@ -43,7 +43,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include "Core/Defines.h"
+#include <Core/Defines.h>
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"

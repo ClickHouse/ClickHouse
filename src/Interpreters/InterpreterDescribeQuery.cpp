@@ -177,13 +177,13 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
 
 void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression)
 {
-    auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
-    getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    if (table->hasExternalDynamicMetadata())
-    {
-        table->updateExternalDynamicMetadata(getContext());
-    }
+    auto query_context = getContext();
+    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name);
+    query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 

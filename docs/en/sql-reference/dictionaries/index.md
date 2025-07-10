@@ -49,10 +49,10 @@ The [dictionaries](/operations/system-tables/dictionaries) system table contains
 ## Creating a dictionary with a DDL query {#creating-a-dictionary-with-a-ddl-query}
 
 Dictionaries can be created with [DDL queries](../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
-- No additional records are added to server configuration files
-- The dictionaries can be worked with as first-class entities, like tables or views
-- Data can be read directly, using familiar SELECT rather than dictionary table functions
-- The dictionaries can be easily renamed
+- No additional records are added to server configuration files.
+- The dictionaries can be worked with as first-class entities, like tables or views.
+- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores. 
+- The dictionaries can be easily renamed.
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
 
@@ -205,6 +205,8 @@ Configuration example of a composite key (key has one element with [String](../.
 ```
 
 ## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
+
+Various methods of storing dictionary data in memory are associated with CPU and RAM-usage trade-offs. Decision tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
 
 - [flat](#flat)
 - [hashed](#hashed)
@@ -798,7 +800,9 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 ### ip_trie {#ip_trie}
 
-This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
+This dictionary is designed for IP address lookups by network prefix. It stores IP ranges in CIDR notation and allows fast determination of which prefix (e.g. subnet or ASN range) a given IP falls into, making it ideal for IP-based searches like geolocation or network classification.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 **Example**
 
@@ -2137,8 +2141,9 @@ For our example, the structure of dictionary can be the following:
 
 ## Polygon dictionaries {#polygon-dictionaries}
 
-Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
-For example: defining a city area by geographical coordinates.
+This dictionary is optimized for point-in-polygon queries, essentially “reverse geocoding” lookups. Given a coordinate (latitude/longitude), it efficiently finds which polygon/region (from a set of many polygons, such as country or region boundaries) contains that point. It’s well-suited for mapping location coordinates to their containing region.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/FyRsriQp46E?si=Kf8CXoPKEpGQlC-Y" title="Polygon Dictionaries in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 Example of a polygon dictionary configuration:
 
@@ -2268,7 +2273,9 @@ Result:
 
 ## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of [user agent](https://en.wikipedia.org/wiki/User_agent) strings, which can be expressed elegantly with regexp tree dictionaries.
+This dictionary lets you map keys to values based on hierarchical regular-expression patterns. It’s optimized for pattern-match lookups (e.g. classifying strings like user agent strings by matching regex patterns) rather than exact key matching.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="An intro to ClickHouse regex tree dictionaries" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Open-Source {#use-regular-expression-tree-dictionary-in-clickhouse-open-source}
 

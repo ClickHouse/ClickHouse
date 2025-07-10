@@ -67,7 +67,7 @@ ENGINE = Memory AS
 SELECT *
 FROM VALUES((NULL, 0), ('a', 1), ('b', 2), ('c', 2), (NULL, NULL), ('d', NULL));
 
-select * from test;
+SELECT * FROM test;
 ┌─a────┬────b─┐
 │ ᴺᵁᴸᴸ │    0 │
 │ a    │    1 │

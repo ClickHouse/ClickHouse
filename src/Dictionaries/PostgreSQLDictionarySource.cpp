@@ -1,11 +1,11 @@
-#include "PostgreSQLDictionarySource.h"
+#include <Dictionaries/PostgreSQLDictionarySource.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
+#include <Dictionaries/registerDictionaries.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
@@ -13,7 +13,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/logger_useful.h>

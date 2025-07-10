@@ -100,28 +100,46 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
-Returns query after syntax optimizations.
+Shows the Abstract Syntax Tree (AST) of a query after syntax analysis.
 
-Example:
+It's done by parsing the query, constructing query AST and query tree, optionally running query analyzer and optimization passes, and then converting the query tree back to the query AST.
+
+Settings:
+
+- `oneline` – Print the query in one line. Default: `0`.
+- `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
+- `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
+
+Examples:
 
 ```sql
-EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c;
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
+
+Output:
+
+```sql
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+With `run_query_tree_passes`:
+
+```sql
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+Output:
 
 ```sql
 SELECT
-    `--a.number` AS `a.number`,
-    `--b.number` AS `b.number`,
-    number AS `c.number`
-FROM
-(
-    SELECT
-        number AS `--a.number`,
-        b.number AS `--b.number`
-    FROM system.numbers AS a
-    CROSS JOIN system.numbers AS b
-) AS `--.s`
-CROSS JOIN system.numbers AS c
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
 ### EXPLAIN QUERY TREE {#explain-query-tree}
@@ -131,6 +149,8 @@ Settings:
 - `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
 - `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
 - `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+- `dump_tree` — Display the query tree. Default: `1`.
+- `dump_ast` — Display the query AST generated from the query tree. Default: `0`.
 
 Example:
 ```sql
@@ -159,6 +179,7 @@ Settings:
 - `header` — Prints output header for step. Default: 0.
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+- `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
@@ -180,7 +201,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -308,7 +329,8 @@ Example:
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
     "Parts": 3/2,
-    "Granules": 10/6
+    "Granules": 10/6,
+    "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
@@ -323,6 +345,47 @@ Example:
     "Description": "set GRANULARITY 2",
     "": 1/1,
     "Granules": 2/1
+  }
+]
+```
+
+With `projections` = 1, the `Projections` key is added. It contains an array of analyzed projections. Each projection is described as JSON with following keys:
+
+- `Name` — The projection name.
+- `Condition` —  The used projection primary key condition.
+- `Description` — The description of how the projection is used (e.g. part-level filtering).
+- `Selected Parts` — Number of parts selected by the projection.
+- `Selected Marks` — Number of marks selected.
+- `Selected Ranges` — Number of ranges selected.
+- `Selected Rows` — Number of rows selected.
+- `Filtered Parts` — Number of parts skipped due to part-level filtering.
+
+Example:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
   }
 ]
 ```
@@ -474,6 +537,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::

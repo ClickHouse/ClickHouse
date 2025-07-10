@@ -30,9 +30,9 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 **Example**
 
 ```sql
-select finalizeAggregation(uniqThetaUnion(a, b)) as a_union_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
+SELECT finalizeAggregation(uniqThetaUnion(a, b)) AS a_union_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState',[2,3,4]) AS b );
 ```
 
 ```text
@@ -56,9 +56,9 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 **Example**
 
 ```sql
-select finalizeAggregation(uniqThetaIntersect(a, b)) as a_intersect_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
+SELECT finalizeAggregation(uniqThetaIntersect(a, b)) AS a_intersect_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState',[2,3,4]) AS b );
 ```
 
 ```text
@@ -82,9 +82,9 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 **Example**
 
 ```sql
-select finalizeAggregation(uniqThetaNot(a, b)) as a_not_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[2,3,4]) as a, arrayReduce('uniqThetaState',[1,2]) as b );
+SELECT finalizeAggregation(uniqThetaNot(a, b)) AS a_not_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[2,3,4]) AS a, arrayReduce('uniqThetaState',[1,2]) AS b );
 ```
 
 ```text

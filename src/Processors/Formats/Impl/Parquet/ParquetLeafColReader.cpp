@@ -1,4 +1,4 @@
-#include "ParquetLeafColReader.h"
+#include <Processors/Formats/Impl/Parquet/ParquetLeafColReader.h>
 
 #include <utility>
 

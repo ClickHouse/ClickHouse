@@ -63,7 +63,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 
@@ -79,7 +79,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 
@@ -103,7 +103,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, ReadEnclosed)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 

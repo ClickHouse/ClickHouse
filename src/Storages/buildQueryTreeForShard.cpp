@@ -198,11 +198,20 @@ private:
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
-                distributed_storage->getRemoteTableName()};
-            auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+            std::optional<StorageID> resolved_remote_storage_id;
+
+            bool database_can_be_changed = distributed_storage->getCluster()->maybeCrossReplication();
+            if (database_can_be_changed)
+                resolved_remote_storage_id = StorageID{{}, distributed_storage->getRemoteTableName()};
+            else
+            {
+                StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
+                    distributed_storage->getRemoteTableName()};
+                resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+            }
+
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
-            auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
+            auto storage = std::make_shared<StorageDummy>(*resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);

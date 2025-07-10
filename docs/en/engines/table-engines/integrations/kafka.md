@@ -1,5 +1,5 @@
 ---
-description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
+description: 'The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe
   to data flows, organize fault-tolerant storage, and process streams as they become
   available.'
 sidebar_label: 'Kafka'
@@ -13,15 +13,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Kafka
 
-<CloudNotSupportedBadge/>
-
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
 :::
-
-This engine works with [Apache Kafka](http://kafka.apache.org/).
-
-Kafka lets you:
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -167,7 +161,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;

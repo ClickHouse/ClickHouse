@@ -213,7 +213,7 @@ public:
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
-    ColumnDefaults getDefaults() const; /// TODO: remove
+    ColumnDefaults getDefaults() const;
     bool hasDefault(const String & column_name) const;
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;

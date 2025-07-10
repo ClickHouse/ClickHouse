@@ -123,14 +123,14 @@ public:
 
                 UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
 
-                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, pos, 4);
+                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, reinterpret_cast<char *>(pos), 4);
                 chassert(bytes1 <= 4);
                 pos += bytes1;
 
                 if (i + 1 != codepoints)
                 {
                     UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
-                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, pos, 4);
+                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, reinterpret_cast<char *>(pos), 4);
                     chassert(bytes2 <= 4);
                     pos += bytes2;
                 }

@@ -151,6 +151,8 @@ public:
 
     void moveFile(const std::string & path_from, const std::string & path_to) override;
 
+    void replaceFile(const std::string & path_from, const std::string & path_to) override;
+
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void commit() override;

@@ -20,9 +20,9 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
+        const std::string & description_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
-        const std::string & description_ = "none");
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -33,6 +33,8 @@ public:
     size_t getElementsCountApprox() const override;
 
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+
+    double getSLRUSizeRatio() const override { return size_ratio; }
 
     void check(const CachePriorityGuard::Lock &) const override;
 
@@ -68,6 +70,8 @@ public:
         EvictionCandidates & res,
         const CachePriorityGuard::Lock &) override;
 
+    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
+
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
@@ -84,6 +88,7 @@ private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
 
+    std::string description;
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;

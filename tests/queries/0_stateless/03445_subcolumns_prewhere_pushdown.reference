@@ -8,7 +8,7 @@ Actions: INPUT : 0 -> __table1.x UInt64 : 0
          ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
          ALIAS __table1.json :: 3 -> json JSON : 2
 Positions: 4 0 1 2
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
   Actions: INPUT : 0 -> x UInt64 : 0
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
@@ -75,7 +75,7 @@ Actions: INPUT : 0 -> __table1.x UInt64 : 0
          ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
          ALIAS __table1.json :: 3 -> json JSON : 2
 Positions: 4 0 1 2
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
   Actions: INPUT : 0 -> x UInt64 : 0
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
@@ -144,7 +144,7 @@ Actions: INPUT : 0 -> __table1.x UInt64 : 0
          ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
          ALIAS __table1.json :: 3 -> json JSON : 2
 Positions: 4 0 1 2
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
   Actions: INPUT : 0 -> x UInt64 : 0
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2

@@ -8,7 +8,13 @@ title: 'Comparison Functions'
 
 # Comparison Functions
 
-The comparison functions below return `0` or `1` with type [UInt8](/sql-reference/data-types/int-uint). Only values within the same group can be compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `DateTime`). Comparison of numbers and strings are possible, as is comparison of strings with dates and dates with times. For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding element of the left side and right side tuple/array. 
+## Comparison rules {#comparison-rules}
+
+The comparison functions below return `0` or `1` with type [UInt8](/sql-reference/data-types/int-uint). Only values within the same group can be 
+compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `DateTime`). 
+Comparison of numbers and strings are possible, as is comparison of strings with dates and dates with times. 
+For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding 
+element of the left side and right side tuple/array. 
 
 The following types can be compared:
 - numbers and decimals
@@ -22,74 +28,6 @@ The following types can be compared:
 Strings are compared byte-by-byte. This may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
 A string S1 which has another string S2 as prefix is considered longer than S2.
 :::
-
-## equals, `=`, `==` operators {#equals}
-
-**Syntax**
-
-```sql
-equals(a, b)
-```
-
-Alias:
-- `a = b` (operator)
-- `a == b` (operator)
-
-## notEquals, `!=`, `<>` operators {#notequals}
-
-**Syntax**
-
-```sql
-notEquals(a, b)
-```
-
-Alias:
-- `a != b` (operator)
-- `a <> b` (operator)
-
-## less, `<` operator {#less}
-
-**Syntax**
-
-```sql
-less(a, b)
-```
-
-Alias:
-- `a < b` (operator)
-
-## greater, `>` operator {#greater}
-
-**Syntax**
-
-```sql
-greater(a, b)
-```
-
-Alias:
-- `a > b` (operator)
-
-## lessOrEquals, `<=` operator {#lessorequals}
-
-**Syntax**
-
-```sql
-lessOrEquals(a, b)
-```
-
-Alias:
-- `a <= b` (operator)
-
-## greaterOrEquals, `>=` operator {#greaterorequals}
-
-**Syntax**
-
-```sql
-greaterOrEquals(a, b)
-```
-
-Alias:
-- `a >= b` (operator)
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

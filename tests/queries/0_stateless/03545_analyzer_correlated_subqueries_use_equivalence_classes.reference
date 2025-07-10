@@ -1,0 +1,45 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1 Nullable(UInt64) : 0
+         INPUT :: 1 -> __table3.number UInt64 : 1
+         ALIAS __table1 :: 0 -> _subquery_1 Nullable(UInt64) : 2
+Positions: 2
+  Expression
+  Actions: INPUT :: 0 -> __table3.number UInt64 : 0
+           INPUT :: 1 -> __table1 Nullable(UInt64) : 1
+  Positions: 0 1
+    Join (JOIN to generate result stream)
+    Type: LEFT
+    Strictness: ANY
+    Algorithm: ConcurrentHashJoin
+    Clauses: [(__table3.number) = (__table1.__table3.number)]
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> number UInt64 : 0
+               ALIAS number :: 0 -> __table3.number UInt64 : 1
+      Positions: 1
+        ReadFromSystemNumbers
+      Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+      Actions: INPUT : 0 -> count() UInt64 : 0
+               INPUT : 1 -> __table3.number UInt64 : 1
+               COLUMN Const(String) -> \'Nullable(UInt64)\'_String String : 2
+               ALIAS __table3.number :: 1 -> __table1.__table3.number UInt64 : 3
+               FUNCTION _CAST(count() :: 0, \'Nullable(UInt64)\'_String :: 2) -> __table1 Nullable(UInt64) : 1
+      Positions: 1 3 1
+        Aggregating
+        Keys: __table3.number
+        Aggregates:
+            count()
+              Function: count() → UInt64
+              Arguments: none
+        Skip merging: 0
+          Expression (Before GROUP BY)
+          Actions: INPUT :: 0 -> __table3.number UInt64 : 0
+                   INPUT :: 1 -> __table2.number UInt64 : 1
+          Positions: 1 0
+            Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+            Filter column: equals(__table2.number, __table3.number) (removed)
+            Actions: INPUT : 0 -> number UInt64 : 0
+                     ALIAS number : 0 -> __table2.number UInt64 : 1
+                     FUNCTION equals(number : 0, number :: 0) -> equals(__table2.number, __table3.number) UInt8 : 2
+                     ALIAS __table2.number : 1 -> __table3.number UInt64 : 0
+            Positions: 2 1 0
+              ReadFromSystemNumbers

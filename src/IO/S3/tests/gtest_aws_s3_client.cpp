@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "IO/S3/Credentials.h"
+#include <IO/S3/Credentials.h>
 #include "config.h"
 
 
@@ -28,7 +28,7 @@
 #include <IO/S3Settings.h>
 #include <Poco/Util/ServerApplication.h>
 
-#include "TestPocoHTTPServer.h"
+#include <IO/S3/tests/TestPocoHTTPServer.h>
 
 namespace DB::S3RequestSetting
 {

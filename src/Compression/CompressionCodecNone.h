@@ -24,6 +24,8 @@ protected:
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isNone() const override { return true; }
+
+    String getDescription() const override { return "No compression. Can be used on columns that can not be compressed anyway."; }
 };
 
 }

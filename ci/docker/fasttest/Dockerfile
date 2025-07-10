@@ -2,7 +2,7 @@
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
+ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG LLVM_APT_VERSION="1:19.1.4"
 

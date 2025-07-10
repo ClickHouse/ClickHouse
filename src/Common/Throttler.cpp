@@ -20,16 +20,25 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
-Throttler::Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_)
+Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
+        ProfileEvents::Event event_amount_,
+        ProfileEvents::Event event_sleep_us_)
     : max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit_exceeded_exception_message("")
     , tokens(max_burst)
     , parent(parent_)
+    , event_amount(event_amount_)
+    , event_sleep_us(event_sleep_us_)
 {}
 
-Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
-            const std::shared_ptr<Throttler> & parent_)
+Throttler::Throttler(size_t max_speed_,
+        ProfileEvents::Event event_amount_,
+        ProfileEvents::Event event_sleep_us_)
+    : Throttler(max_speed_, nullptr, event_amount_, event_sleep_us_)
+{}
+
+Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_, const ThrottlerPtr & parent_)
     : max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit(limit_)
@@ -58,7 +67,12 @@ UInt64 Throttler::add(size_t amount)
         sleepForNanoseconds(sleep_time_ns);
         accumulated_sleep -= sleep_time_ns;
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time_ns / 1000UL);
+        if (event_sleep_us != ProfileEvents::end())
+            ProfileEvents::increment(event_sleep_us, sleep_time_ns / 1000UL);
     }
+
+    if (event_amount != ProfileEvents::end())
+        ProfileEvents::increment(event_amount, amount);
 
     if (parent)
         sleep_time_ns += parent->add(amount);
@@ -119,13 +133,13 @@ Int64 Throttler::getAvailable()
     return static_cast<Int64>(tokens_value);
 }
 
-UInt64 Throttler::getMaxSpeed()
+UInt64 Throttler::getMaxSpeed() const
 {
     std::lock_guard lock(mutex);
     return max_speed;
 }
 
-UInt64 Throttler::getMaxBurst()
+UInt64 Throttler::getMaxBurst() const
 {
     std::lock_guard lock(mutex);
     return max_burst;

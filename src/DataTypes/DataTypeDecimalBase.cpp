@@ -67,5 +67,6 @@ template class DataTypeDecimalBase<Decimal64>;
 template class DataTypeDecimalBase<Decimal128>;
 template class DataTypeDecimalBase<Decimal256>;
 template class DataTypeDecimalBase<DateTime64>;
+template class DataTypeDecimalBase<Time64>;
 
 }

@@ -1,4 +1,4 @@
-#include "TemporaryReplaceTableName.h"
+#include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Common/re2.h>
 

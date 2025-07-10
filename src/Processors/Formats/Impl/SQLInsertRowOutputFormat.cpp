@@ -102,6 +102,8 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     {
         return std::make_shared<SQLInsertRowOutputFormat>(buf, sample, settings);
     });
+
+    factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 }
 
 

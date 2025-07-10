@@ -1,4 +1,4 @@
-#include "StorageSystemQueryResultCache.h"
+#include <Storages/System/StorageSystemQueryResultCache.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -54,7 +54,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
         res_columns[0]->insert(key.query_string); /// approximates the original query string
         res_columns[1]->insert(key.query_id);
-        res_columns[2]->insert(QueryResultCache::QueryResultCacheEntryWeight()(*query_result));
+        res_columns[2]->insert(QueryResultCache::EntryWeight()(*query_result));
         res_columns[3]->insert(key.tag);
         res_columns[4]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[5]->insert(key.is_shared);

@@ -120,7 +120,7 @@ REGISTER_FUNCTION(ArrayResize)
     FunctionDocumentation::Description description = "Changes the length of the array.";
     FunctionDocumentation::Syntax syntax = "arrayResize(arr, size[, extender])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "Array to resize. [Array(T)](/sql-reference/data-types/array)"},
+        {"arr", "Array to resize.", {"Array(T)"}},
         {"size", R"(
 -The new length of the array.
 If `size` is less than the original size of the array, the array is truncated from the right.
@@ -128,7 +128,7 @@ If `size` is larger than the initial size of the array, the array is extended to
 )"},
         {"extender", "Value to use for extending the array. Can be `NULL`."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "An array of length `size`. [Array(T)](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"An array of length `size`.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arrayResize([1], 3);", "[1,0,0]"},
         {"Example 2", "SELECT arrayResize([1], 3, NULL);", "[1,NULL,NULL]"},

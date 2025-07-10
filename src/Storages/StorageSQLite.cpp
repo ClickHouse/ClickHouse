@@ -1,4 +1,4 @@
-#include "StorageSQLite.h"
+#include <Storages/StorageSQLite.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
@@ -219,7 +219,7 @@ void registerStorageSQLite(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::SQLITE,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
     });
 }
 

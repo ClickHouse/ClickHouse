@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
+#include <unordered_map>
 
 namespace Poco::Util
 {
@@ -54,6 +55,7 @@ struct ZooKeeperArgs
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
     String password;
+    std::unordered_map<std::string, Coordination::ACL> path_acls;
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;

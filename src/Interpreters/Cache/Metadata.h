@@ -73,7 +73,10 @@ struct FileSegmentMetadata : private boost::noncopyable
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->resetEvictingFlag();
+
+        const auto & entry = iterator->getEntry();
+        chassert(size() == entry->size);
+        entry->resetEvictingFlag();
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
@@ -322,6 +325,11 @@ struct LockedKey : private boost::noncopyable
         bool invalidate_queue_entry = true);
 
     KeyMetadata::iterator removeFileSegment(
+        size_t offset,
+        bool can_be_broken = false,
+        bool invalidate_queue_entry = true);
+
+    KeyMetadata::iterator removeFileSegmentIfExists(
         size_t offset,
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);

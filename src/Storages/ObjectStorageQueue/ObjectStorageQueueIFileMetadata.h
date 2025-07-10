@@ -27,6 +27,8 @@ public:
         };
 
         void setProcessingEndTime();
+        /// Set how much time it took to list this object from s3.
+        void setGetObjectTime(size_t elapsed_ms);
         void onProcessing();
         void onProcessed();
         void reset();
@@ -42,6 +44,7 @@ public:
         std::atomic<time_t> processing_start_time = 0;
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
+        std::atomic<UInt64> get_object_time_ms = 0;
 
     private:
         mutable std::mutex last_exception_mutex;

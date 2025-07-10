@@ -4,7 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 namespace DB
 {

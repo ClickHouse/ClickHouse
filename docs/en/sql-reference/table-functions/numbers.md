@@ -37,5 +37,5 @@ Examples:
 
 ```sql
 -- Generate a sequence of dates from 2010-01-01 to 2010-12-31
-select toDate('2010-01-01') + number as d FROM numbers(365);
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
 ```

@@ -3,7 +3,7 @@ Regular merge
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.tab)
         Indexes:
           Skip
@@ -23,7 +23,7 @@ Merge with materialize_skip_indexes_on_merge = 1
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.tab)
         Indexes:
           Skip
@@ -44,7 +44,7 @@ Materialize indexes explicitly
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.tab)
         Indexes:
           Skip
@@ -64,7 +64,7 @@ Merge after resetting materialize_skip_indexes_on_merge to default
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.tab)
         Indexes:
           Skip

@@ -42,7 +42,7 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     Blocks & query_plans_headers);
 
 /// Convert query node to ASTSelectQuery
-ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
 
 /// Convert query node to ASTSelectQuery for distributed processing
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
@@ -61,7 +61,8 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set);
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    bool use_column_identifier_as_action_node_name = true);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
@@ -107,5 +108,7 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 /// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 }

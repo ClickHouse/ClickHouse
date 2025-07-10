@@ -1,6 +1,6 @@
 index is applied while using column alias
 Expression ((Projection + Before ORDER BY))
-  Expression
+  Expression (WHERE)
     ReadFromMergeTree (default.t)
     Indexes:
       PrimaryKey
@@ -13,7 +13,7 @@ Expression ((Projection + Before ORDER BY))
         Parts: 0/1
         Granules: 0/8
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (default.t)
     Indexes:
       PrimaryKey

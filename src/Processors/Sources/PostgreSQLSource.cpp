@@ -1,5 +1,5 @@
-#include "PostgreSQLSource.h"
-#include "Common/Exception.h"
+#include <Processors/Sources/PostgreSQLSource.h>
+#include <Common/Exception.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>

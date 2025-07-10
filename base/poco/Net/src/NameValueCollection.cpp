@@ -106,8 +106,10 @@ std::vector<std::string> NameValueCollection::getAll(const std::string& name) co
 {
     std::vector<std::string> values;
     for (ConstIterator it = _map.find(name); it != _map.end(); it++)
-        if (it->first == name)
-            values.push_back(it->second);
+	if (it->first == name)
+		values.push_back(it->second);
+	else
+		break; // No more entries with the same name
     return values;
 }
 
@@ -121,6 +123,17 @@ bool NameValueCollection::has(const std::string& name) const
 NameValueCollection::ConstIterator NameValueCollection::find(const std::string& name) const
 {
 	return _map.find(name);
+}
+
+NameValueCollection::ConstIterator NameValueCollection::findLast(const std::string& name) const
+{
+	ConstIterator last = _map.end();
+	for (ConstIterator it = _map.find(name); it != _map.end(); it++)
+		if (it->first == name)
+			last = it;
+		else
+			break; // No more entries with the same name
+	return last;
 }
 
 

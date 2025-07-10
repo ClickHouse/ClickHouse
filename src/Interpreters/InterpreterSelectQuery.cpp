@@ -573,11 +573,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->hasExternalDynamicMetadata())
+        if (storage->updateExternalDynamicMetadataIfExists(context))
         {
-            storage->updateExternalDynamicMetadata(context);
             metadata_snapshot = storage->getInMemoryMetadataPtr();
         }
+
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
@@ -1908,7 +1908,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         joined_plan->getCurrentHeader(),
                         expressions.join,
                         settings[Setting::max_block_size],
-                        0,
+                        /* min_block_size_rows_ */ 0,
+                        /* min_block_size_bytes_ */ 0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
                         analysis_result.optimize_read_in_order,

@@ -21,6 +21,7 @@ def started_cluster(request):
             main_configs=["configs/named_collections.xml"],
             user_configs=["configs/users.xml"],
             with_mongo=True,
+            stay_alive=True,
         )
         cluster.start()
         yield cluster
@@ -43,11 +44,17 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     )
 
 
+def drop_mongo_collection_if_exists(db, collection_name):
+    if collection_name in db.list_collection_names():
+        db[collection_name].drop()
+
+
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -56,18 +63,32 @@ def test_simple_select(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        f"CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}')"
+        f"CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'simple_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
         node.query("SELECT sum(key) FROM simple_mongo_table")
-        == str(sum(range(0, 100))) + "\n"
+        == f"{str(99 * 100 // 2)}\n"
     )
     assert (
         node.query("SELECT data from simple_mongo_table where key = 42")
-        == hex(42 * 42) + "\n"
+        == f"{hex(42 * 42)}\n"
     )
+
+    system_warnings_query = "SELECT count() >= 1 FROM system.warnings WHERE message LIKE '%MongoDB%path%ignored%'"
+
+    # Need to restart to clear system.warning from previous run in flaky check
+    # FIXME: we can do `TRUNCATE` after https://github.com/ClickHouse/ClickHouse/pull/82087
+    node.restart_clickhouse()
+
+    assert node.query(system_warnings_query) == "0\n"
+    node.stop_clickhouse()
+    replace_definition_cmd = f"sed --follow-symlinks -i 's|mongo1|mongo1/ignored/path|' /var/lib/clickhouse/metadata/default/simple_mongo_table.sql"
+    node.exec_in_container(["bash", "-c", replace_definition_cmd])
+    node.start_clickhouse()
+    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
+    assert node.query(system_warnings_query) == "1\n"
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -78,6 +99,7 @@ def test_simple_select_uri(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -108,6 +130,9 @@ def test_simple_select_from_view(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
+    drop_mongo_collection_if_exists(db, "simple_table_view")
+
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -142,6 +167,8 @@ def test_arrays(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "arrays_table")
+
     arrays_mongo_table = db["arrays_table"]
     data = []
     for i in range(0, 100):
@@ -312,6 +339,7 @@ def test_complex_data_type(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "complex_table")
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -342,6 +370,7 @@ def test_secure_connection(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -371,6 +400,7 @@ def test_secure_connection_with_validation(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -392,6 +422,7 @@ def test_secure_connection_with_validation(started_cluster):
 def test_secure_connection_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "test_secure_connection_uri")
     simple_mongo_table = db["test_secure_connection_uri"]
     data = []
     for i in range(0, 100):
@@ -419,6 +450,7 @@ def test_secure_connection_uri(started_cluster):
 def test_secure_connection_uri_with_validation(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "test_secure_connection_uri")
     simple_mongo_table = db["test_secure_connection_uri"]
     data = []
     for i in range(0, 100):
@@ -443,6 +475,7 @@ def test_predefined_connection_configuration(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -465,6 +498,7 @@ def test_predefined_connection_configuration_uri(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -485,6 +519,7 @@ def test_predefined_connection_configuration_uri(started_cluster):
 def test_no_credentials(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -505,6 +540,7 @@ def test_no_credentials(started_cluster):
 def test_no_credentials_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -532,12 +568,14 @@ def test_auth_source(started_cluster):
         pwd=mongo_pass,
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
     )
+    drop_mongo_collection_if_exists(admin_db, "simple_table")
     simple_mongo_table = admin_db["simple_table"]
     data = []
     for i in range(0, 50):
         data.append({"key": i, "data": hex(i * i)})
     simple_mongo_table.insert_many(data)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -566,6 +604,7 @@ def test_missing_columns(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
@@ -602,6 +641,7 @@ def test_string_casting(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "strings_table")
     string_mongo_table = db["strings_table"]
     data = {
         "k_boolT": True,
@@ -682,6 +722,7 @@ def test_dates_casting(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "dates_table")
     dates_mongo_table = db["dates_table"]
     data = {
         "k_dateTime": datetime.datetime(1999, 2, 28, 11, 23, 16),
@@ -716,6 +757,7 @@ def test_order_by(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "sort_table")
     sort_mongo_table = db["sort_table"]
     data = []
     for i in range(1, 31):
@@ -765,6 +807,7 @@ def test_where(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "where_table")
     where_mongo_table = db["where_table"]
     data = []
     for i in range(1, 3):
@@ -869,6 +912,7 @@ def test_defaults(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "defaults_table")
     defaults_mongo_table = db["defaults_table"]
     defaults_mongo_table.insert_one({"key": "key"})
 
@@ -922,6 +966,7 @@ def test_nulls(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "nulls_table")
     nulls_mongo_table = db["nulls_table"]
     nulls_mongo_table.insert_one({"key": "key"})
 
@@ -974,6 +1019,7 @@ def test_oid(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "oid_table")
     oid_mongo_table = db["oid_table"]
     inserted_result = oid_mongo_table.insert_many(
         [
@@ -1051,6 +1097,7 @@ def test_uuid(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "uuid_table")
     uuid_mongo_table = db["uuid_table"]
     uuid_mongo_table.insert_many(
         [
@@ -1098,6 +1145,7 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "unsupported_clauses")
     unsupported_clauses_table = db["unsupported_clauses"]
 
     node = started_cluster.instances["node"]
@@ -1235,6 +1283,7 @@ def test_json_serialization(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "json_serialization_table")
     json_serialization_table = db["json_serialization_table"]
 
     date = datetime.datetime.strptime("2025-05-17 13:14:15", "%Y-%m-%d %H:%M:%S")

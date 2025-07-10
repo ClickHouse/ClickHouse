@@ -22,12 +22,7 @@ class ODBCDriver2BlockOutputFormat final : public IOutputFormat
 public:
     ODBCDriver2BlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "ODBCDriver2BlockOutputFormat"; }
-
-    std::string getContentType() const override
-    {
-        return "application/octet-stream";
-    }
+    String getName() const override { return "ODBCDriver2"; }
 
 private:
     void consume(Chunk) override;

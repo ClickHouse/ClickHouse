@@ -101,14 +101,18 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for non-void callbacks
     template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback)
+    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
-            FunctionResult res = callback();
-            callback = {};
+            FunctionResult res;
+            {
+                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+                res = callback();
+                callback = {};
+            }
             promise.set_value(std::move(res));
         }
         catch (...)
@@ -120,14 +124,17 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for void callbacks
     template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function && callback)
+    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
-            callback();
-            callback = {};
+            {
+                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+                callback();
+                callback = {};
+            }
             promise.set_value();
         }
         catch (...)
@@ -156,26 +163,24 @@ public:
         auto & task = tasks.emplace_back(std::make_shared<Task>());
         task->future = promise->get_future();
 
-        auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
         {
-            ThreadGroupSwitcher switcher(thread_group, my_thread_name.c_str());
-
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
             {
                 if (expected == CANCELLED)
                     return;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, my_thread_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, thread_name);
             }
 
             SCOPE_EXIT_SAFE(
             {
                 expected = RUNNING;
                 if (!task->state.compare_exchange_strong(expected, FINISHED))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, my_thread_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
             });
 
-            executeCallback(*promise, std::move(my_callback));
+            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
         };
 
         try

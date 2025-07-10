@@ -1329,10 +1329,7 @@
         <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events.
-
-        Note: session log has known security issues and should not be used in production.
-    -->
+    <!-- Session log. Stores user log in (successful or not) and log out events. -->
     <!-- <session_log>
         <database>system</database>
         <table>session_log</table>
