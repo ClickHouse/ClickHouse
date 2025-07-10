@@ -347,7 +347,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         if (!has_to)
         {
-            generateEngineDetails(rg, createViewRelation("", view_ncols), next, true, te);
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                next.cols.insert(i);
+            }
+            generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
         if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
