@@ -28,10 +28,10 @@ const auto highRange = [](RandomGenerator & rg)
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
 };
 
-const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(8192))); };
+const auto rowsRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(8192))); };
 
 const auto bytesRange = [](RandomGenerator & rg)
-{ return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
+{ return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },

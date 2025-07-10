@@ -180,14 +180,18 @@ public:
         {
             return max_val;
         }
-        if constexpr (std::is_same_v<T, uint32_t>)
+        if (tmp <= always_on_prob + always_off_prob + 0.01)
         {
-            std::uniform_int_distribution<uint32_t> d{min_val, max_val};
+            return std::numeric_limits<T>::max();
+        }
+        if constexpr (std::is_unsigned_v<T>)
+        {
+            std::uniform_int_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        if constexpr (std::is_same_v<T, double>)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            std::uniform_real_distribution<double> d{min_val, max_val};
+            std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
         chassert(0);

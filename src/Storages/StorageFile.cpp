@@ -2139,7 +2139,7 @@ void registerStorageFile(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::FILE,
+        .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 

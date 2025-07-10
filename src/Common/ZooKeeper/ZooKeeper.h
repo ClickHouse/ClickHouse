@@ -489,6 +489,7 @@ public:
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,

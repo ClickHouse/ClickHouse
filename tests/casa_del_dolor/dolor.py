@@ -218,9 +218,6 @@ parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
 parser.add_argument(
-    "--storage-limit", type=str, default="", help="Set a storage limit, e.g. '1g'"
-)
-parser.add_argument(
     "--without-keeper-map-prefix",
     action="store_false",
     dest="add_keeper_map_prefix",
@@ -304,7 +301,7 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 is_private_binary = False
 with open(current_server, "r+") as f:
     mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"s3_with_keeper") > -1
+    is_private_binary = mm.find(b"LRU_OVERCOMMIT") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
@@ -374,7 +371,6 @@ for i in range(0, len(args.replica_values)):
             with_mongo=args.with_mongodb,
             with_redis=args.with_redis,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
-            storage_opt=None if args.storage_limit == "" else args.storage_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
             env_variables=test_env_variables,

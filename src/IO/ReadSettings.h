@@ -97,22 +97,8 @@ struct ReadSettings
     std::optional<FileCacheUserInfo> filecache_user_info;
     bool enable_hdfs_pread = true;
 
-    ReadSettings adjustBufferSize(size_t file_size) const
-    {
-        ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
-        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
-        return res;
-    }
-
-    ReadSettings withNestedBuffer() const
-    {
-        ReadSettings res = *this;
-        res.remote_read_buffer_restrict_seek = true;
-        res.remote_read_buffer_use_external_buffer = true;
-        return res;
-    }
+    ReadSettings adjustBufferSize(size_t file_size) const;
+    ReadSettings withNestedBuffer() const;
 };
 
 ReadSettings getReadSettings();

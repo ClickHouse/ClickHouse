@@ -72,8 +72,9 @@ public:
 
     bool hasExplicitNames() const { return has_explicit_names; }
 
+    void updateHashImpl(SipHash & hash) const override;
+
     void forEachChild(const ChildCallback & callback) const override;
 };
 
 }
-

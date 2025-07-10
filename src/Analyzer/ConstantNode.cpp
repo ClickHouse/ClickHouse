@@ -137,11 +137,7 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 {
     constant_value.getColumn()->updateHashFast(hash_state);
     if (compare_options.compare_types)
-    {
-        auto type_name = constant_value.getType()->getName();
-        hash_state.update(type_name.size());
-        hash_state.update(type_name);
-    }
+        constant_value.getType()->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

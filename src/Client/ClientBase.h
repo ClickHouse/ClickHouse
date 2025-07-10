@@ -201,8 +201,9 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQuery();
+    bool receiveEndOfQueryForInsert();
     void cancelQuery();
+    void sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);

@@ -245,7 +245,7 @@ void OwnAsyncSplitChannel::close()
         {
             do
             {
-                text_log_queue.wakeUpAll();
+                text_log_queue.wakeUp();
             } while (!text_log_thread->tryJoin(100));
             text_log_thread.reset();
         }
@@ -256,7 +256,7 @@ void OwnAsyncSplitChannel::close()
             {
                 do
                 {
-                    queues[i]->wakeUpAll();
+                    queues[i]->wakeUp();
                 } while (!threads[i]->tryJoin(100));
             }
             threads[i].reset();
@@ -271,10 +271,10 @@ void OwnAsyncSplitChannel::close()
     }
 }
 
-class OwnMessageNotification : public Poco::Notification
+class AsyncLogMessage
 {
 public:
-    explicit OwnMessageNotification(const Message & msg_)
+    explicit AsyncLogMessage(const Message & msg_)
         : msg(msg_)
         , msg_ext(ExtendedLogMessage::getFrom(msg))
         , msg_thread_name(getThreadName())
@@ -296,17 +296,72 @@ public:
     std::string msg_thread_name;
 };
 
+
+void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
+{
+    std::unique_lock lock(mutex);
+    size_t current_size = message_queue.size();
+    if (unlikely(current_size > max_size || dropped_messages && current_size > max_size / 2))
+    {
+        dropped_messages++;
+        return;
+    }
+
+    if (unlikely(dropped_messages))
+    {
+        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        message_queue.push_back(std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING)));
+        dropped_messages = 0;
+    }
+
+    message_queue.push_back(message);
+    condition.notify_one();
+}
+
+AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
+{
+    std::unique_lock lock(mutex);
+    if (!message_queue.empty())
+    {
+        auto notification = message_queue.front();
+        message_queue.pop_front();
+        return notification;
+    }
+
+    condition.wait(lock);
+    if (message_queue.empty())
+        return nullptr;
+
+    auto notification = message_queue.front();
+    message_queue.pop_front();
+    return notification;
+}
+
+AsyncLogMessageQueue::Queue AsyncLogMessageQueue::getCurrentQueueAndClear()
+{
+    std::unique_lock lock(mutex);
+    Queue new_queue;
+    std::swap(message_queue, new_queue);
+    return new_queue;
+}
+
+void AsyncLogMessageQueue::wakeUp()
+{
+    std::unique_lock lock(mutex);
+    condition.notify_one();
+}
+
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
 {
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     try
     {
-        Poco::AutoPtr<OwnMessageNotification> notification;
+        AsyncLogMessagePtr notification;
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
             logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
-            notification = new OwnMessageNotification(msg);
+            notification = std::make_shared<AsyncLogMessage>(msg);
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
         }
 
@@ -315,13 +370,13 @@ void OwnAsyncSplitChannel::log(const Poco::Message & msg)
             return;
 
         if (!notification)
-            notification = new OwnMessageNotification(msg);
+            notification = std::make_shared<AsyncLogMessage>(msg);
 
         if (msg.getPriority() <= text_log_max_priority_loaded)
-            text_log_queue.enqueueNotification(notification);
+            text_log_queue.enqueueMessage(notification);
 
-        for (const auto & queue : queues)
-            queue->enqueueNotification(notification);
+        for (auto & queue : queues)
+            queue->enqueueMessage(notification);
     }
     catch (...)
     {
@@ -351,7 +406,7 @@ void OwnAsyncSplitChannel::flushTextLogs()
 
     /// We need to send an empty notification to wake up the thread if necessary
     flush_text_logs = true;
-    text_log_queue.wakeUpAll();
+    text_log_queue.wakeUp();
 
     /// Now we simply wait for the async thread to notify it has finished flushing
     flush_text_logs.wait(true, std::memory_order_seq_cst);
@@ -361,20 +416,20 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 {
     setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    Poco::AutoPtr<Poco::Notification> notification = queues[i]->waitDequeueNotification();
+    auto notification = queues[i]->waitDequeueMessage();
 
-    auto log_notification = [&](Poco::AutoPtr<Poco::Notification> & notif)
+    auto log_notification = [&](auto & async_message)
     {
-        if (!notif)
+        if (!async_message)
             return;
-        const OwnMessageNotification * own_notification = dynamic_cast<const OwnMessageNotification *>(notif.get());
+        const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get());
         {
             if (own_notification)
             {
                 if (channels[i].second)
                     channels[i].second->logExtended(own_notification->msg_ext); // extended child
                 else
-                    channels[i].first->log(*own_notification->msg_ext.base); // ordinary child
+                    channels[i].first->log(*(own_notification->msg_ext).base); // ordinary child
             }
         }
     };
@@ -382,7 +437,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     while (is_open)
     {
         log_notification(notification);
-        notification = queues[i]->waitDequeueNotification();
+        notification = queues[i]->waitDequeueMessage();
     }
 
     /// Flush everything before closing
@@ -402,9 +457,9 @@ void OwnAsyncSplitChannel::runTextLog()
 {
     setThreadName("AsyncTextLog", true);
 
-    auto log_notification = [](Poco::Notification * message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
+    auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        if (const auto * own_notification = dynamic_cast<const OwnMessageNotification *>(message))
+        if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(message.get()))
             logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
     };
 
@@ -421,7 +476,7 @@ void OwnAsyncSplitChannel::runTextLog()
         }
     };
 
-    Poco::AutoPtr<Poco::Notification> notification = text_log_queue.waitDequeueNotification();
+    auto notification = text_log_queue.waitDequeueMessage();
     while (is_open)
     {
         if (flush_text_logs)
@@ -446,7 +501,7 @@ void OwnAsyncSplitChannel::runTextLog()
             log_notification(notification, text_log_locked);
         }
 
-        notification = text_log_queue.waitDequeueNotification();
+        notification = text_log_queue.waitDequeueMessage();
     }
 
     /// We want to flush everything already in the queue before closing so all messages are logged
@@ -480,7 +535,7 @@ void OwnAsyncSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, cons
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
 
     channels.emplace_back(extended);
-    queues.emplace_back(std::make_unique<Poco::NotificationQueue>());
+    queues.emplace_back(std::make_unique<AsyncLogMessageQueue>());
     threads.emplace_back(nullptr);
     const size_t i = threads.size() - 1;
     runnables.emplace_back(new OwnRunnableForChannel(*this, i));

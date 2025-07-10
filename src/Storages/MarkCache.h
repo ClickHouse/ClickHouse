@@ -47,6 +47,16 @@ public:
     /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
 
+    MappedPtr get(const Key & key)
+    {
+        auto result = Base::get(key);
+        if (result)
+            ProfileEvents::increment(ProfileEvents::MarkCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
+        return result;
+    }
+
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {

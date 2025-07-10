@@ -34,6 +34,13 @@ DataTypeTime64::DataTypeTime64(UInt32 scale_, const TimezoneMixin & time_zone_in
             "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
+void DataTypeTime64::updateHashImpl(SipHash & hash) const
+{
+    hash.update(has_explicit_time_zone);
+    if (has_explicit_time_zone)
+        hash.update(time_zone.getTimeZone());
+}
+
 std::string DataTypeTime64::doGetName() const
 {
     if (!has_explicit_time_zone)

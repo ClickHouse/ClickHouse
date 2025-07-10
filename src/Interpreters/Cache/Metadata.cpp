@@ -756,7 +756,11 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
+    /// Reset reader to avoid
+    /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
+    file_segment.completePartAndResetDownloader();
+    file_segment.complete(/* allow_background_download */false);
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
@@ -922,6 +926,16 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
         it = removeFileSegment(file_segment->offset(), file_segment->lock());
     }
     return removed_all;
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return {};
+
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)

@@ -27,4 +27,14 @@ void NullWriteBuffer::nextImpl()
         ProfileEvents::increment(write_event, offset());
 }
 
+NullWriteBufferWithMemory::NullWriteBufferWithMemory(size_t size)
+    : BufferWithOwnMemory(size)
+{
+}
+
+NullWriteBufferWithMemory::~NullWriteBufferWithMemory()
+{
+    cancel();
+}
+
 }

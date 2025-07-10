@@ -135,7 +135,6 @@ void StorageSystemPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
-
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])

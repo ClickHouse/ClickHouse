@@ -24,6 +24,28 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
+    bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }
+
+    const String & getPartName() const override { return data_part->name; }
+
+    const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
+
+    Int64 getMinDataVersion() const override
+    {
+        return data_part->info.isPatch()
+            ? data_part->getSourcePartsSet().getMinDataVersion()
+            : data_part->info.getDataVersion();
+    }
+
+    Int64 getMaxDataVersion() const override
+    {
+        return data_part->info.isPatch()
+            ? data_part->getSourcePartsSet().getMaxDataVersion()
+            : data_part->info.getDataVersion();
+    }
+
+    IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }

@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -25,6 +26,13 @@ String DataTypeTime::doGetName() const
     WriteBufferFromOwnString out;
     out << "Time(" << quote << time_zone.getTimeZone() << ")";
     return out.str();
+}
+
+void DataTypeTime::updateHashImpl(SipHash & hash) const
+{
+    hash.update(has_explicit_time_zone);
+    if (has_explicit_time_zone)
+        hash.update(time_zone.getTimeZone());
 }
 
 bool DataTypeTime::equals(const IDataType & rhs) const

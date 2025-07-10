@@ -11,6 +11,7 @@ import pyarrow as pa
 import pytest
 import requests
 import urllib3
+import pytz
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -24,6 +25,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
@@ -443,3 +445,50 @@ def test_non_existing_tables(started_cluster):
     except Exception as e:
         assert "DB::Exception: Table" in str(e)
         assert "doesn't exist" in str(e)
+
+
+def test_timestamps(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="timestamp", field_type=TimestampType(), required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="timestamptz",
+            field_type=TimestamptzType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    data = [
+        {
+            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+            "timestamptz": datetime(
+                2024,
+                1,
+                1,
+                hour=12,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=pytz.timezone("UTC"),
+            )
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"

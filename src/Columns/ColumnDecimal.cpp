@@ -528,6 +528,13 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max, scale);
 }
 
+template <is_decimal T>
+void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;

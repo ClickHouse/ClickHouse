@@ -195,6 +195,10 @@ public:
 
     void reserve(bool need_replicate)
     {
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (lazy)
+            return;
+
         if (!max_joined_block_rows)
             return;
 
@@ -254,11 +258,12 @@ private:
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
 
-
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(rows_to_add);
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (!lazy)
+            columns.back()->reserve(rows_to_add);
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 

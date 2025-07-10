@@ -150,6 +150,11 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
+void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
+{
+    dictionary_type->updateHash(hash);
+}
+
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationLowCardinality>(dictionary_type);

@@ -869,7 +869,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Allocate new block number and check for duplicates
-        auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zookeeper, block_id_path); /// 1 RTT
+        auto block_data = serializeCommittingBlockOpToString(CommittingBlock::Op::NewPart);
+        auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zookeeper, block_id_path, "", block_data); /// 1 RTT
 
         ThreadFuzzer::maybeInjectSleep();
 

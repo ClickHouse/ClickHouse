@@ -69,6 +69,7 @@ void AddedColumns<true>::buildJoinGetOutput()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
+        col->reserve(col->size() + lazy_output.getRowCount());
         for (auto row_ref_i : lazy_output.getRowRefs())
         {
             if (!row_ref_i)
