@@ -47,7 +47,7 @@ target_include_directories(_nlohmann_json SYSTEM INTERFACE
 add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 
 # Add httplib from submodule (header-only)
-set(HTTPLIB_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/httplib")
+set(HTTPLIB_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/httplib-header-only")
 add_library(_httplib INTERFACE)
 target_include_directories(_httplib SYSTEM INTERFACE 
     "${HTTPLIB_SOURCE_DIR}"
@@ -60,7 +60,7 @@ target_link_libraries(_httplib INTERFACE
 add_library(httplib::httplib ALIAS _httplib)
 
 # Add concurrentqueue from submodule (header-only)
-set(CONCURRENTQUEUE_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/concurrentqueue")
+set(CONCURRENTQUEUE_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/concurrentqueue-header-only")
 add_library(_concurrentqueue INTERFACE)
 target_include_directories(_concurrentqueue SYSTEM INTERFACE 
     "${CONCURRENTQUEUE_SOURCE_DIR}"
