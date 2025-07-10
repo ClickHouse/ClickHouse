@@ -83,8 +83,17 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            getName(), object_storage, configuration, info, format_settings,
-            context, max_block_size, iterator_wrapper, parser_group, need_only_count);
+            getName(),
+            object_storage,
+            configuration,
+            info,
+            format_settings,
+            context,
+            max_block_size,
+            iterator_wrapper,
+            parser_group,
+            need_only_count,
+            i);
 
         pipes.emplace_back(std::move(source));
     }

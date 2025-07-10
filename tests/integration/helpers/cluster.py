@@ -51,18 +51,16 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import QueryRuntimeException
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
-
-from .client import Client
+from .client import Client, QueryRuntimeException
 from .config_cluster import *
+from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -475,6 +473,25 @@ class ClickHouseCluster:
         self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+
+        self.env_variables["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+        self.env_variables["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+        self.env_variables["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        self.env_variables["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+        self.env_variables["THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY"] = "0.01"
+        self.env_variables["THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY"] = "0.01"
+
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(

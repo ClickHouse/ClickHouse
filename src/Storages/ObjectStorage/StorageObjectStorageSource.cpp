@@ -79,7 +79,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserGroupPtr parser_group_,
-    bool need_only_count_)
+    bool need_only_count_,
+    size_t thread_order_number_)
     : ISource(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
@@ -91,13 +92,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , parser_group(std::move(parser_group_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1 /* max_threads */))
+          CurrentMetrics::StorageObjectStorageThreads,
+          CurrentMetrics::StorageObjectStorageThreadsActive,
+          CurrentMetrics::StorageObjectStorageThreadsScheduled,
+          1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
+    , thread_order_number(thread_order_number_)
 {
 }
 
@@ -218,8 +220,27 @@ void StorageObjectStorageSource::lazyInitialize()
         return;
 
     reader = createReader();
+
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource, lazyInitialize"),
+        "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
+        "thread_order_number: {}",
+        reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
+        (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
+                                                                     : std::numeric_limits<uint64_t>::max(),
+        reader.reader != nullptr,
+        reader.pipeline != nullptr,
+        reader.read_buf != nullptr,
+        reader.source != nullptr,
+        thread_order_number);
     if (reader)
+    {
         reader_future = createReaderAsync();
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, lazyInitialize"),
+            "Created reader future async, thread_order_number: {}",
+            thread_order_number);
+    }
     initialized = true;
 }
 
@@ -231,19 +252,26 @@ Chunk StorageObjectStorageSource::generate()
     while (true)
     {
         LOG_DEBUG(
-            &Poco::Logger::get("StorageObjectStorageSource, generate0"),
-            "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+            &Poco::Logger::get("StorageObjectStorageSource, generate"),
+            "Cycle beginning: got reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, "
+            "has_source: {}, "
+            "thread_order_number: {}",
             reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
             (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
                                                                          : std::numeric_limits<uint64_t>::max(),
             reader.reader != nullptr,
             reader.pipeline != nullptr,
             reader.read_buf != nullptr,
-            reader.source != nullptr);
+            reader.source != nullptr,
+            thread_order_number);
 
         bool is_cancelled = isCancelled();
 
-        LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSource, generate2"), "Checking if task is cancelled: {}", is_cancelled);
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, generate"),
+            "Checking if task is cancelled: {}, thread_order_number: {}",
+            is_cancelled,
+            thread_order_number);
 
         if (is_cancelled || !reader)
         {
@@ -255,9 +283,10 @@ Chunk StorageObjectStorageSource::generate()
         Chunk chunk;
         LOG_DEBUG(
             &Poco::Logger::get("StorageObjectStorageSource, generate"),
-            "Generating chunks from file with name: {}, object storage source: {}",
+            "Generating chunks from file with name: {}, object storage source: {}, thread_order_number: {}",
             reader.getObjectInfo()->getPath(),
-            configuration->getTypeName());
+            configuration->getTypeName(),
+            thread_order_number);
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
@@ -265,11 +294,12 @@ Chunk StorageObjectStorageSource::generate()
 
             LOG_DEBUG(
                 &Poco::Logger::get("StorageObjectStorageSource, generate"),
-                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}",
+                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}, thread_order_number: {}",
                 num_rows,
                 reader.getObjectInfo()->getPath(),
                 configuration->getTypeName(),
-                total_rows_in_file);
+                total_rows_in_file,
+                thread_order_number);
 
             size_t chunk_size = 0;
             if (const auto * input_format = reader.getInputFormat())
@@ -359,15 +389,17 @@ Chunk StorageObjectStorageSource::generate()
         reader = reader_future.get();
 
         LOG_DEBUG(
-            &Poco::Logger::get("StorageObjectStorageSource, generate1"),
-            "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+            &Poco::Logger::get("StorageObjectStorageSource, generate, end of cycle after future pulling"),
+            "Reader for object got from future: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
+            "thread_order_number: {}",
             reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
             (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
                                                                          : std::numeric_limits<uint64_t>::max(),
             reader.reader != nullptr,
             reader.pipeline != nullptr,
             reader.read_buf != nullptr,
-            reader.source != nullptr);
+            reader.source != nullptr,
+            thread_order_number);
 
 
         if (!reader)
@@ -377,6 +409,10 @@ Chunk StorageObjectStorageSource::generate()
         /// So wait until it will be freed before scheduling a new task.
         create_reader_pool->wait();
         reader_future = createReaderAsync();
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource, generate"),
+            "Created reader future async, thread_order_number: {}",
+            thread_order_number);
     }
 
     return {};
@@ -403,7 +439,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         log,
         max_block_size,
         parser_group,
-        need_only_count);
+        need_only_count,
+        thread_order_number);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -418,7 +455,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     FormatParserGroupPtr parser_group,
-    bool need_only_count)
+    bool need_only_count,
+    size_t thread_order_number)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -450,9 +488,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     LOG_DEBUG(
         &Poco::Logger::get("StorageObjectStorageSource, createReader"),
-        "Creating reader for object: {}, size: {}",
+        "Creating reader for object: {}, size: {}, thread_order_number: {}",
         object_info->getPath(),
-        object_info->metadata->size_bytes);
+        object_info->metadata->size_bytes,
+        thread_order_number);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -507,10 +546,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<size_t> assumed_size = dynamic_cast<ReadBufferFromFileBase *>(read_buf.get())->tryGetFileSize();
             LOG_DEBUG(
                 &Poco::Logger::get("StorageObjectStorageSource, createReader"),
-                "Creating read buffer for object: {}, has assumed size: {}, assumed size: {}",
+                "Creating read buffer for object: {}, has assumed size: {}, assumed size: {}, thread_order_number: {}",
                 object_info->getPath(),
                 assumed_size.has_value(),
-                assumed_size.value_or(0));
+                assumed_size.value_or(0),
+                thread_order_number);
         }
 
 
@@ -550,8 +590,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             LOG_DEBUG(
                 &Poco::Logger::get("StorageObjectStorageSource, createReader"),
-                "Adding position delete transformer for object: {}",
-                object_info->getPath());
+                "Adding position delete transformer for object: {}, thread_order_number: {}",
+                object_info->getPath(),
+                thread_order_number);
             builder.addSimpleTransform(
                 [&](const Block & header)
                 { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
@@ -566,9 +607,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         LOG_DEBUG(
             &Poco::Logger::get("StorageObjectStorageSource, createReader"),
-            "Has schema transformer {} for path {}",
+            "Has schema transformer {} for path {}, thread_order_number: {}",
             transformer != nullptr,
-            object_info->getPath());
+            object_info->getPath(),
+            thread_order_number);
 
         if (transformer)
         {
@@ -605,13 +647,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     LOG_DEBUG(
         &Poco::Logger::get("StorageObjectStorageSource, createReader"),
-        "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+        "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
+        "thread_order_number: {}",
         object_info->getPath(),
         object_info->metadata->size_bytes,
         current_reader != nullptr,
         pipeline != nullptr,
         read_buf != nullptr,
-        source != nullptr);
+        source != nullptr,
+        thread_order_number);
 
     return ReaderHolder(
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
@@ -625,14 +669,16 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
             auto real_reader = createReader();
             LOG_DEBUG(
                 &Poco::Logger::get("StorageObjectStorageSource, createReaderAsync"),
-                "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}",
+                "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
+                "thread_order_number: {}",
                 reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
                 (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
                                                                              : std::numeric_limits<uint64_t>::max(),
                 reader.reader != nullptr,
                 reader.pipeline != nullptr,
                 reader.read_buf != nullptr,
-                reader.source != nullptr);
+                reader.source != nullptr,
+                thread_order_number);
             return real_reader;
         },
         Priority{});

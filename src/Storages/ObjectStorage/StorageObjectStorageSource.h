@@ -39,7 +39,8 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserGroupPtr parser_group_,
-        bool need_only_count_);
+        bool need_only_count_,
+        size_t thread_order_number_);
 
     ~StorageObjectStorageSource() override;
 
@@ -125,6 +126,8 @@ protected:
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
+    size_t thread_order_number;
+
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
@@ -138,7 +141,8 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         FormatParserGroupPtr parser_group,
-        bool need_only_count);
+        bool need_only_count,
+        size_t thread_order_number);
 
     ReaderHolder createReader();
 
