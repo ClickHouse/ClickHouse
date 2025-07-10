@@ -2,7 +2,7 @@
 
 #include <Poco/Redis/Redis.h>
 #include <Storages/IStorage.h>
-#include <Storages/RedisCommon.h>
+#include <Common/RedisCommon.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MutationCommands.h>

@@ -5,7 +5,7 @@
 
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
-#include <Storages/RedisCommon.h>
+#include <Common/RedisCommon.h>
 
 namespace DB
 {
