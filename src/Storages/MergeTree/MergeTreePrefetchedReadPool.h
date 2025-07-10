@@ -72,10 +72,7 @@ private:
     {
         using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
-            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
-        {
-        }
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_);
 
         ~ThreadTask()
         {
@@ -90,6 +87,7 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };
