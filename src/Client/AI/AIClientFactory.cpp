@@ -14,27 +14,19 @@ ai::Client AIClientFactory::createClient(const AIConfiguration & config)
 {
     if (config.provider == "openai")
     {
-#ifdef AI_SDK_HAS_OPENAI
         // If API key is empty, create_client() will read from OPENAI_API_KEY env var
         if (config.api_key.empty())
             return ai::openai::create_client();
         else
             return ai::openai::create_client(config.api_key);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OpenAI support not compiled in ai-sdk-cpp");
-#endif
     }
     else if (config.provider == "anthropic")
     {
-#ifdef AI_SDK_HAS_ANTHROPIC
         // If API key is empty, create_client() will read from ANTHROPIC_API_KEY env var
         if (config.api_key.empty())
             return ai::anthropic::create_client();
         else
             return ai::anthropic::create_client(config.api_key);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Anthropic support not compiled in ai-sdk-cpp");
-#endif
     }
     else
     {
@@ -52,8 +44,6 @@ AIConfiguration AIClientFactory::loadConfiguration(const Poco::Util::AbstractCon
 
     if (config.has("ai.provider"))
         ai_config.provider = config.getString("ai.provider");
-    else if (config.has("ai.model_provider"))
-        ai_config.provider = config.getString("ai.model_provider");
 
     if (config.has("ai.model"))
         ai_config.model = config.getString("ai.model");

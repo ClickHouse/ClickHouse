@@ -25,6 +25,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
@@ -3003,7 +3004,8 @@ void ClientBase::initAIProvider()
     }
     catch (const std::exception & e)
     {
-        error_stream << "Failed to initialize AI SQL generator: " << e.what() << std::endl;
+        auto logger = getLogger("ClientBase");
+        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
     }
 }
 

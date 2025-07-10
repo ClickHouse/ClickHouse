@@ -74,20 +74,6 @@ TEST(AIClientFactory, EmptyAPIKey)
     }
 }
 
-/// Test configuration with alternative provider key
-TEST(AIClientFactory, LoadConfigurationAlternativeKey)
-{
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration();
-    
-    // Use model_provider instead of provider
-    config->setString("ai.model_provider", "openai");
-    config->setString("ai.api_key", "test_key");
-    
-    AIConfiguration ai_config = AIClientFactory::loadConfiguration(*config);
-    
-    EXPECT_EQ("openai", ai_config.provider);
-}
-
 /// Test configuration validation
 TEST(AIClientFactory, LoadConfigurationInvalidProvider)
 {

@@ -291,7 +291,7 @@ ORDER BY order_count DESC
 
 AI SQL generation is configured through a configuration file. An API key must be provided in the configuration.
 
-#### Configuration File
+#### Configuration File {#ai-sql-generation-configuration-file}
 
 Configure AI settings in your ClickHouse Client configuration file:
 
@@ -301,7 +301,7 @@ Configure AI settings in your ClickHouse Client configuration file:
 <config>
     <ai>
         <api_key>your-api-key-here</api_key>  <!-- Required -->
-        <model_provider>openai</model_provider>  <!-- Required: openai or anthropic -->
+        <provider>openai</provider>  <!-- Required: openai or anthropic -->
         <model>gpt-4o</model>
         <enable_schema_access>true</enable_schema_access>
         <temperature>0.0</temperature>
@@ -316,7 +316,7 @@ Configure AI settings in your ClickHouse Client configuration file:
 ```yaml
 ai:
   api_key: your-api-key-here  # Required
-  model_provider: openai  # Required: openai or anthropic
+  provider: openai  # Required: openai or anthropic
   model: gpt-4o
   
   # Enable schema access - allows AI to query database/table information
