@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t_rmt_target SYNC;
 CREATE TABLE t_mt_source (k UInt64, v String) ENGINE = MergeTree() ORDER BY k;
 CREATE TABLE t_rmt_target (k UInt64, v String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt_target', 'r1') ORDER BY ();
 
-INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.numbers LIMIT 1e6;
+INSERT INTO t_mt_source SELECT number as k, toString(number) as v FROM system.numbers_mt LIMIT 1e5;
 select 'mt source table count()', count() from t_mt_source;
 
 SET enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
