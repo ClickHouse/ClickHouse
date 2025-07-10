@@ -28,8 +28,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
-    extern const int NOT_IMPLEMENTED;
-    
 }
 
 namespace S3
@@ -104,16 +102,16 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyle ur
     if (uri_style == S3UriStyle::AUTO)
     {
         if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, true) && !tryInitPathStyle())
-            {
-                /// Custom endpoint, e.g. a public domain of Cloudflare R2,
-                /// which could be served by a custom server-side code.
-                storage_name = "S3";
-                bucket = "default";
-                is_virtual_hosted_style = false;
-                endpoint = uri.getScheme() + "://" + uri.getAuthority();
-                if (!uri.getPath().empty())
-                    key = uri.getPath().substr(1);
-            }
+        {
+            /// Custom endpoint, e.g. a public domain of Cloudflare R2,
+            /// which could be served by a custom server-side code.
+            storage_name = "S3";
+            bucket = "default";
+            is_virtual_hosted_style = false;
+            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+            if (!uri.getPath().empty())
+                key = uri.getPath().substr(1);
+        }
     }
     else if (uri_style == S3UriStyle::VIRTUAL_HOSTED)
     {
@@ -128,7 +126,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, S3UriStyle ur
     }
     else
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "URI Style Indetifier unknown type.");
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "URI Style Indetifier unknown type.");
     }
 
     validateBucket(bucket, uri);

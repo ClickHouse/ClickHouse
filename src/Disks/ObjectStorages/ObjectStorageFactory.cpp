@@ -26,6 +26,7 @@
 #include <Common/Macros.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <IO/S3Settings.h>
 
 #include <filesystem>
 
