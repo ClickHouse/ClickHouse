@@ -334,7 +334,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const DB::Strings & choices = {"'wait'", "'allocate_new_bypassing_pool'"};
+             const DB::Strings & choices = {"'wait'", "'allocate_bypassing_pool'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -465,6 +465,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_skip_not_found_url_for_globs", trueOrFalseSettingNoOracle},
     {"http_wait_end_of_query", trueOrFalseSettingNoOracle},
     {"http_write_exception_in_output_format", trueOrFalseSettingNoOracle},
+    /// ClickHouse cloud setting
+    {"ignore_cold_parts_seconds",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},
     {"ignore_materialized_views_with_dropped_target_table", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_access_entities_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
@@ -554,7 +557,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_tsv_use_best_effort_in_schema_inference", trueOrFalseSettingNoOracle},
     {"input_format_values_accurate_types_of_literals", trueOrFalseSettingNoOracle},
     {"input_format_values_deduce_templates_of_expressions", trueOrFalseSettingNoOracle},
-    {"input_format_values_interpret_expressions", trueOrFalseSettingNoOracle},
     {"insert_allow_materialized_columns", trueOrFalseSettingNoOracle},
     {"insert_deduplicate", trueOrFalseSettingNoOracle},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
@@ -1129,6 +1131,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"input_format_values_interpret_expressions", trueOrFalseSettingNoOracle},
              {"insert_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
              {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability", CHSetting(probRange, {}, false)},
