@@ -234,5 +234,6 @@
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/b176fa241d4b0cd58aecd17eece111e376567e6c"; flake = false; };
+    contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/d9fd33a580a035d10f088536c707e63b96b152c2"; flake = false; };
   };
 }
