@@ -15,7 +15,7 @@ namespace DB
  * It also offers some helper APIs like `getFormatChunk` and `getFormatHeader`. Required mostly because of `hive` strategy
  * since the default behavior is not to write partition columns in the files and rely only on the file path.
  */
-struct PartitionStrategy
+struct IPartitionStrategy
 {
     struct PartitionExpressionActionsAndColumnName
     {
@@ -23,9 +23,9 @@ struct PartitionStrategy
         std::string column_name;
     };
 
-    PartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
+    IPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
-    virtual ~PartitionStrategy() = default;
+    virtual ~IPartitionStrategy() = default;
 
     virtual ColumnPtr computePartitionKey(const Chunk & chunk) = 0;
 
@@ -57,7 +57,7 @@ struct PartitionStrategyFactory
         HIVE
     };
 
-    static std::shared_ptr<PartitionStrategy> get(
+    static std::shared_ptr<IPartitionStrategy> get(
         StrategyType strategy,
         ASTPtr partition_by,
         const Block & sample_block,
@@ -67,7 +67,7 @@ struct PartitionStrategyFactory
         bool contains_partition_wildcard,
         bool partition_columns_in_data_file);
 
-    static std::shared_ptr<PartitionStrategy> get(
+    static std::shared_ptr<IPartitionStrategy> get(
         StrategyType strategy,
         ASTPtr partition_by,
         const NamesAndTypesList & partition_columns,
@@ -83,7 +83,7 @@ struct PartitionStrategyFactory
  * Path for reading is an identity function
  * Path for writing replaces the `{_partition_id}` wildcard with the partition key.
  */
-struct WildcardPartitionStrategy : PartitionStrategy
+struct WildcardPartitionStrategy : IPartitionStrategy
 {
     WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
@@ -100,7 +100,7 @@ private:
  * Path for reading appends recursive reading + file extension (e.g **.parquet)
  * Path for writing appends partition key, snowflakeid as file name and file extension (e.g, table_root/key1=value1/key2=value2/1933642830979268608.parquet).
  */
-struct HiveStylePartitionStrategy : PartitionStrategy
+struct HiveStylePartitionStrategy : IPartitionStrategy
 {
     HiveStylePartitionStrategy(
         KeyDescription partition_key_description_,

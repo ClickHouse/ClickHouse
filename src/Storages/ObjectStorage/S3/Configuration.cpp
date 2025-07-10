@@ -22,7 +22,7 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/PartitionStrategy.h>
+#include <Storages/IPartitionStrategy.h>
 
 namespace DB
 {

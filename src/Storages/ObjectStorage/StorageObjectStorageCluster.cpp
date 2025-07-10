@@ -9,7 +9,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Storages/PartitionStrategy.h>
+#include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>

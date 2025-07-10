@@ -16,8 +16,7 @@
 
 #include <memory>
 
-#include "Storages/PartitionStrategy.h"
-
+#include <Storages/IPartitionStrategy.h>
 namespace DB
 {
 class ReadBufferIterator;
@@ -25,7 +24,7 @@ class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
-struct PartitionStrategy;
+struct IPartitionStrategy;
 
 namespace ErrorCodes
 {
@@ -319,7 +318,7 @@ public:
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
-    std::shared_ptr<PartitionStrategy> partition_strategy;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

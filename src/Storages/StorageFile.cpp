@@ -74,9 +74,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include "DataTypes/DataTypeString.h"
-#include "DataTypes/DataTypeLowCardinality.h"
-#include "Formats/EscapingRuleUtils.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace ProfileEvents
 {
@@ -1544,7 +1542,7 @@ Chunk StorageFileSource::generate()
                     .last_modified = current_file_last_modified
                 }, getContext());
 
-            // the order is important, it must be added after virtual columns..
+            // The order is important, it must be added after virtual columns..
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(current_path);
@@ -1974,7 +1972,7 @@ class PartitionedStorageFileSink : public PartitionedSink
 {
 public:
     PartitionedStorageFileSink(
-        std::shared_ptr<PartitionStrategy> partition_strategy_,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
@@ -2071,7 +2069,7 @@ SinkToStoragePtr StorageFile::write(
             format_name,
             is_path_with_globs,
             has_wildcards,
-            true);
+            /* partition_columns_in_data_file */true);
 
         return std::make_shared<PartitionedStorageFileSink>(
             partition_strategy,

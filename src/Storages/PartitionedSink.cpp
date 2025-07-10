@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 PartitionedSink::PartitionedSink(
-    std::shared_ptr<PartitionStrategy> partition_strategy_,
+    std::shared_ptr<IPartitionStrategy> partition_strategy_,
     ContextPtr context_,
     const Block & source_header_)
     : SinkToStorage(source_header_)

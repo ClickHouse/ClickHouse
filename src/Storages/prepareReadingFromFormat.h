@@ -30,7 +30,10 @@ namespace DB
 
     struct PrepareReadingFromFormatHiveParams
     {
+        /// Columns which exist inside data file.
         NamesAndTypesList file_columns;
+        /// Columns which are read from path to data file.
+        /// (Hive partition columns).
         std::unordered_map<std::string, NameAndTypePair> hive_partition_columns_to_read_from_file_path_map;
     };
 

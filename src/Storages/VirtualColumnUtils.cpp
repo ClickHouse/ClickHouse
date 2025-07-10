@@ -232,7 +232,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), !hive_columns.empty());
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), /* parse_hive_columns */ !hive_columns.empty());
 
     filterBlockWithExpression(actions, block);
 

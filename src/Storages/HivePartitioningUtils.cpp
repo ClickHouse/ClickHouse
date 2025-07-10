@@ -4,7 +4,6 @@
 
 #include <Formats/EscapingRuleUtils.h>
 
-#include "DataTypes/DataTypeLowCardinality.h"
 #include <Formats/FormatFactory.h>
 
 namespace DB

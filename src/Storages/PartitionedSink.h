@@ -8,7 +8,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/PartitionStrategy.h>
+#include <Storages/IPartitionStrategy.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
     PartitionedSink(
-        std::shared_ptr<PartitionStrategy> partition_strategy_,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         ContextPtr context_,
         const Block & source_header_);
 
@@ -41,7 +41,7 @@ public:
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
 protected:
-    std::shared_ptr<PartitionStrategy> partition_strategy;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 private:
     ContextPtr context;

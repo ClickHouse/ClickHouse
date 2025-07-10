@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
@@ -55,9 +56,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-
-#include "Formats/EscapingRuleUtils.h"
-#include "Interpreters/convertFieldToType.h"
 
 namespace ProfileEvents
 {
@@ -503,7 +501,7 @@ Chunk StorageURLSource::generate()
                 },
                 getContext());
 
-            // the order is important, it must be added after virtual columns..
+            // The order is important, hive partition columns must be added after virtual columns
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 auto path = curr_uri.getPath();
@@ -756,7 +754,7 @@ class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
     PartitionedStorageURLSink(
-        std::shared_ptr<PartitionStrategy> partition_strategy_,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const String & uri_,
         const String & format_,
         const std::optional<FormatSettings> & format_settings_,
@@ -1429,7 +1427,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_name,
             urlWithGlobs(uri),
             has_wildcards,
-            true);
+            /* partition_columns_in_data_file */true);
 
         return std::make_shared<PartitionedStorageURLSink>(
             partition_strategy,

@@ -1,4 +1,4 @@
-#include <Storages/PartitionStrategy.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeRewriter.h>
@@ -22,6 +22,10 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
+    /// Creates Expression actions to create hive path part of format
+    ///  `partition_column_1=toString(partition_value_expr_1)/ ... /partition_column_N=toString(partition_value_expr_N)/`
+    /// for given partition columns list and a partition by AST.
+    /// The actions will be computed over chunk to convert partition values to string values.
     HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName buildExpressionHive(
         ASTPtr partition_by,
         const NamesAndTypesList & partition_columns,
@@ -83,7 +87,7 @@ namespace
         return result;
     }
 
-    std::shared_ptr<PartitionStrategy> createHivePartitionStrategy(
+    std::shared_ptr<IPartitionStrategy> createHivePartitionStrategy(
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
@@ -138,7 +142,7 @@ namespace
             partition_columns_in_data_file);
     }
 
-    std::shared_ptr<PartitionStrategy> createWildcardPartitionStrategy(
+    std::shared_ptr<IPartitionStrategy> createWildcardPartitionStrategy(
         ASTPtr partition_by,
         const Block & sample_block,
         ContextPtr context,
@@ -172,22 +176,22 @@ namespace
     }
 }
 
-PartitionStrategy::PartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
+IPartitionStrategy::IPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
 : partition_key_description(partition_key_description_), sample_block(sample_block_), context(context_)
 {
 }
 
-NamesAndTypesList PartitionStrategy::getPartitionColumns() const
+NamesAndTypesList IPartitionStrategy::getPartitionColumns() const
 {
     return partition_key_description.sample_block.getNamesAndTypesList();
 }
 
-const KeyDescription & PartitionStrategy::getPartitionKeyDescription() const
+const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
 {
     return partition_key_description;
 }
 
-std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
+std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
                                                                  const Block & sample_block,
                                                                  ContextPtr context,
@@ -217,7 +221,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
                 magic_enum::enum_name(strategy));
 }
 
-std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
+std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
                                                                  const NamesAndTypesList & partition_columns,
                                                                  ContextPtr context,
@@ -236,7 +240,7 @@ std::shared_ptr<PartitionStrategy> PartitionStrategyFactory::get(StrategyType st
 }
 
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
-    : PartitionStrategy(partition_key_description_, sample_block_, context_)
+    : IPartitionStrategy(partition_key_description_, sample_block_, context_)
 {
     ASTs arguments(1, partition_key_description_.definition_ast);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
@@ -273,7 +277,7 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     ContextPtr context_,
     const std::string & file_format_,
     bool partition_columns_in_data_file_)
-    : PartitionStrategy(partition_key_description_, sample_block_, context_),
+    : IPartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
     partition_columns_in_data_file(partition_columns_in_data_file_)
 {
