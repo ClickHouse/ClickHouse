@@ -282,9 +282,9 @@ QueryPlan decorrelateQueryPlan(
 
         JoinExpressionActions join_expression_actions(lhs_plan_header, decorrelated_plan_header);
 
-        Names output_columns;
-        output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
-        output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader().getNames());
+        NameSet output_columns;
+        output_columns.insert_range(lhs_plan_header.getNames());
+        output_columns.insert_range(node->step->getOutputHeader().getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
             lhs_plan_header,
