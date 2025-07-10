@@ -38,7 +38,13 @@ namespace
         if (const auto * tuple_function = partition_by->as<ASTFunction>();
             tuple_function && tuple_function->name == "tuple")
         {
-            chassert(tuple_function->arguments->children.size() == partition_columns.size());
+            if (tuple_function->arguments->children.size() == partition_columns.size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "The partition by expression has a different number of columns than what is expected by ClickHouse."
+                    "This is a bug.");
+            }
 
             std::size_t index = 0;
 
@@ -55,7 +61,12 @@ namespace
         }
         else
         {
-            chassert(partition_columns.size() == 1);
+            if (partition_columns.size() != 1)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected partition expression to contain a single argument, got {} instead", partition_columns.size());
+            }
 
             ASTs to_string_args = {1, partition_by};
             concat_args.push_back(std::make_shared<ASTLiteral>(partition_columns.front().name + "="));
@@ -105,7 +116,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", "hive");
         }
 
-        if (file_format.empty())
+        if (file_format.empty() || file_format == "auto")
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File format can't be empty for hive style partitioning");
         }
@@ -200,25 +211,24 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                                                                  bool contains_partition_wildcard,
                                                                  bool partition_columns_in_data_file)
 {
-    if (strategy == StrategyType::HIVE)
+    switch (strategy)
     {
-        return createHivePartitionStrategy(
-            partition_by,
-            sample_block,
-            context,
-            file_format,
-            globbed_path,
-            partition_columns_in_data_file);
+        case StrategyType::WILDCARD:
+            return createWildcardPartitionStrategy(
+                partition_by,
+                sample_block,
+                context,
+                contains_partition_wildcard,
+                partition_columns_in_data_file);
+        case StrategyType::HIVE:
+            return createHivePartitionStrategy(
+                partition_by,
+                sample_block,
+                context,
+                file_format,
+                globbed_path,
+                partition_columns_in_data_file);
     }
-
-    if (strategy == StrategyType::WILDCARD)
-    {
-        return createWildcardPartitionStrategy(partition_by, sample_block, context, contains_partition_wildcard, partition_columns_in_data_file);
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unknown partitioning style '{}'",
-                magic_enum::enum_name(strategy));
 }
 
 std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
@@ -348,7 +358,13 @@ Chunk HiveStylePartitionStrategy::getFormatChunk(const Chunk & chunk)
         return result;
     }
 
-    chassert(chunk.getColumns().size() == sample_block.columns());
+    if (chunk.getNumColumns() != sample_block.columns())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Incorrect number of columns in chunk. Expected {}, found {}",
+            sample_block.columns(), chunk.getNumColumns());
+    }
 
     for (size_t i = 0; i < sample_block.columns(); i++)
     {

@@ -117,8 +117,8 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
     Block getFormatHeader() override;
 
 private:
-    std::string file_format;
-    bool partition_columns_in_data_file;
+    const std::string file_format;
+    const bool partition_columns_in_data_file;
     std::unordered_set<std::string> partition_columns_name_set;
     PartitionExpressionActionsAndColumnName actions_with_column_name;
     Block block_without_partition_columns;
