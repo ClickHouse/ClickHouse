@@ -1,3 +1,5 @@
+/// Example taken from https://github.com/googleapis/google-cloud-cpp/tree/main/google/cloud/storage#quickstart
+
 #include "google/cloud/storage/client.h"
 #include <iostream>
 #include <string>
