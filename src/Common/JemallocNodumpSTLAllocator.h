@@ -71,26 +71,28 @@ bool operator !=(const JemallocNodumpSTLAllocator<T> & a, const JemallocNodumpST
 
 namespace DB
 {
-    using NoDumpCharAllocator =
+
+using NoDumpCharAllocator =
 #if USE_JEMALLOC
-        JemallocNodumpSTLAllocator<char>
+    JemallocNodumpSTLAllocator<char>
 #else
-        std::allocator<char>
+    std::allocator<char>
 #endif
     ;
 
-    /// Use for any sensitive data that needs to be excluded from core dumps.
-    using NoDumpString = std::basic_string<
-        char,
-        std::char_traits<char>,
-        NoDumpCharAllocator
-    >;
+/// Use for any sensitive data that needs to be excluded from core dumps.
+using NoDumpString = std::basic_string<
+    char,
+    std::char_traits<char>,
+    NoDumpCharAllocator
+>;
 
-    inline NoDumpString toNoDumpString(std::string s)
-    {
-        return NoDumpString(
-            s,
-            NoDumpCharAllocator()
-        );
-    }
+inline NoDumpString toNoDumpString(std::string s)
+{
+    return NoDumpString(
+        s,
+        NoDumpCharAllocator()
+    );
+}
+
 }
