@@ -2,6 +2,9 @@
 
 #include "config.h"
 
+#include <string>
+#include <memory>
+
 #if USE_JEMALLOC
 
 #include <limits>
