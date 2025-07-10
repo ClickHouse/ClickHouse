@@ -541,7 +541,14 @@ bool StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
 {
     if (pure_storage)
         return pure_storage->updateExternalDynamicMetadataIfExists(context);
-    return false;
+    return IStorageCluster::updateExternalDynamicMetadataIfExists(context);
+}
+
+StorageMetadataPtr StorageObjectStorageCluster::getInMemoryMetadataPtr() const
+{
+    if (pure_storage)
+        return pure_storage->getInMemoryMetadataPtr();
+    return IStorageCluster::getInMemoryMetadataPtr();
 }
 
 }

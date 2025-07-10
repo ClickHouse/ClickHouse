@@ -51,6 +51,8 @@ public:
 
     bool updateExternalDynamicMetadataIfExists(ContextPtr context) override;
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
