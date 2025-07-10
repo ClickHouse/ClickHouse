@@ -43,6 +43,23 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+
+[ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is a powerful open-source web application for visualizing ClickHouse table relationships using Mermaid.js diagrams. Browse databases and tables with an intuitive interface, explore table metadata with optional row counts and size information, and export interactive schema diagrams.
+
+Features:
+
+- Browse ClickHouse databases and tables with an intuitive interface
+- Visualize table relationships with Mermaid.js diagrams
+- Color-coded icons matching table types for better visualization
+- View direction of data flow between tables
+- Export diagrams as standalone HTML files
+- Toggle metadata visibility (table rows and size information)
+- Secure connection to ClickHouse with TLS support
+- Responsive web interface for all devices
+
+[ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
@@ -270,6 +287,22 @@ Features:
 - Translates chart requests from the native Kibana UI into ClickHouse query syntax.
 - Supports advanced features such as sampling and caching to enhance query performance.
 - Minimizes the learning cost for users after migrating from ElasticSearch to ClickHouse.
+
+### Telescope {#telescope}
+
+[Telescope](https://iamtelescope.net/) is a modern web interface for exploring logs stored in ClickHouse. It provides a user-friendly UI for querying, visualizing, and managing log data with fine-grained access control.
+
+Features:
+
+- Clean, responsive UI with powerful filters and customizable field selection.
+- FlyQL syntax for intuitive and expressive log filtering.
+- Time-based graph with group-by support, including nested JSON, Map, and Array fields.
+- Optional raw SQL `WHERE` query support for advanced filtering (with permission checks).
+- Saved Views: persist and share custom UI configurations for queries and layout.
+- Role-based access control (RBAC) and GitHub authentication integration.
+- No extra agents or components required on the ClickHouse side.
+
+[Telescope Source Code](https://github.com/iamtelescope/telescope) · [Live Demo](https://demo.iamtelescope.net)
 
 ## Commercial {#commercial}
 

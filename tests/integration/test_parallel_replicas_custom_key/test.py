@@ -88,6 +88,7 @@ def test_parallel_replicas_custom_key_distributed(
                 "enable_parallel_replicas": 1,
                 "parallel_replicas_mode": parallel_replicas_mode,
                 "prefer_localhost_replica": 0,
+                "serialize_query_plan": 0,
             },
         )
         == expected_result
@@ -139,6 +140,7 @@ def test_parallel_replicas_custom_key_mergetree(
                 "parallel_replicas_mode": parallel_replicas_mode,
                 "parallel_replicas_for_non_replicated_merge_tree": 1,
                 "cluster_for_parallel_replicas": cluster,
+                "serialize_query_plan": 0,
             },
         )
         == expected_result
@@ -185,6 +187,7 @@ def test_parallel_replicas_custom_key_replicatedmergetree(
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_mode": parallel_replicas_mode,
                 "cluster_for_parallel_replicas": cluster,
+                "serialize_query_plan": 0,
             },
         )
         == expected_result

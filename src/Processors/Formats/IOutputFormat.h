@@ -54,9 +54,6 @@ public:
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 
-    /// Content-Type to set when sending HTTP response.
-    virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
-
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
     /// Compatibility with old interface.

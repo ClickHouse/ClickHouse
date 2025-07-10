@@ -17,7 +17,7 @@ public:
         ObjectStorageQueueMetadataPtr metadata,
         const StorageID & storage_id);
 
-    void remove(const std::string & zookeeper_path, const StorageID & storage_id);
+    void remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered);
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 

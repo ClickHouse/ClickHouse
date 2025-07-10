@@ -8,8 +8,9 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -32,7 +33,8 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
-        LoadingStrictnessLevel mode);
+        LoadingStrictnessLevel mode,
+        bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
 
@@ -66,6 +68,21 @@ public:
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
 
+    /// Generate id for the S3(Azure/etc)Queue commit.
+    /// Used for system.s3(azure/etc)_queue_log.
+    static UInt64 generateCommitID();
+
+    static String chooseZooKeeperPath(
+        const ContextPtr & context_,
+        const StorageID & table_id,
+        const Settings & settings,
+        const ObjectStorageQueueSettings & queue_settings,
+        UUID database_uuid = UUIDHelpers::Nil);
+
+    static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
+
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -93,20 +110,21 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    BackgroundSchedulePoolTaskHolder task;
-    std::atomic<bool> stream_cancelled{false};
-    UInt64 reschedule_processing_interval_ms;
+    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
 
+    mutable std::mutex streaming_mutex;
+    std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
+    std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
+
     LoggerPtr log;
 
     void startup() override;
     void shutdown(bool is_drop) override;
-    void drop() override;
 
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
@@ -130,16 +148,20 @@ private:
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
-    void threadFunc();
+    void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews();
+    bool streamToViews(size_t streaming_tasks_index);
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
+
+    const bool can_be_moved_between_databases;
+    const bool keep_data_in_keeper;
 };
 
 }

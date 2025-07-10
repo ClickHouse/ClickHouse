@@ -5,15 +5,13 @@ namespace DB
 {
 namespace
 {
-
 struct NameBase58Decode
 {
     static constexpr auto name = "base58Decode";
 };
 
-using Base58DecodeImpl = Base58Decode<NameBase58Decode, Base58DecodeErrorHandling::ThrowException>;
-using FunctionBase58Decode = FunctionBase58Conversion<Base58DecodeImpl>;
-
+using Base58DecodeImpl = BaseXXDecode<Base58DecodeTraits, NameBase58Decode, BaseXXDecodeErrorHandling::ThrowException>;
+using FunctionBase58Decode = FunctionBaseXXConversion<Base58DecodeImpl>;
 }
 
 REGISTER_FUNCTION(Base58Decode)

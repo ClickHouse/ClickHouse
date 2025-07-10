@@ -5,14 +5,12 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -38,6 +36,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ErrorCodes
@@ -96,6 +95,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     Settings subquery_settings = data.getContext()->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 1;
     subquery_settings[Setting::extremes] = false;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     subquery_context->setSettings(subquery_settings);
 
     if (subquery_context->hasQueryContext())

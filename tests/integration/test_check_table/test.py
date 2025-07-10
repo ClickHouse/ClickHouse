@@ -395,7 +395,7 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
             query_id,
         )
 
-        cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+        cluster.kill_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
         err = node1.query_and_get_error(
             f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
         )

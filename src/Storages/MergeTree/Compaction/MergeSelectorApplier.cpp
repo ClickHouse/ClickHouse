@@ -1,7 +1,10 @@
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 
 #include <Common/logger_useful.h>
 
@@ -27,6 +30,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
+    extern const MergeTreeSettingsBool apply_patches_on_merge;
 }
 
 namespace
@@ -35,12 +39,20 @@ namespace
 std::optional<MergeSelectorChoice> tryChooseTTLMerge(
     const MergeSelectorApplier & applier,
     const PartsRanges & ranges,
+    const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     time_t current_time)
 {
+    auto create_choice = [&](PartsRange && parts, MergeType merge_type)
+    {
+        const bool apply_patch_parts = (*data_settings)[MergeTreeSetting::apply_patches_on_merge];
+        PartsRange patch_parts = apply_patch_parts ? predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
+    };
+
     /// Delete parts - 1 priority
     {
         const size_t max_size = (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
@@ -48,7 +60,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         if (auto parts = drop_ttl_selector.select(ranges, max_size, applier.range_filter); !parts.empty())
-            return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
+            return create_choice(std::move(parts), MergeType::TTLDelete);
     }
 
     /// Delete rows - 2 priority
@@ -57,7 +69,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
         TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
 
         if (auto parts = delete_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
-            return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
+            return create_choice(std::move(parts), MergeType::TTLDelete);
     }
 
     /// Recompression - 3 priority
@@ -66,7 +78,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
         TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time);
 
         if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
-            return MergeSelectorChoice{std::move(parts), MergeType::TTLRecompress};
+            return create_choice(std::move(parts), MergeType::TTLRecompress);
     }
 
     return std::nullopt;
@@ -75,6 +87,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
 std::optional<MergeSelectorChoice> tryChooseRegularMerge(
     const MergeSelectorApplier & applier,
     const PartsRanges & ranges,
+    const IMergePredicate & predicate,
     const MergeTreeSettingsPtr & data_settings)
 {
     const auto algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
@@ -114,7 +127,11 @@ std::optional<MergeSelectorChoice> tryChooseRegularMerge(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
 
     if (!parts.empty())
-        return MergeSelectorChoice{std::move(parts), MergeType::Regular};
+    {
+        const bool apply_patch_parts = (*data_settings)[MergeTreeSetting::apply_patches_on_merge];
+        PartsRange patch_parts = apply_patch_parts ? predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), MergeType::Regular};
+    }
 
     return std::nullopt;
 }
@@ -123,6 +140,7 @@ std::optional<MergeSelectorChoice> tryChooseRegularMerge(
 
 std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     const PartsRanges & ranges,
+    const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
     const PartitionIdToTTLs & next_delete_times,
@@ -131,10 +149,10 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     time_t current_time) const
 {
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
-        if (auto choice = tryChooseTTLMerge(*this, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
+        if (auto choice = tryChooseTTLMerge(*this, ranges, predicate, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
             return choice;
 
-    if (auto choice = tryChooseRegularMerge(*this, ranges, data_settings))
+    if (auto choice = tryChooseRegularMerge(*this, ranges, predicate, data_settings))
         return choice;
 
     return std::nullopt;

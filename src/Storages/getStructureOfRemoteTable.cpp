@@ -1,20 +1,22 @@
-#include "getStructureOfRemoteTable.h"
+#include <Storages/getStructureOfRemoteTable.h>
+
+#include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/quoteString.h>
-#include <Common/NetException.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/NetException.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -99,6 +101,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     while (Block current = executor.readBlock())
     {
+        current = convertBLOBColumns(current);
+
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
         ColumnPtr default_kind = current.getByName("default_type").column;
@@ -201,13 +205,14 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
         RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
-
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
         while (auto block = executor.readBlock())
         {
+            block = convertBLOBColumns(block);
+
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
 

@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+
+#include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+
 #include <Storages/MergeTree/MergeType.h>
 
 #include <Storages/StorageInMemoryMetadata.h>
@@ -12,9 +15,13 @@
 namespace DB
 {
 
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
 struct MergeSelectorChoice
 {
     PartsRange range;
+    PartsRange range_patches;
     MergeType merge_type;
 
     /// If this merges down to a single part in a partition
@@ -31,6 +38,7 @@ public:
 
     std::optional<MergeSelectorChoice> chooseMergeFrom(
         const PartsRanges & ranges,
+        const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & data_settings,
         const PartitionIdToTTLs & next_delete_times,

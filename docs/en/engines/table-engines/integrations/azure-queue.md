@@ -82,7 +82,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 
 ## Introspection {#introspection}
 
-Enable logging for the table via the table setting `enable_logging_to_s3queue_log=1`.
+Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 

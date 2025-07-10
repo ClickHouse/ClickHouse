@@ -36,6 +36,14 @@ public:
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
             STRING = 1,
+            /// FLATTENED serialization:
+            /// - ObjectStructure stream:
+            ///     <list of all paths stored in Object column (except typed paths)>
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths and flattened shared data
+            /// This serialization is used in Native format only for easier support for Object type in clients.
+            FLATTENED = 3,
         };
 
         Value value;
@@ -105,6 +113,9 @@ private:
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
+
+        /// For flattened serialization only.
+        std::vector<String> flattened_paths;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
 

@@ -37,21 +37,20 @@ MergingAggregatedStep::MergingAggregatedStep(
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
     bool memory_efficient_aggregation_,
-    size_t max_threads_,
     size_t memory_efficient_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     size_t max_block_size_,
     size_t memory_bound_merging_max_block_bytes_,
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
-        input_header_,
-        MergingAggregatedTransform::appendGroupingIfNeeded(input_header_, params_.getHeader(input_header_, final_)),
-        getTraits(should_produce_results_in_order_of_bucket_number_))
+          input_header_,
+          MergingAggregatedTransform::appendGroupingIfNeeded(input_header_, params_.getHeader(input_header_, final_)),
+          getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
-    , max_threads(max_threads_)
+    , max_threads(params.max_threads)
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
     , max_block_size(max_block_size_)
     , memory_bound_merging_max_block_bytes(memory_bound_merging_max_block_bytes_)
@@ -109,7 +108,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getHeader(), params, final, grouping_sets_params, max_threads);
+        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getHeader(), params, final, grouping_sets_params);
         pipeline.addTransform(std::move(transform));
     }
     else

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree, no-replicated-database, no-object-storage
 # no-shared-merge-tree -- this test is too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

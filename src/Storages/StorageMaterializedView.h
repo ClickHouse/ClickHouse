@@ -20,7 +20,8 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         LoadingStrictnessLevel mode,
-        const String & comment);
+        const String & comment,
+        bool is_restore_from_backup);
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
@@ -30,6 +31,7 @@ public:
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
@@ -99,7 +101,10 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void finalizeRestoreFromBackup() override;
     bool supportsBackupPartition() const override;
+
+    static String generateInnerTableName(const StorageID & view_id);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

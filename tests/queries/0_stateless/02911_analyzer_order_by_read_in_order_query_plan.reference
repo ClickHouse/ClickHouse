@@ -44,7 +44,7 @@ select * from tab order by (a + b) * c, sin(a / b);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c, sin(a / b)) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
-select * from tab order by (a + b) * c desc, sin(a / b) desc;
+select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first;
 4	4	4	4
 4	4	4	4
 3	3	3	3
@@ -55,7 +55,7 @@ select * from tab order by (a + b) * c desc, sin(a / b) desc;
 1	1	1	1
 0	0	0	0
 0	0	0	0
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, sin(divide(__table1.a, __table1.b)) DESC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, sin(divide(__table1.a, __table1.b)) DESC
 -- Exact match, mixed direction
@@ -168,7 +168,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c, 
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc;
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);

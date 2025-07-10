@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -47,7 +48,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 
     Optimization::ExtraSettings extra_settings = {
-        optimization_settings.max_limit_for_ann_queries,
+        optimization_settings.max_limit_for_vector_search_queries,
+        optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
     };
@@ -117,7 +119,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeSecondPass(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
@@ -160,8 +163,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
-            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
-            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
+            const auto rhs_estimation = optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, rhs_estimation);
             if (!has_join_logical)
                 optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
 
@@ -183,6 +186,44 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         stack.pop_back();
     }
+
+    // find ReadFromLocalParallelReplicaStep and replace with optimized local plan
+    bool read_from_local_parallel_replica_plan = false;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+        {
+            read_from_local_parallel_replica_plan = true;
+
+            auto local_plan = read_from_local->extractQueryPlan();
+            local_plan->optimize(optimization_settings);
+
+            auto * local_plan_node = frame.node;
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+
+            // after applying optimize() we still can have several expression in a row,
+            // so merge them to make plan more concise
+            if (optimization_settings.merge_expressions)
+                tryMergeExpressions(local_plan_node, nodes, {});
+        }
+
+        stack.pop_back();
+    }
+    // local plan can contain redundant sorting
+    if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
+        tryRemoveRedundantSorting(&root);
+
 
     stack.push_back({.node = &root});
 
@@ -241,12 +282,36 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        if (optimization_settings.optimize_lazy_materialization)
-        {
-            optimizeLazyMaterialization(stack, nodes, optimization_settings.max_limit_for_lazy_materialization);
-        }
-
         stack.pop_back();
+    }
+
+    /// projection optimizations can introduce additional reading step
+    /// so, applying lazy materialization after it, since it's dependent on reading step
+    if (optimization_settings.optimize_lazy_materialization)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
+                    break;
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
     }
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())

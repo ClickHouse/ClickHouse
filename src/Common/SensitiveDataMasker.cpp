@@ -1,4 +1,4 @@
-#include "SensitiveDataMasker.h"
+#include <Common/SensitiveDataMasker.h>
 
 #include <set>
 #include <string>
@@ -216,9 +216,9 @@ size_t SensitiveDataMasker::rulesCount() const
 }
 
 
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length)
+std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length)
 {
-    std::string res = str;
+    std::string res = std::move(str);
 
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
