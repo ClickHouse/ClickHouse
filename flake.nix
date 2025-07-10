@@ -228,7 +228,7 @@
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
     contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/aabf2f86682aab0a7329160929b8f6654a18216a"; flake = false; };
-    contrib-sz3 = { url = "github:ClickHouse/SZ3/346c37af88a9e0201729f4a73da90b6aff3481a7"; flake = false; };
+    contrib-sz3 = { url = "github:ClickHouse/SZ3/df46e03190b0fa1b46eef016829030170f3553e0"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
