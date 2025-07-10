@@ -1,20 +1,18 @@
+#include <algorithm>
+#include <memory>
 #include <stack>
 
 #include <Common/JSONBuilder.h>
-
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoinAction.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -35,6 +33,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("description", int(description));
     changes.emplace_back("actions", int(actions));
     changes.emplace_back("indexes", int(indexes));
+    changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
 
@@ -168,10 +167,12 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+    const BuildQueryPipelineSettings & build_pipeline_settings,
+    bool do_optimize)
 {
     checkInitialized();
-    optimize(optimization_settings);
+    if (do_optimize)
+        optimize(optimization_settings);
 
     struct Frame
     {
@@ -251,6 +252,9 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.indexes)
         step.describeIndexes(map);
+
+    if (options.projections)
+        step.describeProjections(map);
 }
 
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
@@ -371,6 +375,9 @@ static void explainStep(
     if (options.indexes)
         step.describeIndexes(settings);
 
+    if (options.projections)
+        step.describeProjections(settings);
+
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
 }
@@ -486,7 +493,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
@@ -618,6 +625,110 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
     return {std::move(plan.nodes), std::move(plan.resources)};
+}
+
+QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
+{
+    std::unordered_set<Node *> used;
+    std::stack<Node *> stack;
+
+    stack.push(subplan_root);
+    used.insert(subplan_root);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+        {
+            used.insert(child);
+            stack.push(child);
+        }
+    }
+
+    QueryPlan new_plan;
+    new_plan.root = subplan_root;
+
+    auto it = nodes.begin();
+    while (it != nodes.end())
+    {
+        auto curr = it;
+        ++it;
+
+        if (used.contains(&*curr))
+            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
+    }
+
+    return new_plan;
+}
+
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+
+    struct Frame
+    {
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    result.root = &result.nodes.back();
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            result.nodes.emplace_back(Node{ .step = {} });
+            result.nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &result.nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
+    }
+
+    return result;
+}
+
+
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
+{
+    chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
+
+    const auto & header = node->step->getOutputHeader();
+    const auto & plan_header = plan->getCurrentHeader();
+
+    if (!blocksHaveEqualStructure(header, plan_header))
+    {
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            plan_header.getColumnsWithTypeAndName(), header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+
+        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+        plan->addStep(std::move(expression));
+    }
+
+    nodes.splice(nodes.end(), std::move(plan->nodes));
+
+    node->step = std::move(plan->getRootNode()->step);
+    node->children = std::move(plan->getRootNode()->children);
+
+    max_threads = std::max(max_threads, plan->max_threads);
+    resources = std::move(plan->resources);
 }
 
 }

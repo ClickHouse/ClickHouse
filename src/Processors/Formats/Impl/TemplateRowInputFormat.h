@@ -7,7 +7,6 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB

@@ -78,19 +78,20 @@ def test(started_cluster):
     assert_eq_with_retry(node3, "SELECT id FROM shard_2.replicated", "333")
 
     # Check that SELECT from the Distributed table works.
+    # For now, serialize_query_plan is disabled, because all the tables must exist on initiator.
     expected_from_distributed = """\
 2017-06-16	111	0
 2017-06-16	222	1
 2017-06-16	333	2
 """
     assert_eq_with_retry(
-        node1, "SELECT * FROM distributed ORDER BY id", expected_from_distributed
+        node1, "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", expected_from_distributed
     )
     assert_eq_with_retry(
-        node2, "SELECT * FROM distributed ORDER BY id", expected_from_distributed
+        node2, "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", expected_from_distributed
     )
     assert_eq_with_retry(
-        node3, "SELECT * FROM distributed ORDER BY id", expected_from_distributed
+        node3, "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", expected_from_distributed
     )
 
     # Now isolate node3 from other nodes and check that SELECTs on other nodes still work.
@@ -99,16 +100,16 @@ def test(started_cluster):
         pm.partition_instances(node3, node2, action="REJECT --reject-with tcp-reset")
 
         assert_eq_with_retry(
-            node1, "SELECT * FROM distributed ORDER BY id", expected_from_distributed
+            node1, "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", expected_from_distributed
         )
         assert_eq_with_retry(
-            node2, "SELECT * FROM distributed ORDER BY id", expected_from_distributed
+            node2, "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", expected_from_distributed
         )
 
         with pytest.raises(Exception):
             print(
                 node3.query_with_retry(
-                    "SELECT * FROM distributed ORDER BY id", retry_count=5
+                    "SELECT * FROM distributed ORDER BY id settings serialize_query_plan = 0", retry_count=5
                 )
             )
 

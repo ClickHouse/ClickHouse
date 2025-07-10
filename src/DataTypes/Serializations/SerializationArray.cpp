@@ -13,6 +13,8 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -338,6 +341,13 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 
     if (limit == 0 || nested_limit)
         nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_offset, nested_limit, settings, state);
+    /// Even if there is no data to write, we still have to call nested serialization,
+    /// because we might need to call the stream getter for all existing substreams even
+    /// if nothing is written there. It's needed in Compact parts when we write
+    /// marks per substreams inside the stream getter.
+    else
+        nested->serializeBinaryBulkWithMultipleStreams(column_array.getData(), column_array.getData().size(), 0, settings, state);
+
     settings.path.pop_back();
 }
 
@@ -368,6 +378,19 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
         else
             SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, 0, rows_offset + limit, 0);
 
+        /// Verify offsets if the data comes over the network
+        if (settings.native_format)
+        {
+            const auto & offsets = column_array.getOffsets();
+            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            if (it != offsets.end())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
+                    std::distance(offsets.begin(), it),
+                    *it);
+            }
+        }
+
         /// The length of the offset column added to the stream cache is limit + rows_offset.
         addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
     }
@@ -396,7 +419,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
     size_t nested_limit = last_offset - prev_last_offset;
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))

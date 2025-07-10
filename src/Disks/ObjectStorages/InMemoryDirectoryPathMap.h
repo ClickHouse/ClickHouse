@@ -39,6 +39,7 @@ public:
     struct RemotePathInfo
     {
         std::string path;
+        std::string etag;
         time_t last_modified = 0;
         FileNames files;
     };
@@ -55,28 +56,49 @@ public:
         return remote_directories.contains(remote_path);
     }
 
+    bool existsRemotePathUnchanged(const std::string & remote_path, const std::string & etag) const
+    {
+        std::lock_guard lock(mutex);
+        auto it = remote_directories.find(remote_path);
+        return it != remote_directories.end() && it->second->second.etag == etag;
+    }
+
     bool existsLocalPath(const std::string & local_path) const
     {
         std::lock_guard lock(mutex);
         return map.contains(local_path);
     }
 
-    auto addPathIfNotExists(std::string path, RemotePathInfo info)
+    void addOrReplacePath(std::string path, RemotePathInfo info)
     {
         std::string remote_path = info.path;
         std::lock_guard lock(mutex);
 
         size_t num_files = info.files.size();
-        auto res = map.emplace(std::move(path), std::move(info));
 
-        if (res.second)
+        /// If the logical path already exists, skip it.
+        if (map.contains(path))
+            return;
+
+        /// If the path was differently named before.
+        auto old_it = remote_directories.find(info.path);
+        if (old_it != remote_directories.end())
         {
-            remote_directories.emplace(remote_path);
-            metric_directories.add(1);
-            metric_files.add(num_files);
+            metric_files.sub(old_it->second->second.files.size());
+            metric_directories.sub(1);
+
+            map.erase(old_it->second->first);
+            remote_directories.erase(old_it);
         }
 
-        return res;
+        auto res = map.emplace(std::move(path), std::move(info));
+
+        if (!res.second)
+            return;
+
+        remote_directories.emplace(remote_path, &*res.first);
+        metric_directories.add(1);
+        metric_files.add(num_files);
     }
 
     bool existsFile(const std::string & local_path) const
@@ -219,11 +241,14 @@ private:
     mutable std::mutex mutex;
 
     /// A mapping from logical filesystem path to the storage path.
-    using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
-    Map TSA_GUARDED_BY(mutex) map;
+    using LogicalToPhysicalMap = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
+    LogicalToPhysicalMap TSA_GUARDED_BY(mutex) map;
+
+    /// A mapping from the storage path to info. Note: std::map has pointers to its nodes stable.
+    using PhysicalPaths = std::map<std::string, LogicalToPhysicalMap::const_pointer>;
 
     /// A set of known storage paths (randomly-assigned names).
-    FileNames TSA_GUARDED_BY(mutex) remote_directories;
+    PhysicalPaths TSA_GUARDED_BY(mutex) remote_directories;
 
     CurrentMetrics::Increment metric_directories;
     CurrentMetrics::Increment metric_files;

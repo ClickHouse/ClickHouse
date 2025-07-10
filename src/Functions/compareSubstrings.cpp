@@ -389,7 +389,7 @@ REGISTER_FUNCTION(CompareSubstrings)
            {"string2_offset", "Positive number. The starting position (zero-based index) in `str2` from which the comparison begins."},
            {"num_bytes", "The number of bytes to compare in both strings, starting from their respective offsets."}},
         .returned_value
-        = R"(-1 if the substring from str1 is lexicographically smaller than the substring from str2, 0 if the substrings are equal, 1 if the substring from str1 is lexicographically greater than the substring from str2.)",
+        = {R"(-1 if the substring from str1 is lexicographically smaller than the substring from str2, 0 if the substrings are equal, 1 if the substring from str1 is lexicographically greater than the substring from str2.)"},
         .examples{
             {"typical",
              "SELECT compareSubstrings('123', '123', 0, 0, 3)",
@@ -398,6 +398,6 @@ REGISTER_FUNCTION(CompareSubstrings)
              1. │                        0 │
                 └──────────────────────────┘
                 )"}},
-        .category{"String"}});
+        .category = FunctionDocumentation::Category::String});
 }
 }

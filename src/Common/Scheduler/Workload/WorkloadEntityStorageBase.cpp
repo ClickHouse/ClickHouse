@@ -311,33 +311,6 @@ bool WorkloadEntityStorageBase::has(const String & entity_name) const
     return tryGet(entity_name) != nullptr;
 }
 
-std::vector<String> WorkloadEntityStorageBase::getAllEntityNames() const
-{
-    std::vector<String> entity_names;
-
-    std::lock_guard lock(mutex);
-    entity_names.reserve(entities.size());
-
-    for (const auto & [name, _] : entities)
-        entity_names.emplace_back(name);
-
-    return entity_names;
-}
-
-std::vector<String> WorkloadEntityStorageBase::getAllEntityNames(WorkloadEntityType entity_type) const
-{
-    std::vector<String> entity_names;
-
-    std::lock_guard lock(mutex);
-    for (const auto & [name, entity] : entities)
-    {
-        if (getEntityType(entity) == entity_type)
-            entity_names.emplace_back(name);
-    }
-
-    return entity_names;
-}
-
 bool WorkloadEntityStorageBase::empty() const
 {
     std::lock_guard lock(mutex);
@@ -398,10 +371,10 @@ bool WorkloadEntityStorageBase::storeEntity(
             }
 
             WorkloadSettings io_validator;
-            io_validator.initFromChanges(WorkloadSettings::Unit::IOByte, workload->changes);
+            io_validator.initFromChanges(CostUnit::IOByte, workload->changes);
 
             WorkloadSettings cpu_validator;
-            cpu_validator.initFromChanges(WorkloadSettings::Unit::CPUSlot, workload->changes);
+            cpu_validator.initFromChanges(CostUnit::CPUSlot, workload->changes);
         }
 
         // Validate resource
@@ -409,15 +382,20 @@ bool WorkloadEntityStorageBase::storeEntity(
         {
             for (const auto & operation : resource->operations)
             {
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
+                if (operation.mode == ResourceAccessMode::MasterThread)
                 {
                     if (!master_thread_resource.empty() && master_thread_resource != resource->getResourceName())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MASTER THREAD is not allowed. Current resource name: '{}'.", master_thread_resource);
                 }
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
+                if (operation.mode == ResourceAccessMode::WorkerThread)
                 {
                     if (!worker_thread_resource.empty() && worker_thread_resource != resource->getResourceName())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for WORKER THREAD is not allowed. Current resource name: '{}'.", worker_thread_resource);
+                }
+                if (operation.mode == ResourceAccessMode::Query)
+                {
+                    if (!query_resource.empty() && query_resource != resource->getResourceName())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for QUERY is not allowed. Current resource name: '{}'.", query_resource);
                 }
             }
         }
@@ -562,6 +540,12 @@ String WorkloadEntityStorageBase::getWorkerThreadResourceName()
     return worker_thread_resource;
 }
 
+String WorkloadEntityStorageBase::getQueryResourceName()
+{
+    std::lock_guard lock{mutex};
+    return query_resource;
+}
+
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     std::vector<Event> tx)
@@ -663,15 +647,17 @@ void WorkloadEntityStorageBase::applyEvent(
         if (workload && !workload->hasParent())
             root_name = workload->getWorkloadName();
 
-        // Update cpu resource
+        // Update resource names
         if (resource)
         {
             for (const auto & operation : resource->operations)
             {
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
+                if (operation.mode == ResourceAccessMode::MasterThread)
                     master_thread_resource = resource->getResourceName();
-                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
+                if (operation.mode == ResourceAccessMode::WorkerThread)
                     worker_thread_resource = resource->getResourceName();
+                if (operation.mode == ResourceAccessMode::Query)
+                    query_resource = resource->getResourceName();
             }
         }
 
@@ -700,6 +686,9 @@ void WorkloadEntityStorageBase::applyEvent(
 
         if (event.name == worker_thread_resource)
             worker_thread_resource.clear();
+
+        if (event.name == query_resource)
+            query_resource.clear();
 
         // Clean up references
         removeReferences(it->second);

@@ -75,6 +75,9 @@ def get_env_for_runner(
     if "analyzer" in check_name.lower():
         my_env["CLICKHOUSE_USE_OLD_ANALYZER"] = "1"
 
+    if "distributed plan" in check_name.lower():
+        my_env["CLICKHOUSE_USE_DISTRIBUTED_PLAN"] = "1"
+
     return my_env
 
 

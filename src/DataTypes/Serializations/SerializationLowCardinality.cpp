@@ -48,6 +48,13 @@ void SerializationLowCardinality::enumerateStreams(
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::DictionaryKeysPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::DictionaryKeys);
     auto dict_data = SubstreamData(dict_inner_serialization)
         .withType(data.type ? dictionary_type : nullptr)
@@ -231,7 +238,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -276,7 +283,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
@@ -455,16 +462,16 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    bool need_update_dictionary = global_dictionary == nullptr;
-    if (need_update_dictionary)
-        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
-
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
     /// Do not write anything for empty column. (May happen while writing empty arrays.)
     if (limit == 0)
         return;
+
+    bool need_update_dictionary = global_dictionary == nullptr;
+    if (need_update_dictionary)
+        global_dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
 
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();

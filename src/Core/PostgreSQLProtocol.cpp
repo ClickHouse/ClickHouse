@@ -1,4 +1,4 @@
-#include "PostgreSQLProtocol.h"
+#include <Core/PostgreSQLProtocol.h>
 
 namespace DB::PostgreSQLProtocol::Messaging
 {
@@ -28,8 +28,6 @@ ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index)
             return {ColumnType::FLOAT8, 8};
 
         case TypeIndex::FixedString:
-            return {ColumnType::BPCHAR, -1};
-
         case TypeIndex::String:
             return {ColumnType::VARCHAR, -1};
 

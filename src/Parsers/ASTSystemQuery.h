@@ -33,6 +33,7 @@ public:
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
+        DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISTRIBUTED_CACHE,
         DROP_DISTRIBUTED_CACHE_CONNECTIONS,
@@ -106,8 +107,10 @@ public:
         WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
+        START_REPLICATED_VIEW,
         STOP_VIEW,
         STOP_VIEWS,
+        STOP_REPLICATED_VIEW,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -126,6 +129,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -148,7 +152,7 @@ public:
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
-    String distributed_cache_servive_id;
+    String distributed_cache_server_id;
     bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;

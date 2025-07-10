@@ -228,6 +228,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
+        String default_database;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;

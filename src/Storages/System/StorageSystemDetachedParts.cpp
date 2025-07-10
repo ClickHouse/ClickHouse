@@ -211,7 +211,7 @@ private:
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(current_info.table);
             if (columns_mask[src_index++])
-                new_columns[res_index++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[res_index++]->insert(p.valid_name ? p.getPartitionId() : Field());
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.dir_name);
             if (columns_mask[src_index++])

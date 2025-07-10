@@ -448,7 +448,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
 }
 
 
-void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
+void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 

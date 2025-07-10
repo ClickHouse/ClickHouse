@@ -192,7 +192,7 @@ private:
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
         {
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 auto field_names = type_tuple->getElementNames();
                 auto field_types = type_tuple->getElements();

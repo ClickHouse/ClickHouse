@@ -115,6 +115,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
+
+        if (if_exists)
+            print_keyword(" IF EXISTS");
+
         return ostr;
     };
 
@@ -268,6 +272,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
             break;
         }
         case Type::DROP_REPLICA:
@@ -327,8 +336,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_servive_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
+            else if (!distributed_cache_server_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
             break;
         }
         case Type::UNFREEZE:
@@ -400,7 +409,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
@@ -455,6 +466,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
+        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:

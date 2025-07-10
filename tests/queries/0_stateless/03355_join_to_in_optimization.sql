@@ -3,8 +3,8 @@ SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity=8192;
+CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity=8192;
 INSERT INTO t1 VALUES (1, '111', '111'),(2, '222', '2'),(2, '222', '222'),(3, '333', '333');
 INSERT INTO t2 VALUES (2, 'AAA', 'AAA'),(2, 'AAA', 'a'),(3, 'BBB', 'BBB'),(4, 'CCC', 'CCC');
 

@@ -1,5 +1,5 @@
-no_transaction_landing	10000
-no_transaction_target	0
+no_transaction_landing	1
+no_transaction_target	1
 after_transaction_landing	0
 after_transaction_target	0
 after_implicit_txn_in_query_settings_landing	0

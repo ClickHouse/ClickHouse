@@ -45,19 +45,6 @@ static const std::string named_collections_storage_config_path = "named_collecti
 
 namespace
 {
-    MutableNamedCollectionPtr createNamedCollectionFromAST(const ASTCreateNamedCollectionQuery & query)
-    {
-        const auto & collection_name = query.collection_name;
-        const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query.changes, query.overridability);
-
-        std::set<std::string, std::less<>> keys;
-        for (const auto & [name, _] : query.changes)
-            keys.insert(name);
-
-        return NamedCollection::create(
-            *config, collection_name, "", keys, NamedCollection::SourceId::SQL, /* is_mutable */true);
-    }
-
     std::string getFileName(const std::string & collection_name)
     {
         return escapeForFileName(collection_name) + ".sql";
@@ -468,7 +455,7 @@ NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::get(const std::string & collection_name) const
 {
     const auto query = readCreateQuery(collection_name);
-    return createNamedCollectionFromAST(query);
+    return NamedCollectionFromSQL::create(query);
 }
 
 NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
@@ -488,10 +475,11 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
     return result;
 }
 
-MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & query)
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & create_query)
 {
-    writeCreateQuery(query);
-    return createNamedCollectionFromAST(query);
+    auto collection_ptr = NamedCollectionFromSQL::create(create_query);
+    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true));
+    return collection_ptr;
 }
 
 void NamedCollectionsMetadataStorage::remove(const std::string & collection_name)
@@ -504,62 +492,14 @@ bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collect
     return storage->removeIfExists(getFileName(collection_name));
 }
 
-void NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
 {
     auto create_query = readCreateQuery(query.collection_name);
+    auto collection_ptr = NamedCollectionFromSQL::create(create_query);
+    collection_ptr->update(query);
+    writeCreateQuery(query.collection_name, collection_ptr->getCreateStatement(true), true);
 
-    std::unordered_map<std::string, Field> result_changes_map;
-    for (const auto & [name, value] : query.changes)
-    {
-        auto [it, inserted] = result_changes_map.emplace(name, value);
-        if (!inserted)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Value with key `{}` is used twice in the SET query (collection name: {})",
-                name, query.collection_name);
-        }
-    }
-
-    for (const auto & [name, value] : create_query.changes)
-        result_changes_map.emplace(name, value);
-
-    std::unordered_map<std::string, bool> result_overridability_map;
-    for (const auto & [name, value] : query.overridability)
-        result_overridability_map.emplace(name, value);
-    for (const auto & [name, value] : create_query.overridability)
-        result_overridability_map.emplace(name, value);
-
-    for (const auto & delete_key : query.delete_keys)
-    {
-        auto it = result_changes_map.find(delete_key);
-        if (it == result_changes_map.end())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot delete key `{}` because it does not exist in collection",
-                delete_key);
-        }
-
-        result_changes_map.erase(it);
-        auto it_override = result_overridability_map.find(delete_key);
-        if (it_override != result_overridability_map.end())
-            result_overridability_map.erase(it_override);
-    }
-
-    create_query.changes.clear();
-    for (const auto & [name, value] : result_changes_map)
-        create_query.changes.emplace_back(name, value);
-    create_query.overridability = std::move(result_overridability_map);
-
-    if (create_query.changes.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Named collection cannot be empty (collection name: {})",
-            query.collection_name);
-
-    chassert(create_query.collection_name == query.collection_name);
-    writeCreateQuery(create_query, true);
+    return collection_ptr;
 }
 
 std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() const
@@ -584,15 +524,9 @@ ASTCreateNamedCollectionQuery NamedCollectionsMetadataStorage::readCreateQuery(c
     return create_query;
 }
 
-void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedCollectionQuery & query, bool replace)
+void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection_name, const String & create_statement, bool replace)
 {
-    auto normalized_query = query.clone();
-    auto & changes = typeid_cast<ASTCreateNamedCollectionQuery *>(normalized_query.get())->changes;
-    ::sort(
-        changes.begin(), changes.end(),
-        [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
-
-    storage->write(getFileName(query.collection_name), normalized_query->formatWithSecretsOneLine(), replace);
+    storage->write(getFileName(collection_name), create_statement, replace);
 }
 
 bool NamedCollectionsMetadataStorage::isReplicated() const

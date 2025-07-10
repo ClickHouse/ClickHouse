@@ -323,13 +323,22 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
+            }
+
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
+            {
+                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+                {
+                    source_parts.writeBinary(buffer);
+                });
             }
         }
     }
@@ -360,6 +369,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         new_part->getColumns().writeText(buffer);
     });
+
+    const auto & columns_substreams = writer->getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        write_plain_file("columns_substreams.txt", [&](auto & buffer)
+        {
+            columns_substreams.writeText(buffer);
+        });
+
+        new_part->setColumnsSubstreams(columns_substreams);
+    }
 
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {

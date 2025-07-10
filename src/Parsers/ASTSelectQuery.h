@@ -153,7 +153,7 @@ public:
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void replaceDatabaseAndTable(const StorageID & table_id);
-    void addTableFunction(ASTPtr & table_function_ptr);
+    void addTableFunction(const ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void setFinal();
