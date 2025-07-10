@@ -1,4 +1,4 @@
-#include "NetlinkMetricsProvider.h"
+#include <Common/NetlinkMetricsProvider.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -7,7 +7,7 @@
 
 #if defined(OS_LINUX)
 
-#include "hasLinuxCapability.h"
+#include <Common/hasLinuxCapability.h>
 #include <base/unaligned.h>
 #include <base/getThreadId.h>
 #include <Common/logger_useful.h>

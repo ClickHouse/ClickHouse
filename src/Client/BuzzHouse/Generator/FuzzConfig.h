@@ -149,7 +149,7 @@ public:
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, dump_table_oracle_compare_content = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false,
-         allow_memory_tables = true, allow_client_restarts = false;
+         allow_memory_tables = true, allow_client_restarts = false, enable_fault_injection_settings = true;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, type_mask = std::numeric_limits<uint32_t>::max(), port = 9000, secure_port = 9440,

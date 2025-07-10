@@ -17,6 +17,7 @@ public:
     std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
+    void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
 

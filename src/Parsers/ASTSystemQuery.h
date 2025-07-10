@@ -152,7 +152,7 @@ public:
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
-    String distributed_cache_servive_id;
+    String distributed_cache_server_id;
     bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;

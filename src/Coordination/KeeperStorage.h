@@ -510,7 +510,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
-        std::unordered_set<int64_t> closed_sessions;
+        std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
         struct UncommittedNode
         {

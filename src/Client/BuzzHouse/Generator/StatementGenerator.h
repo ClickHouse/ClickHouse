@@ -312,7 +312,6 @@ private:
         bool modify,
         bool is_pk,
         ColumnSpecial special,
-        uint32_t col_tp_mask,
         SQLColumn & col,
         ColumnDef * cd);
     void addTableColumn(
@@ -342,7 +341,7 @@ private:
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
