@@ -685,15 +685,16 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
 
 std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name) const
 {
-    return readFile(getFileSizeAndChecksum(file_name));
+    return readFile(file_name, getFileSizeAndChecksum(file_name));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const
 {
-    return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
+    return readFileImpl(file_name, size_and_checksum, /* read_encrypted= */ false);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+std::unique_ptr<ReadBufferFromFileBase>
+BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
@@ -706,9 +707,10 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndCh
         {
             throw Exception(
                 ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-                "Backup {}: Entry {} not found in the backup",
+                "Backup {}: Entry {} for file '{}' not found in the backup",
                 backup_name_for_logging,
-                formatSizeAndChecksum(size_and_checksum));
+                formatSizeAndChecksum(size_and_checksum),
+                file_name);
         }
         info = it->second;
     }
@@ -761,7 +763,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndCh
                 backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
         }
 
-        base_read_buffer = base->readFile(std::pair{info.base_size, info.base_checksum});
+        base_read_buffer = base->readFile(info.file_name, std::pair{info.base_size, info.base_checksum});
     }
 
     {
@@ -861,7 +863,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     else
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
-        auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
+        auto read_buffer = readFileImpl(info.file_name, size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
         std::unique_ptr<WriteBuffer> write_buffer;
         size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
