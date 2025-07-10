@@ -1,7 +1,9 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -2792,48 +2794,63 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         const auto & args = function_node_ptr->getArguments().getNodes();
 
-        auto isBoolConst = [](const QueryTreeNodePtr & n, bool & out)->bool
+        auto isBoolConst = [](const QueryTreeNodePtr & n, bool & out, bool & has_bool_arg)->bool
         {
             const auto * lit = n->as<ConstantNode>();
             if (!lit) return false;
 
+            if (lit->getResultType()->getName() == "Bool")
+                has_bool_arg = true;
+
             UInt64 u = 0;  Int64 i = 0;
-            if (lit->getValue().tryGet<UInt64>(u))      { out = (u != 0); return true; }
-            if (lit->getValue().tryGet<Int64>(i))       { out = (i != 0); return true; }
-            bool tmp = false;
-            if (lit->getValue().tryGet<bool>(tmp))
-            {
-                out = tmp;
-                return true;
+            if (lit->getValue().tryGet<UInt64>(u)){ 
+                out = (u != 0); 
+                return true; 
             }
-            String s;
-            if (lit->getValue().tryGet<String>(s))
-            {
-                auto lc = Poco::toLower(s);
-                if (lc == "true" || lc == "false")
-                {
-                    out = (lc == "true");
-                    return true;
-                }
+            if (lit->getValue().tryGet<Int64>(i)){ 
+                out = (i != 0); 
+                return true; 
             }
             return false;
         };
 
-        bool decisive = false, found = false;
+        bool decisive = false;
+        bool found = false;
+        bool has_bool_arg = false;
+        
         for (const auto & a : args)
         {
             bool v = false;
-            if (!isBoolConst(a, v)) continue;
-            if ((function_name == "or"  && v) ||
-                (function_name == "and" && !v))
-            { decisive = v; found = true; break; }
+            bool arg_is_bool = false;
+            if (isBoolConst(a, v, arg_is_bool))
+            {
+                has_bool_arg = has_bool_arg || arg_is_bool;
+                if ((function_name == "or"  && v) ||
+                    (function_name == "and" && !v))
+                {
+                    decisive = v;
+                    found = true;
+                    if (has_bool_arg)
+                        break;
+                }
+            }
         }
 
         if (found)
         {
-            UInt64 num = decisive ? 1u : 0u;
-            auto new_const = std::make_shared<ConstantNode>(Field(num),
-                                                            std::make_shared<DataTypeUInt8>());
+            DataTypePtr result_type;
+            Field result_field;
+            if (has_bool_arg)
+            {
+                result_type = DataTypeFactory::instance().get("Bool");
+                result_field = Field(decisive);
+            }
+            else
+            {
+                result_type = std::make_shared<DataTypeUInt8>();
+                result_field = Field(decisive ? 1u : 0u);
+            }
+            auto new_const = std::make_shared<ConstantNode>(result_field, result_type);
             if (!function_node_ptr->getAlias().empty())
                 new_const->setAlias(function_node_ptr->getAlias());
 
@@ -3566,7 +3583,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
-      * Then each lambda arguments are initialized with columns, where column source is lambda.
+      * Then each lambda arguments are initialized with columns, where column source is lambda node.
       * This information is important for later steps of query processing.
       * Example: SELECT arrayMap(x -> x + 1, [1, 2, 3]).
       * lambda node x -> x + 1 identifier x is resolved as column where source is lambda node.
@@ -5312,7 +5329,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
                             "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 
-/// Resolve join node in scope
+/// Resolve cross join node in scope
 void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto & cross_join_node_typed = cross_join_node->as<CrossJoinNode &>();
