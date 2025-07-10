@@ -41,13 +41,13 @@ StorageType parseStorageTypeFromString(const std::string & type)
     };
 
     std::string storage_type_str = type;
-    auto pos = type.find("://");
+    auto pos = storage_type_str.find("://");
     if (pos != std::string::npos)
     {
-        // Remove :// if it exists can come
+        // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
-    if (capitalize_first_letter(type) == "File")
+    if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
 
     if (capitalize_first_letter(storage_type_str) == "S3a")
@@ -201,7 +201,7 @@ bool TableMetadata::hasStorageCredentials() const
 
 std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
 {
-    auto metadata_location = iceberg_metadata_file_location;
+    std::string metadata_location = iceberg_metadata_file_location;
     if (!metadata_location.empty())
     {
         std::string data_location = getLocation();
