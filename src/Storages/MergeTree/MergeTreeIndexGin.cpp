@@ -28,7 +28,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_INDEX;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -683,18 +682,6 @@ MergeTreeIndexGin::MergeTreeIndexGin(
 
 MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
-    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// Index type 'full_text' was renamed to 'gin' in April 2025.
-    /// Index type 'gin' was renamed to 'text' in May 2025.
-    ///
-    /// Tables with old indexes can be loaded during a transition period. We still want let users know that they should drop existing
-    /// indexes and re-create them. Function `createIndexGranule` is called whenever the index is used by queries. Reject the query if we
-    /// have an old index.
-    ///
-    /// TODO: remove this one year after text indexes became GA.
-    if (index.type == INVERTED_INDEX_NAME || index.type == FULL_TEXT_INDEX_NAME || index.type == GIN_INDEX_NAME)
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Indexes of type 'inverted', 'full_text' and 'gin' are no longer supported. Please drop and recreate the index as type 'text'");
-
     return std::make_shared<MergeTreeIndexGranuleGin>(index.name, gin_filter_params);
 }
 
