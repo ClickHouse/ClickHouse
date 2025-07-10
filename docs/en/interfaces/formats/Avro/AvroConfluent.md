@@ -73,7 +73,7 @@ format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry
 
 ## Troubleshooting {#troubleshooting}
 
-To monitor ingestion progress and debug errors with the Kafka consumer, you can query the [`system.kafka_consumers` system table](../../../operations/system-tables/kafka_consumers). If your deployment has multiple replicas (e.g., ClickHouse Cloud), you must use the [`clusterAllReplicas`](../../../sql-reference/table-functions/cluster.md) table function.
+To monitor ingestion progress and debug errors with the Kafka consumer, you can query the [`system.kafka_consumers` system table](../../../operations/system-tables/kafka_consumers.md). If your deployment has multiple replicas (e.g., ClickHouse Cloud), you must use the [`clusterAllReplicas`](../../../sql-reference/table-functions/cluster.md) table function.
 
 ```sql
 SELECT * FROM clusterAllReplicas('default',system.kafka_consumers)
