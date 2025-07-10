@@ -277,7 +277,7 @@ InitVector InitVector::random()
 }
 
 
-Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
+Encryptor::Encryptor(Algorithm algorithm_, const NoDumpString & key_, const InitVector & iv_)
     : key(key_)
     , init_vector(iv_)
     , evp_cipher(getCipher(algorithm_))
@@ -451,6 +451,7 @@ void Header::write(WriteBuffer & out) const
     out.write(zero_bytes, reserved_size);
 }
 
+template<typename String>
 UInt128 calculateKeyFingerprint(const String & key)
 {
     const UInt64 seed0 = 0x4368456E63727970ULL; // ChEncryp
@@ -458,6 +459,7 @@ UInt128 calculateKeyFingerprint(const String & key)
     return sipHash128Keyed(seed0, seed1, key.data(), key.size());
 }
 
+template<typename String>
 UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id)
 {
     /// In the version 1 we stored {key_id, very_small_hash(key)} instead of a fingerprint.
