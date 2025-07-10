@@ -1627,7 +1627,7 @@ public:
 
         /// Check for overflows before continuing
         if ((std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
-            && (fabs(value) > std::numeric_limits<std::int64_t>::max() / scaling))
+            && (fabs(value) > static_cast<Float64>(std::numeric_limits<std::int64_t>::max()) / static_cast<Float64>(scaling)))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
