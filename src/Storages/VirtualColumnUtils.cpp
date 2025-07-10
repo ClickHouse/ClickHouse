@@ -393,13 +393,15 @@ bool isDeterministic(const ActionsDAG::Node * node)
     }
 
     /// Special case: `in subquery or table` is non-deterministic
-    if (node->type == ActionsDAG::ActionType::COLUMN) {
-        if (auto *column = typeid_cast<const ColumnSet *>(node->column.get())) {
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+    {
+        if (auto * column = typeid_cast<const ColumnSet *>(node->column.get()))
+        {
             if (!column->getData()->isDeterministic())
             {
                 return false;
             }
-      }
+        }
     }
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
