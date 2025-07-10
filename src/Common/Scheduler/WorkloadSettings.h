@@ -28,7 +28,7 @@ struct WorkloadSettings
 
     /// CPU throttling constraints
     Float64 max_cpus = 0; // Zero means unlimited
-    Float64 max_burst_cpu_seconds = 0.012; // 12ms (CPU burst is different from IO and query burst; by default it is set to the minimum safe value to avoid bursts aka "pacing" mode)
+    Float64 max_burst_cpu_seconds = 1.0;
 
     /// Query throttling constraints
     Float64 max_queries_per_second = 0; // Zero means unlimited
