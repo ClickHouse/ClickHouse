@@ -154,11 +154,10 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
-                settings[DatabaseDataLakeSetting::aws_access_key_id].value,
-                settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
-                settings[DatabaseDataLakeSetting::region].value,
                 url,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                settings,
+                table_engine_definition);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:

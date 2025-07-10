@@ -836,11 +836,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     auto set_defaults_for_root_view = [&] (const StorageIDPrivate & root_view_, const StorageIDPrivate & inner_table_)
     {
+        const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
+        const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
+
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
-        select_contexts[root_view] = init_context;
-        insert_contexts[root_view] = init_context;
+        select_contexts[root_view] = select_context;
+        insert_contexts[root_view] = insert_context;
         input_headers[root_view] = init_header;
         thread_groups[root_view] = CurrentThread::getGroup();
         views_error_registry->init(root_view);
