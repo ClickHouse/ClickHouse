@@ -23,7 +23,8 @@ public:
         ContextPtr context_,
         const String & comment_,
         std::optional<FormatSettings> format_settings_,
-        LoadingStrictnessLevel mode_);
+        LoadingStrictnessLevel mode_,
+        bool lazy_init = false);
 
     std::string getName() const override;
 

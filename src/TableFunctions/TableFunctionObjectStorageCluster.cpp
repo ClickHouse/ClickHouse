@@ -47,7 +47,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* mode */ LoadingStrictnessLevel::CREATE,
             /* distributed_processing */ true,
             /* partition_by_ */Base::partition_by,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            /* lazy_init */ true);
     }
     else
     {
@@ -62,7 +63,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             context,
             /* comment */ String{},
             /* format_settings */ std::nullopt, /// No format_settings
-            /* mode */ LoadingStrictnessLevel::CREATE);
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* lazy_init */ true);
     }
 
     storage->startup();
