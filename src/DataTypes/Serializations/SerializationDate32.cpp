@@ -103,7 +103,7 @@ bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         return SerializationNumber<Int32>::tryDeserializeTextJSON(column, istr, format_settings);
 
     ExtendedDayNum x;
-    if (!checkChar('"', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
+    if (!tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;
