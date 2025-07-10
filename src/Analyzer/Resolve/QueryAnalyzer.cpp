@@ -2805,32 +2805,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             UInt64 u = 0;  Int64 i = 0;
             if (lit->getValue().tryGet<UInt64>(u))
-            { 
-                out = (u != 0); 
-                return true; 
-            }
-            if (lit->getValue().tryGet<Int64>(i))
-            { 
-                out = (i != 0); 
-                return true; 
-            }
-            bool tmp = false;
-            if (lit->getValue().tryGet<bool>(tmp))
             {
-                out = tmp;
-                has_bool_arg = true;
+                out = (u != 0);
                 return true;
             }
-            String s;
-            if (lit->getValue().tryGet<String>(s))
+            if (lit->getValue().tryGet<Int64>(i))
             {
-                auto lc = Poco::toLower(s);
-                if (lc == "true" || lc == "false")
-                {
-                    out = (lc == "true");
-                    has_bool_arg = true;
-                    return true;
-                }
+                out = (i != 0);
+                return true;
             }
             return false;
         };
@@ -2838,7 +2820,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         bool decisive = false;
         bool found = false;
         bool has_bool_arg = false;
-        
+
         for (const auto & a : args)
         {
             bool v = false;
