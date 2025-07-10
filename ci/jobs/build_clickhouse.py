@@ -167,6 +167,7 @@ def main():
 
     files = []
     if res and JobStages.BUILD in stages:
+        run_shell("sccache start server", "sccache --start-server", retries=3)
         run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
             targets = "-k0 all"
