@@ -666,7 +666,7 @@ void registerStorageRedis(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
         .supports_parallel_insert = true,
-        .source_access_type = AccessType::REDIS,
+        .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
     factory.registerStorage("Redis", createStorageRedis, features);
