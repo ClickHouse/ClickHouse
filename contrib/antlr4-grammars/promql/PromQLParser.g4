@@ -95,8 +95,8 @@ subqueryOp
     ;
 
 offsetOp
-    : AT NUMBER (OFFSET NUMBER)?
-    | OFFSET NUMBER (AT NUMBER)?
+    : AT NUMBER (OFFSET (ADD|SUB)? NUMBER)?
+    | OFFSET (ADD|SUB)? NUMBER (AT NUMBER)?
     ;
 
 vector
