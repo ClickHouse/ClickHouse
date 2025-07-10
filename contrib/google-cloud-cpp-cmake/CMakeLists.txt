@@ -40,17 +40,16 @@ set(GOOGLE_CLOUD_CPP_PRIVATE_LIBS)
 # Directories.
 SET(GOOGLE_CLOUD_CPP_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp" )
 list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/google-cloud-cpp-cmake/cmake")
 
 # Set the PROJECT_SOURCE_DIR so that all Google Cloud cmake files work
 set(PROJECT_SOURCE_DIR_BAK ${PROJECT_SOURCE_DIR})
 set(PROJECT_SOURCE_DIR ${GOOGLE_CLOUD_CPP_DIR})
 
-list(APPEND CMAKE_MODULE_PATH "${GOOGLE_CLOUD_CPP_DIR}/cmake")
-
 # Building this target results in all protobufs being compiled.
 add_custom_target(google-cloud-cpp-protos)
 
-include("GoogleCloudCppLibrary")
+include(GoogleCloudCppLibrary)
 
 # Set some variables required for googleapis CMakeLists.txt to work.
 set(GOOGLE_CLOUD_CPP_ENABLE_GRPC ON)
@@ -59,13 +58,16 @@ set(PROJECT_VERSION_MAJOR "1")
 set(PROTO_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
 set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
-include(GoogleApis.cmake)
+include(GoogleApis)
 
 add_library(gRPC::grpc++ ALIAS _ch_contrib_grpc)
 add_library(gRPC::grpc ALIAS _ch_contrib_grpc)
 
-include(google_cloud_cpp_common.cmake)
-include(google_cloud_cpp_grpc_utils.cmake)
+# google-cloud-cpp-kms.
+google_cloud_cpp_add_library_protos(kms)
+
+include(google_cloud_cpp_common)
+include(google_cloud_cpp_grpc_utils)
 
 # KMS
 if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
@@ -90,8 +92,8 @@ add_library(CURL::libcurl ALIAS _curl)
 add_library(Crc32c::crc32c ALIAS _crc32c)
 add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 
-include(google_cloud_cpp_rest_internal.cmake)
-include(storage/google_cloud_cpp_storage.cmake)
+include(google_cloud_cpp_rest_internal)
+include(google_cloud_cpp_storage)
 
 # Common
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")

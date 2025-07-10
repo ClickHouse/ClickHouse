@@ -5945,7 +5945,7 @@ Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connec
     DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
 Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
-    DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
+    DECLARE(UInt64, distributed_cache_alignment, 0, R"(
 Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
     DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
@@ -5965,6 +5965,9 @@ Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 )", 0) \
     DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
+    DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
+Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
 )", 0) \
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
@@ -6788,10 +6791,6 @@ If it is set to true, allow to use experimental text index.
 Allow to use lightweight updates.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_join_condition, false, R"(
-Support join with inequal conditions which involve columns from both left and right table. e.g. `t1.y < t2.y`.
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
@@ -6928,6 +6927,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
     MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
@@ -6975,6 +6975,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
+    MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
