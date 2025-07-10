@@ -2799,17 +2799,38 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * lit = n->as<ConstantNode>();
             if (!lit) return false;
 
+            // Check if this ConstantNode has a Bool result type (indicating it came from a boolean literal)
             if (lit->getResultType()->getName() == "Bool")
                 has_bool_arg = true;
 
             UInt64 u = 0;  Int64 i = 0;
-            if (lit->getValue().tryGet<UInt64>(u)){ 
+            if (lit->getValue().tryGet<UInt64>(u))
+            { 
                 out = (u != 0); 
                 return true; 
             }
-            if (lit->getValue().tryGet<Int64>(i)){ 
+            if (lit->getValue().tryGet<Int64>(i))
+            { 
                 out = (i != 0); 
                 return true; 
+            }
+            bool tmp = false;
+            if (lit->getValue().tryGet<bool>(tmp))
+            {
+                out = tmp;
+                has_bool_arg = true;
+                return true;
+            }
+            String s;
+            if (lit->getValue().tryGet<String>(s))
+            {
+                auto lc = Poco::toLower(s);
+                if (lc == "true" || lc == "false")
+                {
+                    out = (lc == "true");
+                    has_bool_arg = true;
+                    return true;
+                }
             }
             return false;
         };
