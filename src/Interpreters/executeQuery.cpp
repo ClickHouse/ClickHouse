@@ -1460,11 +1460,11 @@ static BlockIO executeQueryImpl(
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
-                    if (reader.hasCacheEntryForKey())
+                    auto reader = query_result_cache->createReader(key);
+                    if (reader->hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
-                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
                         return true;
@@ -1591,7 +1591,7 @@ static BlockIO executeQueryImpl(
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
-                                std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
+                                static_cast<uint32_t>(settings[Setting::query_cache_ttl].totalSeconds()),
                                 settings[Setting::query_cache_compress_entries]);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
@@ -1603,13 +1603,13 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                auto query_result_cache_writer = query_result_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
                                                  settings[Setting::max_block_size],
                                                  settings[Setting::query_cache_max_size_in_bytes],
-                                                 settings[Setting::query_cache_max_entries]));
+                                                 settings[Setting::query_cache_max_entries]);
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
