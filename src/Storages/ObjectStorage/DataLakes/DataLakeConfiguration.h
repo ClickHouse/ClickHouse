@@ -39,13 +39,13 @@ namespace DataLakeStorageSetting
 
 
 template <typename T>
-concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
+concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
 template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetadata>
-class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorage::Configuration>
+class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
-    using Configuration = StorageObjectStorage::Configuration;
+    using Configuration = StorageObjectStorageConfiguration;
 
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 

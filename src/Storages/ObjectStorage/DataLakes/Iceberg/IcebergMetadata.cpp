@@ -102,7 +102,7 @@ std::string normalizeUuid(const std::string & uuid)
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     LoggerPtr log,
@@ -350,7 +350,7 @@ struct ShortMetadataFileInfo
  */
 static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     const std::optional<String> & table_uuid)
@@ -430,7 +430,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
 static MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log)

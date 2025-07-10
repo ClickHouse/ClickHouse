@@ -30,7 +30,7 @@ using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<De
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationObserverPtr = StorageObjectStorageConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);

@@ -10,7 +10,7 @@ namespace DB
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     ReadFromObjectStorageStep(
         ObjectStoragePtr object_storage_,

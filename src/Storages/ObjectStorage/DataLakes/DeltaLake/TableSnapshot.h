@@ -25,7 +25,7 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationWeakPtr = DB::StorageObjectStorageConfigurationObserverPtr;
 
     explicit TableSnapshot(
         KernelHelperPtr helper_,

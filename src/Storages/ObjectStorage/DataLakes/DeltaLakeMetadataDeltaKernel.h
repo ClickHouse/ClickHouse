@@ -22,7 +22,7 @@ namespace DB
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationObserverPtr = StorageObjectStorageConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadataDeltaKernel(

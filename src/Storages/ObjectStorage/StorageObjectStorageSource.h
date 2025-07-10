@@ -20,8 +20,8 @@ class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
 public:
-    using Configuration = StorageObjectStorage::Configuration;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using Configuration = StorageObjectStorageConfiguration;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     class ReadTaskIterator;
@@ -51,7 +51,7 @@ public:
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         ConfigurationPtr configuration,
-        const StorageObjectStorage::QuerySettings & query_settings,
+        const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,

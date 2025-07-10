@@ -30,8 +30,8 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationObserverPtr = StorageObjectStorageConfigurationObserverPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";

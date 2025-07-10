@@ -21,7 +21,7 @@ struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,

@@ -13,7 +13,7 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationObserverPtr = StorageObjectStorageConfigurationObserverPtr;
 
     static constexpr auto name = "Hudi";
 

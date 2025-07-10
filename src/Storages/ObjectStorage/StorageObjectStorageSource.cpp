@@ -124,7 +124,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
-    const StorageObjectStorage::QuerySettings & query_settings,
+    const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
     bool distributed_processing,
     const ContextPtr & local_context,

@@ -13,10 +13,10 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class StorageLocalConfiguration : public StorageObjectStorage::Configuration
+class StorageLocalConfiguration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
@@ -53,7 +53,7 @@ public:
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
-    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
     {

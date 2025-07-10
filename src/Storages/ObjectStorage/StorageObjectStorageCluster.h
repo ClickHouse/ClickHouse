@@ -10,7 +10,7 @@ namespace DB
 class StorageObjectStorageCluster : public IStorageCluster
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     StorageObjectStorageCluster(
         const String & cluster_name_,
@@ -41,7 +41,7 @@ private:
         const ContextPtr & context) override;
 
     const String engine_name;
-    const StorageObjectStorage::ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
 };

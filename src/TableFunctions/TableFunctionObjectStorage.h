@@ -156,7 +156,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(), args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -178,7 +178,7 @@ public:
     }
 
 protected:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,

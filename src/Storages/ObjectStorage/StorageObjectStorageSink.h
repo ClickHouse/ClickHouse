@@ -9,7 +9,7 @@ namespace DB
 class StorageObjectStorageSink : public SinkToStorage
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     StorageObjectStorageSink(
         const std::string & path_,
@@ -41,7 +41,7 @@ private:
 class PartitionedStorageObjectStorageSink : public PartitionedSink
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+    using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
 
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
@@ -60,7 +60,7 @@ private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
 
-    const StorageObjectStorage::QuerySettings query_settings;
+    const StorageObjectStorageQuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
     const Block sample_block;
     const ContextPtr context;
