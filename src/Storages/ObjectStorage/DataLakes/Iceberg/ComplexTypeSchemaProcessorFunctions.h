@@ -61,39 +61,6 @@ protected:
     std::vector<Edge> root;
 };
 
-class IcebergDeletingOperation : public IcebergChangeSchemaOperation
-{
-public:
-    IcebergDeletingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::DELETING, root_), field_name(field_name_)
-    {
-    }
-
-    std::string field_name;
-};
-
-class IcebergAddingOperation : public IcebergChangeSchemaOperation
-{
-public:
-    IcebergAddingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::ADDING, root_), field_name(field_name_)
-    {
-    }
-
-    std::string field_name;
-};
-
-class IcebergReorderingOperation : public IcebergChangeSchemaOperation
-{
-public:
-    IcebergReorderingOperation(const std::vector<Edge> & root_, const std::vector<size_t> & permutation_)
-        : IcebergChangeSchemaOperation(ChangeType::REORDERING, root_), permutation(permutation_)
-    {
-    }
-
-    std::vector<size_t> permutation;
-};
-
 using ComplexNode = std::variant<Tuple, Array, Map>;
 
 class IIcebergSchemaTransform

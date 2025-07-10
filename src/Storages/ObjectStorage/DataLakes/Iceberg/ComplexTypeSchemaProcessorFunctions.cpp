@@ -24,6 +24,39 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+class IcebergDeletingOperation : public IcebergChangeSchemaOperation
+{
+public:
+    IcebergDeletingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::DELETING, root_), field_name(field_name_)
+    {
+    }
+
+    std::string field_name;
+};
+
+class IcebergAddingOperation : public IcebergChangeSchemaOperation
+{
+public:
+    IcebergAddingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::ADDING, root_), field_name(field_name_)
+    {
+    }
+
+    std::string field_name;
+};
+
+class IcebergReorderingOperation : public IcebergChangeSchemaOperation
+{
+public:
+    IcebergReorderingOperation(const std::vector<Edge> & root_, const std::vector<size_t> & permutation_)
+        : IcebergChangeSchemaOperation(ChangeType::REORDERING, root_), permutation(permutation_)
+    {
+    }
+
+    std::vector<size_t> permutation;
+};
+
 IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_) : path(path_)
 {
 }
@@ -253,52 +286,49 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
         }
 
         transformChildNode(std::get<Tuple>(current_node));
-        ComplexNode fixed_node = std::move(current_node);
-        if (path_to_transform.empty())
-            initial_node = fixed_node;
         for (int j = static_cast<int>(path_to_transform.size()) - 1; j >= 0; --j)
         {
             switch (path[j].parent_type)
             {
                 case TransformType::STRUCT:
                 {
-                    if (std::holds_alternative<Tuple>(fixed_node))
-                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
-                    else if (std::holds_alternative<Array>(fixed_node))
-                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
-                    else if (std::holds_alternative<Map>(fixed_node))
-                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(fixed_node);
+                    if (std::holds_alternative<Tuple>(current_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(current_node);
+                    else if (std::holds_alternative<Array>(current_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(current_node);
+                    else if (std::holds_alternative<Map>(current_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(current_node);
 
-                    fixed_node = nodes_in_path[j];
+                    current_node = std::move(nodes_in_path[j]);
                     break;
                 }
                 case TransformType::ARRAY:
                 {
-                    if (std::holds_alternative<Tuple>(fixed_node))
-                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
-                    else if (std::holds_alternative<Array>(fixed_node))
-                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
-                    else if (std::holds_alternative<Map>(fixed_node))
-                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(fixed_node);
+                    if (std::holds_alternative<Tuple>(current_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(current_node);
+                    else if (std::holds_alternative<Array>(current_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(current_node);
+                    else if (std::holds_alternative<Map>(current_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(current_node);
 
-                    fixed_node = nodes_in_path[j];
+                    current_node = std::move(nodes_in_path[j]);
                     break;
                 }
                 case TransformType::MAP:
                 {
-                    if (std::holds_alternative<Tuple>(fixed_node))
-                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Tuple>(fixed_node);
-                    else if (std::holds_alternative<Array>(fixed_node))
-                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Array>(fixed_node);
-                    else if (std::holds_alternative<Map>(fixed_node))
-                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Map>(fixed_node);
+                    if (std::holds_alternative<Tuple>(current_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Tuple>(current_node);
+                    else if (std::holds_alternative<Array>(current_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Array>(current_node);
+                    else if (std::holds_alternative<Map>(current_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Map>(current_node);
 
-                    fixed_node = nodes_in_path[j];
+                    current_node = std::move(nodes_in_path[j]);
                     break;
                 }
             }
-            initial_node = fixed_node;
         }
+        initial_node = std::move(current_node);
     }
 }
 
@@ -727,7 +757,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                      current_path,
                      TransformType::STRUCT});
             }
-            if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
+            else if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
             {
                 walk_stack.push(
                     {makeArrayFromObject(old_subfield->getObject("element")),
@@ -735,7 +765,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                      current_path,
                      TransformType::ARRAY});
             }
-            if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "map" && old_subfield->isObject("value"))
+            else if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "map" && old_subfield->isObject("value"))
             {
                 walk_stack.push(
                     {makeArrayFromObject(old_subfield->getObject("value")),
