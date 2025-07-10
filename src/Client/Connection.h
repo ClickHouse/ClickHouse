@@ -318,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -326,6 +326,7 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
