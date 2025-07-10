@@ -167,7 +167,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         /// If previous stream is not null it means it was Array offsets stream.
         /// Can't apply lossy compression for offsets.
-        if (prev_stream_name && column_streams[*prev_stream_name]->compressor.getCodec()->isLossyCompression())
+        if (prev_stream_name && *prev_stream_name != stream_name && column_streams[*prev_stream_name]->compressor.getCodec()->isLossyCompression())
             column_streams[*prev_stream_name]->compressor.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
         prev_stream_name = stream_name;
 
