@@ -29,8 +29,8 @@ Each Avro message embeds a schema ID that ClickHouse automatically resolves by q
 
 | Setting                                     | Description                                                                                         | Default |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
-| `input_format_avro_allow_missing_fields`    | For `Avro`/`AvroConfluent`: whether to use a default value instead of erroring when a field is not found in the schema. | `0`     |
-| `input_format_avro_null_as_default`         | For `Avro`/`AvroConfluent`: whether to use a default value instead of erroring when inserting a `null` value into a non-nullable column. |   `0`   |
+| `input_format_avro_allow_missing_fields`    | For `Avro`/`AvroConfluent`: whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
+| `input_format_avro_null_as_default`         | For `Avro`/`AvroConfluent`: whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
 | `format_avro_schema_registry_url`           | For `Avro`/`AvroConfluent`: the Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
 
 ## Example {#example}
