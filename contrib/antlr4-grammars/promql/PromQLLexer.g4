@@ -195,9 +195,9 @@ COMMA: ',';
 
 AT: '@';
 
-SUBQUERY_RANGE: LEFT_BRACKET NUMBER ':' NUMBER? RIGHT_BRACKET;
+SUBQUERY_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? ':' WS_FRAGMENT? NUMBER? WS_FRAGMENT? RIGHT_BRACKET;
 
-TIME_RANGE: LEFT_BRACKET NUMBER RIGHT_BRACKET;
+TIME_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? RIGHT_BRACKET;
 
 // The proper order (longest to the shortest) must be validated after parsing
 fragment DURATION: ([0-9]+ ('ms' | [smhdwy]))+;
@@ -207,3 +207,6 @@ LABEL_NAME  : [a-z_] [a-z0-9_]*;
 
 WS         : [\r\t\n ]+   -> channel(WHITESPACE);
 SL_COMMENT : '#' .*? '\n' -> channel(COMMENTS);
+
+// Whitespace as a fragment (so it can be used as a part of another token).
+fragment WS_FRAGMENT: [\r\t\n ]+;
