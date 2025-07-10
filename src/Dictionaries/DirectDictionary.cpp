@@ -1,4 +1,4 @@
-#include "DirectDictionary.h"
+#include <Dictionaries/DirectDictionary.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>

@@ -24,7 +24,7 @@ Positions: 0
         Type: CROSS
         Strictness: UNSPECIFIED
         Algorithm: HashJoin
-          Filter (( + Change column names to column identifiers))
+          Filter ((((WHERE + (Change column names to column identifiers + (Project names + Projection))) + WHERE) + Change column names to column identifiers))
           Filter column: equals(__table2.key, 162601_UInt32) (removed)
           Actions: INPUT : 0 -> key Int32 : 0
                    INPUT : 1 -> value DateTime : 1

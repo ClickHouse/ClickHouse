@@ -85,9 +85,9 @@ This function can also be used in higher-order functions. For example, you can u
 )";
     FunctionDocumentation::Syntax syntax = "arrayEnumerate(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to enumerate. [`Array`](/sql-reference/data-types/array)."}
+        {"arr", "The array to enumerate.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the array `[1, 2, 3, ..., length (arr)]`. Array(UInt32)";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the array `[1, 2, 3, ..., length (arr)]`.", {"Array(UInt32)"}};
     FunctionDocumentation::Examples examples = {{"Basic example with ARRAY JOIN", R"(
 CREATE TABLE test
 (

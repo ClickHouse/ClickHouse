@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/FileUpdatesTracker.h>
-#include "INamesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
 
 namespace DB
 {

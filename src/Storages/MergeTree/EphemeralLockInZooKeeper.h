@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ReplicatedMergeTreeMutationEntry.h"
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -104,7 +104,10 @@ class EphemeralLocksInAllPartitions : public boost::noncopyable
 {
 public:
     EphemeralLocksInAllPartitions(
-        const String & block_numbers_path, const String & path_prefix, const String & temp_path,
+        const String & block_numbers_path,
+        const String & path_prefix,
+        const String & temp_path,
+        const std::optional<String> & znode_data,
         zkutil::ZooKeeper & zookeeper_);
 
     EphemeralLocksInAllPartitions() = default;
@@ -152,23 +155,26 @@ public:
     PartitionBlockNumbersHolder(const PartitionBlockNumbersHolder &) = delete;
     PartitionBlockNumbersHolder & operator=(const PartitionBlockNumbersHolder &) = delete;
 
+    PartitionBlockNumbersHolder(PartitionBlockNumbersHolder &&) = default;
+    PartitionBlockNumbersHolder & operator=(PartitionBlockNumbersHolder &&) = default;
+
     using BlockNumbersType = ReplicatedMergeTreeMutationEntry::BlockNumbersType;
 
     PartitionBlockNumbersHolder() = default;
+
     PartitionBlockNumbersHolder(
         BlockNumbersType block_numbers_, std::optional<EphemeralLocksInAllPartitions> locked_block_numbers_holder)
         : block_numbers(std::move(block_numbers_))
         , multiple_partitions_holder(std::move(locked_block_numbers_holder))
     {
     }
+
     PartitionBlockNumbersHolder(
         BlockNumbersType block_numbers_, std::optional<EphemeralLockInZooKeeper> locked_block_numbers_holder)
         : block_numbers(std::move(block_numbers_))
         , single_partition_holder(std::move(locked_block_numbers_holder))
     {
     }
-
-    PartitionBlockNumbersHolder & operator=(PartitionBlockNumbersHolder &&) = default;
 
     const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 

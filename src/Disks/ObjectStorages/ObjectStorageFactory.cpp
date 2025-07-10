@@ -1,6 +1,6 @@
 #include <utility>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include "Disks/DiskType.h"
+#include <Disks/DiskType.h>
 #include "config.h"
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
@@ -184,7 +184,8 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
-        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto settings = std::make_unique<S3Settings>();
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -206,18 +207,11 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        /// send_metadata changes the filenames (includes revision), while
-        /// s3_plain do not care about this, and expect that the file name
-        /// will not be changed.
-        ///
-        /// And besides, send_metadata does not make sense for s3_plain.
-        if (config.getBool(config_prefix + ".send_metadata", false))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
-
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
-        auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+        auto settings = std::make_unique<S3Settings>();
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -240,15 +234,11 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* skip_access_check */) -> ObjectStoragePtr
         {
-            /// send_metadata changes the filenames (includes revision), while
-            /// s3_plain_rewritable does not support file renaming.
-            if (config.getBool(config_prefix + ".send_metadata", false))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
-
             auto uri = getS3URI(config, config_prefix, context);
             auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
             auto endpoint = getEndpoint(config, config_prefix, context);
-            auto settings = getSettings(config, config_prefix, context, endpoint, /* validate_settings */true);
+            auto settings = std::make_unique<S3Settings>();
+            settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
             auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */true);
             auto key_generator = getKeyGenerator(uri, config, config_prefix);
 

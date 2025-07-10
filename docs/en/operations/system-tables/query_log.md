@@ -12,11 +12,7 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains information about executed queries, for example, start time, duration of processing, error messages.
-
-:::note
-This table does not contain the ingested data for `INSERT` queries.
-:::
+Stores metadata and statistics about executed queries, such as start time, duration, error messages, resource usage, and other execution details. It does not store the results of queries. 
 
 You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query_log) section of the server configuration.
 

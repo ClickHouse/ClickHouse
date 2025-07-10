@@ -1004,7 +1004,10 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperSessionIDResponse>();
+    auto response = std::make_shared<ZooKeeperSessionIDResponse>();
+    response->server_id = server_id;
+    response->internal_id = internal_id;
+    return std::move(response);
 }
 
 void ZooKeeperSessionIDResponse::readImpl(ReadBuffer & in)

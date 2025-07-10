@@ -15,7 +15,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>

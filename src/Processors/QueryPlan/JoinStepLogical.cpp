@@ -660,6 +660,7 @@ static void constructPhysicalStep(
         join_right_node->step->getOutputHeader(),
         join_ptr,
         join_settings.max_block_size,
+        join_settings.min_joined_block_size_rows
         join_settings.min_joined_block_size_bytes,
         optimization_settings.max_threads,
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),

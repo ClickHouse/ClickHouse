@@ -1,4 +1,4 @@
-#include "RedisSource.h"
+#include <Dictionaries/RedisSource.h>
 
 #include <vector>
 #include <Columns/ColumnNullable.h>

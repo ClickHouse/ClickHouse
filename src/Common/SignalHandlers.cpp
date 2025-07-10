@@ -578,7 +578,7 @@ try
     {
         if (daemon)
         {
-            CrashWriter::onSignal(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+            CrashWriter::onSignal(sig, std::string_view(error_message), stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
         }
 
         /// Advice the user to send it manually.

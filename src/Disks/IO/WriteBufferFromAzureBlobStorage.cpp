@@ -12,9 +12,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-
     extern const Event AzureUpload;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
@@ -22,7 +19,6 @@ namespace ProfileEvents
     extern const Event DiskAzureUpload;
     extern const Event DiskAzureStageBlock;
     extern const Event DiskAzureCommitBlockList;
-
 }
 
 namespace DB
@@ -252,7 +248,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 void WriteBufferFromAzureBlobStorage::hidePartialData()
 {
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 

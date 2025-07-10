@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
@@ -240,6 +241,7 @@ void ThreadStatus::flushUntrackedMemory()
     if (untracked_memory == 0)
         return;
 
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
     untracked_memory = 0;
 }
@@ -336,6 +338,14 @@ MainThreadStatus::MainThreadStatus()
 
 MainThreadStatus::~MainThreadStatus()
 {
+    /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
+    /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
+    /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open
+    /// If the `metrics_provider` static object is destroyed first then by the time when the destructor of `thread_status` is called
+    /// the file descriptors are closed, which will throw errors.
+    /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
+    /// implicit ~ThreadStatus is called here
+    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 

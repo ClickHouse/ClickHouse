@@ -118,7 +118,7 @@ SELECT '';
 SELECT '-------- GIN filter --------';
 SELECT '';
 
-SET allow_experimental_inverted_index=1;
+SET allow_experimental_full_text_index = 1;
 DROP TABLE IF EXISTS 03165_token_ft;
 CREATE TABLE 03165_token_ft
 (

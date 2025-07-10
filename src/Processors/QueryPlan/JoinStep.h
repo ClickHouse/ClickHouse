@@ -19,6 +19,7 @@ public:
         const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_rows_,
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
@@ -66,6 +67,7 @@ private:
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 

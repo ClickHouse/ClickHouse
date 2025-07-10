@@ -1,4 +1,4 @@
-#include "DiskType.h"
+#include <Disks/DiskType.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
 

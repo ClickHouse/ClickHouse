@@ -1,4 +1,4 @@
-#include "gtest_common.h"
+#include <Parsers/tests/gtest_common.h>
 
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>

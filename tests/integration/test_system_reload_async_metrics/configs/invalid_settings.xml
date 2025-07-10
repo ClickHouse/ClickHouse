@@ -1,0 +1,4 @@
+<clickhouse>
+    <asynchronous_metrics_update_period_s>0</asynchronous_metrics_update_period_s>
+    <asynchronous_heavy_metrics_update_period_s>0</asynchronous_heavy_metrics_update_period_s>
+</clickhouse>

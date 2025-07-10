@@ -3,8 +3,8 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
-#include "KernelHelper.h"
-#include "KernelUtils.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes

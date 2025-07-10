@@ -24,6 +24,8 @@ Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:
 
 Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
 
+The number of digits after the decimal point depends on the precision parameter.
+
 Note: The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is `2262-04-11 23:47:16` in UTC.
 
 ## Examples {#examples}
@@ -41,8 +43,9 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from integer interpreted as number of seconds since 1970-01-01.
--- - from string,
+-- - from integer interpreted as number of microseconds (because of precision 3) since 1970-01-01,
+-- - from decimal interpreted as number of seconds before the decimal part, and based on the precision after the decimal point,
+-- - from string.
 INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
 SELECT * FROM dt64;
@@ -103,8 +106,8 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 
 ```sql
 SELECT
-toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
+toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
 FROM dt64;
 ```
 

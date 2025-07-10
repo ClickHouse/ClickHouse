@@ -9,7 +9,7 @@
 
 #include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>

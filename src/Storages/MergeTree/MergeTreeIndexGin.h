@@ -12,7 +12,6 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleGin(
         const String & index_name_,
-        size_t columns_number,
         const GinFilterParameters & gin_filter_params_);
 
     ~MergeTreeIndexGranuleGin() override = default;
@@ -25,7 +24,7 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 
     const String index_name;
     const GinFilterParameters gin_filter_params;
-    GinFilters gin_filters;
+    GinFilter gin_filter;
     bool has_elems;
 };
 
@@ -86,16 +85,17 @@ private:
     {
         enum Function
         {
-            /// Atoms of a Boolean expression.
+            /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
+            FUNCTION_SEARCH_ANY,
+            FUNCTION_SEARCH_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
-            /// Operators of the logical expression.
+            /// Operators
             FUNCTION_NOT,
             FUNCTION_AND,
             FUNCTION_OR,
@@ -105,13 +105,10 @@ private:
         };
 
         RPNElement( /// NOLINT
-                Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<GinFilter> && const_gin_filter_ = nullptr)
-                : function(function_), key_column(key_column_), gin_filter(std::move(const_gin_filter_)) {}
+                Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinFilter> && const_gin_filter_ = nullptr)
+                : function(function_), gin_filter(std::move(const_gin_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
-
-        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
-        size_t key_column;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<GinFilter> gin_filter;
@@ -127,8 +124,8 @@ private:
 
     bool traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out);
     bool traverseASTEquals(
-        const String & function_name,
-        const RPNBuilderTreeNode & key_ast,
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_ast,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);

@@ -1,4 +1,4 @@
-#include "ClickHouseDictionarySource.h"
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/DateLUTImpl.h>
@@ -18,12 +18,12 @@
 #include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "readInvalidateQuery.h"
-#include "DictionaryFactory.h"
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/readInvalidateQuery.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 namespace DB
 {

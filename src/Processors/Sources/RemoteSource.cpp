@@ -1,11 +1,15 @@
+#include <Columns/ColumnBLOB.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+
+#include <Processors/Transforms/SortChunksBySequenceNumber.h>
 
 namespace DB
 {
@@ -288,6 +292,17 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
+void UnmarshallBlocksTransform::transform(Chunk & chunk)
+{
+    const auto rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+    {
+        if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
+            column = col->convertFrom();
+    }
+    chunk.setColumns(std::move(columns), rows);
+}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
@@ -295,15 +310,23 @@ Pipe createRemoteSourcePipe(
     bool add_totals,
     bool add_extremes,
     bool async_read,
-    bool async_query_sending)
+    bool async_query_sending,
+    size_t parallel_marshalling_threads)
 {
+    chassert(parallel_marshalling_threads);
+
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
+    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
 
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
+
+    pipe.resize(parallel_marshalling_threads);
+    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
 }

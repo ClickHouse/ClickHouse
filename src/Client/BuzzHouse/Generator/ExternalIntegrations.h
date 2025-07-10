@@ -22,6 +22,7 @@
 #    include <mongocxx/client.hpp>
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
+#    include <mongocxx/exception/exception.hpp>
 #endif
 
 #if USE_LIBPQXX
@@ -322,7 +323,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
@@ -360,7 +361,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 

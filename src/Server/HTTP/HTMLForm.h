@@ -54,6 +54,13 @@ public:
         return (it != end()) ? DB::parse<T>(it->second) : default_value;
     }
 
+    template <typename T>
+    T getParsedLast(const std::string & key, T default_value)
+    {
+        auto it = findLast(key);
+        return (it != end()) ? DB::parse<T>(it->second) : default_value;
+    }
+
     /// Reads the form data from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
     void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);

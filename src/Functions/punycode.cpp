@@ -149,8 +149,8 @@ REGISTER_FUNCTION(Punycode)
         .description=R"(
 Computes a Punycode representation of a string.)",
         .syntax="punycodeEncode(str)",
-        .arguments={{"str", "Input string"}},
-        .returned_value="The punycode representation [String](/sql-reference/data-types/string.md).",
+        .arguments={{"str", "Input string", {"String"}}},
+        .returned_value={"The punycode representation", {"String"}},
         .examples={
             {"simple",
             "SELECT punycodeEncode('München') AS puny;",
@@ -167,8 +167,8 @@ Computes a Punycode representation of a string.)",
         .description=R"(
 Computes a Punycode representation of a string. Throws an exception if the input is not valid Punycode.)",
         .syntax="punycodeDecode(str)",
-        .arguments={{"str", "A Punycode-encoded string"}},
-        .returned_value="The plaintext representation [String](/sql-reference/data-types/string.md).",
+        .arguments={{"str", "A Punycode-encoded string", {"String"}}},
+        .returned_value={"The plaintext representation", {"String"}},
         .examples={
             {"simple",
             "SELECT punycodeDecode('Mnchen-3ya') AS plain;",
@@ -186,7 +186,7 @@ Computes a Punycode representation of a string. Throws an exception if the input
 Computes a Punycode representation of a string. Returns an empty string if the input is not valid Punycode.)",
         .syntax="punycodeDecode(str)",
         .arguments={{"str", "A Punycode-encoded string"}},
-        .returned_value="The plaintext representation [String](/sql-reference/data-types/string.md).",
+        .returned_value={"The plaintext representation", {"String"}},
         .examples={
             {"simple",
             "SELECT tryPunycodeDecode('Mnchen-3ya') AS plain;",

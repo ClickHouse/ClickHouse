@@ -6,7 +6,7 @@
 #    include <base/types.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include "ElementTypes.h"
+#    include <Common/JSONParsers/ElementTypes.h>
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
 #    include <charconv>

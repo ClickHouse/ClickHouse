@@ -401,12 +401,12 @@ REGISTER_FUNCTION(NormalizedGini)
     FunctionDocumentation::Description doc_description = "Calculates the normalized Gini coefficient.";
     FunctionDocumentation::Syntax doc_syntax = "arrayNormalizedGini(predicted, label)";
     FunctionDocumentation::Arguments doc_arguments = {
-        {"predicted", "The predicted value. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"label", "The actual value. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"predicted", "The predicted value.", {"Array(T)"}},
+        {"label", "The actual value.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue doc_returned_value = "A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients). [Tuple(Float64, Float64, Float64)](/sql-reference/data-types/tuple).";
+    FunctionDocumentation::ReturnedValue doc_returned_value = {"A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients)", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples doc_examples = {
-        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}
+        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)"}
     };
     FunctionDocumentation::IntroducedIn doc_introduced_in = {25, 1};
     FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::Array;

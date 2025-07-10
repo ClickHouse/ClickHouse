@@ -1,5 +1,5 @@
-#include "ORCBlockInputFormat.h"
-#include "Common/Exception.h"
+#include <Processors/Formats/Impl/ORCBlockInputFormat.h>
+#include <Common/Exception.h>
 
 #if USE_ORC
 #    include <DataTypes/NestedUtils.h>
@@ -9,10 +9,10 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include "ArrowBufferedStreams.h"
-#    include "ArrowColumnToCHColumn.h"
-#    include "ArrowFieldIndexUtil.h"
-#    include "NativeORCBlockInputFormat.h"
+#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
 
 namespace DB

@@ -10,7 +10,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include "IO/CompressionMethod.h"
+#include <IO/CompressionMethod.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 

@@ -1,7 +1,7 @@
-#include "PostgreSQLHandlerFactory.h"
+#include <Server/PostgreSQLHandlerFactory.h>
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
-#include "Core/PostgreSQLProtocol.h"
+#include <Core/PostgreSQLProtocol.h>
 
 namespace DB
 {

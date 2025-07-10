@@ -10,10 +10,10 @@
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
 #include <base/StringRef.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 namespace DB
 {

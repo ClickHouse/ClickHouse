@@ -1991,7 +1991,7 @@ Use function [hex](../functions/encoding-functions.md/#hex) to format the result
 
 Query:
 ```sql
-select hex(keccak256('hello'))
+SELECT hex(keccak256('hello'))
 ```
 
 Result:

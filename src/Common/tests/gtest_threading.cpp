@@ -6,7 +6,7 @@
 #include <barrier>
 #include <atomic>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/CancelToken.h>
 #include <Common/SharedMutex.h>
 #include <Common/CancelableSharedMutex.h>

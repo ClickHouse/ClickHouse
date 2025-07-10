@@ -43,6 +43,8 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
+    void updateHashImpl(SipHash &) const override {}
+
     SerializationPtr doGetDefaultSerialization() const override;
 };
 

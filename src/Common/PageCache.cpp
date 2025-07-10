@@ -1,4 +1,4 @@
-#include "PageCache.h"
+#include <Common/PageCache.h>
 
 #include <sys/mman.h>
 #include <Common/Allocator.h>
@@ -145,9 +145,10 @@ bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
     return shard.contains(key_hash);
 }
 
-void PageCache::Shard::onRemoveOverflowWeightLoss(size_t weight_loss)
+void PageCache::Shard::onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr)
 {
     ProfileEvents::increment(ProfileEvents::PageCacheWeightLost, weight_loss);
+    UNUSED(mapped_ptr);
 }
 
 void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)

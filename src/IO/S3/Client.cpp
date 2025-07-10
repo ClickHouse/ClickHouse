@@ -31,7 +31,8 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-
+#include <Common/thread_local_rng.h>
+#include <random>
 
 namespace ProfileEvents
 {
@@ -713,7 +714,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 sleepAfterNetworkError(error, attempt_no);
-                continue;
             }
         }
 
@@ -777,6 +777,13 @@ void Client::slowDownAfterNetworkError() const
         if (current_time_ms >= next_time_ms)
             break;
         UInt64 sleep_ms = next_time_ms - current_time_ms;
+
+        /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
+        /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
+        std::uniform_real_distribution<double> dist(1.0, 1.1);
+        double jitter = dist(thread_local_rng);
+        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
+
         LOG_WARNING(log, "Some request failed, now waiting {} ms before executing a request", sleep_ms);
         sleepForMilliseconds(sleep_ms);
     }

@@ -202,7 +202,7 @@ void StatementGenerator::setTableRemote(
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+        mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
         mfunc->set_rdatabase(sc.database);
         mfunc->set_rtable("t" + std::to_string(t.tname));
         mfunc->set_user(sc.user);
@@ -213,7 +213,7 @@ void StatementGenerator::setTableRemote(
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
 
-        pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
         pfunc->set_rdatabase(sc.database);
         pfunc->set_rtable("t" + std::to_string(t.tname));
         pfunc->set_user(sc.user);
@@ -227,14 +227,14 @@ void StatementGenerator::setTableRemote(
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (table_engine && (t.isS3Engine() || t.isURLEngine() || t.isAzureEngine()) && rg.nextSmallNumber() < 7)
+    else if (table_engine && (t.isAnyS3Engine() || t.isURLEngine() || t.isAnyAzureEngine()) && rg.nextSmallNumber() < 7)
     {
         String buf;
         bool first = true;
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isS3Engine())
+        if (t.isAnyS3Engine())
         {
             S3Func * sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
@@ -246,10 +246,10 @@ void StatementGenerator::setTableRemote(
             }
             else
             {
-                sfunc->set_fname(S3Func_FName::S3Func_FName_s3);
+                sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
             }
             sfunc->set_resource(
-                "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
+                "http://" + sc.server_hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
                 + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
@@ -274,7 +274,7 @@ void StatementGenerator::setTableRemote(
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl("http://" + sc.hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
+            ufunc->set_uurl("http://" + sc.server_hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
             ufunc->set_inoutformat(t.file_format);
             structure = ufunc->mutable_structure();
         }
@@ -292,7 +292,7 @@ void StatementGenerator::setTableRemote(
             {
                 afunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage);
             }
-            afunc->set_connection_string(sc.hostname);
+            afunc->set_connection_string(sc.server_hostname);
             afunc->set_container(sc.container);
             afunc->set_blobpath("file" + std::to_string(t.tname));
             afunc->set_user(sc.user);
@@ -330,7 +330,7 @@ void StatementGenerator::setTableRemote(
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
-            rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+            rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             rfunc->set_user(sc.user);
             rfunc->set_password(sc.password);
         }
@@ -479,7 +479,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
-    const uint32_t url_encoded_table = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+    const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -511,7 +511,7 @@ bool StatementGenerator::joinedTableOrFunction(
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
-            rel.cols.push_back(entry);
+            rel.cols.emplace_back(SQLRelationCol(rel_name, entry.path));
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -865,7 +865,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values_udf + random_data_udf + 1))
     {
         GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
-        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+        std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
         std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
         addRandomRelation(
@@ -913,7 +913,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += "http://" + fc.host + ":" + std::to_string(fc.http_port) + "/?query=SELECT+";
+        url += fc.getHTTPURL(rg.nextSmallNumber() < 4) + "/?query=SELECT+";
         flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
         std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
         for (const auto & entry : this->remote_entries)
@@ -1044,14 +1044,13 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
             if (!intersect.empty())
             {
-                ExprColumnList * ecl = jc->mutable_using_expr()->mutable_col_list();
-                const uint32_t nclauses
-                    = std::min<uint32_t>(UINT32_C(3), (rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size())) + 1);
+                UsingExpr * uexpr = jc->mutable_using_expr();
+                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextRandomUInt32() % static_cast<uint32_t>(intersect.size()));
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
+                    ColumnPath * cp = uexpr->add_columns()->mutable_path();
                     const DB::Strings & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
@@ -1274,7 +1273,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
-            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
         }
         else
         {
@@ -1882,8 +1881,10 @@ void StatementGenerator::generateSelect(
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
         setq->set_set_op(static_cast<SetQuery_SetOp>(set_range(rg.generator)));
-        setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
-
+        if (rg.nextSmallNumber() < 8)
+        {
+            setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
+        }
         this->depth++;
         this->current_level++;
         if (ncols == 1 && rg.nextMediumNumber() < 6)

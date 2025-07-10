@@ -734,13 +734,14 @@ Creates a `Date` from either:
 makeDate(year, month, day)
 makeDate(year, day_of_year)
     )";
-    FunctionDocumentation::Arguments arguments_makeDate = {
-        {"year", "Year number. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"month", "Month number (1-12). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day", "Day of the month (1-31). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day_of_year", "Day of the year (1-365). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."}
+    FunctionDocumentation::Arguments arguments_makeDate =
+    {
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_makeDate = "Returns a `Date` value constructed from the provided arguments. [`Date`](../data-types/date.md).";
+    FunctionDocumentation::ReturnedValue returned_value_makeDate = {"Returns a `Date` value constructed from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_makeDate = {
         {"Date from a year, month, day", R"(
 SELECT makeDate(2023, 2, 28) AS date;
@@ -774,13 +775,14 @@ Creates a `Date32` from either:
 makeDate32(year, month, day)
 makeDate32(year, day_of_year)
     )";
-    FunctionDocumentation::Arguments arguments_makeDate32 = {
-        {"year", "Year number. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"month", "Month number (1-12). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day", "Day of the month (1-31). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day_of_year", "Day of the year (1-365). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."}
+    FunctionDocumentation::Arguments arguments_makeDate32 =
+    {
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_makeDate32 = "Returns a `Date32` value constructed from the provided arguments. [`Date32`](../data-types/date32.md).";
+    FunctionDocumentation::ReturnedValue returned_value_makeDate32 = {"Returns a `Date32` value constructed from the provided arguments", {"Date32"}};
     FunctionDocumentation::Examples examples_makeDate32 = {
         {"Date32 from a year, month, day", R"(
 SELECT makeDate(2023, 2, 28) AS date;
@@ -811,16 +813,17 @@ Creates a `DateTime` from year, month, day, hour, minute, and second, with optio
     FunctionDocumentation::Syntax syntax_makeDateTime = R"(
 makeDateTime(year, month, day, hour, minute, second[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_makeDateTime = {
-        {"year", "Year number. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"month", "Month number (1-12). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day", "Day of the month (1-31). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"hour", "Hour (0-23). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"minute", "Minute (0-59). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"second", "Second (0-59). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"timezone", "Optional. Timezone name. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments_makeDateTime =
+    {
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"hour", "Hour (0-23).", {"(U)Int*", "Float*", "Decimal"}},
+        {"minute", "Minute (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"second", "Second (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"timezone", "Timezone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_makeDateTime = "Returns a `DateTime` value constructed from the provided arguments. [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::ReturnedValue returned_value_makeDateTime = {"Returns a `DateTime` value constructed from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_makeDateTime = {
         {"DateTime from year, month, day, hour, minute, second", R"(
 SELECT makeDateTime(2023, 2, 28, 17, 12, 33) AS DateTime;
@@ -843,18 +846,19 @@ Creates a `DateTime64` from year, month, day, hour, minute, second, with optiona
     FunctionDocumentation::Syntax syntax_makeDateTime64 = R"(
 makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
     )";
-    FunctionDocumentation::Arguments arguments_makeDateTime64 = {
-        {"year", "Year number. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"month", "Month number (1-12). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"day", "Day of the month (1-31). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"hour", "Hour (0-23). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"minute", "Minute (0-59). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"second", "Second (0-59). [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"fraction", "Optional. Fractional part of the second. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"precision", "Optional. Precision for the fractional part (0-9). [`UInt8`](../data-types/int-uint.md)."},
-        {"timezone", "Optional. Timezone name. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments_makeDateTime64 =
+    {
+        {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
+        {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
+        {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
+        {"hour", "Hour (0-23).", {"(U)Int*", "Float*", "Decimal"}},
+        {"minute", "Minute (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"second", "Second (0-59).", {"(U)Int*", "Float*", "Decimal"}},
+        {"fraction", "Fractional part of the second.", {"(U)Int*", "Float*", "Decimal"}},
+        {"precision", "Precision for the fractional part (0-9).", {"UInt8"}},
+        {"timezone", "Timezone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_makeDateTime64 = "Returns a `DateTime64` value constructed from the provided arguments. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_makeDateTime64 = {"Returns a `DateTime64` value constructed from the provided arguments", {"DateTime64"}};
     FunctionDocumentation::Examples examples_makeDateTime64 = {
         {"DateTime64 from year, month, day, hour, minute, second", R"(
 SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
@@ -878,10 +882,11 @@ The output is undefined if the input does not encode a valid Date value.
     FunctionDocumentation::Syntax syntax_yyyymmddtodate = R"(
 YYYYMMDDToDate(YYYYMMDD)
     )";
-    FunctionDocumentation::Arguments arguments_yyyymmddtodate = {
-        {"YYYYMMDD", "Number containing the year, month and day. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."}
+    FunctionDocumentation::Arguments arguments_yyyymmddtodate =
+    {
+        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate = "Returns a `Date` value from the provided arguments. [`Date`](../data-types/date.md).";
+    FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate = {"Returns a `Date` value from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_yyyymmddtodate = {
         {"Example", R"(
 SELECT YYYYMMDDToDate(20230911);
@@ -906,11 +911,11 @@ The output is undefined if the input does not encode a valid `Date32` value.
     FunctionDocumentation::Syntax syntax_yyyymmddtodate32 = R"(
 YYYYMMDDToDate32(YYYYMMDD)
     )";
-    FunctionDocumentation::Arguments arguments_yyyymmddtodate32 = {
-        {"YYYYMMDD", "Number containing the year, month and day. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."}
+    FunctionDocumentation::Arguments arguments_yyyymmddtodate32 =
+    {
+        {"YYYYMMDD", "Number containing the year, month and day.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate32 = "Returns a `Date32` value from the provided arguments. [`Date32`](../data-types/date32.md).";
-    FunctionDocumentation::Examples examples_yyyymmddtodate32 = {
+    FunctionDocumentation::ReturnedValue returned_value_yyyymmddtodate32 = {"Returns a `Date32` value from the provided arguments", {"Date32"}};    FunctionDocumentation::Examples examples_yyyymmddtodate32 = {
         {"Example", R"(
 SELECT YYYYMMDDToDate32(20000507);
         )",
@@ -934,11 +939,12 @@ The output is undefined if the input does not encode a valid `DateTime` value.
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime = R"(
 YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime = {
-        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"timezone", "Optional. Timezone name. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime =
+    {
+        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float*", "Decimal"}},
+        {"timezone", "Timezone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = "Returns a `DateTime` value from the provided arguments. [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime = {
         {"Example", R"(
 SELECT YYYYMMDDToDateTime(20230911131415);
@@ -963,12 +969,13 @@ The output is undefined if the input does not encode a valid `DateTime64` value.
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime64 = R"(
 YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
     )";
-    FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime64 = {
-        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second. [`(U)Int*`](../data-types/int-uint.md)/[`Float32/64`](../data-types/float.md)/[`Decimal`](../data-types/decimal.md)."},
-        {"precision", "Optional. Precision for the fractional part (0-9). [`UInt8`](../data-types/int-uint.md)."},
-        {"timezone", "Optional. Timezone name. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments_yyyymmddhhmmsstodatetime64 =
+    {
+        {"YYYYMMDDhhmmss", "Number containing the year, month, day, hour, minute, and second.", {"(U)Int*", "Float*", "Decimal"}},
+        {"precision", "Precision for the fractional part (0-9).", {"UInt8"}},
+        {"timezone", "Timezone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime64 = "Returns a `DateTime64` value from the provided arguments. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime64 = {"Returns a `DateTime64` value from the provided arguments", {"DateTime64"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime64 = {
         {"Example", R"(
 SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');

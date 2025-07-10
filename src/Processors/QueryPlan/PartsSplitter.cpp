@@ -985,16 +985,18 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         {
             continue; /// early exit, intersection infeasible in this part
         }
-
-        auto candidates_start = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        /// The selected lower bound could be 'fqrst' and granule PK ranges could be -
+        ///      abcde,...,fcedr, ffagj, fqrst, fqrst, fqrst, ghyrw ....
+        /// candidates_start needs to point to granule starting at "ffagj"
+        auto candidates_start = index_access.findRightmostMarkLessThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
         if (!candidates_start)
-            continue; /// no intersection possible in this part
-        if (candidates_start.value() > 0)
-            candidates_start = candidates_start.value() - 1;
+            candidates_start = 0;
 
         auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
         if (!candidates_end)
             candidates_end = index_granularity->getMarksCountWithoutFinal();
+        if (candidates_end != 0) /// Come back by 1 because we are now 1 past the upper bound or at the final mark
+            candidates_end = candidates_end.value() - 1;
 
         for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
         {

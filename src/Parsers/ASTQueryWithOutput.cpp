@@ -97,5 +97,9 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     return false;
 }
 
+bool ASTQueryWithOutput::hasOutputOptions() const
+{
+    return out_file || format_ast || settings_ast || compression || compression_level;
+}
 
 }

@@ -215,7 +215,7 @@ public:
                     {
                         if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            if (type_tuple->haveExplicitNames())
+                            if (type_tuple->hasExplicitNames())
                             {
                                 const auto & names = type_tuple->getElementNames();
                                 size_t size = names.size();

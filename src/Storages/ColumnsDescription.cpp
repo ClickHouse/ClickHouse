@@ -423,7 +423,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        if (!type_tuple->haveExplicitNames())
+        if (!type_tuple->hasExplicitNames())
         {
             ++it;
             continue;

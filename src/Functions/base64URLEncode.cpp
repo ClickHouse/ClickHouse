@@ -21,7 +21,7 @@ REGISTER_FUNCTION(Base64URLEncode)
     FunctionDocumentation::Description description = R"(Encodes an URL (String or FixedString) as base64 with URL-specific modifications, according to RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648#section-5).)";
     FunctionDocumentation::Syntax syntax = "base64URLEncode(url)";
     FunctionDocumentation::Arguments arguments = {{"url", "String column or constant."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A string containing the encoded value of the argument.";
+    FunctionDocumentation::ReturnedValue returned_value = {"A string containing the encoded value of the argument.", {"String"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64URLEncode('https://clickhouse.com')", "aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;

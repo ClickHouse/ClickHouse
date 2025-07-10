@@ -291,16 +291,16 @@ def find_prev_build(info, build_type):
 def main():
 
     args = parse_args()
-    test_options = args.test_options.split(",")
+    test_options = [to.strip() for to in args.test_options.split(",")]
     batch_num, total_batches = 1, 1
     compare_against_master = False
     compare_against_release = False
     for test_option in test_options:
         if "/" in test_option:
             batch_num, total_batches = map(int, test_option.split("/"))
-        if test_option == "master_head":
+        if "master_head" in test_option:
             compare_against_master = True
-        elif test_option == "prev_release":
+        elif "prev_release" in test_option:
             compare_against_release = True
 
     batch_num -= 1

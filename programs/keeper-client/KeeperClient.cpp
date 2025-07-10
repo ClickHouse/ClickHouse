@@ -1,5 +1,5 @@
-#include "KeeperClient.h"
-#include "Commands.h"
+#include <KeeperClient.h>
+#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -196,6 +196,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("tests-mode", "", "run keeper-client in a special mode for tests. all commands output are separated by special symbols. default false")
             .binding("tests-mode"));
+
+    options.addOption(
+        Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
+            .argument("<identity>")
+            .binding("identity"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -432,6 +437,9 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zk_args.use_xid_64 = config().hasOption("use-xid-64");
     zk_args.password = config().getString("password", "");
+    zk_args.identity = config().getString("identity", "");
+    if (!zk_args.identity.empty())
+        zk_args.auth_scheme = "digest";
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))

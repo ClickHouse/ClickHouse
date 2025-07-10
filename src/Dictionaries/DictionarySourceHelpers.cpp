@@ -1,9 +1,9 @@
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>

@@ -1,9 +1,9 @@
 #include "config.h"
 
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 #if USE_MONGODB
-#include "MongoDBDictionarySource.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/MongoDBDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>

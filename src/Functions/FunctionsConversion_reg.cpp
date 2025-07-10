@@ -44,6 +44,8 @@ Example:
     factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<detail::FunctionToDate32>();
+    factory.registerFunction<detail::FunctionToTime>();
+    factory.registerFunction<detail::FunctionToTime64>();
     factory.registerFunction<detail::FunctionToDateTime>();
     factory.registerFunction<detail::FunctionToDateTime32>();
     factory.registerFunction<detail::FunctionToDateTime64>();
@@ -59,10 +61,10 @@ Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1
 toUnixTimestamp(date, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
-        {"date", "Value to convert. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)/[`String`](/sql-reference/data-types/string)."},
-        {"timezone", "Optional. Timezone to use for conversion. If not specified, the server's timezone is used. [`String`](/sql-reference/data-types/string)."}
+        {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"timezone", "Optional.Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = "Returns the Unix timestamp as [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp as", {"UInt32"}};
     FunctionDocumentation::Examples examples_to_unix_timestamp = {
         {"Usage example", R"(
 SELECT
@@ -140,6 +142,8 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToFloat64OrZero>();
     factory.registerFunction<detail::FunctionToDateOrZero>();
     factory.registerFunction<detail::FunctionToDate32OrZero>();
+    factory.registerFunction<detail::FunctionToTimeOrZero>();
+    factory.registerFunction<detail::FunctionToTime64OrZero>();
     factory.registerFunction<detail::FunctionToDateTimeOrZero>();
     factory.registerFunction<detail::FunctionToDateTime64OrZero>();
 
@@ -193,6 +197,8 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToFloat64OrNull>();
     factory.registerFunction<detail::FunctionToDateOrNull>();
     factory.registerFunction<detail::FunctionToDate32OrNull>();
+    factory.registerFunction<detail::FunctionToTimeOrNull>();
+    factory.registerFunction<detail::FunctionToTime64OrNull>();
     factory.registerFunction<detail::FunctionToDateTimeOrNull>();
     factory.registerFunction<detail::FunctionToDateTime64OrNull>();
 

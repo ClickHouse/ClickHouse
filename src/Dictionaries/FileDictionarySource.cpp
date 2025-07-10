@@ -1,14 +1,14 @@
-#include "FileDictionarySource.h"
+#include <Dictionaries/FileDictionarySource.h>
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
