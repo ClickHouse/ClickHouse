@@ -17,7 +17,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB

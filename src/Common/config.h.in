@@ -56,6 +56,7 @@
 #cmakedefine01 USE_SQLITE
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_SZ3
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_USEARCH

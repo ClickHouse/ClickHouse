@@ -1,4 +1,4 @@
-#include "NativeORCBlockInputFormat.h"
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
@@ -45,7 +45,7 @@
 #    include <Common/quoteString.h>
 #    include <Common/memory.h>
 
-#    include "ArrowBufferedStreams.h"
+#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #    include <boost/algorithm/string.hpp>
 
