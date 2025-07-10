@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <sstream>
 #include <variant>
 #include <vector>
 
@@ -9,13 +8,13 @@
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <Core/Field.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
-#include "Core/Field.h"
-#include "DataTypes/IDataType.h"
 
 namespace DB
 {
@@ -48,7 +47,9 @@ public:
         TransformType parent_type;
     };
 
-    explicit IcebergChangeSchemaOperation(ChangeType change_type_, const std::vector<Edge> & root_) : change_type(change_type_), root(root_)
+    explicit IcebergChangeSchemaOperation(ChangeType change_type_, const std::vector<Edge> & root_)
+        : change_type(change_type_)
+        , root(root_)
     {
     }
 
@@ -90,7 +91,10 @@ class ExecutableEvolutionFunction : public IExecutableFunction
 public:
     explicit ExecutableEvolutionFunction(
         DataTypePtr type_, DataTypePtr old_type_, Poco::SharedPtr<Poco::JSON::Object> old_json_, Poco::SharedPtr<Poco::JSON::Object> field_)
-        : type(type_), old_type(old_type_), old_json(old_json_), field(field_)
+        : type(type_)
+        , old_type(old_type_)
+        , old_json(old_json_)
+        , field(field_)
     {
     }
 
@@ -140,7 +144,10 @@ public:
         const DataTypes & old_types_,
         Poco::SharedPtr<Poco::JSON::Object> old_json_,
         Poco::SharedPtr<Poco::JSON::Object> field_)
-        : types(types_), old_types(old_types_), old_json(old_json_), field(field_)
+        : types(types_)
+        , old_types(old_types_)
+        , old_json(old_json_)
+        , field(field_)
     {
     }
 

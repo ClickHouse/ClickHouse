@@ -1,20 +1,19 @@
 #include <memory>
-#include <sstream>
 #include <stack>
 #include <variant>
 
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
+#include <base/defines.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
-#include "Common/Exception.h"
-#include "Columns/IColumn.h"
-#include "DataTypes/DataTypeArray.h"
-#include "DataTypes/DataTypeMap.h"
-#include "DataTypes/DataTypeTuple.h"
-#include "base/defines.h"
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -28,7 +27,8 @@ class IcebergDeletingOperation : public IcebergChangeSchemaOperation
 {
 public:
     IcebergDeletingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::DELETING, root_), field_name(field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::DELETING, root_)
+        , field_name(field_name_)
     {
     }
 
@@ -39,7 +39,8 @@ class IcebergAddingOperation : public IcebergChangeSchemaOperation
 {
 public:
     IcebergAddingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::ADDING, root_), field_name(field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::ADDING, root_)
+        , field_name(field_name_)
     {
     }
 
@@ -50,14 +51,16 @@ class IcebergReorderingOperation : public IcebergChangeSchemaOperation
 {
 public:
     IcebergReorderingOperation(const std::vector<Edge> & root_, const std::vector<size_t> & permutation_)
-        : IcebergChangeSchemaOperation(ChangeType::REORDERING, root_), permutation(permutation_)
+        : IcebergChangeSchemaOperation(ChangeType::REORDERING, root_)
+        , permutation(permutation_)
     {
     }
 
     std::vector<size_t> permutation;
 };
 
-IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_) : path(path_)
+IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_)
+    : path(path_)
 {
 }
 
@@ -84,8 +87,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
         size_t height = current_path.size();
         switch (path[height].parent_type)
         {
-            case TransformType::STRUCT:
-            {
+            case TransformType::STRUCT: {
                 current_path.push_back(index_path[height]);
 
                 if (current_path.size() == index_path.size())
@@ -114,8 +116,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                 walk_stack.push({current_path, current_value});
                 break;
             }
-            case TransformType::ARRAY:
-            {
+            case TransformType::ARRAY: {
                 for (size_t i = 0; i < std::get<Array>(current_value).size(); ++i)
                 {
                     current_path.push_back(i);
@@ -150,8 +151,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                 }
                 break;
             }
-            case TransformType::MAP:
-            {
+            case TransformType::MAP: {
                 for (size_t i = 0; i < std::get<Map>(current_value).size(); ++i)
                 {
                     current_path.push_back(i);
@@ -207,8 +207,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
 
             switch (edge_type)
             {
-                case TransformType::STRUCT:
-                {
+                case TransformType::STRUCT: {
                     auto current_tuple = std::get<Tuple>(current_node);
                     Tuple tmp_node_tuple;
                     Array tmp_node_array;
@@ -234,8 +233,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                             current_tuple[subfield_index].getTypeName());
                     break;
                 }
-                case TransformType::ARRAY:
-                {
+                case TransformType::ARRAY: {
                     auto current_tuple = std::get<Array>(current_node);
                     Tuple tmp_node_tuple;
                     Array tmp_node_array;
@@ -258,8 +256,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type in iceberg complex schema transform");
                     break;
                 }
-                case TransformType::MAP:
-                {
+                case TransformType::MAP: {
                     auto current_tuple = std::get<Map>(current_node);
 
                     Tuple tmp_node_tuple;
@@ -290,8 +287,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
         {
             switch (path[j].parent_type)
             {
-                case TransformType::STRUCT:
-                {
+                case TransformType::STRUCT: {
                     if (std::holds_alternative<Tuple>(current_node))
                         std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(current_node);
                     else if (std::holds_alternative<Array>(current_node))
@@ -302,8 +298,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                     current_node = std::move(nodes_in_path[j]);
                     break;
                 }
-                case TransformType::ARRAY:
-                {
+                case TransformType::ARRAY: {
                     if (std::holds_alternative<Tuple>(current_node))
                         std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(current_node);
                     else if (std::holds_alternative<Array>(current_node))
@@ -314,8 +309,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                     current_node = std::move(nodes_in_path[j]);
                     break;
                 }
-                case TransformType::MAP:
-                {
+                case TransformType::MAP: {
                     if (std::holds_alternative<Tuple>(current_node))
                         std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Tuple>(current_node);
                     else if (std::holds_alternative<Array>(current_node))
@@ -336,14 +330,14 @@ class DeletingTransform : public IIcebergSchemaTransform
 {
 public:
     explicit DeletingTransform(const IcebergDeletingOperation & operation_, DataTypePtr old_type, const std::vector<size_t> & permutation)
-        : IIcebergSchemaTransform(operation_.getPath()), operation(operation_)
+        : IIcebergSchemaTransform(operation_.getPath())
+        , operation(operation_)
     {
         for (const auto & path : operation_.getPath())
         {
             switch (path.parent_type)
             {
-                case TransformType::STRUCT:
-                {
+                case TransformType::STRUCT: {
                     auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
                     auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
@@ -363,14 +357,12 @@ public:
                     old_type = current_types[result_index];
                     break;
                 }
-                case TransformType::ARRAY:
-                {
+                case TransformType::ARRAY: {
                     index_path.push_back(-1);
                     old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
                     break;
                 }
-                case TransformType::MAP:
-                {
+                case TransformType::MAP: {
                     index_path.push_back(-1);
                     old_type = std::static_pointer_cast<const DataTypeTuple>(
                                    std::static_pointer_cast<const DataTypeArray>(
@@ -408,14 +400,14 @@ class AddingTransform : public IIcebergSchemaTransform
 {
 public:
     explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type)
-        : IIcebergSchemaTransform(operation_.getPath()), operation(operation_)
+        : IIcebergSchemaTransform(operation_.getPath())
+        , operation(operation_)
     {
         for (const auto & path : operation_.getPath())
         {
             switch (path.parent_type)
             {
-                case TransformType::STRUCT:
-                {
+                case TransformType::STRUCT: {
                     auto old_current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
                     auto old_element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
@@ -452,15 +444,13 @@ public:
                     type = current_types[result_index];
                     break;
                 }
-                case TransformType::ARRAY:
-                {
+                case TransformType::ARRAY: {
                     index_path.push_back(-1);
                     old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
                     type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
                     break;
                 }
-                case TransformType::MAP:
-                {
+                case TransformType::MAP: {
                     index_path.push_back(-1);
                     old_type = std::static_pointer_cast<const DataTypeTuple>(
                                    std::static_pointer_cast<const DataTypeArray>(
@@ -506,14 +496,14 @@ class ReorderingTransform : public IIcebergSchemaTransform
 {
 public:
     explicit ReorderingTransform(const IcebergReorderingOperation & operation_, DataTypePtr type)
-        : IIcebergSchemaTransform(operation_.getPath()), operation(operation_)
+        : IIcebergSchemaTransform(operation_.getPath())
+        , operation(operation_)
     {
         for (const auto & path : operation_.getPath())
         {
             switch (path.parent_type)
             {
-                case TransformType::STRUCT:
-                {
+                case TransformType::STRUCT: {
                     current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
                     auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
 
@@ -533,14 +523,12 @@ public:
                     type = current_types[result_index];
                     break;
                 }
-                case TransformType::ARRAY:
-                {
+                case TransformType::ARRAY: {
                     index_path.push_back(-1);
                     type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
                     break;
                 }
-                case TransformType::MAP:
-                {
+                case TransformType::MAP: {
                     index_path.push_back(-1);
                     type = std::static_pointer_cast<const DataTypeTuple>(
                                std::static_pointer_cast<const DataTypeArray>(
@@ -757,7 +745,8 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                      current_path,
                      TransformType::STRUCT});
             }
-            else if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
+            else if (
+                old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
             {
                 walk_stack.push(
                     {makeArrayFromObject(old_subfield->getObject("element")),
