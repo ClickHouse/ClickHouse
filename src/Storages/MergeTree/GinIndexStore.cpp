@@ -156,39 +156,60 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
 }
 
 GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_)
-    : max_token_size(max_token_size_)
 {
     const auto & [bits_per_row, num_hash_functions] = BloomFilterHash::calculationBestPractices(max_conflict_probability);
     filter_size = bits_per_row;
     hashes = num_hash_functions;
     bloom_filter = std::make_unique<BloomFilter>(filter_size, hashes, 0);
+
+    /// Use first and last [max_token_size / 2] characters and max is 7.
+    first_characters = max_token_size_ >= 14 ? 7 : ((max_token_size_ + 1) / 2);
+    last_characters = max_token_size_ >= 14 ? 7 : (max_token_size_ - first_characters);
 }
 
-void GinSegmentDictionaryBloomFilter::add(const char * token, size_t size)
+void GinSegmentDictionaryBloomFilter::add(const char * token, UInt64 size)
 {
-    bloom_filter->add(token, std::min(size, max_token_size));
+    if (size <= (first_characters + last_characters))
+    {
+        bloom_filter->add(token, size);
+    }
+    else
+    {
+        bloom_filter->add(token, first_characters);
+        bloom_filter->add(token + (size - last_characters), last_characters);
+    }
 }
 
-bool GinSegmentDictionaryBloomFilter::contains(const char * token, size_t size)
+bool GinSegmentDictionaryBloomFilter::contains(const char * token, UInt64 size)
 {
-    return bloom_filter->find(token, std::min(size, max_token_size));
+    if (size <= (first_characters + last_characters))
+        return bloom_filter->find(token, size);
+    return bloom_filter->find(token, first_characters) && bloom_filter->find(token + (size - last_characters), last_characters);
 }
 
 UInt64 GinSegmentDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
 {
-    writeVarUInt(filter_size, write_buffer);
-    writeVarUInt(hashes, write_buffer);
-    writeVarUInt(max_token_size, write_buffer);
+    /// We need around 15 bits (~2 bytes) to store all values
+    /// Filter size can be max 20 (5 bits) [offset = 10].
+    /// Hashes can be max 15 (4 bits) [offset = 6].
+    /// First characters can be max 7 (3 bits) [offset = 3].
+    /// Last characters can be max 7 (3 bits) [offset = 0].
+    UInt16 header = (filter_size << 10) | (hashes << 6) | (first_characters << 3) | (last_characters);
+    writeVarUInt(header, write_buffer);
     write_buffer.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), filter_size);
-
-    return getLengthOfVarUInt(filter_size) + getLengthOfVarUInt(hashes) + getLengthOfVarUInt(max_token_size) + filter_size;
+    return getLengthOfVarUInt(header) + filter_size;
 }
 
 void GinSegmentDictionaryBloomFilter::deserialize(ReadBuffer & read_buffer)
 {
-    readVarUInt(filter_size, read_buffer);
-    readVarUInt(hashes, read_buffer);
-    readVarUInt(max_token_size, read_buffer);
+    {
+        UInt16 header = 0;
+        readVarUInt(header, read_buffer);
+        filter_size = header >> 10;             // 5 bits
+        hashes = (header >> 6) & 0xf;           // 4 bits
+        first_characters = (header >> 3) & 0x7; // 3 bits
+        last_characters = header & 0x7;         // 3 bits
+    }
     bloom_filter = std::make_unique<BloomFilter>(filter_size, hashes, 0);
     read_buffer.readStrict(reinterpret_cast<char *>(bloom_filter->getFilter().data()), filter_size);
 }
@@ -395,11 +416,11 @@ void GinIndexStore::writeSegment()
     TokenPostingsBuilderPairs token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
 
-    GinSegmentDictionaryBloomFilter bloom_filter(0.001);
+    GinSegmentDictionaryBloomFilter bloom_filter(0.001, GIN_INDEX_BLOOM_FILTER_DEFAULT_MAX_TOKEN_SIZE);
     for (const auto & [token, postings_list] : current_postings)
     {
         token_postings_list_pairs.push_back({token, postings_list});
-        bloom_filter.add(token.data(), std::min(token.size(), static_cast<size_t>(3)));
+        bloom_filter.add(token.data(), token.size());
     }
 
     // FST part is relative to the data
@@ -642,7 +663,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     {
         auto segment_id = seg_dict.first;
 
-        if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term.data(), std::min(static_cast<size_t>(3), term.size())))
+        if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term.data(), term.size()))
             continue;
 
         if (seg_dict.second->fst == nullptr)

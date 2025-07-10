@@ -37,6 +37,7 @@
 
 namespace DB
 {
+constexpr static const auto GIN_INDEX_BLOOM_FILTER_DEFAULT_MAX_TOKEN_SIZE = 6;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
@@ -121,10 +122,10 @@ class GinSegmentDictionaryBloomFilter
 public:
     GinSegmentDictionaryBloomFilter() = default;
 
-    explicit GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_ = 4);
+    explicit GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_);
 
-    void add(const char * token, size_t size);
-    bool contains(const char * token, size_t size);
+    void add(const char * token, UInt64 size);
+    bool contains(const char * token, UInt64 size);
 
     UInt64 serialize(WriteBuffer & write_buffer);
     void deserialize(ReadBuffer & read_buffer);
@@ -133,7 +134,8 @@ private:
     std::unique_ptr<BloomFilter> bloom_filter;
     UInt64 filter_size;
     UInt64 hashes;
-    UInt64 max_token_size;
+    UInt64 first_characters;
+    UInt64 last_characters;
 };
 
 struct GinSegmentDictionary
