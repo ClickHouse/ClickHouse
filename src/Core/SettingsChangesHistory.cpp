@@ -1,43 +1,15 @@
-#include <Core/Defines.h>
 #include <Core/SettingsChangesHistory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <boost/algorithm/string.hpp>
+
 #include <Core/SettingsEnums.h>
 
-#include <fmt/ranges.h>
-
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-ClickHouseVersion::ClickHouseVersion(std::string_view version)
-{
-    Strings split;
-    boost::split(split, version, [](char c){ return c == '.'; });
-    components.reserve(split.size());
-    if (split.empty())
-        throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-
-    for (const auto & split_element : split)
-    {
-        size_t component;
-        ReadBufferFromString buf(split_element);
-        if (!tryReadIntText(component, buf) || !buf.eof())
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};
-        components.push_back(component);
-    }
-}
-
-String ClickHouseVersion::toString() const
-{
-    return fmt::format("{}", fmt::join(components, "."));
 }
 
 static void addSettingsChanges(
@@ -73,9 +45,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
+            {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
+            {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
