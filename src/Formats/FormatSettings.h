@@ -284,7 +284,6 @@ struct FormatSettings
         bool bloom_filter_push_down = true;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
-        bool fuzz = false;
         bool use_native_reader = false;
         bool use_native_reader_with_filter_push_down = false;
         bool use_native_reader_v3 = false;

@@ -66,10 +66,19 @@ void SchemaConverter::prepareForReading()
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Name clash between PREWHERE condition and a column in parquet file: {}", name);
         found_columns[idx] = true;
     }
+
     for (size_t i = 0; i < found_columns.size(); ++i)
     {
-        if (!found_columns[i])
+        if (found_columns[i])
+            continue;
+        if (!options.format.parquet.allow_missing_columns)
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
+
+        OutputColumnInfo & missing_output = output_columns.emplace_back();
+        missing_output.idx_in_output_block = i;
+        missing_output.name = sample_block->getByPosition(i).name;
+        missing_output.type = sample_block->getByPosition(i).type;
+        missing_output.is_missing_column = true;
     }
 }
 
@@ -123,7 +132,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             /// E.g.:
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
-            std::optional<size_t> pos = sample_block->findPositionByName(name, options.case_insensitive_column_matching);
+            std::optional<size_t> pos = sample_block->findPositionByName(name, options.format.parquet.case_insensitive_column_matching);
             if (pos.has_value())
             {
                 if (requested)
@@ -270,7 +279,8 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             else if (options.schema_inference_force_nullable)
             {
                 /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
-                /// to JSON columns for some reason. Keep this behavior for compatibility.
+                /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
+                /// Keep this behavior for compatibility.
                 output_nullable_if_not_json = true;
             }
         }
@@ -284,7 +294,8 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         }
         catch (Exception & e)
         {
-            if (options.schema_inference_skip_unsupported_columns && (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
+            if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
+                (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
             {
                 return std::nullopt;
             }
@@ -408,8 +419,8 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         ///  * If type_hint has no names, we match elements sequentially and preserve order.
         ///  * If there's no type_hint, we preserve order, produce tuple with names.
         ///    Only in this mode, we allow skipping unsupported elements if
-        ///    schema_inference_skip_unsupported_columns is true. In other modes, we skip the whole
-        ///    tuple if any element is unsupported.
+        ///    skip_columns_with_unsupported_types_in_schema_inference is true.
+        ///    In other modes, we skip the whole tuple if any element is unsupported.
 
         bool lookup_by_name = false;
         std::vector<size_t> elements;
@@ -447,7 +458,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
             if (lookup_by_name)
             {
-                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.case_insensitive_column_matching);
+                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
 
                 if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
                     throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", name, element_name);
@@ -500,27 +511,36 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         if (!requested)
             return std::nullopt;
 
-        output_idx = output_columns.size();
-        OutputColumnInfo & output = output_columns.emplace_back();
-        output.name = name;
-        output.primitive_start = primitive_start;
-        output.primitive_end = primitive_columns.size();
-
+        DataTypePtr output_type;
         if (type_hint)
         {
             chassert(elements.size() == tuple_type_hint->getElements().size());
             for (size_t i = 0; i < elements.size(); ++i)
             {
-                if (elements[i] == UINT64_MAX)
-                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema", tuple_type_hint->getNameByPosition(i), name);
+                if (elements[i] != UINT64_MAX)
+                    continue;
+                if (!options.format.parquet.allow_missing_columns)
+                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema", tuple_type_hint->getNameByPosition(i + 1), name);
+
+                elements[i] = output_columns.size();
+                OutputColumnInfo & missing_output = output_columns.emplace_back();
+                missing_output.name = name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+                missing_output.type = tuple_type_hint->getElement(i);
+                missing_output.is_missing_column = true;
             }
-            output.type = type_hint;
+            output_type = type_hint;
         }
         else
         {
-            output.type = std::make_shared<DataTypeTuple>(types, names);
+            output_type = std::make_shared<DataTypeTuple>(types, names);
         }
 
+        output_idx = output_columns.size();
+        OutputColumnInfo & output = output_columns.emplace_back();
+        output.name = name;
+        output.primitive_start = primitive_start;
+        output.primitive_end = primitive_columns.size();
+        output.type = std::move(output_type);
         output.nested_columns = elements;
     }
 
@@ -858,7 +878,7 @@ void SchemaConverter::processPrimitiveColumn(
 
         if (!output_plain_int)
         {
-            converter->date_overflow_behavior = options.date_time_overflow_behavior;
+            converter->date_overflow_behavior = options.format.date_time_overflow_behavior;
 
             /// Prior to introducing `date_time_overflow_behavior`, out parquet reader threw an error
             /// in case date was out of range.
@@ -1044,7 +1064,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_decoder.allow_stats = is_output_type_string();
             out_decoder.string_converter = std::move(converter);
 
-            if ((logical.__isset.JSON || converted == CONV::JSON) && options.enable_json)
+            if ((logical.__isset.JSON || converted == CONV::JSON) && options.format.parquet.enable_json_parsing)
             {
                 /// Just output ColumnString and leave json parsing to castColumn.
                 /// Alternatively, we could add a custom StringConverter to avoid copying the strings.

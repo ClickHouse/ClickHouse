@@ -24,15 +24,11 @@ public:
 
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 
-    const BlockMissingValues * getMissingValues() const override
-    {
-        //TODO
-        return nullptr;
-    }
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override
     {
-        //TODO
+        /// TODO [parquet]:
         return 0;
     }
 
@@ -47,6 +43,8 @@ private:
     PrewhereInfoPtr prewhere_info;
 
     std::optional<Parquet::ReadManager> reader;
+
+    BlockMissingValues previous_block_missing_values;
 
     void initializeIfNeeded();
 };

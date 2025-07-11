@@ -12,22 +12,12 @@ namespace DB
 
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
-    /// TODO [parquet]: Consider just passing FormatSettings to Parquet::Reader instead of this.
     Parquet::ReadOptions options;
-    options.use_bloom_filter = format_settings.parquet.bloom_filter_push_down;
-    options.use_row_group_min_max = format_settings.parquet.filter_push_down;
-    options.use_page_min_max = format_settings.parquet.page_filter_push_down;
-    options.always_use_offset_index = format_settings.parquet.use_offset_index;
-    options.case_insensitive_column_matching = format_settings.parquet.case_insensitive_column_matching;
+    options.format = format_settings;
+
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
-    options.null_as_default = format_settings.null_as_default;
-    options.schema_inference_skip_unsupported_columns = format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference;
-    options.enable_json = format_settings.parquet.enable_json_parsing;
-    options.date_time_overflow_behavior = format_settings.date_time_overflow_behavior;
-    options.max_block_size = format_settings.parquet.max_block_size;
-    options.preferred_block_size_bytes = format_settings.parquet.prefer_block_bytes;
-    options.fuzz = format_settings.parquet.fuzz;
+
     return options;
 }
 
@@ -91,7 +81,14 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 Chunk ParquetV3BlockInputFormat::read()
 {
     initializeIfNeeded();
-    return reader->read();
+    Chunk chunk;
+    std::tie(chunk, previous_block_missing_values) = reader->read();
+    return chunk;
+}
+
+const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
+{
+    return &previous_block_missing_values;
 }
 
 void ParquetV3BlockInputFormat::onCancel() noexcept
@@ -103,6 +100,7 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
 void ParquetV3BlockInputFormat::resetParser()
 {
     reader.reset();
+    previous_block_missing_values.clear();
     IInputFormat::resetParser();
 }
 

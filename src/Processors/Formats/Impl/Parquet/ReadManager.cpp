@@ -804,7 +804,7 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
         col.column_and_offsets_memory.reset(&diff);
 }
 
-Chunk ReadManager::read()
+std::tuple<Chunk, BlockMissingValues> ReadManager::read()
 {
     Task task;
     {
@@ -897,18 +897,19 @@ Chunk ReadManager::read()
         if (already_formed)
             continue;
         row_subgroup.output.at(*idx_in_output_block) =
-            reader.formOutputColumn(row_subgroup, i);
+            reader.formOutputColumn(row_subgroup, i, row_subgroup.filter.rows_pass);
     }
     row_subgroup.output.resize(num_final_columns); // remove prewhere-only columns
     chassert(row_subgroup.filter.rows_pass > 0);
     Chunk chunk(std::move(row_subgroup.output), row_subgroup.filter.rows_pass);
+    BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);
     finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, diff);
     flushMemoryUsageDiff(std::move(diff));
 
-    return chunk;
+    return {std::move(chunk), std::move(block_missing_values)};
 }
 
 }

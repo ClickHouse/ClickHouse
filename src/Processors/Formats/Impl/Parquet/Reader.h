@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <Columns/IColumn.h>
+#include <Core/BlockMissingValues.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -25,13 +26,8 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
-//  * profile
-//     - query profiler
-//     - perf or samply
-//     - add OpenTelemetry::SpanHolder-s and try https://github.com/ClickHouse/ClickHouse/blob/bae91a06d914eac4cda7b90ac65dfef07eef0c82/utils/trace-visualizer/README.md
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
-//  * input_format_parquet_enable_json_parsing
 //  * allow_geoparquet_parser
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
@@ -82,6 +78,7 @@ namespace DB::Parquet
 //     - Bool type
 //     - looking for NaN using min/max indices; try it with merge tree too
 //     - input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, make a file by hacking PrepareForWrite.cpp to use garbage physical type for some data type (~/t/invalid_type.parquet has column `invalid` that's FixedString(5) but has type=42 instead of type=FIXED_LEN_BYTE_ARRAY)
+//     - block_missing_values (missing whole column or subset of rows)
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
 //    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
 //    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.
@@ -90,6 +87,7 @@ namespace DB::Parquet
 //    is there a way to make it better or to support simple solution as special case?
 //  * lazy materialization (not feasible because of unaligned pages?)
 //  * add prewhere check next to addNumRowsToCache calls, in addition to key condition check
+//  * make sure ~all reader and writer settings are randomized in tests
 
 /// Components of this parquet reader implementation:
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
@@ -191,12 +189,15 @@ struct Reader
     struct OutputColumnInfo
     {
         String name;
+        /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
         DataTypePtr type;
         std::optional<size_t> idx_in_output_block;
         std::vector<size_t> nested_columns;
         bool is_primitive = false;
+        /// Column not in the file, fill it with default values.
+        bool is_missing_column = false;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -370,6 +371,7 @@ struct Reader
         RowSet filter;
 
         std::vector<ColumnSubchunk> columns;
+        BlockMissingValues block_missing_values;
 
         Columns output; // parallel to extended_sample_block
 
@@ -489,7 +491,7 @@ struct Reader
     /// Moves the column out of ColumnSubchunk-s, leaving nullptrs in ColumnSubchunk::column.
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
-    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx);
+    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
 
     void applyPrewhere(RowSubgroup & row_subgroup);
 

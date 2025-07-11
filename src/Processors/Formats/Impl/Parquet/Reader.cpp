@@ -182,7 +182,7 @@ void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_bloc
                            column_meta.statistics.null_count == column_meta.num_values;
         bool can_be_null = !column_meta.statistics.__isset.null_count ||
                            column_meta.statistics.null_count != 0;
-        bool null_as_default = options.null_as_default && !column_info.output_nullable;
+        bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
 
         if (nullable && always_null)
         {
@@ -271,7 +271,7 @@ void Reader::prefilterAndInitRowGroups()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
-        if (options.use_row_group_min_max && parser_group->key_condition)
+        if (options.format.parquet.filter_push_down && parser_group->key_condition)
         {
             getHyperrectangleForRowGroup(key_condition_columns, meta, hyperrectangle);
             if (!parser_group->key_condition->checkInHyperrectangle(
@@ -308,7 +308,7 @@ void Reader::prefilterAndInitRowGroups()
     if (row_groups.empty())
         return; // all row groups were skipped
 
-    if (options.use_bloom_filter && parser_group->key_condition)
+    if (options.format.parquet.bloom_filter_push_down && parser_group->key_condition)
     {
         /// Index in output block -> arrow column info.
         std::vector<std::optional<parquet::ColumnDescriptor>> bf_eligible_columns(key_condition_columns.size());
@@ -363,6 +363,8 @@ void Reader::prefilterAndInitRowGroups()
                 const auto & descriptor = bf_eligible_columns.at(column_idx);
                 if (!descriptor.has_value())
                     return std::nullopt;
+                if (column->size() > options.bloom_filter_max_set_size)
+                    return std::nullopt;
                 auto hashes = parquetTryHashColumn(column.get(), &*descriptor);
                 if (!hashes.has_value())
                     return std::nullopt;
@@ -382,7 +384,7 @@ void Reader::prefilterAndInitRowGroups()
         }
     }
 
-    if (options.use_page_min_max)
+    if (options.format.parquet.page_filter_push_down)
     {
         const auto & column_conditions = static_cast<ParserGroupExt *>(parser_group->opaque.get())->column_conditions;
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
@@ -392,7 +394,7 @@ void Reader::prefilterAndInitRowGroups()
         }
     }
 
-    bool use_offset_index = options.always_use_offset_index || prewhere_info
+    bool use_offset_index = options.format.parquet.use_offset_index || prewhere_info
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -715,7 +717,7 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group)
     /// We use both the min/max statistics and bloom filter. For the case where condition has
     /// something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and `y = 1337`
     /// is ruled out by bloom filter.
-    /// (I'm guessing this hardly ever comes in practice, but it was easy enough to support.)
+    /// (I'm guessing this hardly ever comes up in practice, but it was easy enough to support.)
     return bloom_filter_condition->checkInHyperrectangle(
         row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;
 }
@@ -732,7 +734,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
     size_t num_pages = column.offset_index.page_locations.size();
     bool nullable = column_info.levels.back().def > 0;
-    bool null_as_default = options.null_as_default && !column_info.output_nullable;
+    bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
     if (column_index.min_values.size() != num_pages || column_index.max_values.size() != num_pages ||
         (column_index.null_pages.size() != num_pages && !column_index.null_pages.empty()) ||
         (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
@@ -869,16 +871,16 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         return;
 
     size_t rows_per_subgroup = num_rows;
-    if (options.max_block_size > 0)
-        rows_per_subgroup = std::min(rows_per_subgroup, options.max_block_size);
+    if (options.format.parquet.max_block_size > 0)
+        rows_per_subgroup = std::min(rows_per_subgroup, options.format.parquet.max_block_size);
 
-    if (options.preferred_block_size_bytes > 0)
+    if (options.format.parquet.prefer_block_bytes > 0)
     {
         double bytes_per_row = 0;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
             bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
 
-        size_t n = size_t(options.preferred_block_size_bytes / std::max(bytes_per_row, 1.));
+        size_t n = size_t(options.format.parquet.prefer_block_bytes / std::max(bytes_per_row, 1.));
         rows_per_subgroup = std::min(rows_per_subgroup, std::max(n, 1ul));
     }
     chassert(rows_per_subgroup > 0);
@@ -901,6 +903,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
             row_subgroup.columns.resize(primitive_columns.size());
             row_subgroup.output.resize(extended_sample_block.columns());
+            if (options.format.defaults_for_omitted_fields)
+                row_subgroup.block_missing_values.init(sample_block->columns());
         }
     }
 
@@ -1149,7 +1153,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !options.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
@@ -1171,12 +1175,8 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         if (!subchunk.null_map)
             subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), 0);
         subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
+        subchunk.null_map.reset();
     }
-    else
-    {
-        /// TODO [parquet]: Turn null_map into BlockMissingValues.
-    }
-    subchunk.null_map.reset();
 
     chassert(subchunk.column->getDataType() == column_info.intermediate_type->getColumnType());
 
@@ -1579,7 +1579,7 @@ static void processRepDefLevelsForArray(
             ///  * `def[i] == array_def - 1` means this array is empty,
             ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
             ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.null_as_default?
+            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
             continue;
 
         if (rep[i] < array_rep)
@@ -1719,28 +1719,54 @@ void Reader::decompressPageIfCompressed(PageState & page)
     page.codec = parq::CompressionCodec::UNCOMPRESSED;
 }
 
-MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx)
+MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
-    chassert(output_info.primitive_start < output_info.primitive_end);
     TypeIndex kind = output_info.type->getColumnType();
     MutableColumnPtr res;
 
-    if (output_info.is_primitive)
+    if (output_info.is_missing_column)
+    {
+        res = output_info.type->createColumn();
+        res->insertManyDefaults(num_rows);
+
+        if (output_info.idx_in_output_block.has_value() &&
+            /// If block_missing_values is enabled (not empty), and this column is not prewhere-only
+            /// (idx < sample_block->columns()).
+            *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+        {
+            row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
+        }
+    }
+    else if (output_info.is_primitive)
     {
         /// Primitive column.
         chassert(output_info.primitive_start + 1 == output_info.primitive_end);
         size_t primitive_idx = output_info.primitive_start;
         ColumnSubchunk & subchunk = row_subgroup.columns.at(primitive_idx);
         res = std::move(subchunk.column);
+
+        if (output_info.idx_in_output_block.has_value() &&
+            *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns() &&
+            subchunk.null_map)
+        {
+            auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map.get()).getData();
+            row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
+        }
+        subchunk.null_map.reset();
     }
     else if (kind == TypeIndex::Array)
     {
         chassert(output_info.nested_columns.size() == 1);
-        auto offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
-        const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
+        MutableColumnPtr offsets_column;
+        if (output_info.primitive_start < output_info.primitive_end)
+            offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
+        else
+            /// All subcolumns inside the Array are missing. E.g. Array(Tuple(nonexistent_column Int64)).
+            offsets_column = ColumnUInt64::create(num_rows, 0);
 
         /// If it's an array of tuples, every tuple element should have the same array offsets.
+        const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
         for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
         {
             const auto other_offsets_column = std::move(row_subgroup.columns.at(i).arrays_offsets.at(output_info.rep - 1));
@@ -1749,21 +1775,21 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
         }
 
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0));
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back());
         res = ColumnArray::create(std::move(nested), std::move(offsets_column));
     }
     else if (kind == TypeIndex::Tuple)
     {
         MutableColumns columns;
         for (size_t idx : output_info.nested_columns)
-            columns.push_back(formOutputColumn(row_subgroup, idx));
+            columns.push_back(formOutputColumn(row_subgroup, idx, num_rows));
         res = ColumnTuple::create(std::move(columns));
     }
     else
     {
         chassert(kind == TypeIndex::Map);
         chassert(output_info.nested_columns.size() == 1);
-        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0));
+        MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
     }
 
@@ -1783,7 +1809,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
             const auto & output_info = output_columns.at(output_idx);
             auto & col = row_subgroup.output.at(output_info.idx_in_output_block.value());
             if (!col)
-                col = formOutputColumn(row_subgroup, output_idx);
+                col = formOutputColumn(row_subgroup, output_idx, row_subgroup.filter.rows_total);
             block.insert({col, output_info.type, output_info.name});
         }
         addDummyColumnWithRowCount(block, row_subgroup.filter.rows_total);

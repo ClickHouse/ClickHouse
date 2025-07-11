@@ -182,7 +182,7 @@ When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 Use native parquet reader v1. It's relatively fast but unfinished.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, /*asdqwe*/ true, R"(
 Use Parquet reader v3.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
@@ -196,9 +196,6 @@ Skip pages using min/max values from column index.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
-)", 0) \
-    DECLARE(Bool, input_format_parquet_fuzz, false, R"(
-Randomize various decisions in parquet reader, for testing.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.

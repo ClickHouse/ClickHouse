@@ -45,7 +45,7 @@ public:
     ~ReadManager();
 
     /// Not thread safe.
-    Chunk read();
+    std::tuple<Chunk, BlockMissingValues> read();
 
     void cancel() noexcept;
 

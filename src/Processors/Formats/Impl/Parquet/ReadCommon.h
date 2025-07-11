@@ -18,24 +18,12 @@ namespace DB::Parquet
 
 struct ReadOptions
 {
-    /// TODO [parquet]: make sure all of these are randomized in tests; writer settings too.
-    bool use_row_group_min_max = true;
-    bool use_bloom_filter = true;
-    bool use_page_min_max = true;
-    bool always_use_offset_index = true;
+    FormatSettings format;
 
     bool seekable_read = true;
 
-    bool case_insensitive_column_matching = false;
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
-    bool null_as_default = true;
-    bool schema_inference_skip_unsupported_columns = false;
-    bool enable_json = false;
-
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
-
-    bool fuzz = false; // TODO [parquet]: Use it.
 
     /// Not implemented.
     /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
@@ -44,9 +32,6 @@ struct ReadOptions
 
     size_t min_bytes_for_seek = 64 << 10;
     size_t bytes_per_read_task = 4 << 20;
-
-    size_t preferred_block_size_bytes = DEFAULT_BLOCK_SIZE * 256;
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 
     /// Don't use bloom filter for `x IN (...)` if the set `(...)` is has more than this many
     /// elements. There's no point using bloom filter for big sets because false positive
