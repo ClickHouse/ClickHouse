@@ -91,7 +91,6 @@ void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         return;
     }
     ExtendedDayNum x;
-    assertChar('"', istr);
     readDateText(x, istr, time_zone);
     assertChar('"', istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
