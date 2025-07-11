@@ -409,7 +409,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_url_encoding", trueOrFalseSettingNoOracle},
     {"enable_vertical_final", trueOrFalseSetting},
     {"enable_writes_to_query_cache", trueOrFalseSetting},
-    {"enforce_strict_identifier_format", trueOrFalseSettingNoOracle},
     {"engine_file_allow_create_multiple_files", trueOrFalseSettingNoOracle},
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
@@ -1175,6 +1174,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
+             {"enforce_strict_identifier_format", trueOrFalseSettingNoOracle},
              {"input_format_values_interpret_expressions", trueOrFalseSettingNoOracle},
              {"insert_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
              {"memory_tracker_fault_probability", CHSetting(probRange, {}, false)},
