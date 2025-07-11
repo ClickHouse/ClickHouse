@@ -52,7 +52,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// ExpressionStep
     ///    ^
     ///    |
-    /// (FilterStep, optional)
+    /// (optional: FilterStep)
     ///    ^
     ///    |
     /// ReadFromMergeTree
@@ -194,8 +194,24 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return no_layers_updated;
 
-    size_t updated_layers = no_layers_updated;
+    /// The Usearch index calculates and returns (at index granule level) the row ID(s) + corresponding distances for the top-N most similar
+    /// matches to the given reference vector. This creates a mismatch to the granule-based interface of skip indexes in ClickHouse.
+    /// To bridge this gap, MergeTreeVectorSimilarityIndex historically extrapolated the result from USearch to granule level. This caused
+    /// vector search queries to slow down as ClickHouse subsequently loaded the returned granules from disk and applied the distance
+    /// function to _all_ contained rows (e.g. 8191 out of 8192 rows). This is maximally silly but we decided to give this mode the fancy
+    /// name "rescoring mode" and turn a weakness into a strength (in terms of feature completeness).
+    ///
+    /// A more natural way (called "optimized plan" below) goes like this: We rewrite the query plan and
+    /// - remove the vector_column from the read list in ReadFromMergeTreeStep,
+    /// - remove the L2Distance(...) function OUTPUT node from the expressions ActionsDAG,
+    /// - adds back the L2Distance(...) as ALIAS to a "_distance" INPUT node.
+    /// "_distance" node is a virtual column.
+    /// The row IDs + distances returned from Usearch are bundled as RangesInDataPartHints and reach the MergeTreeRangeReader.
+    /// MergeTreeRangeReader::executeActionsForReadHints() is the key - it creates and populates a filter that is True only for the exact
+    /// row IDs/part offsets returned by vector search and the routine populates a virtual column named _distance for distance corresponding
+    /// to the exact Row ID. The filter is then applied on the columns in the read list.
     bool optimize_plan = !settings.vector_search_with_rescoring;
+    size_t updated_layers = no_layers_updated;
     if (optimize_plan)
     {
         for (const auto & output : expression.getOutputs())
@@ -205,26 +221,26 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                 (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column))
             {
                 optimize_plan = false;
+                break;
             }
         }
 
         if (optimize_plan)
         {
-            /// Rewrite the plan:
-            /// 1. Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
-            /// 2. Replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
-
+            /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
 
+            /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
+            std::cerr << expression.dumpDAG() << std::endl;
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
-
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
+            std::cerr << expression.dumpDAG() << std::endl;
 
             updated_layers = 2;
-            /// need to do same removal of the vector column from the Filter step
+            /// Need to do same removal of the vector column from the Filter step
             if (filter_step)
             {
                 auto & filter_expression = filter_step->getExpression();

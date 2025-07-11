@@ -95,7 +95,10 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
-/// A vehicle which transports elements of the SELECT query to the vector similarity index.
+/// ---------------------------------------------
+/// Vector-search-related stuff
+
+/// A vehicle to transport elements of the SELECT query into the vector similarity index.
 struct VectorSearchParameters
 {
     /// Elements of the SELECT query
@@ -114,6 +117,7 @@ struct NearestNeighbours
     std::vector<UInt64> rows;
     std::optional<std::vector<float>> distances;
 };
+/// ---------------------------------------------
 
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
@@ -193,7 +197,9 @@ public:
     }
 
     /// Special method for vector similarity indexes:
-    /// Returns the row positions(and optional distances) of the N nearest neighbors in the index granule
+    /// Returns the N nearest neighbors for a reference vector in the index granule.
+    /// The nearest neighbors are returned as row positions. Optionally, if VectorSearchParameters::return_distances = 1, then the distances
+    /// are returned as well.
     /// The returned row numbers are guaranteed to be sorted and unique.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
