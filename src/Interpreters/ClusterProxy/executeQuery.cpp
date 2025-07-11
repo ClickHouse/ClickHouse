@@ -247,7 +247,6 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         new_settings[Setting::load_balancing] = LoadBalancing::ROUND_ROBIN;
     }
 
-
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     new_context->setClientInfo(new_client_info);
@@ -362,16 +361,6 @@ void executeQuery(
             log,
             "Parallel reading from replicas is disabled for cluster. There are no shards with more than 1 replica: cluster={}",
             cluster->getName());
-    }
-
-    if (is_remote_function && !new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty()
-        && context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value
-            != new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].value)
-    {
-        LOG_TRACE(
-            log,
-            "'cluster_for_parallel_replicas' setting has been updated for the query to '{}'",
-            new_context->getSettingsRef()[Setting::cluster_for_parallel_replicas].toString());
     }
 
     new_context->increaseDistributedDepth();
