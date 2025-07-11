@@ -65,10 +65,7 @@ Positions: 6 0 1 2 3 4
                      ALIAS name :: 1 -> __table2.name String : 0
                      ALIAS age :: 2 -> __table2.age Int16 : 1
             Positions: 3 0 1
-              ReadFromMergeTree (default.users)
-              ReadType: Default
-              Parts: 3
-              Granules: 3
+              ReadFromMemoryStorage
           Expression
           Actions: INPUT :: 0 -> __table3.uid Int16 : 0
                    INPUT :: 1 -> __table3.name String : 1
@@ -83,10 +80,7 @@ Positions: 6 0 1 2 3 4
                      ALIAS name :: 1 -> __table3.name String : 0
                      ALIAS age :: 2 -> __table3.age Int16 : 1
             Positions: 3 0 1
-              ReadFromMergeTree (default.users)
-              ReadType: Default
-              Parts: 3
-              Granules: 3
+              ReadFromMemoryStorage
 SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 1231	John	33	1231	John	33
 6666	Ksenia	48	6666	Ksenia	48
@@ -151,10 +145,7 @@ Positions: 6 0 1 2 3 4
                    ALIAS name :: 1 -> __table2.name String : 0
                    ALIAS age :: 2 -> __table2.age Int16 : 1
           Positions: 3 0 1
-            ReadFromMergeTree (default.users)
-            ReadType: Default
-            Parts: 3
-            Granules: 3
+            ReadFromMemoryStorage
           Expression (Change column names to column identifiers)
           Actions: INPUT : 0 -> uid Int16 : 0
                    INPUT : 1 -> name String : 1
@@ -163,10 +154,7 @@ Positions: 6 0 1 2 3 4
                    ALIAS name :: 1 -> __table3.name String : 0
                    ALIAS age :: 2 -> __table3.age Int16 : 1
           Positions: 3 0 1
-            ReadFromMergeTree (default.users)
-            ReadType: Default
-            Parts: 3
-            Granules: 3
+            ReadFromMemoryStorage
 SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
 1231	John	33	1231	John	33
 6666	Ksenia	48	6666	Ksenia	48
@@ -246,10 +234,7 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table2.name String : 0
                        ALIAS age :: 2 -> __table2.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage
             Expression
             Actions: INPUT :: 0 -> __table3.uid Int16 : 0
                      INPUT :: 1 -> __table3.name String : 1
@@ -264,10 +249,7 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table3.name String : 0
                        ALIAS age :: 2 -> __table3.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage
 EXPLAIN PLAN actions = 1
 SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
@@ -343,10 +325,7 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table2.name String : 0
                        ALIAS age :: 2 -> __table2.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage
             Expression
             Actions: INPUT :: 0 -> __table3.uid Int16 : 0
                      INPUT :: 1 -> __table3.name String : 1
@@ -361,10 +340,7 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table3.name String : 0
                        ALIAS age :: 2 -> __table3.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage
 EXPLAIN PLAN actions = 1
 SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
@@ -440,10 +416,7 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table2.name String : 0
                        ALIAS age :: 2 -> __table2.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage
             Expression
             Actions: INPUT :: 0 -> __table3.uid Int16 : 0
                      INPUT :: 1 -> __table3.name String : 1
@@ -458,7 +431,4 @@ Positions: 6 0 1 2 3 4
                        ALIAS name :: 1 -> __table3.name String : 0
                        ALIAS age :: 2 -> __table3.age Int16 : 1
               Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+                ReadFromMemoryStorage

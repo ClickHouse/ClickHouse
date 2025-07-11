@@ -1,4 +1,4 @@
-#include <Parsers/Kusto/KustoFunctions/KQLMathematicalFunctions.h>
+#include "KQLMathematicalFunctions.h"
 
 #include <fmt/format.h>
 

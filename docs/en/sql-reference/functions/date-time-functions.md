@@ -232,7 +232,7 @@ Alias: `TIMESTAMP`
 **Examples**
 
 ```sql
-SELECT timestamp('2023-12-31') AS ts;
+SELECT timestamp('2023-12-31') as ts;
 ```
 
 Result:
@@ -244,7 +244,7 @@ Result:
 ```
 
 ```sql
-SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
 ```
 
 Result:
@@ -1352,15 +1352,16 @@ Result:
 Query with timezone:
 
 ```sql
-WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
-SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
+┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
+│               2020-01-01 12:20:30.999000000 │
+└─────────────────────────────────────────────┘
 ```
 
 Result:
 
 ```text
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 13:20:30.999000000 │
+│                     2020-01-01 12:20:30.999 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1411,7 +1412,7 @@ Result:
 
 ```text
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 13:20:30.999999000 │
+│               2020-01-01 12:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1466,7 +1467,7 @@ Result:
 
 ```text
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 13:20:30.999999999 │
+│              2020-01-01 12:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 
@@ -1643,17 +1644,15 @@ Result:
 **See Also**
 - [date_trunc](#date_trunc)
 
-## toTimeWithFixedDate {#totimewithfixeddate}
+## toTime {#totime}
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
 **Syntax**
 
 ```sql
-toTimeWithFixedDate(date[,timezone])
+toTime(date[,timezone])
 ```
-
-Alias: `toTime` - can be used only when the `use_legacy_to_time` setting is enabled.
 
 **Arguments**
 
@@ -1997,8 +1996,8 @@ Query:
 
 ```sql
 SELECT
-  toISOYear(toDate('2024/10/02')) AS year1,
-  toISOYear(toDateTime('2024-10-02 01:30:00')) AS year2
+  toISOYear(toDate('2024/10/02')) as year1,
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 Result:
@@ -2632,7 +2631,7 @@ Date or date with time with the specified `value` expressed in `unit` added to `
 **Example**
 
 ```sql
-SELECT timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
+select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 ```
 
 Result:
@@ -2681,7 +2680,7 @@ Date or date with time obtained by subtracting `value`, expressed in `unit`, fro
 **Example**
 
 ```sql
-SELECT timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
+select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
 ```
 
 Result:
@@ -4374,7 +4373,7 @@ Using replacement fields, you can define a pattern for the resulting string. "Ex
 | %C       | year divided by 100 and truncated to integer (00-99)                                                                                                                                                | 20        |
 | %d       | day of the month, zero-padded (01-31)                                                                                                                                                               | 02        |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                                                                                                         | 01/02/18  |
-| %e       | day of the month, space-padded ( 1-31), see 'Note 5' below                                                                                                                                          | &nbsp; 2  |
+| %e       | day of the month, space-padded ( 1-31)                                                                                                                                                              | &nbsp; 2  |
 | %f       | fractional second, see 'Note 1' and 'Note 2' below                                                                                                                                                  | 123456    |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                                                                                                       | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                                                                                                    | 18       |
@@ -4412,9 +4411,7 @@ Note 2: In ClickHouse versions earlier than v25.1, `%f` prints as many digits as
 
 Note 3: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 
-Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
-
-Note 5: In ClickHouse versions earlier than v25.5, function `parseDateTime` required for formatter `%e` that single-digit days are space padded, e.g. ` 3`. In later versions, space padding is optional, e.g. `3` and ` 3` work. To retain the previous behaviour, set setting `parsedatetime_e_requires_space_padding = 1`. Similarly, formatter `%e` in function `formatDateTime` previously space-padded single-printed unconditionally whereas it now prints them without leading whitespace. To retain the previous behavior, set setting `formatdatetime_e_with_space_padding = 1`.
+Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime()` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime()` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
 
 **Example**
 
@@ -4926,12 +4923,3 @@ timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->

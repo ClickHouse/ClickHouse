@@ -22,12 +22,11 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
 
 echo "Get previous release tag"
-PACKAGES_DIR=/repo/tests/ci/tmp/packages
 # shellcheck disable=SC2016
-previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
+previous_release_tag=$(dpkg-deb --showformat='${Version}' --show package_folder/clickhouse-client*.deb | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -131,7 +130,7 @@ stop 300 false
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # Install and start new server
-install_packages $PACKAGES_DIR
+install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
