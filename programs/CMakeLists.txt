@@ -5,7 +5,7 @@ if (USE_CLANG_TIDY)
 endif ()
 
 if (BUILD_FUZZERS)
-    set(MAX_LINKER_MEMORY 5000)
+    set(MAX_LINKER_MEMORY 8000)
 else()
     set(MAX_LINKER_MEMORY 3500)
 endif ()
