@@ -248,7 +248,7 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 
 void JoinStep::updateOutputHeader()
 {
-    if (join_algorithm_header)
+    if (join_algorithm_header && *join_algorithm_header)
         return;
 
     const auto & header = swap_streams ? input_headers[1] : input_headers[0];
@@ -266,6 +266,8 @@ void JoinStep::updateOutputHeader()
     auto column_permutation = getPermutationForBlock(*join_algorithm_header, *input_headers[0], *input_headers[1], required_output);
     if (!column_permutation.empty())
         output_header = std::make_shared<const Block>(ColumnPermuteTransform::permute(*join_algorithm_header, column_permutation));
+    else
+        output_header = join_algorithm_header;
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
