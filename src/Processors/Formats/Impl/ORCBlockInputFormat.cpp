@@ -1,5 +1,5 @@
-#include <Processors/Formats/Impl/ORCBlockInputFormat.h>
-#include <Common/Exception.h>
+#include "ORCBlockInputFormat.h"
+#include "Common/Exception.h"
 
 #if USE_ORC
 #    include <DataTypes/NestedUtils.h>
@@ -9,11 +9,10 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
-#    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
-#    include <Interpreters/Context.h>
+#    include "ArrowBufferedStreams.h"
+#    include "ArrowColumnToCHColumn.h"
+#    include "ArrowFieldIndexUtil.h"
+#    include "NativeORCBlockInputFormat.h"
 
 namespace DB
 {
@@ -138,7 +137,6 @@ void ORCBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "ORC",
-        format_settings,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -182,7 +180,6 @@ NamesAndTypesList ORCSchemaReader::readSchema()
         *schema,
         metadata,
         "ORC",
-        format_settings,
         format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
         false,

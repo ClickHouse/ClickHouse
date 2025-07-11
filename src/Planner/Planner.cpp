@@ -6,7 +6,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -52,7 +51,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -143,7 +141,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool enable_parallel_blocks_marshalling;
 }
 
 namespace ServerSetting
@@ -228,11 +225,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         if (typeid_cast<const StorageDistributed *>(storage.get())
             || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
-        {
-            collect_filters = true;
-            break;
-        }
-        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
         {
             collect_filters = true;
             break;
@@ -1070,16 +1062,6 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
-    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
-    /// as it may break `rows_before_limit_at_least` value during the second stage in
-    /// case it also contains LIMIT BY
-    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-
-    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
-    {
-        return;
-    }
-
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
@@ -1566,11 +1548,10 @@ void Planner::buildPlanForQueryNode()
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        auto & query_node_typed = query_tree->as<QueryNode &>();
-        const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTree(), true, true);
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
+            auto * table_node = it.first->as<TableNode>();
             if (!table_node)
                 continue;
 
@@ -1583,7 +1564,6 @@ void Planner::buildPlanForQueryNode()
                 LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                break;
             }
         }
     }
@@ -1961,18 +1941,6 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
-
-    // Not all cases are supported here yet. E.g. for this query:
-    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6)) group by number
-    // we will have `BlocksMarshallingStep` added to the query plan, but not for
-    // select * from remote('127.0.0.{1,2}', numbers_mt(1e6))
-    // because `to_stage` for it will be `QueryProcessingStage::Complete`.
-    if (query_context->getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
-        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
-        && query_context->getClientInfo().distributed_depth <= 1 // Makes sense for higher depths too, just not supported
-    )
-        query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);

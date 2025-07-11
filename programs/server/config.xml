@@ -563,13 +563,6 @@
     </storage_configuration>
     -->
 
-    <!-- Default database disk storing metadata files: -->
-    <!--
-    <database_disk>
-        <disk>default</disk>
-    </database_disk>
-    -->
-
     <!-- Path to temporary data for processing heavy queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
@@ -1329,7 +1322,10 @@
         <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events. -->
+    <!-- Session log. Stores user log in (successful or not) and log out events.
+
+        Note: session log has known security issues and should not be used in production.
+    -->
     <!-- <session_log>
         <database>system</database>
         <table>session_log</table>
@@ -1695,12 +1691,13 @@
 
     <send_crash_reports>
         <!-- Setting <enabled> to true allows sending crash reports to -->
-        <!-- the ClickHouse core developers team. -->
+        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
-        <!-- The reports are anonymized -->
         <enabled>true</enabled>
         <send_logical_errors>true</send_logical_errors>
-        <endpoint>https://crash.clickhouse.com/</endpoint>
+        <!-- The reports are anonymized by default -->
+        <anonymize>true</anonymize>
+        <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
     </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->

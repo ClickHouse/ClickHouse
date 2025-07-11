@@ -12,9 +12,6 @@ namespace ProfileEvents
 {
     extern const Event MarkCacheHits;
     extern const Event MarkCacheMisses;
-    extern const Event MarkCacheEvictedBytes;
-    extern const Event MarkCacheEvictedMarks;
-    extern const Event MarkCacheEvictedFiles;
 }
 
 namespace DB
@@ -44,7 +41,7 @@ private:
 public:
     MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Calculate key from path to file.
+    /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file);
 
     template <typename LoadFunc>
@@ -58,19 +55,6 @@ public:
 
         return result.first;
     }
-
-private:
-    /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
-    {
-        /// File is the key of MarkCache, each removal means eviction of 1 file from the cache.
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
-
-        const auto * marks_in_compressed_file = static_cast<const MarksInCompressedFile *>(mapped_ptr.get());
-        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, marks_in_compressed_file->getNumberOfMarks());
-    }
-
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;
