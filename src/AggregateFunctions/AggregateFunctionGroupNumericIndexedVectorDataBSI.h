@@ -1634,6 +1634,8 @@ public:
         {
             if (value > std::numeric_limits<Int64>::max())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Value {} does not fit in Int64. It should, even when using UInt64.", value);
+
+            scaled_value = static_cast<Int64>(value);
         }
         else if constexpr (std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
         {
