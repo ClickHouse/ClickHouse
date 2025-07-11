@@ -1,5 +1,5 @@
-#include "ArrowColumnToCHColumn.h"
-#include "Common/Exception.h"
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Common/Exception.h>
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 

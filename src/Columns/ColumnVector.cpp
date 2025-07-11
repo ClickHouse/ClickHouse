@@ -996,6 +996,13 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     return res;
 }
 
+template <typename T>
+void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 DECLARE_DEFAULT_CODE(
     template <typename Container, typename Type> void vectorIndexImpl(
     const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
