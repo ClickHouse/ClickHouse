@@ -293,9 +293,10 @@ void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
-        RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        auto & counters = current_performance_counters ? *current_performance_counters : performance_counters;
+        RUsageCounters::updateProfileEvents(*last_rusage, counters);
         if (taskstats)
-            taskstats->updateCounters(performance_counters);
+            taskstats->updateCounters(counters);
     }
     catch (...)
     {
