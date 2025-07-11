@@ -1627,15 +1627,15 @@ public:
         Int64 scaled_value = 0;
         UInt64 scaling = 1ULL << fraction_bit_num;
 
-        /// Check for overflows. (1) With all integer types, value * (1ULL << fraction_bit_num) cannot overflow as fraction_bit_num is
-        /// always 0. Overflow can only occur when value is a UInt64 that is out of bounds of Int64. (2) With Float32/Float64, we are
+        /// Check for overflows. (3) With all integer types, value * (1ULL << fraction_bit_num) cannot overflow as fraction_bit_num is
+        /// always 0. (1) Overflow can only occur when value is a UInt64 that is out of bounds of Int64. (2) With Float32/Float64, we are
         /// concerned that casting Float(32/64) result will overflow Int64 destination.
         if constexpr (std::is_same_v<ValueType, UInt64>)
         {
             if (value > std::numeric_limits<Int64>::max())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Value {} does not fit in Int64. It should, even when using UInt64.", value);
         }
-        else
+        else if constexpr (std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
         {
             constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
 
@@ -1648,6 +1648,10 @@ public:
                     fraction_bit_num);
 
             scaled_value = static_cast<Int64>(value * scaling);
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(value);
         }
 
         UInt8 cin = 0;
