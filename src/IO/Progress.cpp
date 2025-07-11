@@ -1,4 +1,4 @@
-#include "Progress.h"
+#include <IO/Progress.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>

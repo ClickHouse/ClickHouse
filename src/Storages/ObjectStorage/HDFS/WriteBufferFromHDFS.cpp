@@ -2,9 +2,9 @@
 
 #if USE_HDFS
 
-#include "WriteBufferFromHDFS.h"
-#include "HDFSCommon.h"
-#include "HDFSErrorWrapper.h"
+#include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
