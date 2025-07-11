@@ -122,6 +122,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_TEXT;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -2535,16 +2536,22 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
+                have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2558,7 +2565,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     current_exception->rethrow();
                 }
 
-                if (!hint.hasExpectedClientError(current_exception->code()))
+                if (!hint.hasExpectedClientError(current_exception->code()) || buzz_house)
                 {
                     if (hint.hasClientErrors())
                         current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
