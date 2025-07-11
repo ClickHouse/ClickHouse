@@ -11,8 +11,6 @@
 #include <new>
 
 #include <jemalloc/jemalloc.h>
-#include <sys/mman.h>
-#include <Poco/Format.h>
 
 #include <Common/JemallocNodumpAllocatorImpl.h>
 
