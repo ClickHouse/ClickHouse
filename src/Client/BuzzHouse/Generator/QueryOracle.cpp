@@ -213,7 +213,7 @@ void QueryOracle::generateExportQuery(
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
-    sparen->set_paren(true);
+    sparen->set_paren(false);
     can_test_oracle_result &= test_content;
     /// Remove the file if exists
     if (!std::filesystem::remove(cnfile, ec) && ec)
@@ -460,7 +460,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
-        sparen->set_paren(true);
+        sparen->set_paren(false);
         if (!std::filesystem::remove(qcfile, ec) && ec)
         {
             LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
@@ -774,7 +774,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
 
         /// Then insert the data
-        sparen->set_paren(true);
+        sparen->set_paren(false);
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
